@@ -4,6 +4,8 @@ use wgpu::*;
 
 mod wireframe;
 
+pub use wireframe::Wireframe;
+
 /// Main render part
 pub struct Interface {
     surface: Surface<'static>,
@@ -50,8 +52,10 @@ impl Interface {
 
         surface.configure(&device, &surface_config);
 
+        // Render Components
         let mut wireframe = wireframe::WireframePipeline::init(&device);
-        wireframe.new_wireframe(&device);
+        wireframe.create([0.0, 0.0, 0.2, 0.5], [1.0, 0.0, 0.0, 1.0], &device);
+
         Interface { wireframe, surface, device, queue, width, height }
     }
 
@@ -86,5 +90,21 @@ impl Interface {
         self.queue.submit([encoder.finish()]);
 
         texture.present();
+    }
+
+    pub fn create_wireframe(&mut self, rect: [f32; 4], color: [f32; 4]) -> Wireframe {
+        self.wireframe.create(rect, color, &self.device)
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn queue(&self) -> &Queue {
+        &self.queue
     }
 }

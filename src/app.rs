@@ -8,15 +8,16 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::interface::Interface;
+use crate::interface::{Interface, Wireframe};
 
 #[derive(Default)]
 pub struct LnDrawer {
     window: Option<Arc<Window>>,
     renderer: Option<Interface>,
 
+    cursor_start: PhysicalPosition<f64>,
     cursor_position: PhysicalPosition<f64>,
-    mouse_down: bool,
+    cursor_wireframe: Option<Wireframe>,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -42,19 +43,33 @@ impl ApplicationHandler for LnDrawer {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_position = position;
-                if self.mouse_down
+                if let Some(wireframe) = &self.cursor_wireframe
                     && let Some(renderer) = &mut self.renderer
                 {
-                    
+                    let screen = cursor_to_screen(self.cursor_position, renderer);
+                    let screen_start = cursor_to_screen(self.cursor_start, renderer);
+                    wireframe.set_rect(
+                        [screen_start.0, screen_start.1, screen.0, screen.1],
+                        renderer.queue(),
+                    );
+                    renderer.redraw();
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                if button == MouseButton::Left {
+                if button == MouseButton::Left
+                    && let Some(renderer) = &mut self.renderer
+                {
                     if state == ElementState::Pressed {
-                        self.mouse_down = true;
+                        self.cursor_start = self.cursor_position;
+                        let screen = cursor_to_screen(self.cursor_position, renderer);
+                        self.cursor_wireframe = Some(renderer.create_wireframe(
+                            [screen.0, screen.1, screen.0, screen.1],
+                            [1.0, 0.0, 0.0, 1.0],
+                        ));
                     } else if state == ElementState::Released {
-                        self.mouse_down = false;
+                        self.cursor_wireframe = None;
                     }
+                    renderer.redraw();
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -79,4 +94,11 @@ impl LnDrawer {
         self.window = Some(window);
         self.renderer = Some(renderer);
     }
+}
+
+fn cursor_to_screen(cursor: PhysicalPosition<f64>, renderer: &Interface) -> (f32, f32) {
+    (
+        cursor.x as f32 / renderer.width() as f32 * 2.0 - 1.0,
+        1.0 - cursor.y as f32 / renderer.height() as f32 * 2.0,
+    )
 }

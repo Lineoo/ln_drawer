@@ -1,6 +1,7 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
+#[derive(Clone)]
 pub struct Wireframe {
     vertices: Buffer,
     indices: Buffer,
@@ -74,7 +75,7 @@ impl Wireframe {
             [rect[2], rect[3]],
             [rect[2], rect[1]],
         ];
-        queue.write_buffer(&self.indices, 0, bytemuck::bytes_of(&contents));
+        queue.write_buffer(&self.vertices, 0, bytemuck::bytes_of(&contents));
     }
     pub fn set_color(&self, color: [f32; 4], queue: &Queue) {
         queue.write_buffer(&self.color, 0, bytemuck::bytes_of(&color));
@@ -158,12 +159,10 @@ impl WireframePipeline {
         }
     }
 
-    pub fn new_wireframe(&mut self, device: &Device) {
-        self.wireframe.push(Wireframe::init(
-            [0.0, 0.0, 0.2, 0.5],
-            [1.0, 0.6, 0.5, 1.0],
-            device,
-        ));
+    pub fn create(&mut self, rect: [f32; 4], color: [f32; 4], device: &Device) -> Wireframe {
+        let wireframe = Wireframe::init(rect, color, device);
+        self.wireframe.push(wireframe.clone());
+        wireframe
     }
 
     pub fn render(&self, rpass: &mut RenderPass) {
