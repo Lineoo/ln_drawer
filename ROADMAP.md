@@ -1,4 +1,4 @@
-> This page is written in Chinese.
+> NOTE: This page is written in Chinese.
 
 # 主要愿景
 - 绘制
@@ -15,9 +15,33 @@
         - 按钮
     - 元素编组
     - 多页面
+    - 渲染偏移与精度修正
 - 交互
     - 移动
     - 缩放/拉伸
     - 文本输入
+    - 右键菜单
 - 全屏覆盖层
     - 需要能够传递鼠标，键盘事件
+
+# 架构
+- 界面基础渲染，与 wgpu 直接交互 `interface`
+    - 通用的按钮，标签等组件
+    - 用于拖曳组件的线框，手柄
+    - 直接纹理渲染与网格渲染
+    - 笔画的细分网格 StrokeSection
+    - 节点之间连接的箭头 Line
+    - 右键菜单
+- 更加高级的逻辑组件，不涉及 wgpu `elements`
+    - 笔画的渲染图层 `StrokeLayer`
+    - 添加的图像 `Image`
+    - 节点连接 `NodeLink`
+    - 文本编辑栏
+- 总体的各种功能支持，绘制、工具与导入，承接 IO 和用户输入 `layout`
+    - 框选
+    - 用于实现 stroke 的笔画管理器 `StrokeManager`
+    - 添加图像的入口，甚至是截图工具
+- 窗口管理，与 winit 直接交互 `lnwin`
+    - 全屏覆盖层
+    - 输入处理
+- 主程序 `main`
