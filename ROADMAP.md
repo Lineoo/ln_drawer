@@ -25,14 +25,15 @@
     - 需要能够传递鼠标，键盘事件
 
 # 架构
-- 界面基础渲染，与 wgpu 直接交互 `interface`
+- 界面基础渲染，与 wgpu 直接交互，使用屏幕空间 `interface`
     - 通用的按钮，标签等组件
     - 用于拖曳组件的线框，手柄
     - 直接纹理渲染与网格渲染
     - 笔画的细分网格 StrokeSection
     - 节点之间连接的箭头 Line
     - 右键菜单
-- 更加高级的逻辑组件，不涉及 wgpu `elements`
+    - 空间变化
+- 更加高级的逻辑组件，不涉及 wgpu 与屏幕空间 `elements`
     - 笔画的渲染图层 `StrokeLayer`
     - 添加的图像 `Image`
     - 节点连接 `NodeLink`

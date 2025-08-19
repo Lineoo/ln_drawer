@@ -1,6 +1,7 @@
 mod app;
 mod renderer;
 mod layout;
+mod interface;
 
 use winit::{error::EventLoopError, event_loop::{ControlFlow, EventLoop}};
 
