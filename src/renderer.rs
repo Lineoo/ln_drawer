@@ -6,6 +6,8 @@ use wgpu::{
 };
 use winit::window::Window;
 
+use crate::layout::canvas::Canvas;
+
 pub struct LnDrawerRenderer {
     surface: Surface<'static>,
     device: Device,
@@ -19,6 +21,8 @@ pub struct LnDrawerRenderer {
 
     drawing_buffer: Vec<u8>,
     drawing_texture: Texture,
+
+    canvas: Canvas,
 }
 
 impl LnDrawerRenderer {
@@ -182,6 +186,11 @@ impl LnDrawerRenderer {
             },
         );
 
+        // Canvas
+        let mut canvas = Canvas::default();
+        canvas.new_instance(0.0, 0.3, 0.5, 0.0);
+        canvas.setup(&device);
+
         LnDrawerRenderer {
             surface,
             device,
@@ -192,6 +201,7 @@ impl LnDrawerRenderer {
             drawing_bind_group,
             drawing_buffer,
             drawing_texture,
+            canvas
         }
     }
 
@@ -244,6 +254,8 @@ impl LnDrawerRenderer {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, Some(&self.drawing_bind_group), &[]);
         pass.draw(0..3, 0..1);
+
+        self.canvas.render(&mut pass);
 
         drop(pass);
 
