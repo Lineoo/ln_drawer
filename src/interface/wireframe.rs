@@ -176,6 +176,7 @@ impl WireframePipeline {
         color: [f32; 4],
         device: &Device,
     ) -> Arc<Wireframe> {
+        self.clean();
         let wireframe = Arc::new(Wireframe::init(rect, color, device));
         self.wireframe_set.insert(wireframe.clone());
         wireframe
@@ -187,10 +188,15 @@ impl WireframePipeline {
             i.render(rpass);
         }
         for wireframe in &self.wireframe_set {
-            // FIXME: Memory leak
             if Arc::strong_count(wireframe) > 1 {
                 wireframe.render(rpass);
             }
         }
+    }
+
+    /// This will locate all unused wireframe and remove it
+    pub fn clean(&mut self) {
+        self.wireframe_set
+            .retain(|wireframe| Arc::strong_count(wireframe) > 1);
     }
 }
