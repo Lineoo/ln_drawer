@@ -93,7 +93,7 @@ pub struct WireframePipeline {
     wireframe: Vec<Wireframe>,
 }
 impl WireframePipeline {
-    pub fn init(device: &Device) -> WireframePipeline {
+    pub fn init(device: &Device, surface: SurfaceConfiguration) -> WireframePipeline {
         // TODO: this shader will be provided by interface instead then
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("color_shader"),
@@ -145,7 +145,7 @@ impl WireframePipeline {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
-                targets: &[Some(TextureFormat::Bgra8UnormSrgb.into())],
+                targets: &[Some(surface.format.into())],
             }),
             depth_stencil: None,
             multisample: Default::default(),

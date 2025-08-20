@@ -53,7 +53,7 @@ impl Interface {
         surface.configure(&device, &surface_config);
 
         // Render Components
-        let mut wireframe = wireframe::WireframePipeline::init(&device);
+        let mut wireframe = wireframe::WireframePipeline::init(&device, surface_config);
         wireframe.create([0.0, 0.0, 0.2, 0.5], [1.0, 0.0, 0.0, 1.0], &device);
 
         Interface { wireframe, surface, device, queue, width, height }
