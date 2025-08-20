@@ -99,6 +99,7 @@ impl PainterPipeline {
         }
     }
 
+    #[must_use = "The painter will be destroyed when being drop."]
     pub fn create(&mut self, rect: [f32; 4], width: u32, height: u32, device: &Device) -> Arc<Painter> {
         self.clean();
         let painter = Arc::new(Painter::init(rect, width, height, device));

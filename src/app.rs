@@ -85,7 +85,7 @@ impl ApplicationHandler for LnDrawer {
                     if state == ElementState::Pressed {
                         self.cursor_start = self.cursor_position;
                         let screen = cursor_to_screen(self.cursor_position, renderer);
-                        self.cursor_wireframe = Some(renderer.create_wireframe_instance(
+                        self.cursor_wireframe = Some(renderer.create_wireframe(
                             [screen.0, screen.1, screen.0, screen.1],
                             [1.0, 0.0, 0.0, 1.0],
                         ));

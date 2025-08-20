@@ -56,8 +56,7 @@ impl Interface {
         surface.configure(&device, &surface_config);
 
         // Render Components
-        let mut wireframe = wireframe::WireframePipeline::init(&device, &surface_config);
-        wireframe.create([0.0, 0.0, 0.2, 0.5], [1.0, 0.0, 0.0, 1.0], &device);
+        let wireframe = wireframe::WireframePipeline::init(&device, &surface_config);
         let painter = painter::PainterPipeline::init(&device, &surface_config);
 
         Interface {
@@ -105,12 +104,8 @@ impl Interface {
         texture.present();
     }
 
-    pub fn create_wireframe(&mut self, rect: [f32; 4], color: [f32; 4]) -> Wireframe {
+    pub fn create_wireframe(&mut self, rect: [f32; 4], color: [f32; 4]) -> Arc<Wireframe> {
         self.wireframe.create(rect, color, &self.device)
-    }
-
-    pub fn create_wireframe_instance(&mut self, rect: [f32; 4], color: [f32; 4]) -> Arc<Wireframe> {
-        self.wireframe.create_instance(rect, color, &self.device)
     }
 
     pub fn create_painter(&mut self, rect: [f32; 4], width: u32, height: u32) -> Arc<Painter> {

@@ -1,5 +1,4 @@
 mod app;
-mod renderer;
 mod layout;
 mod interface;
 

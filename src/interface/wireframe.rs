@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-use hashbrown::HashSet;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct Wireframe {
     vertices: Buffer,
     indices: Buffer,
@@ -12,6 +10,7 @@ pub struct Wireframe {
     bind_group: BindGroup,
     color: Buffer,
 }
+
 impl Wireframe {
     /// rect: [left, down, right, up]
     pub fn init(rect: [f32; 4], color: [f32; 4], device: &Device) -> Wireframe {
@@ -38,7 +37,7 @@ impl Wireframe {
         });
 
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("color_bind_group_layout"),
+            label: Some("wireframe_bind_group_layout"),
             entries: &[BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::FRAGMENT,
@@ -52,7 +51,7 @@ impl Wireframe {
         });
 
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("color_bind_group"),
+            label: Some("wireframe_bind_group"),
             layout: &bind_group_layout,
             entries: &[BindGroupEntry {
                 binding: 0,
@@ -93,19 +92,18 @@ impl Wireframe {
 
 pub struct WireframePipeline {
     pipeline: RenderPipeline,
-    wireframe: Vec<Wireframe>,
-    wireframe_set: HashSet<Arc<Wireframe>>,
+    wireframe: Vec<Arc<Wireframe>>,
 }
+
 impl WireframePipeline {
     pub fn init(device: &Device, surface: &SurfaceConfiguration) -> WireframePipeline {
-        // TODO: this shader will be provided by interface instead then
         let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("color_shader"),
-            source: ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            label: Some("wireframe_shader"),
+            source: ShaderSource::Wgsl(include_str!("wireframe.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("color_bind_group_layout"),
+            label: Some("wireframe_bind_group_layout"),
             entries: &[BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::FRAGMENT,
@@ -119,7 +117,7 @@ impl WireframePipeline {
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("color_layout"),
+            label: Some("wireframe_layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
@@ -160,34 +158,20 @@ impl WireframePipeline {
         WireframePipeline {
             pipeline,
             wireframe: Vec::new(),
-            wireframe_set: HashSet::new(),
         }
     }
 
-    pub fn create(&mut self, rect: [f32; 4], color: [f32; 4], device: &Device) -> Wireframe {
-        let wireframe = Wireframe::init(rect, color, device);
-        self.wireframe.push(wireframe.clone());
-        wireframe
-    }
-
-    pub fn create_instance(
-        &mut self,
-        rect: [f32; 4],
-        color: [f32; 4],
-        device: &Device,
-    ) -> Arc<Wireframe> {
+    #[must_use = "The wireframe will be destroyed when being drop."]
+    pub fn create(&mut self, rect: [f32; 4], color: [f32; 4], device: &Device) -> Arc<Wireframe> {
         self.clean();
         let wireframe = Arc::new(Wireframe::init(rect, color, device));
-        self.wireframe_set.insert(wireframe.clone());
+        self.wireframe.push(wireframe.clone());
         wireframe
     }
 
     pub fn render(&self, rpass: &mut RenderPass) {
         rpass.set_pipeline(&self.pipeline);
-        for i in &self.wireframe {
-            i.render(rpass);
-        }
-        for wireframe in &self.wireframe_set {
+        for wireframe in &self.wireframe {
             if Arc::strong_count(wireframe) > 1 {
                 wireframe.render(rpass);
             }
@@ -196,7 +180,7 @@ impl WireframePipeline {
 
     /// This will locate all unused wireframe and remove it
     pub fn clean(&mut self) {
-        self.wireframe_set
+        self.wireframe
             .retain(|wireframe| Arc::strong_count(wireframe) > 1);
     }
 }
