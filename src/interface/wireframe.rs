@@ -97,7 +97,7 @@ pub struct WireframePipeline {
     wireframe_set: HashSet<Arc<Wireframe>>,
 }
 impl WireframePipeline {
-    pub fn init(device: &Device, surface: SurfaceConfiguration) -> WireframePipeline {
+    pub fn init(device: &Device, surface: &SurfaceConfiguration) -> WireframePipeline {
         // TODO: this shader will be provided by interface instead then
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("color_shader"),

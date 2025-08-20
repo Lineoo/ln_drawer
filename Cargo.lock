@@ -899,6 +899,7 @@ dependencies = [
  "hashbrown",
  "log",
  "palette",
+ "parking_lot",
  "pollster",
  "tokio",
  "wgpu",

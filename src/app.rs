@@ -8,7 +8,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::interface::{Interface, Wireframe};
+use crate::interface::{Interface, Painter, Wireframe};
 
 #[derive(Default)]
 pub struct LnDrawer {
@@ -18,6 +18,8 @@ pub struct LnDrawer {
     cursor_start: PhysicalPosition<f64>,
     cursor_position: PhysicalPosition<f64>,
     cursor_wireframe: Option<Arc<Wireframe>>,
+
+    painter: Option<Arc<Painter>>,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -38,12 +40,15 @@ impl ApplicationHandler for LnDrawer {
             WindowEvent::CloseRequested => {
                 self.window = None;
                 self.renderer = None; // Drop or it will get seg fault
+                self.cursor_wireframe = None;
+                self.painter = None;
 
                 event_loop.exit();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_position = position;
                 if let Some(wireframe) = &self.cursor_wireframe
+                    && let Some(painter) = &self.painter
                     && let Some(renderer) = &mut self.renderer
                 {
                     let screen = cursor_to_screen(self.cursor_position, renderer);
@@ -52,6 +57,14 @@ impl ApplicationHandler for LnDrawer {
                         [screen_start.0, screen_start.1, screen.0, screen.1],
                         renderer.queue(),
                     );
+
+                    painter.set_pixel(
+                        self.cursor_position.x as u32,
+                        renderer.height() - self.cursor_position.y as u32,
+                        [85, 145, 255, 255],
+                    );
+                    painter.flush(renderer.queue());
+
                     renderer.redraw();
                 }
             }
@@ -89,7 +102,9 @@ impl LnDrawer {
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::new(window);
 
-        let renderer = pollster::block_on(Interface::new(window.clone()));
+        let mut renderer = pollster::block_on(Interface::new(window.clone()));
+
+        self.painter = Some(renderer.create_painter([-1.0, -1.0, 1.0, 1.0], renderer.width(), renderer.height()));
 
         self.window = Some(window);
         self.renderer = Some(renderer);

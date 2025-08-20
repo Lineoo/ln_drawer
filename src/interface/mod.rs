@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use wgpu::*;
 
+mod painter;
 mod wireframe;
 
+pub use painter::Painter;
 pub use wireframe::Wireframe;
 
 /// Main render part
@@ -16,6 +18,7 @@ pub struct Interface {
     height: u32,
 
     wireframe: wireframe::WireframePipeline,
+    painter: painter::PainterPipeline,
 }
 impl Interface {
     pub async fn new(window: Arc<winit::window::Window>) -> Interface {
@@ -53,10 +56,19 @@ impl Interface {
         surface.configure(&device, &surface_config);
 
         // Render Components
-        let mut wireframe = wireframe::WireframePipeline::init(&device, surface_config);
+        let mut wireframe = wireframe::WireframePipeline::init(&device, &surface_config);
         wireframe.create([0.0, 0.0, 0.2, 0.5], [1.0, 0.0, 0.0, 1.0], &device);
+        let painter = painter::PainterPipeline::init(&device, &surface_config);
 
-        Interface { wireframe, surface, device, queue, width, height }
+        Interface {
+            surface,
+            device,
+            queue,
+            width,
+            height,
+            wireframe,
+            painter,
+        }
     }
 
     pub fn redraw(&self) {
@@ -83,6 +95,7 @@ impl Interface {
             ..Default::default()
         });
 
+        self.painter.render(&mut rpass);
         self.wireframe.render(&mut rpass);
 
         drop(rpass);
@@ -98,6 +111,10 @@ impl Interface {
 
     pub fn create_wireframe_instance(&mut self, rect: [f32; 4], color: [f32; 4]) -> Arc<Wireframe> {
         self.wireframe.create_instance(rect, color, &self.device)
+    }
+
+    pub fn create_painter(&mut self, rect: [f32; 4], width: u32, height: u32) -> Arc<Painter> {
+        self.painter.create(rect, width, height, &self.device)
     }
 
     pub fn width(&self) -> u32 {
