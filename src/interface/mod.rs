@@ -96,6 +96,10 @@ impl Interface {
         self.wireframe.create(rect, color, &self.device)
     }
 
+    pub fn create_wireframe_instance(&mut self, rect: [f32; 4], color: [f32; 4]) -> Arc<Wireframe> {
+        self.wireframe.create_instance(rect, color, &self.device)
+    }
+
     pub fn width(&self) -> u32 {
         self.width
     }

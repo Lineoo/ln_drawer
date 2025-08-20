@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
+use hashbrown::HashSet;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-#[derive(Clone)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct Wireframe {
     vertices: Buffer,
     indices: Buffer,
@@ -91,6 +94,7 @@ impl Wireframe {
 pub struct WireframePipeline {
     pipeline: RenderPipeline,
     wireframe: Vec<Wireframe>,
+    wireframe_set: HashSet<Arc<Wireframe>>,
 }
 impl WireframePipeline {
     pub fn init(device: &Device, surface: SurfaceConfiguration) -> WireframePipeline {
@@ -156,6 +160,7 @@ impl WireframePipeline {
         WireframePipeline {
             pipeline,
             wireframe: Vec::new(),
+            wireframe_set: HashSet::new(),
         }
     }
 
@@ -165,10 +170,27 @@ impl WireframePipeline {
         wireframe
     }
 
+    pub fn create_instance(
+        &mut self,
+        rect: [f32; 4],
+        color: [f32; 4],
+        device: &Device,
+    ) -> Arc<Wireframe> {
+        let wireframe = Arc::new(Wireframe::init(rect, color, device));
+        self.wireframe_set.insert(wireframe.clone());
+        wireframe
+    }
+
     pub fn render(&self, rpass: &mut RenderPass) {
         rpass.set_pipeline(&self.pipeline);
         for i in &self.wireframe {
             i.render(rpass);
+        }
+        for wireframe in &self.wireframe_set {
+            // FIXME: Memory leak
+            if Arc::strong_count(wireframe) > 1 {
+                wireframe.render(rpass);
+            }
         }
     }
 }

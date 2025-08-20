@@ -17,7 +17,7 @@ pub struct LnDrawer {
 
     cursor_start: PhysicalPosition<f64>,
     cursor_position: PhysicalPosition<f64>,
-    cursor_wireframe: Option<Wireframe>,
+    cursor_wireframe: Option<Arc<Wireframe>>,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -62,7 +62,7 @@ impl ApplicationHandler for LnDrawer {
                     if state == ElementState::Pressed {
                         self.cursor_start = self.cursor_position;
                         let screen = cursor_to_screen(self.cursor_position, renderer);
-                        self.cursor_wireframe = Some(renderer.create_wireframe(
+                        self.cursor_wireframe = Some(renderer.create_wireframe_instance(
                             [screen.0, screen.1, screen.0, screen.1],
                             [1.0, 0.0, 0.0, 1.0],
                         ));
