@@ -34,7 +34,7 @@ impl Wireframe {
         let color = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("color_uniform"),
             contents: bytemuck::bytes_of(&color),
-            usage: BufferUsages::UNIFORM,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {

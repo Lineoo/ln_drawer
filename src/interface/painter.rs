@@ -241,6 +241,7 @@ impl Painter {
         buffer[start + 3] = color[3];
     }
 
+    // TODO Memory Optimization
     pub fn flush(&self, queue: &Queue) {
         let buffer = self.buffer.lock();
         queue.write_texture(
