@@ -89,6 +89,7 @@ impl Interface {
     /// Suggested to call before [`Interface::redraw()`]. This will clean up all ready-to-remove interface components.
     pub fn restructure(&mut self) {
         self.painter.clean();
+        self.wireframe.clean();
     }
 
     pub fn redraw(&self) {
@@ -125,12 +126,14 @@ impl Interface {
         texture.present();
     }
 
-    pub fn create_wireframe(&mut self, rect: [f32; 4], color: [f32; 4]) -> Arc<Wireframe> {
-        self.wireframe.create(rect, color, &self.device)
+    pub fn create_wireframe(&mut self, rect: [f32; 4], color: [f32; 4]) -> Wireframe {
+        self.wireframe
+            .create(rect, color, &self.device, &self.queue)
     }
 
     pub fn create_painter(&mut self, rect: [f32; 4], width: u32, height: u32) -> Painter {
-        self.painter.create(rect, width, height, &self.device, &self.queue)
+        self.painter
+            .create(rect, width, height, &self.device, &self.queue)
     }
 
     pub fn get_camera(&self) -> [i32; 2] {
@@ -153,9 +156,5 @@ impl Interface {
 
     pub fn height(&self) -> u32 {
         self.height
-    }
-
-    pub fn queue(&self) -> &Queue {
-        &self.queue
     }
 }

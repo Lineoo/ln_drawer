@@ -1,98 +1,13 @@
-use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-pub struct Wireframe {
-    vertices: Buffer,
-    indices: Buffer,
-
-    bind_group: BindGroup,
-    color: Buffer,
-}
-
-impl Wireframe {
-    /// rect: [left, down, right, up]
-    pub fn init(rect: [f32; 4], color: [f32; 4], device: &Device) -> Wireframe {
-        let vertices = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("wireframe_vertex_buffer"),
-            contents: bytemuck::bytes_of(&[
-                [rect[0], rect[1]],
-                [rect[0], rect[3]],
-                [rect[2], rect[3]],
-                [rect[2], rect[1]],
-            ]),
-            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-        });
-        let indices = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("wireframe_index_buffer"),
-            contents: bytemuck::bytes_of(&[0, 1, 1, 2, 2, 3, 3, 0]),
-            usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
-        });
-
-        let color = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("color_uniform"),
-            contents: bytemuck::bytes_of(&color),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("wireframe_bind_group_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("wireframe_bind_group"),
-            layout: &bind_group_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &color,
-                    offset: 0,
-                    size: None,
-                }),
-            }],
-        });
-
-        Wireframe {
-            vertices,
-            indices,
-            bind_group,
-            color,
-        }
-    }
-    pub fn set_rect(&self, rect: [f32; 4], queue: &Queue) {
-        let contents = [
-            [rect[0], rect[1]],
-            [rect[0], rect[3]],
-            [rect[2], rect[3]],
-            [rect[2], rect[1]],
-        ];
-        queue.write_buffer(&self.vertices, 0, bytemuck::bytes_of(&contents));
-    }
-    pub fn set_color(&self, color: [f32; 4], queue: &Queue) {
-        queue.write_buffer(&self.color, 0, bytemuck::bytes_of(&color));
-    }
-    fn render(&self, rpass: &mut RenderPass) {
-        rpass.set_bind_group(0, Some(&self.bind_group), &[]);
-        rpass.set_vertex_buffer(0, self.vertices.slice(..));
-        rpass.set_index_buffer(self.indices.slice(..), IndexFormat::Uint32);
-        rpass.draw_indexed(0..8, 0, 0..1);
-    }
-}
-
 pub struct WireframePipeline {
     pipeline: RenderPipeline,
-    wireframe: Vec<Arc<Wireframe>>,
+    removal_tx: Sender<usize>,
+    removal_rx: Receiver<usize>,
+    wireframe: Vec<WireframeBuffer>,
 }
 
 impl WireframePipeline {
@@ -155,32 +70,148 @@ impl WireframePipeline {
             cache: None,
         });
 
+        let (removal_tx, removal_rx) = channel();
+
         WireframePipeline {
             pipeline,
+            removal_tx,
+            removal_rx,
             wireframe: Vec::new(),
         }
     }
 
     #[must_use = "The wireframe will be destroyed when being drop."]
-    pub fn create(&mut self, rect: [f32; 4], color: [f32; 4], device: &Device) -> Arc<Wireframe> {
+    pub fn create(
+        &mut self,
+        rect: [f32; 4],
+        color: [f32; 4],
+        device: &Device,
+        queue: &Queue,
+    ) -> Wireframe {
         self.clean();
-        let wireframe = Arc::new(Wireframe::init(rect, color, device));
+
+        let vertices = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("wireframe_vertex_buffer"),
+            contents: bytemuck::bytes_of(&[
+                [rect[0], rect[1]],
+                [rect[0], rect[3]],
+                [rect[2], rect[3]],
+                [rect[2], rect[1]],
+            ]),
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        });
+        let indices = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("wireframe_index_buffer"),
+            contents: bytemuck::bytes_of(&[0, 1, 1, 2, 2, 3, 3, 0]),
+            usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+        });
+
+        let color = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("color_uniform"),
+            contents: bytemuck::bytes_of(&color),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("wireframe_bind_group_layout"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("wireframe_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &color,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
+        let wireframe = WireframeBuffer {
+            vertices,
+            indices,
+            bind_group,
+            color,
+        };
+
         self.wireframe.push(wireframe.clone());
-        wireframe
+
+        Wireframe {
+            rect,
+            pipeline_remove: self.removal_tx.clone(),
+            pipeline_remove_idx: self.wireframe.len() - 1,
+            buffer: wireframe,
+            queue: queue.clone(),
+        }
+    }
+
+    pub fn clean(&mut self) {
+        for idx in self.removal_rx.try_iter() {
+            self.wireframe.swap_remove(idx);
+        }
     }
 
     pub fn render(&self, rpass: &mut RenderPass) {
         rpass.set_pipeline(&self.pipeline);
         for wireframe in &self.wireframe {
-            if Arc::strong_count(wireframe) > 1 {
-                wireframe.render(rpass);
-            }
+            rpass.set_bind_group(0, Some(&wireframe.bind_group), &[]);
+            rpass.set_vertex_buffer(0, wireframe.vertices.slice(..));
+            rpass.set_index_buffer(wireframe.indices.slice(..), IndexFormat::Uint32);
+            rpass.draw_indexed(0..8, 0, 0..1);
         }
     }
+}
 
-    /// This will locate all unused wireframe and remove it
-    pub fn clean(&mut self) {
-        self.wireframe
-            .retain(|wireframe| Arc::strong_count(wireframe) > 1);
+pub struct Wireframe {
+    /// rect: [left, down, right, up]
+    rect: [f32; 4],
+
+    pipeline_remove_idx: usize,
+    pipeline_remove: Sender<usize>,
+    buffer: WireframeBuffer,
+    queue: Queue,
+}
+impl Drop for Wireframe {
+    fn drop(&mut self) {
+        if let Err(e) = self.pipeline_remove.send(self.pipeline_remove_idx) {
+            log::warn!("Dropping Wireframe: {e}");
+        }
     }
+}
+impl Wireframe {
+    pub fn set_rect(&self, rect: [f32; 4]) {
+        let contents = [
+            [rect[0], rect[1]],
+            [rect[0], rect[3]],
+            [rect[2], rect[3]],
+            [rect[2], rect[1]],
+        ];
+        self.queue
+            .write_buffer(&self.buffer.vertices, 0, bytemuck::bytes_of(&contents));
+    }
+    pub fn set_color(&self, color: [f32; 4]) {
+        self.queue
+            .write_buffer(&self.buffer.color, 0, bytemuck::bytes_of(&color));
+    }
+}
+
+#[derive(Clone)]
+pub struct WireframeBuffer {
+    vertices: Buffer,
+    indices: Buffer,
+
+    bind_group: BindGroup,
+    color: Buffer,
 }

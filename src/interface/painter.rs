@@ -264,7 +264,7 @@ impl Drop for Painter {
     fn drop(&mut self) {
         // FIXME: when program terminate
         if let Err(e) = self.pipeline_remove.send(self.pipeline_remove_idx) {
-            log::error!("Dropping Painter: {e}");
+            log::warn!("Dropping Painter: {e}");
         }
     }
 }
@@ -309,6 +309,7 @@ struct PainterBuffer {
     bind_texture: Texture,
 }
 
+// TODO integrate into shader
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {

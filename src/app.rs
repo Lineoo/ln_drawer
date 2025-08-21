@@ -18,7 +18,7 @@ pub struct LnDrawer {
 
     cursor_start: PhysicalPosition<f64>,
     cursor_position: PhysicalPosition<f64>,
-    cursor_wireframe: Option<Arc<Wireframe>>,
+    cursor_wireframe: Option<Wireframe>,
 
     right_button_down: bool,
 
@@ -61,19 +61,13 @@ impl ApplicationHandler for LnDrawer {
                 {
                     let screen = cursor_to_screen(self.cursor_position, renderer);
                     let screen_start = cursor_to_screen(self.cursor_start, renderer);
-                    wireframe.set_rect(
-                        [screen_start.0, screen_start.1, screen.0, screen.1],
-                        renderer.queue(),
-                    );
-                    wireframe.set_color(
-                        [
-                            (screen_start.0 - screen.0).abs().clamp(0.0, 1.0),
-                            (screen_start.1 - screen.1).abs().clamp(0.0, 1.0),
-                            0.5,
-                            1.0,
-                        ],
-                        renderer.queue(),
-                    );
+                    wireframe.set_rect([screen_start.0, screen_start.1, screen.0, screen.1]);
+                    wireframe.set_color([
+                        (screen_start.0 - screen.0).abs().clamp(0.0, 1.0),
+                        (screen_start.1 - screen.1).abs().clamp(0.0, 1.0),
+                        0.5,
+                        1.0,
+                    ]);
 
                     painter.set_pixel(
                         (self.cursor_position.x as f32).rem_euclid(renderer.width() as f32) as u32,
@@ -85,7 +79,7 @@ impl ApplicationHandler for LnDrawer {
                     renderer.restructure();
                     renderer.redraw();
                 }
-                
+
                 if let Some(renderer) = &mut self.renderer
                     && self.right_button_down
                 {
