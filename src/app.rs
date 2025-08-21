@@ -22,7 +22,7 @@ pub struct LnDrawer {
 
     right_button_down: bool,
 
-    painter: Option<Arc<Painter>>,
+    painter: Option<Painter>,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -56,7 +56,7 @@ impl ApplicationHandler for LnDrawer {
 
                 self.cursor_position = position;
                 if let Some(wireframe) = &self.cursor_wireframe
-                    && let Some(painter) = &self.painter
+                    && let Some(painter) = &mut self.painter
                     && let Some(renderer) = &mut self.renderer
                 {
                     let screen = cursor_to_screen(self.cursor_position, renderer);
@@ -81,8 +81,8 @@ impl ApplicationHandler for LnDrawer {
                             .rem_euclid(renderer.height() as f32) as u32,
                         [85, 145, 255, 255],
                     );
-                    painter.flush(renderer.queue());
 
+                    renderer.restructure();
                     renderer.redraw();
                 }
                 
@@ -92,6 +92,7 @@ impl ApplicationHandler for LnDrawer {
                     let position = renderer.get_camera();
                     renderer
                         .set_camera([position[0] - delta[0] as i32, position[1] + delta[1] as i32]);
+                    renderer.restructure();
                     renderer.redraw();
                 }
             }
@@ -109,6 +110,7 @@ impl ApplicationHandler for LnDrawer {
                     } else if state == ElementState::Released {
                         self.cursor_wireframe = None;
                     }
+                    renderer.restructure();
                     renderer.redraw();
                 }
                 if button == MouseButton::Right {
@@ -117,6 +119,7 @@ impl ApplicationHandler for LnDrawer {
             }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
+                    renderer.restructure();
                     renderer.redraw();
                 }
             }
@@ -140,6 +143,7 @@ impl ApplicationHandler for LnDrawer {
                         }
                         _ => (),
                     }
+                    renderer.restructure();
                     renderer.redraw();
                 }
             }

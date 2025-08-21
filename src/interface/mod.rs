@@ -86,6 +86,11 @@ impl Interface {
         }
     }
 
+    /// Suggested to call before [`Interface::redraw()`]. This will clean up all ready-to-remove interface components.
+    pub fn restructure(&mut self) {
+        self.painter.clean();
+    }
+
     pub fn redraw(&self) {
         let texture = self.surface.get_current_texture().unwrap();
 
@@ -124,13 +129,9 @@ impl Interface {
         self.wireframe.create(rect, color, &self.device)
     }
 
-    pub fn create_painter(&mut self, rect: [f32; 4], width: u32, height: u32) -> Arc<Painter> {
-        self.painter.create(rect, width, height, &self.device)
+    pub fn create_painter(&mut self, rect: [f32; 4], width: u32, height: u32) -> Painter {
+        self.painter.create(rect, width, height, &self.device, &self.queue)
     }
-
-    // TODO
-    // let painter = interface.create_painter(size, position);
-    // painter.set_pixel(position, color, interface)
 
     pub fn get_camera(&self) -> [i32; 2] {
         self.camera

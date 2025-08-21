@@ -1,13 +1,14 @@
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, channel};
 
-use parking_lot::Mutex;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
 pub struct PainterPipeline {
     pipeline: RenderPipeline,
-    painters: Vec<Arc<Painter>>,
+    removal_tx: Sender<usize>,
+    removal_rx: Receiver<usize>,
+    painters: Vec<PainterBuffer>,
     bind_group_layout: BindGroupLayout,
     transform_bind: BindGroup,
 }
@@ -117,8 +118,12 @@ impl PainterPipeline {
             cache: None,
         });
 
+        let (removal_tx, removal_rx) = channel();
+
         PainterPipeline {
             painters: Vec::new(),
+            removal_tx,
+            removal_rx,
             pipeline,
             bind_group_layout,
             transform_bind,
@@ -132,9 +137,8 @@ impl PainterPipeline {
         width: u32,
         height: u32,
         device: &Device,
-    ) -> Arc<Painter> {
-        self.clean();
-
+        queue: &Queue,
+    ) -> Painter {
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("painter_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
@@ -208,74 +212,80 @@ impl PainterPipeline {
             ],
         });
 
-        let painter = Arc::new(Painter {
+        let painter_buffer = PainterBuffer {
             vertices,
             indices,
             bind_group,
             bind_texture,
-            buffer: Mutex::new(buffer),
+        };
+
+        self.painters.push(painter_buffer.clone());
+
+        Painter {
             width,
             height,
-        });
+            data: buffer,
+            buffer: painter_buffer.clone(),
+            queue: queue.clone(),
+            pipeline_remove: self.removal_tx.clone(),
+            pipeline_remove_idx: self.painters.len() - 1,
+        }
+    }
 
-        self.painters.push(painter.clone());
-        painter
+    pub fn clean(&mut self) {
+        for idx in self.removal_rx.try_iter() {
+            self.painters.swap_remove(idx);
+        }
     }
 
     pub fn render(&self, rpass: &mut RenderPass) {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(1, &self.transform_bind, &[]);
         for painter in &self.painters {
-            if Arc::strong_count(painter) > 1 {
-                rpass.set_bind_group(0, Some(&painter.bind_group), &[]);
-                rpass.set_vertex_buffer(0, painter.vertices.slice(..));
-                rpass.set_index_buffer(painter.indices.slice(..), IndexFormat::Uint32);
-                rpass.draw_indexed(0..6, 0, 0..1);
-            }
+            rpass.set_bind_group(0, Some(&painter.bind_group), &[]);
+            rpass.set_vertex_buffer(0, painter.vertices.slice(..));
+            rpass.set_index_buffer(painter.indices.slice(..), IndexFormat::Uint32);
+            rpass.draw_indexed(0..6, 0, 0..1);
         }
-    }
-
-    pub fn clean(&mut self) {
-        self.painters
-            .retain(|painter| Arc::strong_count(painter) > 1);
     }
 }
 
 pub struct Painter {
-    vertices: Buffer,
-    indices: Buffer,
-
-    bind_group: BindGroup,
-    bind_texture: Texture,
-
     width: u32,
     height: u32,
+    data: Vec<u8>,
 
-    buffer: Mutex<Vec<u8>>,
+    pipeline_remove_idx: usize,
+    pipeline_remove: Sender<usize>,
+    queue: Queue,
+    buffer: PainterBuffer,
+}
+impl Drop for Painter {
+    fn drop(&mut self) {
+        // FIXME: when program terminate
+        if let Err(e) = self.pipeline_remove.send(self.pipeline_remove_idx) {
+            log::error!("Dropping Painter: {e}");
+        }
+    }
 }
 impl Painter {
-    pub fn set_pixel(&self, x: u32, y: u32, color: [u8; 4]) {
-        let mut buffer = self.buffer.lock();
+    pub fn set_pixel(&mut self, x: u32, y: u32, color: [u8; 4]) {
         let start = (x.rem_euclid(self.width) + y.rem_euclid(self.height) * self.width) * 4;
         let start = start as usize;
 
-        buffer[start] = color[0];
-        buffer[start + 1] = color[1];
-        buffer[start + 2] = color[2];
-        buffer[start + 3] = color[3];
-    }
+        self.data[start] = color[0];
+        self.data[start + 1] = color[1];
+        self.data[start + 2] = color[2];
+        self.data[start + 3] = color[3];
 
-    // TODO Memory Optimization
-    pub fn flush(&self, queue: &Queue) {
-        let buffer = self.buffer.lock();
-        queue.write_texture(
+        self.queue.write_texture(
             TexelCopyTextureInfo {
-                texture: &self.bind_texture,
+                texture: &self.buffer.bind_texture,
                 mip_level: 0,
                 origin: Origin3d::ZERO,
                 aspect: TextureAspect::All,
             },
-            &buffer,
+            &self.data,
             TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(self.width * 4),
@@ -288,6 +298,15 @@ impl Painter {
             },
         );
     }
+}
+
+#[derive(Clone)]
+struct PainterBuffer {
+    vertices: Buffer,
+    indices: Buffer,
+
+    bind_group: BindGroup,
+    bind_texture: Texture,
 }
 
 #[repr(C)]
