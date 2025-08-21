@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
+use hashbrown::HashMap;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
@@ -8,7 +9,8 @@ pub struct PainterPipeline {
     pipeline: RenderPipeline,
     removal_tx: Sender<usize>,
     removal_rx: Receiver<usize>,
-    painters: Vec<PainterBuffer>,
+    painters_idx: usize,
+    painters: HashMap<usize, PainterBuffer>,
     bind_group_layout: BindGroupLayout,
     transform_bind: BindGroup,
 }
@@ -121,7 +123,8 @@ impl PainterPipeline {
         let (removal_tx, removal_rx) = channel();
 
         PainterPipeline {
-            painters: Vec::new(),
+            painters_idx: 0,
+            painters: HashMap::new(),
             removal_tx,
             removal_rx,
             pipeline,
@@ -219,7 +222,8 @@ impl PainterPipeline {
             bind_texture,
         };
 
-        self.painters.push(painter_buffer.clone());
+        self.painters.insert(self.painters_idx, painter_buffer.clone());
+        self.painters_idx += 1;
 
         Painter {
             width,
@@ -234,14 +238,14 @@ impl PainterPipeline {
 
     pub fn clean(&mut self) {
         for idx in self.removal_rx.try_iter() {
-            self.painters.swap_remove(idx);
+            self.painters.remove(&idx);
         }
     }
 
     pub fn render(&self, rpass: &mut RenderPass) {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(1, &self.transform_bind, &[]);
-        for painter in &self.painters {
+        for painter in self.painters.values() {
             rpass.set_bind_group(0, Some(&painter.bind_group), &[]);
             rpass.set_vertex_buffer(0, painter.vertices.slice(..));
             rpass.set_index_buffer(painter.indices.slice(..), IndexFormat::Uint32);

@@ -1,5 +1,6 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 
+use hashbrown::HashMap;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
@@ -13,7 +14,9 @@ pub struct WireframePipeline {
 
     rect_tx: Sender<(usize, [i32; 4])>,
     rect_rx: Receiver<(usize, [i32; 4])>,
-    wireframe: Vec<WireframeBuffer>,
+
+    wireframe_idx: usize,
+    wireframe: HashMap<usize, WireframeBuffer>,
 }
 
 impl WireframePipeline {
@@ -85,7 +88,8 @@ impl WireframePipeline {
             removal_rx,
             rect_tx,
             rect_rx,
-            wireframe: Vec::new(),
+            wireframe_idx: 0,
+            wireframe: HashMap::new(),
         }
     }
 
@@ -161,7 +165,8 @@ impl WireframePipeline {
             color,
         };
 
-        self.wireframe.push(wireframe.clone());
+        self.wireframe.insert(self.wireframe_idx, wireframe.clone());
+        self.wireframe_idx += 1;
 
         Wireframe {
             rect,
@@ -181,7 +186,7 @@ impl WireframePipeline {
             let rect_screen = [point_from[0], point_from[1], point_to[0], point_to[1]];
 
             queue.write_buffer(
-                &self.wireframe[idx].vertices,
+                &self.wireframe[&idx].vertices,
                 0,
                 bytemuck::bytes_of(&[
                     [rect_screen[0], rect_screen[1]],
@@ -195,13 +200,13 @@ impl WireframePipeline {
 
     pub fn clean(&mut self) {
         for idx in self.removal_rx.try_iter() {
-            self.wireframe.swap_remove(idx);
+            self.wireframe.remove(&idx);
         }
     }
 
     pub fn render(&self, rpass: &mut RenderPass) {
         rpass.set_pipeline(&self.pipeline);
-        for wireframe in &self.wireframe {
+        for wireframe in self.wireframe.values() {
             rpass.set_bind_group(0, Some(&wireframe.bind_group), &[]);
             rpass.set_vertex_buffer(0, wireframe.vertices.slice(..));
             rpass.set_index_buffer(wireframe.indices.slice(..), IndexFormat::Uint32);
