@@ -86,8 +86,11 @@ impl Interface {
         }
     }
 
-    /// Suggested to call before [`Interface::redraw()`]. This will clean up all ready-to-remove interface components.
+    /// Suggested to call before [`Interface::redraw()`]. This will following jobs:
+    /// - Remove unattached components
+    /// - Update components' data through channel
     pub fn restructure(&mut self) {
+        self.wireframe.update_rect(&self.viewport(), &self.queue);
         self.painter.clean();
         self.wireframe.clean();
     }
@@ -126,11 +129,13 @@ impl Interface {
         texture.present();
     }
 
-    pub fn create_wireframe(&mut self, rect: [f32; 4], color: [f32; 4]) -> Wireframe {
+    #[must_use = "The wireframe will be destroyed when being drop."]
+    pub fn create_wireframe(&mut self, rect: [i32; 4], color: [f32; 4]) -> Wireframe {
         self.wireframe
-            .create(rect, color, &self.device, &self.queue)
+            .create(rect, color, &self.device, &self.queue, &self.viewport())
     }
 
+    #[must_use = "The painter will be destroyed when being drop."]
     pub fn create_painter(&mut self, rect: [f32; 4], width: u32, height: u32) -> Painter {
         self.painter
             .create(rect, width, height, &self.device, &self.queue)
@@ -156,5 +161,27 @@ impl Interface {
 
     pub fn height(&self) -> u32 {
         self.height
+    }
+
+    fn viewport(&self) -> InterfaceViewport {
+        InterfaceViewport {
+            width: self.width,
+            height: self.height,
+            camera: self.camera,
+        }
+    }
+}
+
+struct InterfaceViewport {
+    width: u32,
+    height: u32,
+
+    camera: [i32; 2],
+}
+impl InterfaceViewport {
+    fn world_to_screen(&self, point: [i32; 2]) -> [f32; 2] {
+        let x = (point[0] - self.camera[0]) as f32 / self.width as f32 * 2.0;
+        let y = (point[1] - self.camera[1]) as f32 / self.height as f32 * 2.0;
+        [x, y]
     }
 }

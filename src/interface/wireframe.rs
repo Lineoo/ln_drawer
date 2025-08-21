@@ -3,10 +3,16 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
+use crate::interface::InterfaceViewport;
+
 pub struct WireframePipeline {
     pipeline: RenderPipeline,
+
     removal_tx: Sender<usize>,
     removal_rx: Receiver<usize>,
+
+    rect_tx: Sender<(usize, [i32; 4])>,
+    rect_rx: Receiver<(usize, [i32; 4])>,
     wireframe: Vec<WireframeBuffer>,
 }
 
@@ -71,11 +77,14 @@ impl WireframePipeline {
         });
 
         let (removal_tx, removal_rx) = channel();
+        let (rect_tx, rect_rx) = channel();
 
         WireframePipeline {
             pipeline,
             removal_tx,
             removal_rx,
+            rect_tx,
+            rect_rx,
             wireframe: Vec::new(),
         }
     }
@@ -83,20 +92,26 @@ impl WireframePipeline {
     #[must_use = "The wireframe will be destroyed when being drop."]
     pub fn create(
         &mut self,
-        rect: [f32; 4],
+        rect: [i32; 4],
         color: [f32; 4],
         device: &Device,
         queue: &Queue,
+        viewport: &InterfaceViewport,
     ) -> Wireframe {
         self.clean();
+
+        let point_from = viewport.world_to_screen([rect[0], rect[1]]);
+        let point_to = viewport.world_to_screen([rect[2], rect[3]]);
+
+        let rect_screen = [point_from[0], point_from[1], point_to[0], point_to[1]];
 
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("wireframe_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
-                [rect[0], rect[1]],
-                [rect[0], rect[3]],
-                [rect[2], rect[3]],
-                [rect[2], rect[1]],
+                [rect_screen[0], rect_screen[1]],
+                [rect_screen[0], rect_screen[3]],
+                [rect_screen[2], rect_screen[3]],
+                [rect_screen[2], rect_screen[1]],
             ]),
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
@@ -151,9 +166,30 @@ impl WireframePipeline {
         Wireframe {
             rect,
             pipeline_remove: self.removal_tx.clone(),
-            pipeline_remove_idx: self.wireframe.len() - 1,
+            pipeline_idx: self.wireframe.len() - 1,
+            pipeline_rect: self.rect_tx.clone(),
             buffer: wireframe,
             queue: queue.clone(),
+        }
+    }
+
+    pub fn update_rect(&self, viewport: &InterfaceViewport, queue: &Queue) {
+        for (idx, rect) in self.rect_rx.try_iter() {
+            let point_from = viewport.world_to_screen([rect[0], rect[1]]);
+            let point_to = viewport.world_to_screen([rect[2], rect[3]]);
+
+            let rect_screen = [point_from[0], point_from[1], point_to[0], point_to[1]];
+
+            queue.write_buffer(
+                &self.wireframe[idx].vertices,
+                0,
+                bytemuck::bytes_of(&[
+                    [rect_screen[0], rect_screen[1]],
+                    [rect_screen[0], rect_screen[3]],
+                    [rect_screen[2], rect_screen[3]],
+                    [rect_screen[2], rect_screen[1]],
+                ]),
+            );
         }
     }
 
@@ -176,39 +212,37 @@ impl WireframePipeline {
 
 pub struct Wireframe {
     /// rect: [left, down, right, up]
-    rect: [f32; 4],
+    rect: [i32; 4],
 
-    pipeline_remove_idx: usize,
+    pipeline_idx: usize,
     pipeline_remove: Sender<usize>,
+    pipeline_rect: Sender<(usize, [i32; 4])>,
+
     buffer: WireframeBuffer,
     queue: Queue,
 }
 impl Drop for Wireframe {
     fn drop(&mut self) {
-        if let Err(e) = self.pipeline_remove.send(self.pipeline_remove_idx) {
+        if let Err(e) = self.pipeline_remove.send(self.pipeline_idx) {
             log::warn!("Dropping Wireframe: {e}");
         }
     }
 }
 impl Wireframe {
-    pub fn set_rect(&self, rect: [f32; 4]) {
-        let contents = [
-            [rect[0], rect[1]],
-            [rect[0], rect[3]],
-            [rect[2], rect[3]],
-            [rect[2], rect[1]],
-        ];
-        self.queue
-            .write_buffer(&self.buffer.vertices, 0, bytemuck::bytes_of(&contents));
+    pub fn set_rect(&mut self, rect: [i32; 4]) {
+        self.rect = rect;
+        if let Err(e) = self.pipeline_rect.send((self.pipeline_idx, rect)) {
+            log::error!("Send rect: {e}");
+        }
     }
-    pub fn set_color(&self, color: [f32; 4]) {
+    pub fn set_color(&mut self, color: [f32; 4]) {
         self.queue
             .write_buffer(&self.buffer.color, 0, bytemuck::bytes_of(&color));
     }
 }
 
 #[derive(Clone)]
-pub struct WireframeBuffer {
+struct WireframeBuffer {
     vertices: Buffer,
     indices: Buffer,
 

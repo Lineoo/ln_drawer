@@ -20,6 +20,9 @@ pub struct LnDrawer {
     cursor_position: PhysicalPosition<f64>,
     cursor_wireframe: Option<Wireframe>,
 
+    width: u32,
+    height: u32,
+
     right_button_down: bool,
 
     painter: Option<Painter>,
@@ -55,16 +58,21 @@ impl ApplicationHandler for LnDrawer {
                 ];
 
                 self.cursor_position = position;
-                if let Some(wireframe) = &self.cursor_wireframe
+                if let Some(wireframe) = &mut self.cursor_wireframe
                     && let Some(painter) = &mut self.painter
                     && let Some(renderer) = &mut self.renderer
                 {
-                    let screen = cursor_to_screen(self.cursor_position, renderer);
-                    let screen_start = cursor_to_screen(self.cursor_start, renderer);
-                    wireframe.set_rect([screen_start.0, screen_start.1, screen.0, screen.1]);
+                    wireframe.set_rect([
+                        (self.cursor_position.x - self.width as f64 * 0.5).floor() as i32,
+                        (self.height as f64 * 0.5 - self.cursor_position.y).floor() as i32,
+                        (self.cursor_start.x - self.width as f64 * 0.5).floor() as i32,
+                        (self.height as f64 * 0.5 - self.cursor_start.y).floor() as i32,
+                    ]);
                     wireframe.set_color([
-                        (screen_start.0 - screen.0).abs().clamp(0.0, 1.0),
-                        (screen_start.1 - screen.1).abs().clamp(0.0, 1.0),
+                        ((self.cursor_position.x - self.cursor_start.x).abs() as f32 * 0.001)
+                            .clamp(0.0, 1.0),
+                        ((self.cursor_position.y - self.cursor_start.y).abs() as f32 * 0.001)
+                            .clamp(0.0, 1.0),
                         0.5,
                         1.0,
                     ]);
@@ -96,9 +104,13 @@ impl ApplicationHandler for LnDrawer {
                 {
                     if state == ElementState::Pressed {
                         self.cursor_start = self.cursor_position;
-                        let screen = cursor_to_screen(self.cursor_position, renderer);
                         self.cursor_wireframe = Some(renderer.create_wireframe(
-                            [screen.0, screen.1, screen.0, screen.1],
+                            [
+                                (self.cursor_position.x - self.width as f64 * 0.5).floor() as i32,
+                                (self.height as f64 * 0.5 - self.cursor_position.y).floor() as i32,
+                                (self.cursor_position.x - self.width as f64 * 0.5).floor() as i32,
+                                (self.height as f64 * 0.5 - self.cursor_position.y).floor() as i32,
+                            ],
                             [1.0, 0.0, 0.0, 1.0],
                         ));
                     } else if state == ElementState::Released {
@@ -161,14 +173,11 @@ impl LnDrawer {
             renderer.height(),
         ));
 
+        let size = window.inner_size();
+        self.width = size.width;
+        self.height = size.height;
+
         self.window = Some(window);
         self.renderer = Some(renderer);
     }
-}
-
-fn cursor_to_screen(cursor: PhysicalPosition<f64>, renderer: &Interface) -> (f32, f32) {
-    (
-        cursor.x as f32 / renderer.width() as f32 * 2.0 - 1.0,
-        1.0 - cursor.y as f32 / renderer.height() as f32 * 2.0,
-    )
 }
