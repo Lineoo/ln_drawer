@@ -6,10 +6,12 @@ struct VertexOutput {
 @group(0) @binding(0) var texture: texture_2d<f32>;
 @group(0) @binding(1) var texture_sampler: sampler;
 
+@group(1) @binding(0) var<uniform> camera: vec2f;
+
 @vertex
 fn vs_main(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOutput {
     var output: VertexOutput;
-    output.pos = vec4f(position, 0.0, 1.0);
+    output.pos = vec4f(position - camera, 0.0, 1.0);
     output.uv = uv;
     return output;
 }

@@ -33,6 +33,7 @@
     - 节点之间连接的箭头 Line
     - 右键菜单
     - 空间变化
+    - interface 的位置等由自己存储
 - 更加高级的逻辑组件，不涉及 wgpu 与屏幕空间 `elements`
     - 笔画的渲染图层 `StrokeLayer`
     - 添加的图像 `Image`

@@ -8,9 +8,15 @@ use wgpu::*;
 pub struct PainterPipeline {
     pipeline: RenderPipeline,
     painters: Vec<Arc<Painter>>,
+    bind_group_layout: BindGroupLayout,
+    transform_bind: BindGroup,
 }
 impl PainterPipeline {
-    pub fn init(device: &Device, surface: &SurfaceConfiguration) -> PainterPipeline {
+    pub fn init(
+        device: &Device,
+        surface: &SurfaceConfiguration,
+        camera: &Buffer,
+    ) -> PainterPipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("painter_shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("painter.wgsl"))),
@@ -23,7 +29,7 @@ impl PainterPipeline {
                     binding: 0,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: false },
+                        sample_type: TextureSampleType::Float { filterable: true },
                         view_dimension: TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -32,15 +38,42 @@ impl PainterPipeline {
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
         });
 
+        let transform_bind_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("transform_bind_group_layout"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let transform_bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("transform_bind_group"),
+            layout: &transform_bind_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: camera,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("painter_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[&bind_group_layout, &transform_bind_layout],
             push_constant_ranges: &[],
         });
 
@@ -87,46 +120,21 @@ impl PainterPipeline {
         PainterPipeline {
             painters: Vec::new(),
             pipeline,
-        }
-    }
-
-    pub fn render(&self, rpass: &mut RenderPass) {
-        rpass.set_pipeline(&self.pipeline);
-        for painter in &self.painters {
-            if Arc::strong_count(painter) > 1 {
-                painter.render(rpass);
-            }
+            bind_group_layout,
+            transform_bind,
         }
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
-    pub fn create(&mut self, rect: [f32; 4], width: u32, height: u32, device: &Device) -> Arc<Painter> {
+    pub fn create(
+        &mut self,
+        rect: [f32; 4],
+        width: u32,
+        height: u32,
+        device: &Device,
+    ) -> Arc<Painter> {
         self.clean();
-        let painter = Arc::new(Painter::init(rect, width, height, device));
-        self.painters.push(painter.clone());
-        painter
-    }
 
-    pub fn clean(&mut self) {
-        self.painters
-            .retain(|painter| Arc::strong_count(painter) > 1);
-    }
-}
-
-pub struct Painter {
-    vertices: Buffer,
-    indices: Buffer,
-
-    bind_group: BindGroup,
-    bind_texture: Texture,
-
-    width: u32,
-    height: u32,
-
-    buffer: Mutex<Vec<u8>>,
-}
-impl Painter {
-    pub fn init(rect: [f32; 4], width: u32, height: u32, device: &Device) -> Painter {
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("painter_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
@@ -156,6 +164,8 @@ impl Painter {
             usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
         });
 
+        // Texture Buffer
+
         let buffer = vec![0; (width * height * 4) as usize];
 
         let bind_texture = device.create_texture(&TextureDescriptor {
@@ -181,31 +191,9 @@ impl Painter {
             ..Default::default()
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("painter_bind_group_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: false },
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
-                    count: None,
-                },
-            ],
-        });
-
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("painter_bind_group"),
-            layout: &bind_group_layout,
+            layout: &self.bind_group_layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
@@ -220,7 +208,7 @@ impl Painter {
             ],
         });
 
-        Painter {
+        let painter = Arc::new(Painter {
             vertices,
             indices,
             bind_group,
@@ -228,9 +216,44 @@ impl Painter {
             buffer: Mutex::new(buffer),
             width,
             height,
+        });
+
+        self.painters.push(painter.clone());
+        painter
+    }
+
+    pub fn render(&self, rpass: &mut RenderPass) {
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(1, &self.transform_bind, &[]);
+        for painter in &self.painters {
+            if Arc::strong_count(painter) > 1 {
+                rpass.set_bind_group(0, Some(&painter.bind_group), &[]);
+                rpass.set_vertex_buffer(0, painter.vertices.slice(..));
+                rpass.set_index_buffer(painter.indices.slice(..), IndexFormat::Uint32);
+                rpass.draw_indexed(0..6, 0, 0..1);
+            }
         }
     }
 
+    pub fn clean(&mut self) {
+        self.painters
+            .retain(|painter| Arc::strong_count(painter) > 1);
+    }
+}
+
+pub struct Painter {
+    vertices: Buffer,
+    indices: Buffer,
+
+    bind_group: BindGroup,
+    bind_texture: Texture,
+
+    width: u32,
+    height: u32,
+
+    buffer: Mutex<Vec<u8>>,
+}
+impl Painter {
     pub fn set_pixel(&self, x: u32, y: u32, color: [u8; 4]) {
         let mut buffer = self.buffer.lock();
         let start = (x.rem_euclid(self.width) + y.rem_euclid(self.height) * self.width) * 4;
@@ -264,13 +287,6 @@ impl Painter {
                 depth_or_array_layers: 1,
             },
         );
-    }
-
-    fn render(&self, rpass: &mut RenderPass) {
-        rpass.set_bind_group(0, Some(&self.bind_group), &[]);
-        rpass.set_vertex_buffer(0, self.vertices.slice(..));
-        rpass.set_index_buffer(self.indices.slice(..), IndexFormat::Uint32);
-        rpass.draw_indexed(0..6, 0, 0..1);
     }
 }
 

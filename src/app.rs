@@ -5,6 +5,7 @@ use winit::{
     dpi::PhysicalPosition,
     event::{ElementState, MouseButton, WindowEvent},
     event_loop::ActiveEventLoop,
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
@@ -18,6 +19,8 @@ pub struct LnDrawer {
     cursor_start: PhysicalPosition<f64>,
     cursor_position: PhysicalPosition<f64>,
     cursor_wireframe: Option<Arc<Wireframe>>,
+
+    right_button_down: bool,
 
     painter: Option<Arc<Painter>>,
 }
@@ -46,6 +49,11 @@ impl ApplicationHandler for LnDrawer {
                 event_loop.exit();
             }
             WindowEvent::CursorMoved { position, .. } => {
+                let delta = [
+                    position.x - self.cursor_position.x,
+                    position.y - self.cursor_position.y,
+                ];
+
                 self.cursor_position = position;
                 if let Some(wireframe) = &self.cursor_wireframe
                     && let Some(painter) = &self.painter
@@ -77,6 +85,15 @@ impl ApplicationHandler for LnDrawer {
 
                     renderer.redraw();
                 }
+                
+                if let Some(renderer) = &mut self.renderer
+                    && self.right_button_down
+                {
+                    let position = renderer.get_camera();
+                    renderer
+                        .set_camera([position[0] - delta[0] as i32, position[1] + delta[1] as i32]);
+                    renderer.redraw();
+                }
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 if button == MouseButton::Left
@@ -94,9 +111,35 @@ impl ApplicationHandler for LnDrawer {
                     }
                     renderer.redraw();
                 }
+                if button == MouseButton::Right {
+                    self.right_button_down = state == ElementState::Pressed;
+                }
             }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
+                    renderer.redraw();
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let Some(renderer) = &mut self.renderer
+                    && event.state == ElementState::Pressed
+                {
+                    let camera = renderer.get_camera();
+                    match event.physical_key {
+                        PhysicalKey::Code(KeyCode::ArrowRight) => {
+                            renderer.set_camera([camera[0] + 1, camera[1]]);
+                        }
+                        PhysicalKey::Code(KeyCode::ArrowDown) => {
+                            renderer.set_camera([camera[0], camera[1] - 1]);
+                        }
+                        PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                            renderer.set_camera([camera[0] - 1, camera[1]]);
+                        }
+                        PhysicalKey::Code(KeyCode::ArrowUp) => {
+                            renderer.set_camera([camera[0], camera[1] + 1]);
+                        }
+                        _ => (),
+                    }
                     renderer.redraw();
                 }
             }
