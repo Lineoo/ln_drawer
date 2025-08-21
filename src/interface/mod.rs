@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt},
-    *,
-};
+use wgpu::*;
 
 mod painter;
 mod wireframe;
@@ -24,7 +21,6 @@ pub struct Interface {
     painter: painter::PainterPipeline,
 
     camera: [i32; 2],
-    camera_buffer: Buffer,
 }
 impl Interface {
     pub async fn new(window: Arc<winit::window::Window>) -> Interface {
@@ -63,15 +59,10 @@ impl Interface {
 
         // Camera
         let camera = [0, 0];
-        let camera_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("camera_buffer"),
-            contents: bytemuck::bytes_of(&[0.0, 0.0]),
-            usage: BufferUsages::COPY_DST | BufferUsages::UNIFORM,
-        });
 
         // Render Components
         let wireframe = wireframe::WireframePipeline::init(&device, &surface_config);
-        let painter = painter::PainterPipeline::init(&device, &surface_config, &camera_buffer);
+        let painter = painter::PainterPipeline::init(&device, &surface_config);
 
         Interface {
             surface,
@@ -82,7 +73,6 @@ impl Interface {
             wireframe,
             painter,
             camera,
-            camera_buffer,
         }
     }
 
@@ -136,9 +126,15 @@ impl Interface {
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
-    pub fn create_painter(&mut self, rect: [f32; 4], width: u32, height: u32) -> Painter {
-        self.painter
-            .create(rect, width, height, &self.device, &self.queue)
+    pub fn create_painter(&mut self, rect: [i32; 4], width: u32, height: u32) -> Painter {
+        self.painter.create(
+            rect,
+            width,
+            height,
+            &self.device,
+            &self.queue,
+            &self.viewport(),
+        )
     }
 
     pub fn get_camera(&self) -> [i32; 2] {
@@ -147,12 +143,6 @@ impl Interface {
 
     pub fn set_camera(&mut self, position: [i32; 2]) {
         self.camera = position;
-        let contents = [
-            self.camera[0] as f32 / self.width as f32,
-            self.camera[1] as f32 / self.height as f32,
-        ];
-        self.queue
-            .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&contents));
     }
 
     pub fn width(&self) -> u32 {

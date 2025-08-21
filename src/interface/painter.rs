@@ -5,6 +5,8 @@ use hashbrown::HashMap;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
+use crate::interface::InterfaceViewport;
+
 pub struct PainterPipeline {
     pipeline: RenderPipeline,
     removal_tx: Sender<usize>,
@@ -12,14 +14,9 @@ pub struct PainterPipeline {
     painters_idx: usize,
     painters: HashMap<usize, PainterBuffer>,
     bind_group_layout: BindGroupLayout,
-    transform_bind: BindGroup,
 }
 impl PainterPipeline {
-    pub fn init(
-        device: &Device,
-        surface: &SurfaceConfiguration,
-        camera: &Buffer,
-    ) -> PainterPipeline {
+    pub fn init(device: &Device, surface: &SurfaceConfiguration) -> PainterPipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("painter_shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("painter.wgsl"))),
@@ -47,36 +44,9 @@ impl PainterPipeline {
             ],
         });
 
-        let transform_bind_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("transform_bind_group_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let transform_bind = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("transform_bind_group"),
-            layout: &transform_bind_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: camera,
-                    offset: 0,
-                    size: None,
-                }),
-            }],
-        });
-
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("painter_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout, &transform_bind_layout],
+            bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -129,36 +99,36 @@ impl PainterPipeline {
             removal_rx,
             pipeline,
             bind_group_layout,
-            transform_bind,
         }
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
     pub fn create(
         &mut self,
-        rect: [f32; 4],
+        rect: [i32; 4],
         width: u32,
         height: u32,
         device: &Device,
         queue: &Queue,
+        viewport: &InterfaceViewport,
     ) -> Painter {
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("painter_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
                 Vertex {
-                    pos: [rect[0], rect[1]],
+                    pos: viewport.world_to_screen([rect[0], rect[1]]),
                     uv: [0.0, 0.0],
                 },
                 Vertex {
-                    pos: [rect[0], rect[3]],
+                    pos: viewport.world_to_screen([rect[0], rect[3]]),
                     uv: [0.0, 1.0],
                 },
                 Vertex {
-                    pos: [rect[2], rect[3]],
+                    pos: viewport.world_to_screen([rect[2], rect[3]]),
                     uv: [1.0, 1.0],
                 },
                 Vertex {
-                    pos: [rect[2], rect[1]],
+                    pos: viewport.world_to_screen([rect[2], rect[1]]),
                     uv: [1.0, 0.0],
                 },
             ]),
@@ -222,7 +192,8 @@ impl PainterPipeline {
             bind_texture,
         };
 
-        self.painters.insert(self.painters_idx, painter_buffer.clone());
+        self.painters
+            .insert(self.painters_idx, painter_buffer.clone());
         self.painters_idx += 1;
 
         Painter {
@@ -232,9 +203,11 @@ impl PainterPipeline {
             buffer: painter_buffer.clone(),
             queue: queue.clone(),
             pipeline_remove: self.removal_tx.clone(),
-            pipeline_remove_idx: self.painters.len() - 1,
+            pipeline_idx: self.painters_idx - 1,
         }
     }
+
+    pub fn update_rect(&mut self) {}
 
     pub fn clean(&mut self) {
         for idx in self.removal_rx.try_iter() {
@@ -244,7 +217,6 @@ impl PainterPipeline {
 
     pub fn render(&self, rpass: &mut RenderPass) {
         rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(1, &self.transform_bind, &[]);
         for painter in self.painters.values() {
             rpass.set_bind_group(0, Some(&painter.bind_group), &[]);
             rpass.set_vertex_buffer(0, painter.vertices.slice(..));
@@ -259,7 +231,7 @@ pub struct Painter {
     height: u32,
     data: Vec<u8>,
 
-    pipeline_remove_idx: usize,
+    pipeline_idx: usize,
     pipeline_remove: Sender<usize>,
     queue: Queue,
     buffer: PainterBuffer,
@@ -267,7 +239,7 @@ pub struct Painter {
 impl Drop for Painter {
     fn drop(&mut self) {
         // FIXME: when program terminate
-        if let Err(e) = self.pipeline_remove.send(self.pipeline_remove_idx) {
+        if let Err(e) = self.pipeline_remove.send(self.pipeline_idx) {
             log::warn!("Dropping Painter: {e}");
         }
     }

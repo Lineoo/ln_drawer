@@ -168,7 +168,7 @@ impl LnDrawer {
         let mut renderer = pollster::block_on(Interface::new(window.clone()));
 
         self.painter = Some(renderer.create_painter(
-            [-1.0, -1.0, 1.0, 1.0],
+            [-400, -300, 400, 300],
             renderer.width(),
             renderer.height(),
         ));

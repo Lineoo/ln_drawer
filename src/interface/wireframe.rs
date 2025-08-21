@@ -171,7 +171,7 @@ impl WireframePipeline {
         Wireframe {
             rect,
             pipeline_remove: self.removal_tx.clone(),
-            pipeline_idx: self.wireframe.len() - 1,
+            pipeline_idx: self.wireframe_idx - 1,
             pipeline_rect: self.rect_tx.clone(),
             buffer: wireframe,
             queue: queue.clone(),
