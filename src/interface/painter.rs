@@ -277,9 +277,10 @@ impl Painter {
         let x_offset = x - self.rect[0];
         let y_offset = y - self.rect[1];
 
-        let start = (x_offset.rem_euclid(width as i32)
-            + y_offset.rem_euclid(height as i32) * width as i32)
-            * 4;
+        let x_clamped = (x_offset as u32).rem_euclid(width);
+        let y_clamped = (y_offset as u32).rem_euclid(height);
+
+        let start = (x_clamped + y_clamped * width) * 4;
         let start = start as usize;
 
         self.data[start] = color[0];
@@ -291,18 +292,22 @@ impl Painter {
             TexelCopyTextureInfo {
                 texture: &self.buffer.bind_texture,
                 mip_level: 0,
-                origin: Origin3d::ZERO,
+                origin: Origin3d {
+                    x: x_clamped,
+                    y: y_clamped,
+                    z: 0,
+                },
                 aspect: TextureAspect::All,
             },
-            &self.data,
+            &self.data[start..start + 4],
             TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(width * 4),
-                rows_per_image: Some(height),
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
             },
             Extent3d {
-                width,
-                height,
+                width: 1,
+                height: 1,
                 depth_or_array_layers: 1,
             },
         );
