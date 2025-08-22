@@ -136,14 +136,7 @@ impl PainterPipeline {
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
-    pub fn create(
-        &mut self,
-        rect: [i32; 4],
-        width: u32,
-        height: u32,
-        device: &Device,
-        queue: &Queue,
-    ) -> Painter {
+    pub fn create(&mut self, rect: [i32; 4], device: &Device, queue: &Queue) -> Painter {
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("painter_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
@@ -174,6 +167,9 @@ impl PainterPipeline {
         });
 
         // Texture Buffer
+
+        let width = (rect[0] - rect[2]).unsigned_abs();
+        let height = (rect[1] - rect[3]).unsigned_abs();
 
         let buffer = vec![0; (width * height * 4) as usize];
 
@@ -229,8 +225,7 @@ impl PainterPipeline {
         self.painters_idx += 1;
 
         Painter {
-            width,
-            height,
+            rect,
             data: buffer,
             buffer: painter_buffer.clone(),
             queue: queue.clone(),
@@ -258,8 +253,7 @@ impl PainterPipeline {
 }
 
 pub struct Painter {
-    width: u32,
-    height: u32,
+    rect: [i32; 4],
     data: Vec<u8>,
 
     pipeline_idx: usize,
@@ -276,8 +270,16 @@ impl Drop for Painter {
     }
 }
 impl Painter {
-    pub fn set_pixel(&mut self, x: u32, y: u32, color: [u8; 4]) {
-        let start = (x.rem_euclid(self.width) + y.rem_euclid(self.height) * self.width) * 4;
+    pub fn set_pixel(&mut self, x: i32, y: i32, color: [u8; 4]) {
+        let width = self.width();
+        let height = self.height();
+
+        let x_offset = x - self.rect[0];
+        let y_offset = y - self.rect[1];
+
+        let start = (x_offset.rem_euclid(width as i32)
+            + y_offset.rem_euclid(height as i32) * width as i32)
+            * 4;
         let start = start as usize;
 
         self.data[start] = color[0];
@@ -295,15 +297,23 @@ impl Painter {
             &self.data,
             TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(self.width * 4),
-                rows_per_image: Some(self.height),
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
             },
             Extent3d {
-                width: self.width,
-                height: self.height,
+                width,
+                height,
                 depth_or_array_layers: 1,
             },
         );
+    }
+
+    fn width(&self) -> u32 {
+        (self.rect[0] - self.rect[2]).unsigned_abs()
+    }
+
+    fn height(&self) -> u32 {
+        (self.rect[1] - self.rect[3]).unsigned_abs()
     }
 }
 

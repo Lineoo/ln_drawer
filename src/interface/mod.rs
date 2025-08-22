@@ -87,7 +87,6 @@ impl Interface {
 
     /// Suggested to call before [`Interface::redraw()`]. This will following jobs:
     /// - Remove unattached components
-    /// - Update components' data through channel
     pub fn restructure(&mut self) {
         self.painter.clean();
         self.wireframe.clean();
@@ -151,9 +150,8 @@ impl Interface {
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
-    pub fn create_painter(&mut self, rect: [i32; 4], width: u32, height: u32) -> Painter {
-        self.painter
-            .create(rect, width, height, &self.device, &self.queue)
+    pub fn create_painter(&mut self, rect: [i32; 4]) -> Painter {
+        self.painter.create(rect, &self.device, &self.queue)
     }
 
     pub fn get_camera(&self) -> [i32; 2] {
@@ -167,14 +165,6 @@ impl Interface {
             size_of::<[u32; 2]>() as BufferAddress,
             bytemuck::bytes_of(&position),
         );
-    }
-
-    pub fn width(&self) -> u32 {
-        self.viewport.width
-    }
-
-    pub fn height(&self) -> u32 {
-        self.viewport.height
     }
 }
 

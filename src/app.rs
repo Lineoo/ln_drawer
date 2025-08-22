@@ -78,9 +78,8 @@ impl ApplicationHandler for LnDrawer {
                     ]);
 
                     painter.set_pixel(
-                        (self.cursor_position.x as f32).rem_euclid(renderer.width() as f32) as u32,
-                        (renderer.height() as f32 - self.cursor_position.y as f32)
-                            .rem_euclid(renderer.height() as f32) as u32,
+                        (self.cursor_position.x - self.width as f64 * 0.5).floor() as i32,
+                        (self.height as f64 * 0.5 - self.cursor_position.y).floor() as i32,
                         [85, 145, 255, 255],
                     );
 
@@ -174,11 +173,7 @@ impl LnDrawer {
 
         let mut renderer = pollster::block_on(Interface::new(window.clone()));
 
-        self.painter = Some(renderer.create_painter(
-            [-400, -300, 400, 300],
-            800,
-            600,
-        ));
+        self.painter = Some(renderer.create_painter([-400, -300, 400, 300]));
 
         let size = window.inner_size();
         self.width = size.width;
