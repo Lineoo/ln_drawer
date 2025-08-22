@@ -72,12 +72,15 @@ impl ApplicationHandler for LnDrawer {
                     && let Some(painter) = &mut self.painter
                     && let Some(renderer) = &mut self.renderer
                 {
-                    wireframe.set_rect([
-                        (self.cursor_position.x - self.width as f64 * 0.5).floor() as i32,
-                        (self.height as f64 * 0.5 - self.cursor_position.y).floor() as i32,
-                        (self.cursor_start.x - self.width as f64 * 0.5).floor() as i32,
-                        (self.height as f64 * 0.5 - self.cursor_start.y).floor() as i32,
-                    ]);
+                    let sx = (self.cursor_start.x * 2.0) / self.width as f64 - 1.0;
+                    let sy = 1.0 - (self.cursor_start.y * 2.0) / self.height as f64;
+                    let [sx, sy] = renderer.screen_to_world([sx, sy]);
+
+                    let x = (self.cursor_position.x * 2.0) / self.width as f64 - 1.0;
+                    let y = 1.0 - (self.cursor_position.y * 2.0) / self.height as f64;
+                    let [x, y] = renderer.screen_to_world([x, y]);
+
+                    wireframe.set_rect([sx, sy, x, y]);
                     wireframe.set_color([
                         ((self.cursor_position.x - self.cursor_start.x).abs() as f32 * 0.001)
                             .clamp(0.0, 1.0),

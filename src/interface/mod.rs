@@ -174,6 +174,14 @@ impl Interface {
             bytemuck::bytes_of(&position),
         );
     }
+
+    pub fn world_to_screen(&self, point: [i32; 2]) -> [f64; 2] {
+        self.viewport.world_to_screen(point)
+    }
+
+    pub fn screen_to_world(&self, point: [f64; 2]) -> [i32; 2] {
+        self.viewport.screen_to_world(point)
+    }
 }
 
 struct InterfaceViewport {
@@ -183,6 +191,18 @@ struct InterfaceViewport {
     camera: [i32; 2],
 
     buffer: Buffer,
+}
+impl InterfaceViewport {
+    fn world_to_screen(&self, point: [i32; 2]) -> [f64; 2] {
+        let x = (point[0] - self.camera[0]) as f64 / self.width as f64 * 2.0;
+        let y = (point[1] - self.camera[1]) as f64 / self.height as f64 * 2.0;
+        [x, y]
+    }
+    fn screen_to_world(&self, point: [f64; 2]) -> [i32; 2] {
+        let x = (point[0] * self.width as f64 / 2.0) as i32 + self.camera[0];
+        let y = (point[1] * self.height as f64 / 2.0) as i32 + self.camera[1];
+        [x, y]
+    }
 }
 
 #[repr(C)]
