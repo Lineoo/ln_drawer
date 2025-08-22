@@ -169,8 +169,8 @@ impl LnDrawer {
 
         self.painter = Some(renderer.create_painter(
             [-400, -300, 400, 300],
-            renderer.width(),
-            renderer.height(),
+            800,
+            600,
         ));
 
         let size = window.inner_size();

@@ -14,9 +14,14 @@ pub struct PainterPipeline {
     painters_idx: usize,
     painters: HashMap<usize, PainterBuffer>,
     bind_group_layout: BindGroupLayout,
+    viewport_bind: BindGroup,
 }
 impl PainterPipeline {
-    pub fn init(device: &Device, surface: &SurfaceConfiguration) -> PainterPipeline {
+    pub fn init(
+        device: &Device,
+        surface: &SurfaceConfiguration,
+        viewport: &InterfaceViewport,
+    ) -> PainterPipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("painter_shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("painter.wgsl"))),
@@ -44,9 +49,36 @@ impl PainterPipeline {
             ],
         });
 
+        let viewport_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("painter_viewport_bind_group_layout"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let viewport_bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("painter_viewport_bind_group"),
+            layout: &viewport_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &viewport.buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("painter_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[&bind_group_layout, &viewport_layout],
             push_constant_ranges: &[],
         });
 
@@ -64,7 +96,7 @@ impl PainterPipeline {
                         VertexAttribute {
                             offset: 0,
                             shader_location: 0,
-                            format: VertexFormat::Float32x2,
+                            format: VertexFormat::Sint32x2,
                         },
                         VertexAttribute {
                             offset: std::mem::size_of::<[f32; 2]>() as BufferAddress,
@@ -99,6 +131,7 @@ impl PainterPipeline {
             removal_rx,
             pipeline,
             bind_group_layout,
+            viewport_bind,
         }
     }
 
@@ -110,25 +143,24 @@ impl PainterPipeline {
         height: u32,
         device: &Device,
         queue: &Queue,
-        viewport: &InterfaceViewport,
     ) -> Painter {
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("painter_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
                 Vertex {
-                    pos: viewport.world_to_screen([rect[0], rect[1]]),
+                    pos: [rect[0], rect[1]],
                     uv: [0.0, 0.0],
                 },
                 Vertex {
-                    pos: viewport.world_to_screen([rect[0], rect[3]]),
+                    pos: [rect[0], rect[3]],
                     uv: [0.0, 1.0],
                 },
                 Vertex {
-                    pos: viewport.world_to_screen([rect[2], rect[3]]),
+                    pos: [rect[2], rect[3]],
                     uv: [1.0, 1.0],
                 },
                 Vertex {
-                    pos: viewport.world_to_screen([rect[2], rect[1]]),
+                    pos: [rect[2], rect[1]],
                     uv: [1.0, 0.0],
                 },
             ]),
@@ -207,8 +239,6 @@ impl PainterPipeline {
         }
     }
 
-    pub fn update_rect(&mut self) {}
-
     pub fn clean(&mut self) {
         for idx in self.removal_rx.try_iter() {
             self.painters.remove(&idx);
@@ -217,6 +247,7 @@ impl PainterPipeline {
 
     pub fn render(&self, rpass: &mut RenderPass) {
         rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(1, Some(&self.viewport_bind), &[]);
         for painter in self.painters.values() {
             rpass.set_bind_group(0, Some(&painter.bind_group), &[]);
             rpass.set_vertex_buffer(0, painter.vertices.slice(..));
@@ -289,6 +320,6 @@ struct PainterBuffer {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
-    pos: [f32; 2],
+    pos: [i32; 2],
     uv: [f32; 2],
 }

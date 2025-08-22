@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use wgpu::*;
+use wgpu::{
+    util::{BufferInitDescriptor, DeviceExt},
+    *,
+};
 
 mod painter;
 mod wireframe;
@@ -20,7 +23,7 @@ pub struct Interface {
     wireframe: wireframe::WireframePipeline,
     painter: painter::PainterPipeline,
 
-    camera: [i32; 2],
+    viewport: InterfaceViewport,
 }
 impl Interface {
     pub async fn new(window: Arc<winit::window::Window>) -> Interface {
@@ -59,10 +62,21 @@ impl Interface {
 
         // Camera
         let camera = [0, 0];
+        let viewport_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("viewport_buffer"),
+            contents: bytemuck::bytes_of(&[width as i32, height as i32, camera[0], camera[1]]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+        let viewport = InterfaceViewport {
+            width,
+            height,
+            camera,
+            buffer: viewport_buffer,
+        };
 
         // Render Components
         let wireframe = wireframe::WireframePipeline::init(&device, &surface_config);
-        let painter = painter::PainterPipeline::init(&device, &surface_config);
+        let painter = painter::PainterPipeline::init(&device, &surface_config, &viewport);
 
         Interface {
             surface,
@@ -72,7 +86,7 @@ impl Interface {
             height,
             wireframe,
             painter,
-            camera,
+            viewport,
         }
     }
 
@@ -80,7 +94,7 @@ impl Interface {
     /// - Remove unattached components
     /// - Update components' data through channel
     pub fn restructure(&mut self) {
-        self.wireframe.update_rect(&self.viewport(), &self.queue);
+        self.wireframe.update_rect(&self.viewport, &self.queue);
         self.painter.clean();
         self.wireframe.clean();
     }
@@ -122,27 +136,26 @@ impl Interface {
     #[must_use = "The wireframe will be destroyed when being drop."]
     pub fn create_wireframe(&mut self, rect: [i32; 4], color: [f32; 4]) -> Wireframe {
         self.wireframe
-            .create(rect, color, &self.device, &self.queue, &self.viewport())
+            .create(rect, color, &self.device, &self.queue, &self.viewport)
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
     pub fn create_painter(&mut self, rect: [i32; 4], width: u32, height: u32) -> Painter {
-        self.painter.create(
-            rect,
-            width,
-            height,
-            &self.device,
-            &self.queue,
-            &self.viewport(),
-        )
+        self.painter
+            .create(rect, width, height, &self.device, &self.queue)
     }
 
     pub fn get_camera(&self) -> [i32; 2] {
-        self.camera
+        self.viewport.camera
     }
 
     pub fn set_camera(&mut self, position: [i32; 2]) {
-        self.camera = position;
+        self.viewport.camera = position;
+        self.queue.write_buffer(
+            &self.viewport.buffer,
+            size_of::<[u32; 2]>() as BufferAddress,
+            bytemuck::bytes_of(&position),
+        );
     }
 
     pub fn width(&self) -> u32 {
@@ -152,14 +165,6 @@ impl Interface {
     pub fn height(&self) -> u32 {
         self.height
     }
-
-    fn viewport(&self) -> InterfaceViewport {
-        InterfaceViewport {
-            width: self.width,
-            height: self.height,
-            camera: self.camera,
-        }
-    }
 }
 
 struct InterfaceViewport {
@@ -167,6 +172,8 @@ struct InterfaceViewport {
     height: u32,
 
     camera: [i32; 2],
+
+    buffer: Buffer,
 }
 impl InterfaceViewport {
     fn world_to_screen(&self, point: [i32; 2]) -> [f32; 2] {
@@ -174,4 +181,12 @@ impl InterfaceViewport {
         let y = (point[1] - self.camera[1]) as f32 / self.height as f32 * 2.0;
         [x, y]
     }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct InterfaceViewportBind {
+    width: i32,
+    height: i32,
+    camera: [i32; 2],
 }

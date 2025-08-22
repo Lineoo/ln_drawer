@@ -1,3 +1,14 @@
+struct VertexInput {
+    @location(0) world_space: vec2i,
+    @location(1) uv: vec2f,
+}
+
+struct Viewport {
+    width: i32,
+    height: i32,
+    camera: vec2i,
+}
+
 struct VertexOutput {
     @builtin(position) pos: vec4f,
     @location(0) uv: vec2f,
@@ -6,11 +17,22 @@ struct VertexOutput {
 @group(0) @binding(0) var texture: texture_2d<f32>;
 @group(0) @binding(1) var texture_sampler: sampler;
 
+@group(1) @binding(0) var<uniform> viewport: Viewport;
+
 @vertex
-fn vs_main(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOutput {
+fn vs_main(@location(0) world_space: vec2i, @location(1) uv: vec2f) -> VertexOutput {
     var output: VertexOutput;
-    output.pos = vec4f(position, 0.0, 1.0);
+
+    output.pos = vec4f(
+        2.0 * vec2f(world_space - viewport.camera) / vec2f(
+            f32(viewport.width),
+            f32(viewport.height)
+        ),
+        0.0, 
+        1.0
+    );
     output.uv = uv;
+
     return output;
 }
 
