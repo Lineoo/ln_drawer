@@ -12,6 +12,7 @@ use winit::{
 use crate::{
     elements::Image,
     interface::{Interface, Painter, Wireframe},
+    layout::world::World,
 };
 
 #[derive(Default)]
@@ -30,6 +31,8 @@ pub struct LnDrawer {
 
     painter: Option<Painter>,
     image: Option<Image>,
+    world: Option<World>,
+    selection_wireframe: Option<Wireframe>,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -53,6 +56,8 @@ impl ApplicationHandler for LnDrawer {
                 self.cursor_wireframe = None;
                 self.painter = None;
                 self.image = None;
+                self.world = None;
+                self.selection_wireframe = None;
 
                 event_loop.exit();
             }
@@ -105,6 +110,7 @@ impl ApplicationHandler for LnDrawer {
             WindowEvent::MouseInput { state, button, .. } => {
                 if button == MouseButton::Left
                     && let Some(renderer) = &mut self.renderer
+                    && let Some(world) = &mut self.world
                 {
                     if state == ElementState::Pressed {
                         self.cursor_start = self.cursor_position;
@@ -117,6 +123,17 @@ impl ApplicationHandler for LnDrawer {
                             ],
                             [1.0, 0.0, 0.0, 1.0],
                         ));
+                        if let Some(element) = world.intersect(
+                            (self.cursor_position.x - self.width as f64 * 0.5).floor() as i32,
+                            (self.height as f64 * 0.5 - self.cursor_position.y).floor() as i32,
+                        ) {
+                            let element = world.fetch_dyn(element).unwrap();
+                            self.selection_wireframe = Some(
+                                renderer.create_wireframe(element.border(), [1.0, 0.0, 0.0, 1.0]),
+                            );
+                        } else {
+                            self.selection_wireframe = None;
+                        }
                     } else if state == ElementState::Released {
                         self.cursor_wireframe = None;
                     }
@@ -179,12 +196,14 @@ impl LnDrawer {
         let mut renderer = pollster::block_on(Interface::new(window.clone()));
 
         self.painter = Some(renderer.create_painter([-400, -300, 400, 300]));
-        self.image =
-            Some(Image::from_bytes(include_bytes!("../res/icon.png"), &mut renderer).unwrap());
 
         let size = window.inner_size();
         self.width = size.width;
         self.height = size.height;
+
+        let mut world = World::new();
+        world.insert(Image::from_bytes(include_bytes!("../res/icon.png"), &mut renderer).unwrap());
+        self.world = Some(world);
 
         self.window = Some(window);
         self.renderer = Some(renderer);
