@@ -153,6 +153,13 @@ impl ApplicationHandler for LnDrawer {
                     renderer.redraw();
                 }
             }
+            WindowEvent::Resized(size) => {
+                if let Some(renderer) = &mut self.renderer {
+                    self.width = size.width.max(1);
+                    self.height = size.height.max(1);
+                    renderer.resize(size);
+                }
+            }
             _ => (),
         }
     }

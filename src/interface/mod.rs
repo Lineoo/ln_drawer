@@ -14,11 +14,9 @@ pub use wireframe::Wireframe;
 /// Main render part
 pub struct Interface {
     surface: Surface<'static>,
+    surface_config: SurfaceConfiguration,
     device: Device,
     queue: Queue,
-
-    width: u32,
-    height: u32,
 
     wireframe: wireframe::WireframePipeline,
     painter: painter::PainterPipeline,
@@ -58,8 +56,6 @@ impl Interface {
 
         let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
 
-        surface.configure(&device, &surface_config);
-
         // Camera
         let camera = [0, 0];
         let viewport_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -80,10 +76,9 @@ impl Interface {
 
         Interface {
             surface,
+            surface_config,
             device,
             queue,
-            width,
-            height,
             wireframe,
             painter,
             viewport,
@@ -132,6 +127,23 @@ impl Interface {
         texture.present();
     }
 
+    pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+        let width = size.width.max(1);
+        let height = size.height.max(1);
+
+        self.viewport.width = width;
+        self.viewport.height = height;
+        self.queue.write_buffer(
+            &self.viewport.buffer,
+            0,
+            bytemuck::bytes_of(&[width as i32, height as i32]),
+        );
+
+        self.surface_config.width = width;
+        self.surface_config.height = height;
+        self.surface.configure(&self.device, &self.surface_config);
+    }
+
     #[must_use = "The wireframe will be destroyed when being drop."]
     pub fn create_wireframe(&mut self, rect: [i32; 4], color: [f32; 4]) -> Wireframe {
         self.wireframe
@@ -158,11 +170,11 @@ impl Interface {
     }
 
     pub fn width(&self) -> u32 {
-        self.width
+        self.viewport.width
     }
 
     pub fn height(&self) -> u32 {
-        self.height
+        self.viewport.height
     }
 }
 
