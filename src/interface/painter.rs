@@ -136,7 +136,13 @@ impl PainterPipeline {
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
-    pub fn create(&mut self, rect: [i32; 4], device: &Device, queue: &Queue) -> Painter {
+    pub fn create(
+        &mut self,
+        rect: [i32; 4],
+        data: Vec<u8>,
+        device: &Device,
+        queue: &Queue,
+    ) -> Painter {
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("painter_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
@@ -170,8 +176,6 @@ impl PainterPipeline {
 
         let width = (rect[0] - rect[2]).unsigned_abs();
         let height = (rect[1] - rect[3]).unsigned_abs();
-
-        let buffer = vec![0; (width * height * 4) as usize];
 
         let bind_texture = device.create_texture(&TextureDescriptor {
             label: Some("painter_texture"),
@@ -213,6 +217,26 @@ impl PainterPipeline {
             ],
         });
 
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &bind_texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &data,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
         let painter_buffer = PainterBuffer {
             vertices,
             indices,
@@ -226,7 +250,7 @@ impl PainterPipeline {
 
         Painter {
             rect,
-            data: buffer,
+            data,
             buffer: painter_buffer.clone(),
             queue: queue.clone(),
             pipeline_remove: self.removal_tx.clone(),
@@ -311,6 +335,10 @@ impl Painter {
                 depth_or_array_layers: 1,
             },
         );
+    }
+
+    pub fn get_border(&self) -> [i32; 4] {
+        self.rect
     }
 
     fn width(&self) -> u32 {

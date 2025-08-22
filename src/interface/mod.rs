@@ -151,7 +151,15 @@ impl Interface {
 
     #[must_use = "The painter will be destroyed when being drop."]
     pub fn create_painter(&mut self, rect: [i32; 4]) -> Painter {
-        self.painter.create(rect, &self.device, &self.queue)
+        let width = (rect[0] - rect[2]).unsigned_abs();
+        let height = (rect[1] - rect[3]).unsigned_abs();
+        let empty = vec![0; (width * height * 4) as usize];
+        self.painter.create(rect, empty, &self.device, &self.queue)
+    }
+
+    #[must_use = "The painter will be destroyed when being drop."]
+    pub fn create_painter_with(&mut self, rect: [i32; 4], data: Vec<u8>) -> Painter {
+        self.painter.create(rect, data, &self.device, &self.queue)
     }
 
     pub fn get_camera(&self) -> [i32; 2] {

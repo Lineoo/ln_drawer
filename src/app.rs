@@ -9,7 +9,10 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::interface::{Interface, Painter, Wireframe};
+use crate::{
+    elements::Image,
+    interface::{Interface, Painter, Wireframe},
+};
 
 #[derive(Default)]
 pub struct LnDrawer {
@@ -26,6 +29,7 @@ pub struct LnDrawer {
     right_button_down: bool,
 
     painter: Option<Painter>,
+    image: Option<Image>,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -48,6 +52,7 @@ impl ApplicationHandler for LnDrawer {
                 self.renderer = None; // Drop or it will get seg fault
                 self.cursor_wireframe = None;
                 self.painter = None;
+                self.image = None;
 
                 event_loop.exit();
             }
@@ -174,6 +179,8 @@ impl LnDrawer {
         let mut renderer = pollster::block_on(Interface::new(window.clone()));
 
         self.painter = Some(renderer.create_painter([-400, -300, 400, 300]));
+        self.image =
+            Some(Image::from_bytes(include_bytes!("../res/icon.png"), &mut renderer).unwrap());
 
         let size = window.inner_size();
         self.width = size.width;
