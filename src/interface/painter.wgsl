@@ -1,8 +1,3 @@
-struct VertexInput {
-    @location(0) world_space: vec2i,
-    @location(1) uv: vec2f,
-}
-
 struct Viewport {
     width: i32,
     height: i32,

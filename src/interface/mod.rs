@@ -75,7 +75,7 @@ impl Interface {
         };
 
         // Render Components
-        let wireframe = wireframe::WireframePipeline::init(&device, &surface_config);
+        let wireframe = wireframe::WireframePipeline::init(&device, &surface_config, &viewport);
         let painter = painter::PainterPipeline::init(&device, &surface_config, &viewport);
 
         Interface {
@@ -94,7 +94,6 @@ impl Interface {
     /// - Remove unattached components
     /// - Update components' data through channel
     pub fn restructure(&mut self) {
-        self.wireframe.update_rect(&self.viewport, &self.queue);
         self.painter.clean();
         self.wireframe.clean();
     }
@@ -136,7 +135,7 @@ impl Interface {
     #[must_use = "The wireframe will be destroyed when being drop."]
     pub fn create_wireframe(&mut self, rect: [i32; 4], color: [f32; 4]) -> Wireframe {
         self.wireframe
-            .create(rect, color, &self.device, &self.queue, &self.viewport)
+            .create(rect, color, &self.device, &self.queue)
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
@@ -174,13 +173,6 @@ struct InterfaceViewport {
     camera: [i32; 2],
 
     buffer: Buffer,
-}
-impl InterfaceViewport {
-    fn world_to_screen(&self, point: [i32; 2]) -> [f32; 2] {
-        let x = (point[0] - self.camera[0]) as f32 / self.width as f32 * 2.0;
-        let y = (point[1] - self.camera[1]) as f32 / self.height as f32 * 2.0;
-        [x, y]
-    }
 }
 
 #[repr(C)]

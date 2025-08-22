@@ -12,15 +12,18 @@ pub struct WireframePipeline {
     removal_tx: Sender<usize>,
     removal_rx: Receiver<usize>,
 
-    rect_tx: Sender<(usize, [i32; 4])>,
-    rect_rx: Receiver<(usize, [i32; 4])>,
-
     wireframe_idx: usize,
     wireframe: HashMap<usize, WireframeBuffer>,
+
+    viewport_bind: BindGroup,
 }
 
 impl WireframePipeline {
-    pub fn init(device: &Device, surface: &SurfaceConfiguration) -> WireframePipeline {
+    pub fn init(
+        device: &Device,
+        surface: &SurfaceConfiguration,
+        viewport: &InterfaceViewport,
+    ) -> WireframePipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("wireframe_shader"),
             source: ShaderSource::Wgsl(include_str!("wireframe.wgsl").into()),
@@ -40,9 +43,36 @@ impl WireframePipeline {
             }],
         });
 
+        let viewport_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("wireframe_viewport_bind_group_layout"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let viewport_bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("wireframe_viewport_bind_group"),
+            layout: &viewport_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &viewport.buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("wireframe_layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[&bind_group_layout, &viewport_layout],
             push_constant_ranges: &[],
         });
 
@@ -59,7 +89,7 @@ impl WireframePipeline {
                     attributes: &[VertexAttribute {
                         offset: 0,
                         shader_location: 0,
-                        format: VertexFormat::Float32x2,
+                        format: VertexFormat::Sint32x2,
                     }],
                 }],
             },
@@ -80,16 +110,14 @@ impl WireframePipeline {
         });
 
         let (removal_tx, removal_rx) = channel();
-        let (rect_tx, rect_rx) = channel();
 
         WireframePipeline {
             pipeline,
             removal_tx,
             removal_rx,
-            rect_tx,
-            rect_rx,
             wireframe_idx: 0,
             wireframe: HashMap::new(),
+            viewport_bind,
         }
     }
 
@@ -100,22 +128,16 @@ impl WireframePipeline {
         color: [f32; 4],
         device: &Device,
         queue: &Queue,
-        viewport: &InterfaceViewport,
     ) -> Wireframe {
         self.clean();
-
-        let point_from = viewport.world_to_screen([rect[0], rect[1]]);
-        let point_to = viewport.world_to_screen([rect[2], rect[3]]);
-
-        let rect_screen = [point_from[0], point_from[1], point_to[0], point_to[1]];
 
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("wireframe_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
-                [rect_screen[0], rect_screen[1]],
-                [rect_screen[0], rect_screen[3]],
-                [rect_screen[2], rect_screen[3]],
-                [rect_screen[2], rect_screen[1]],
+                [rect[0], rect[1]],
+                [rect[0], rect[3]],
+                [rect[2], rect[3]],
+                [rect[2], rect[1]],
             ]),
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
@@ -172,29 +194,8 @@ impl WireframePipeline {
             rect,
             pipeline_remove: self.removal_tx.clone(),
             pipeline_idx: self.wireframe_idx - 1,
-            pipeline_rect: self.rect_tx.clone(),
             buffer: wireframe,
             queue: queue.clone(),
-        }
-    }
-
-    pub fn update_rect(&self, viewport: &InterfaceViewport, queue: &Queue) {
-        for (idx, rect) in self.rect_rx.try_iter() {
-            let point_from = viewport.world_to_screen([rect[0], rect[1]]);
-            let point_to = viewport.world_to_screen([rect[2], rect[3]]);
-
-            let rect_screen = [point_from[0], point_from[1], point_to[0], point_to[1]];
-
-            queue.write_buffer(
-                &self.wireframe[&idx].vertices,
-                0,
-                bytemuck::bytes_of(&[
-                    [rect_screen[0], rect_screen[1]],
-                    [rect_screen[0], rect_screen[3]],
-                    [rect_screen[2], rect_screen[3]],
-                    [rect_screen[2], rect_screen[1]],
-                ]),
-            );
         }
     }
 
@@ -206,6 +207,7 @@ impl WireframePipeline {
 
     pub fn render(&self, rpass: &mut RenderPass) {
         rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(1, Some(&self.viewport_bind), &[]);
         for wireframe in self.wireframe.values() {
             rpass.set_bind_group(0, Some(&wireframe.bind_group), &[]);
             rpass.set_vertex_buffer(0, wireframe.vertices.slice(..));
@@ -221,7 +223,6 @@ pub struct Wireframe {
 
     pipeline_idx: usize,
     pipeline_remove: Sender<usize>,
-    pipeline_rect: Sender<(usize, [i32; 4])>,
 
     buffer: WireframeBuffer,
     queue: Queue,
@@ -236,9 +237,16 @@ impl Drop for Wireframe {
 impl Wireframe {
     pub fn set_rect(&mut self, rect: [i32; 4]) {
         self.rect = rect;
-        if let Err(e) = self.pipeline_rect.send((self.pipeline_idx, rect)) {
-            log::error!("Send rect: {e}");
-        }
+        self.queue.write_buffer(
+            &self.buffer.vertices,
+            0,
+            bytemuck::bytes_of(&[
+                [rect[0], rect[1]],
+                [rect[0], rect[3]],
+                [rect[2], rect[3]],
+                [rect[2], rect[1]],
+            ]),
+        );
     }
     pub fn set_color(&mut self, color: [f32; 4]) {
         self.queue
