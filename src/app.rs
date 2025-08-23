@@ -9,6 +9,8 @@ use winit::{
     window::{Window, WindowId},
 };
 
+use octotablet::events::{Event as OctoEvent, ToolEvent};
+
 use crate::{
     elements::{ButtonRaw, Image, Label, StrokeLayer},
     interface::{Interface, Wireframe},
@@ -33,6 +35,9 @@ pub struct LnDrawer {
     world: Option<World>,
     selection_wireframe: Option<Wireframe>,
     stroke: Option<ElementHandle>,
+
+    manager: Option<octotablet::Manager>,
+    tablet_down: bool,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -220,6 +225,45 @@ impl ApplicationHandler for LnDrawer {
             _ => (),
         }
     }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(manager) = &mut self.manager {
+            for event in manager.pump().into_iter().flatten() {
+                log::trace!("{event:?}");
+                #[expect(clippy::single_match)]
+                match event {
+                    OctoEvent::Tool { tool, event } => match event {
+                        ToolEvent::Down => self.tablet_down = true,
+                        ToolEvent::Up => self.tablet_down = false,
+                        ToolEvent::Pose(pose) => {
+                            if self.tablet_down
+                                && let Some(renderer) = &mut self.renderer
+                                && let Some(world) = &mut self.world
+                            {
+                                let x = (pose.position[0] as f64 * 2.0) / self.width as f64 - 1.0;
+                                let y = 1.0 - (pose.position[1] as f64 * 2.0) / self.height as f64;
+                                let [x, y] = renderer.screen_to_world([x, y]);
+
+                                let stroke = self
+                                    .world
+                                    .as_mut()
+                                    .unwrap()
+                                    .fetch_mut::<StrokeLayer>(self.stroke.unwrap())
+                                    .unwrap();
+
+                                stroke.write_pixel([x, y], [15, 230, 255, 255], renderer);
+
+                                renderer.restructure();
+                                renderer.redraw();
+                            }
+                        }
+                        _ => (),
+                    },
+                    _ => (),
+                }
+            }
+        }
+    }
 }
 
 impl LnDrawer {
@@ -228,6 +272,9 @@ impl LnDrawer {
 
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::new(window);
+
+        let manager = octotablet::Builder::new().build_shared(&window).unwrap();
+        self.manager = Some(manager);
 
         let size = window.inner_size();
         self.width = size.width;
