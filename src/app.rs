@@ -194,14 +194,13 @@ impl LnDrawer {
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::new(window);
 
-        let mut renderer = pollster::block_on(Interface::new(window.clone()));
+        let renderer = pollster::block_on(Interface::new(window.clone()));
 
         let size = window.inner_size();
         self.width = size.width;
         self.height = size.height;
 
         let mut world = World::new();
-        world.insert(Image::from_bytes(include_bytes!("../res/icon.png"), &mut renderer).unwrap());
         self.stroke = Some(world.insert(StrokeLayer::new()));
         self.world = Some(world);
 
