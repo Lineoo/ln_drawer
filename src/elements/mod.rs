@@ -1,8 +1,10 @@
 mod image;
+mod stroke;
 
 use std::any::Any;
 
 pub use image::Image;
+pub use stroke::StrokeLayer;
 
 pub trait Element: Any {
     fn name(&self) -> std::borrow::Cow<'_, str>;

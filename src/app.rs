@@ -10,9 +10,9 @@ use winit::{
 };
 
 use crate::{
-    elements::Image,
+    elements::{Image, StrokeLayer},
     interface::{Interface, Painter, Wireframe},
-    layout::world::World,
+    layout::world::{ElementHandle, World},
 };
 
 #[derive(Default)]
@@ -33,6 +33,7 @@ pub struct LnDrawer {
     image: Option<Image>,
     world: Option<World>,
     selection_wireframe: Option<Wireframe>,
+    stroke: Option<ElementHandle>,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -89,6 +90,12 @@ impl ApplicationHandler for LnDrawer {
                         0.5,
                         1.0,
                     ]);
+
+                    let stroke = self.world.as_mut().unwrap()
+                        .fetch::<StrokeLayer>(self.stroke.unwrap())
+                        .unwrap();
+
+                    stroke.write_pixel([x, y], [15, 230, 255, 255], renderer);
 
                     painter.set_pixel(
                         (self.cursor_position.x - self.width as f64 * 0.5).floor() as i32,
@@ -206,6 +213,7 @@ impl LnDrawer {
 
         let mut world = World::new();
         world.insert(Image::from_bytes(include_bytes!("../res/icon.png"), &mut renderer).unwrap());
+        self.stroke = Some(world.insert(StrokeLayer::new()));
         self.world = Some(world);
 
         self.window = Some(window);
