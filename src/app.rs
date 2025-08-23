@@ -11,7 +11,7 @@ use winit::{
 
 use crate::{
     elements::{Image, StrokeLayer},
-    interface::{Interface, Painter, Wireframe},
+    interface::{Interface, Wireframe},
     layout::world::{ElementHandle, World},
 };
 
@@ -29,7 +29,6 @@ pub struct LnDrawer {
 
     right_button_down: bool,
 
-    painter: Option<Painter>,
     image: Option<Image>,
     world: Option<World>,
     selection_wireframe: Option<Wireframe>,
@@ -55,7 +54,6 @@ impl ApplicationHandler for LnDrawer {
                 self.window = None;
                 self.renderer = None; // Drop or it will get seg fault
                 self.cursor_wireframe = None;
-                self.painter = None;
                 self.image = None;
                 self.world = None;
                 self.selection_wireframe = None;
@@ -70,7 +68,6 @@ impl ApplicationHandler for LnDrawer {
 
                 self.cursor_position = position;
                 if let Some(wireframe) = &mut self.cursor_wireframe
-                    && let Some(painter) = &mut self.painter
                     && let Some(renderer) = &mut self.renderer
                 {
                     let sx = (self.cursor_start.x * 2.0) / self.width as f64 - 1.0;
@@ -96,12 +93,6 @@ impl ApplicationHandler for LnDrawer {
                         .unwrap();
 
                     stroke.write_pixel([x, y], [15, 230, 255, 255], renderer);
-
-                    painter.set_pixel(
-                        (self.cursor_position.x - self.width as f64 * 0.5).floor() as i32,
-                        (self.height as f64 * 0.5 - self.cursor_position.y).floor() as i32,
-                        [85, 145, 255, 255],
-                    );
 
                     renderer.restructure();
                     renderer.redraw();
@@ -204,8 +195,6 @@ impl LnDrawer {
         let window = Arc::new(window);
 
         let mut renderer = pollster::block_on(Interface::new(window.clone()));
-
-        self.painter = Some(renderer.create_painter([-400, -300, 400, 300]));
 
         let size = window.inner_size();
         self.width = size.width;
