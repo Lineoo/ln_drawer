@@ -106,9 +106,12 @@ impl ApplicationHandler for LnDrawer {
                 if let Some(renderer) = &mut self.renderer
                     && self.right_button_down
                 {
+                    let x = -(delta[0] * 2.0) / self.width as f64;
+                    let y = (delta[1] * 2.0) / self.height as f64;
+                    let [x, y] = renderer.screen_to_world_relative([x, y]);
+
                     let position = renderer.get_camera();
-                    renderer
-                        .set_camera([position[0] - delta[0] as i32, position[1] + delta[1] as i32]);
+                    renderer.set_camera([position[0] + x, position[1] + y]);
                     renderer.restructure();
                     renderer.redraw();
                 }
