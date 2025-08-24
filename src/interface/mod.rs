@@ -1,16 +1,15 @@
 use std::sync::Arc;
 
-use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt},
-    *,
-};
+use wgpu::*;
 
 mod painter;
 mod text;
+mod viewport;
 mod wireframe;
 
 pub use painter::Painter;
 pub use text::Text;
+pub use viewport::InterfaceViewport;
 pub use wireframe::Wireframe;
 
 /// Main render part
@@ -61,17 +60,8 @@ impl Interface {
 
         // Camera
         let camera = [0, 0];
-        let viewport_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("viewport_buffer"),
-            contents: bytemuck::bytes_of(&[width as i32, height as i32, camera[0], camera[1]]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-        let viewport = InterfaceViewport {
-            width,
-            height,
-            camera,
-            buffer: viewport_buffer,
-        };
+        let zoom = 1.0;
+        let viewport = InterfaceViewport::new(&device, width, height, camera, zoom);
 
         // Render Components
         let wireframe = wireframe::WireframePipeline::init(&device, &surface_config, &viewport);
@@ -137,13 +127,7 @@ impl Interface {
         let width = size.width.max(1);
         let height = size.height.max(1);
 
-        self.viewport.width = width;
-        self.viewport.height = height;
-        self.queue.write_buffer(
-            &self.viewport.buffer,
-            0,
-            bytemuck::bytes_of(&[width as i32, height as i32]),
-        );
+        self.viewport.resize(width, height, &self.queue);
 
         self.surface_config.width = width;
         self.surface_config.height = height;
@@ -174,17 +158,22 @@ impl Interface {
         self.text.create(rect, &text, &self.device, &self.queue)
     }
 
+    // Viewport Shortcut //
+
     pub fn get_camera(&self) -> [i32; 2] {
-        self.viewport.camera
+        self.viewport.get_camera()
     }
 
     pub fn set_camera(&mut self, position: [i32; 2]) {
-        self.viewport.camera = position;
-        self.queue.write_buffer(
-            &self.viewport.buffer,
-            size_of::<[u32; 2]>() as BufferAddress,
-            bytemuck::bytes_of(&position),
-        );
+        self.viewport.set_camera(position, &self.queue);
+    }
+
+    pub fn get_zoom(&self) -> f32 {
+        self.viewport.get_zoom()
+    }
+
+    pub fn set_zoom(&mut self, zoom: f32) {
+        self.viewport.set_zoom(zoom, &self.queue);
     }
 
     pub fn world_to_screen(&self, point: [i32; 2]) -> [f64; 2] {
@@ -194,33 +183,4 @@ impl Interface {
     pub fn screen_to_world(&self, point: [f64; 2]) -> [i32; 2] {
         self.viewport.screen_to_world(point)
     }
-}
-
-struct InterfaceViewport {
-    width: u32,
-    height: u32,
-
-    camera: [i32; 2],
-
-    buffer: Buffer,
-}
-impl InterfaceViewport {
-    fn world_to_screen(&self, point: [i32; 2]) -> [f64; 2] {
-        let x = (point[0] - self.camera[0]) as f64 / self.width as f64 * 2.0;
-        let y = (point[1] - self.camera[1]) as f64 / self.height as f64 * 2.0;
-        [x, y]
-    }
-    fn screen_to_world(&self, point: [f64; 2]) -> [i32; 2] {
-        let x = (point[0] * self.width as f64 / 2.0) as i32 + self.camera[0];
-        let y = (point[1] * self.height as f64 / 2.0) as i32 + self.camera[1];
-        [x, y]
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct InterfaceViewportBind {
-    width: i32,
-    height: i32,
-    camera: [i32; 2],
 }

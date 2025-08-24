@@ -161,6 +161,7 @@ impl ApplicationHandler for LnDrawer {
                     && event.state == ElementState::Pressed
                 {
                     let camera = renderer.get_camera();
+                    let zoom = renderer.get_zoom();
                     match event.physical_key {
                         PhysicalKey::Code(KeyCode::ArrowRight) => {
                             renderer.set_camera([camera[0] + 1, camera[1]]);
@@ -173,6 +174,12 @@ impl ApplicationHandler for LnDrawer {
                         }
                         PhysicalKey::Code(KeyCode::ArrowUp) => {
                             renderer.set_camera([camera[0], camera[1] + 1]);
+                        }
+                        PhysicalKey::Code(KeyCode::Equal) => {
+                            renderer.set_zoom(zoom * 2.0);
+                        }
+                        PhysicalKey::Code(KeyCode::Minus) => {
+                            renderer.set_zoom(zoom * 0.5);
                         }
                         _ => (),
                     }

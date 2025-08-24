@@ -69,7 +69,7 @@ impl PainterPipeline {
             entries: &[BindGroupEntry {
                 binding: 0,
                 resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &viewport.buffer,
+                    buffer: viewport.buffer(),
                     offset: 0,
                     size: None,
                 }),
