@@ -6,9 +6,11 @@ use wgpu::{
 };
 
 mod painter;
+mod text;
 mod wireframe;
 
 pub use painter::Painter;
+pub use text::Text;
 pub use wireframe::Wireframe;
 
 /// Main render part
@@ -20,6 +22,7 @@ pub struct Interface {
 
     wireframe: wireframe::WireframePipeline,
     painter: painter::PainterPipeline,
+    text: text::TextManager,
 
     viewport: InterfaceViewport,
 }
@@ -73,6 +76,7 @@ impl Interface {
         // Render Components
         let wireframe = wireframe::WireframePipeline::init(&device, &surface_config, &viewport);
         let painter = painter::PainterPipeline::init(&device, &surface_config, &viewport);
+        let text = text::TextManager::init(&device, &surface_config, &viewport);
 
         Interface {
             surface,
@@ -81,6 +85,7 @@ impl Interface {
             queue,
             wireframe,
             painter,
+            text,
             viewport,
         }
     }
@@ -90,6 +95,7 @@ impl Interface {
     pub fn restructure(&mut self) {
         self.painter.clean();
         self.wireframe.clean();
+        self.text.clean();
     }
 
     pub fn redraw(&self) {
@@ -118,6 +124,7 @@ impl Interface {
 
         self.painter.render(&mut rpass);
         self.wireframe.render(&mut rpass);
+        self.text.render(&mut rpass);
 
         drop(rpass);
 
@@ -160,6 +167,11 @@ impl Interface {
     #[must_use = "The painter will be destroyed when being drop."]
     pub fn create_painter_with(&mut self, rect: [i32; 4], data: Vec<u8>) -> Painter {
         self.painter.create(rect, data, &self.device, &self.queue)
+    }
+
+    #[must_use = "The text will be destroyed when being drop."]
+    pub fn create_text(&mut self, rect: [i32; 4], text: String) -> Text {
+        self.text.create(rect, &text, &self.device, &self.queue)
     }
 
     pub fn get_camera(&self) -> [i32; 2] {

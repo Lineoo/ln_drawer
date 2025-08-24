@@ -11,7 +11,7 @@ use winit::{
 
 use crate::{
     elements::{Image, StrokeLayer},
-    interface::{Interface, Wireframe},
+    interface::{Interface, Text, Wireframe},
     layout::world::{ElementHandle, World},
 };
 
@@ -33,6 +33,8 @@ pub struct LnDrawer {
     world: Option<World>,
     selection_wireframe: Option<Wireframe>,
     stroke: Option<ElementHandle>,
+
+    text: Option<Text>,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -88,7 +90,10 @@ impl ApplicationHandler for LnDrawer {
                         1.0,
                     ]);
 
-                    let stroke = self.world.as_mut().unwrap()
+                    let stroke = self
+                        .world
+                        .as_mut()
+                        .unwrap()
                         .fetch::<StrokeLayer>(self.stroke.unwrap())
                         .unwrap();
 
@@ -194,7 +199,7 @@ impl LnDrawer {
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::new(window);
 
-        let renderer = pollster::block_on(Interface::new(window.clone()));
+        let mut renderer = pollster::block_on(Interface::new(window.clone()));
 
         let size = window.inner_size();
         self.width = size.width;
@@ -203,6 +208,8 @@ impl LnDrawer {
         let mut world = World::new();
         self.stroke = Some(world.insert(StrokeLayer::new()));
         self.world = Some(world);
+
+        self.text = Some(renderer.create_text([0, 0, 300, 300], "Hello, LnDrawer!".into()));
 
         self.window = Some(window);
         self.renderer = Some(renderer);
