@@ -38,6 +38,7 @@ pub struct LnDrawer {
 
     manager: Option<octotablet::Manager>,
     tablet_down: bool,
+    dpi: f64,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -240,14 +241,13 @@ impl ApplicationHandler for LnDrawer {
                                 && let Some(renderer) = &mut self.renderer
                                 && let Some(world) = &mut self.world
                             {
-                                let x = (pose.position[0] as f64 * 2.0) / self.width as f64 - 1.0;
-                                let y = 1.0 - (pose.position[1] as f64 * 2.0) / self.height as f64;
+                                let x =
+                                    (pose.position[0] as f64 * 2.0 * 1.5) / self.width as f64 - 1.0;
+                                let y = 1.0
+                                    - (pose.position[1] as f64 * 2.0 * 1.5) / self.height as f64;
                                 let [x, y] = renderer.screen_to_world([x, y]);
 
-                                let stroke = self
-                                    .world
-                                    .as_mut()
-                                    .unwrap()
+                                let stroke = world
                                     .fetch_mut::<StrokeLayer>(self.stroke.unwrap())
                                     .unwrap();
 
@@ -275,6 +275,7 @@ impl LnDrawer {
 
         let manager = octotablet::Builder::new().build_shared(&window).unwrap();
         self.manager = Some(manager);
+        self.dpi = window.scale_factor();
 
         let size = window.inner_size();
         self.width = size.width;
