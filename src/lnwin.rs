@@ -61,11 +61,11 @@ impl Lnwindow {
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::new(window);
 
-        let mut interface = Interface::new(window.clone()).await;
-
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
+
+        let mut interface = Interface::new(window.clone(), width, height).await;
 
         let world = World::new();
         let selector = Selector::new(&mut interface);
@@ -101,7 +101,7 @@ impl Lnwindow {
             WindowEvent::Resized(size) => {
                 self.width = size.width.max(1);
                 self.height = size.height.max(1);
-                self.interface.resize(size);
+                self.interface.resize(self.width, self.width);
             }
             _ => (),
         }

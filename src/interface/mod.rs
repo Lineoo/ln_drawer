@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use wgpu::*;
 
 mod painter;
@@ -26,10 +24,10 @@ pub struct Interface {
     viewport: InterfaceViewport,
 }
 impl Interface {
-    pub async fn new(window: Arc<winit::window::Window>) -> Interface {
+    pub async fn new(window: impl Into<SurfaceTarget<'static>>, width: u32, height: u32) -> Interface {
         let instance = Instance::default();
 
-        let surface = instance.create_surface(window.clone()).unwrap();
+        let surface = instance.create_surface(window).unwrap();
 
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -52,9 +50,8 @@ impl Interface {
             .unwrap();
 
         // Surface Configuration
-        let size = window.inner_size();
-        let width = size.width.max(1);
-        let height = size.height.max(1);
+        let width = width.max(1);
+        let height = height.max(1);
 
         let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
 
@@ -124,9 +121,9 @@ impl Interface {
         texture.present();
     }
 
-    pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
-        let width = size.width.max(1);
-        let height = size.height.max(1);
+    pub fn resize(&mut self, width: u32, height: u32) {
+        let width = width.max(1);
+        let height = height.max(1);
 
         self.viewport.resize(width, height, &self.queue);
 

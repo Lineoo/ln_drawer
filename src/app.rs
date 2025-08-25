@@ -214,7 +214,7 @@ impl ApplicationHandler for LnDrawer {
                 if let Some(renderer) = &mut self.renderer {
                     self.width = size.width.max(1);
                     self.height = size.height.max(1);
-                    renderer.resize(size);
+                    renderer.resize(self.width, self.height);
                 }
             }
             _ => (),
@@ -229,11 +229,12 @@ impl LnDrawer {
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::new(window);
 
-        let mut renderer = pollster::block_on(Interface::new(window.clone()));
-
         let size = window.inner_size();
         self.width = size.width;
         self.height = size.height;
+
+        let mut renderer =
+            pollster::block_on(Interface::new(window.clone(), self.width, self.height));
 
         let mut world = World::new();
         world.insert(Image::from_bytes(include_bytes!("../res/icon.png"), &mut renderer).unwrap());

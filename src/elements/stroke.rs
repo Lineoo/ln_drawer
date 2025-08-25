@@ -2,7 +2,7 @@ use hashbrown::HashMap;
 
 use crate::{
     elements::Element,
-    interface::{Interface, Painter, Wireframe},
+    interface::{Interface, Painter},
 };
 
 const CHUNK_SIZE: i32 = 512;
@@ -39,19 +39,7 @@ impl StrokeLayer {
                 chunk_orig[0] + CHUNK_SIZE,
                 chunk_orig[1] + CHUNK_SIZE,
             ]);
-            let debug_wireframe = interface.create_wireframe(
-                [
-                    chunk_orig[0],
-                    chunk_orig[1],
-                    chunk_orig[0] + CHUNK_SIZE,
-                    chunk_orig[1] + CHUNK_SIZE,
-                ],
-                [1.0, 0.5, 0.5, 1.0],
-            );
-            StrokeChunk {
-                painter,
-                debug_wireframe,
-            }
+            StrokeChunk { painter }
         });
 
         chunk.painter.set_pixel(point[0], point[1], color);
@@ -60,5 +48,4 @@ impl StrokeLayer {
 
 struct StrokeChunk {
     painter: Painter,
-    debug_wireframe: Wireframe,
 }

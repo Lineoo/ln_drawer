@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::ops::Range;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use hashbrown::HashMap;
