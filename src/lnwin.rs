@@ -10,7 +10,9 @@ use winit::{
 };
 
 use crate::{
-    elements::Image, interface::Interface, layout::{select::Selector, stroke::StrokeManager, world::World}
+    elements::Image,
+    interface::Interface,
+    layout::{select::Selector, stroke::StrokeManager, world::World},
 };
 
 #[derive(Default)]
@@ -79,7 +81,7 @@ impl Lnwindow {
         let world = World::new();
         let selector = Selector::new(&mut interface);
         let stroke = StrokeManager::new();
-        let camera = CameraMove::new(state);
+        let camera = CameraMove::default();
 
         Lnwindow {
             window,
@@ -99,8 +101,24 @@ impl Lnwindow {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 let screen = self.cursor_to_screen(position);
+
+                // The viewport is updated before the viewport transform
+                if self.camera.active {
+                    let dx = self.camera.start_cursor[0] - screen[0];
+                    let dy = self.camera.start_cursor[1] - screen[1];
+                    let [dx, dy] = self.interface.screen_to_world_relative([dx, dy]);
+
+                    self.interface.set_camera([
+                        self.camera.camera_orig[0] + dx,
+                        self.camera.camera_orig[1] + dy,
+                    ]);
+
+                    self.window.request_redraw();
+                }
+
                 let point = self.interface.screen_to_world(screen);
                 self.cursor = screen;
+
                 match self.state {
                     ActivatedTool::Selection => {
                         self.selector.cursor_position(point, &self.world);
@@ -108,18 +126,6 @@ impl Lnwindow {
                     }
                     ActivatedTool::Stroke => {
                         self.stroke.cursor_position(point, &mut self.interface);
-                        self.window.request_redraw();
-                    }
-                    ActivatedTool::Move => {
-                        let dx = self.camera.start_cursor[0] - self.cursor[0];
-                        let dy = self.camera.start_cursor[1] - self.cursor[1];
-                        let [dx, dy] = self.interface.screen_to_world_relative([dx, dy]);
-
-                        self.interface.set_camera([
-                            self.camera.camera_orig[0] + dx,
-                            self.camera.camera_orig[1] + dy,
-                        ]);
-
                         self.window.request_redraw();
                     }
                 }
@@ -137,7 +143,6 @@ impl Lnwindow {
                     self.stroke.cursor_pressed([0xff; 4], &mut self.interface);
                     self.window.request_redraw();
                 }
-                _ => (),
             },
             WindowEvent::MouseInput {
                 state: ElementState::Released,
@@ -149,15 +154,13 @@ impl Lnwindow {
                     self.stroke.cursor_released();
                     self.window.request_redraw();
                 }
-                _ => (),
             },
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Middle,
                 ..
             } => {
-                self.camera.prev_tool = self.state;
-                self.switch_tool(ActivatedTool::Move);
+                self.camera.active = true;
                 self.camera.start_cursor = self.cursor;
                 self.camera.camera_orig = self.interface.get_camera();
             }
@@ -166,7 +169,7 @@ impl Lnwindow {
                 button: MouseButton::Middle,
                 ..
             } => {
-                self.switch_tool(self.camera.prev_tool);
+                self.camera.active = false;
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 match delta {
@@ -204,16 +207,14 @@ impl Lnwindow {
                 _ => (),
             },
 
-            WindowEvent::DroppedFile(path) => {
-                match Image::new(path, &mut self.interface) {
-                    Ok(image) => {
-                        self.world.insert(image);
-                    }
-                    Err(err) => {
-                        log::warn!("Drop File: {err}");
-                    }
+            WindowEvent::DroppedFile(path) => match Image::new(path, &mut self.interface) {
+                Ok(image) => {
+                    self.world.insert(image);
                 }
-            }
+                Err(err) => {
+                    log::warn!("Drop File: {err}");
+                }
+            },
 
             WindowEvent::RedrawRequested => {
                 self.interface.restructure();
@@ -243,30 +244,20 @@ impl Lnwindow {
             ActivatedTool::Stroke => {
                 self.stroke.cursor_released();
             }
-            _ => (),
         }
         self.state = tool;
     }
 }
 
+#[derive(Default)]
 struct CameraMove {
     start_cursor: [f64; 2],
     camera_orig: [i32; 2],
-    prev_tool: ActivatedTool,
-}
-impl CameraMove {
-    fn new(prev_tool: ActivatedTool) -> Self {
-        CameraMove {
-            start_cursor: [0.0, 0.0],
-            camera_orig: [0, 0],
-            prev_tool,
-        }
-    }
+    active: bool,
 }
 
 #[derive(Clone, Copy)]
 enum ActivatedTool {
     Stroke,
     Selection,
-    Move,
 }
