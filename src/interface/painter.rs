@@ -305,8 +305,8 @@ impl Painter {
         let x_offset = x - self.rect[0];
         let y_offset = y - self.rect[1];
 
-        let x_clamped = (x_offset as u32).rem_euclid(width);
-        let y_clamped = (height - y_offset as u32).rem_euclid(height);
+        let x_clamped = (x_offset).rem_euclid(width as i32) as u32;
+        let y_clamped = (height as i32 - 1 - y_offset).rem_euclid(height as i32) as u32;
 
         let start = (x_clamped + y_clamped * width) * 4;
         let start = start as usize;
@@ -375,8 +375,8 @@ impl PainterWriter<'_> {
         let x_offset = x - self.painter.rect[0];
         let y_offset = y - self.painter.rect[1];
 
-        let x_clamped = (x_offset as u32).rem_euclid(width);
-        let y_clamped = (height - y_offset as u32).rem_euclid(height);
+        let x_clamped = (x_offset).rem_euclid(width as i32) as u32;
+        let y_clamped = (height as i32 - 1 - y_offset).rem_euclid(height as i32) as u32;
 
         let start = (x_clamped + y_clamped * width) * 4;
         let start = start as usize;
