@@ -62,7 +62,7 @@ struct Lnwindow {
 }
 impl Lnwindow {
     pub async fn new(event_loop: &ActiveEventLoop) -> Lnwindow {
-        let win_attr = Window::default_attributes().with_transparent(true);
+        let win_attr = Window::default_attributes();
 
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::new(window);

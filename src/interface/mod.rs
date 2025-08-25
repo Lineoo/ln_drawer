@@ -24,11 +24,7 @@ pub struct Interface {
     viewport: InterfaceViewport,
 }
 impl Interface {
-    pub async fn new(
-        window: impl Into<SurfaceTarget<'static>>,
-        width: u32,
-        height: u32,
-    ) -> Interface {
+    pub async fn new(window: impl Into<SurfaceTarget<'static>>, width: u32, height: u32) -> Interface {
         let instance = Instance::default();
 
         let surface = instance.create_surface(window).unwrap();
@@ -57,21 +53,7 @@ impl Interface {
         let width = width.max(1);
         let height = height.max(1);
 
-        let mut surface_config = surface.get_default_config(&adapter, width, height).unwrap();
-        #[cfg(all(
-            unix,
-            not(any(
-                target_os = "redox",
-                target_family = "wasm",
-                target_os = "android",
-                target_os = "ios",
-                target_os = "macos"
-            ))
-        ))]
-        {
-            surface_config.alpha_mode = CompositeAlphaMode::PreMultiplied;
-        }
-        surface.configure(&device, &surface_config);
+        let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
 
         // Camera
         let camera = [0, 0];
@@ -120,7 +102,7 @@ impl Interface {
                 view: &view,
                 resolve_target: None,
                 ops: Operations {
-                    load: LoadOp::Clear(Color::TRANSPARENT),
+                    load: LoadOp::Clear(Color::BLACK),
                     store: StoreOp::Store,
                 },
                 depth_slice: None,
