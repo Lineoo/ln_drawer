@@ -183,7 +183,7 @@ impl Interface {
     }
 
     /// This ignore the camera position, useful for relative point like mouse dragging
-    pub fn screen_to_world_relative(&self, point: [f64; 2]) -> [i32; 2] {
-        self.viewport.screen_to_world_relative(point)
+    pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> [i32; 2] {
+        self.viewport.screen_to_world_relative(delta)
     }
 }

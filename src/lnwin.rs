@@ -3,7 +3,7 @@ use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
-    event::{ElementState, KeyEvent, MouseButton, WindowEvent},
+    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
@@ -52,11 +52,12 @@ struct Lnwindow {
     width: u32,
     height: u32,
 
+    state: ActivatedTool,
+
     world: World,
     selector: Selector,
     stroke: StrokeManager,
-
-    state: ActivatedTool,
+    camera: CameraMove,
 }
 impl Lnwindow {
     pub async fn new(event_loop: &ActiveEventLoop) -> Lnwindow {
@@ -70,30 +71,33 @@ impl Lnwindow {
         let height = size.height.max(1);
 
         let mut interface = Interface::new(window.clone(), width, height).await;
+        
+        let state = ActivatedTool::Stroke;
 
         let world = World::new();
         let selector = Selector::new(&mut interface);
         let stroke = StrokeManager::new();
-
-        let state = ActivatedTool::Selection;
+        let camera = CameraMove::new(state);
 
         Lnwindow {
             window,
             interface,
             width,
             height,
+            state,
             world,
             selector,
             stroke,
-            state,
+            camera,
         }
     }
 
     pub fn window_event(&mut self, event: WindowEvent) {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
-                let point = self.cursor_to_screen(position);
-                let point = self.interface.screen_to_world(point);
+                let screen = self.cursor_to_screen(position);
+                let point = self.interface.screen_to_world(screen);
+                self.camera.curr_cursor = screen;
                 match self.state {
                     ActivatedTool::Selection => {
                         self.selector.cursor_position(point, &self.world);
@@ -101,6 +105,18 @@ impl Lnwindow {
                     }
                     ActivatedTool::Stroke => {
                         self.stroke.cursor_position(point, &mut self.interface);
+                        self.window.request_redraw();
+                    }
+                    ActivatedTool::Move => {
+                        let dx = self.camera.start_cursor[0] - self.camera.curr_cursor[0];
+                        let dy = self.camera.start_cursor[1] - self.camera.curr_cursor[1];
+                        let [dx, dy] = self.interface.screen_to_world_relative([dx, dy]);
+
+                        self.interface.set_camera([
+                            self.camera.camera_orig[0] + dx,
+                            self.camera.camera_orig[1] + dy,
+                        ]);
+
                         self.window.request_redraw();
                     }
                 }
@@ -118,6 +134,7 @@ impl Lnwindow {
                     self.stroke.cursor_pressed([0xff; 4], &mut self.interface);
                     self.window.request_redraw();
                 }
+                _ => (),
             },
             WindowEvent::MouseInput {
                 state: ElementState::Released,
@@ -129,7 +146,42 @@ impl Lnwindow {
                     self.stroke.cursor_released();
                     self.window.request_redraw();
                 }
+                _ => (),
             },
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Middle,
+                ..
+            } => {
+                self.camera.prev_tool = self.state;
+                self.switch_tool(ActivatedTool::Move);
+                self.camera.start_cursor = self.camera.curr_cursor;
+                self.camera.camera_orig = self.interface.get_camera();
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Middle,
+                ..
+            } => {
+                self.switch_tool(self.camera.prev_tool);
+            }
+            WindowEvent::MouseWheel { delta,  .. } => {
+                match delta {
+                    MouseScrollDelta::LineDelta(_rows, lines) => {
+                        let level = lines.ceil() as i32;
+                        let factor = f32::powi(2.0, level);
+                        let zoom = self.interface.get_zoom();
+                        self.interface.set_zoom(zoom * factor);
+                    }
+                    MouseScrollDelta::PixelDelta(delta) => {
+                        let level = delta.y.div_euclid(16.0) as i32 + 1;
+                        let factor = f32::powi(2.0, level);
+                        let zoom = self.interface.get_zoom();
+                        self.interface.set_zoom(zoom * factor);
+                    }
+                }
+                self.window.request_redraw();
+            }
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -168,16 +220,34 @@ impl Lnwindow {
     }
 
     fn switch_tool(&mut self, tool: ActivatedTool) {
-        self.state = tool;
-        match tool {
+        // Final for tools
+        match self.state {
             ActivatedTool::Selection => {
-                log::info!("switch to selection");
                 self.selector.stop();
             }
             ActivatedTool::Stroke => {
-                log::info!("switch to stroke");
                 self.stroke.cursor_released();
             }
+            _ => ()
+        }
+        self.state = tool;
+    }
+}
+
+struct CameraMove {
+    start_cursor: [f64; 2],
+    curr_cursor: [f64; 2],
+
+    camera_orig: [i32; 2],
+    prev_tool: ActivatedTool,
+}
+impl CameraMove {
+    fn new(prev_tool: ActivatedTool) -> Self {
+        CameraMove {
+            start_cursor: [0.0, 0.0],
+            curr_cursor: [0.0, 0.0],
+            camera_orig: [0, 0],
+            prev_tool,
         }
     }
 }
@@ -186,4 +256,5 @@ impl Lnwindow {
 enum ActivatedTool {
     Stroke,
     Selection,
+    Move,
 }
