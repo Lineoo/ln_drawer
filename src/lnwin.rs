@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use octotablet::events::{Event as OctoEvent, ToolEvent};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
@@ -10,7 +11,9 @@ use winit::{
 };
 
 use crate::{
-    elements::Image, interface::Interface, layout::{select::Selector, stroke::StrokeManager, world::World}
+    elements::Image,
+    interface::Interface,
+    layout::{select::Selector, stroke::StrokeManager, world::World},
 };
 
 #[derive(Default)]
@@ -41,6 +44,12 @@ impl ApplicationHandler for Lnwin {
             window.window_event(event);
         }
     }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(window) = &mut self.window {
+            window.about_to_wait();
+        }
+    }
 }
 
 /// The main window.
@@ -52,6 +61,7 @@ struct Lnwindow {
     height: u32,
 
     cursor: [f64; 2],
+    tablet: octotablet::Manager,
 
     state: ActivatedTool,
 
@@ -73,6 +83,8 @@ impl Lnwindow {
 
         let mut interface = Interface::new(window.clone(), width, height).await;
 
+        let tablet = octotablet::Builder::new().build_shared(&window).unwrap();
+
         let cursor = [0.0, 0.0];
         let state = ActivatedTool::Stroke;
 
@@ -87,6 +99,7 @@ impl Lnwindow {
             width,
             height,
             cursor,
+            tablet,
             state,
             world,
             selector,
@@ -204,16 +217,14 @@ impl Lnwindow {
                 _ => (),
             },
 
-            WindowEvent::DroppedFile(path) => {
-                match Image::new(path, &mut self.interface) {
-                    Ok(image) => {
-                        self.world.insert(image);
-                    }
-                    Err(err) => {
-                        log::warn!("Drop File: {err}");
-                    }
+            WindowEvent::DroppedFile(path) => match Image::new(path, &mut self.interface) {
+                Ok(image) => {
+                    self.world.insert(image);
                 }
-            }
+                Err(err) => {
+                    log::warn!("Drop File: {err}");
+                }
+            },
 
             WindowEvent::RedrawRequested => {
                 self.interface.restructure();
@@ -225,6 +236,35 @@ impl Lnwindow {
                 self.interface.resize(self.width, self.height);
             }
             _ => (),
+        }
+    }
+
+    fn about_to_wait(&mut self) {
+        for event in self.tablet.pump().into_iter().flatten() {
+            log::trace!("{event:?}");
+            #[expect(clippy::single_match)]
+            match event {
+                OctoEvent::Tool { event, .. } => match event {
+                    ToolEvent::Down => self.stroke.cursor_pressed([0xff; 4], &mut self.interface),
+                    ToolEvent::Up | ToolEvent::Out => self.stroke.cursor_released(),
+                    ToolEvent::Pose(pose) => {
+                        let dpi = self.window.scale_factor();
+
+                        let x = pose.position[0] as f64 * 2.0 * dpi;
+                        let y = pose.position[1] as f64 * 2.0 * dpi;
+
+                        let x = x / self.width as f64 - 1.0;
+                        let y = 1.0 - y / self.height as f64;
+
+                        let [x, y] = self.interface.screen_to_world([x, y]);
+
+                        self.stroke.cursor_position([x, y], &mut self.interface);
+                        self.window.request_redraw();
+                    }
+                    _ => (),
+                },
+                _ => (),
+            }
         }
     }
 
