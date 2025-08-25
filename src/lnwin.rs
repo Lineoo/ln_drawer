@@ -3,14 +3,15 @@ use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
-    event::{ElementState, MouseButton, WindowEvent},
+    event::{ElementState, KeyEvent, MouseButton, WindowEvent},
     event_loop::ActiveEventLoop,
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
 use crate::{
     interface::Interface,
-    layout::{select::Selector, world::World},
+    layout::{select::Selector, stroke::StrokeManager, world::World},
 };
 
 #[derive(Default)]
@@ -53,6 +54,9 @@ struct Lnwindow {
 
     world: World,
     selector: Selector,
+    stroke: StrokeManager,
+
+    state: ActivatedTool,
 }
 impl Lnwindow {
     pub async fn new(event_loop: &ActiveEventLoop) -> Lnwindow {
@@ -69,6 +73,9 @@ impl Lnwindow {
 
         let world = World::new();
         let selector = Selector::new(&mut interface);
+        let stroke = StrokeManager::new();
+
+        let state = ActivatedTool::Selection;
 
         Lnwindow {
             window,
@@ -77,23 +84,70 @@ impl Lnwindow {
             height,
             world,
             selector,
+            stroke,
+            state,
         }
     }
+
     pub fn window_event(&mut self, event: WindowEvent) {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 let point = self.cursor_to_screen(position);
                 let point = self.interface.screen_to_world(point);
-                self.selector.cursor_position(point, &self.world);
+                match self.state {
+                    ActivatedTool::Selection => {
+                        self.selector.cursor_position(point, &self.world);
+                        self.window.request_redraw();
+                    }
+                    ActivatedTool::Stroke => {
+                        self.stroke.cursor_position(point, &mut self.interface);
+                        self.window.request_redraw();
+                    }
+                }
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
                 ..
-            } => {
-                self.selector.cursor_click(&mut self.world);
-            }
-            WindowEvent::KeyboardInput { event, .. } => {}
+            } => match self.state {
+                ActivatedTool::Selection => {
+                    self.selector.cursor_click(&mut self.world);
+                    self.window.request_redraw();
+                }
+                ActivatedTool::Stroke => {
+                    self.stroke.cursor_pressed([0xff; 4], &mut self.interface);
+                    self.window.request_redraw();
+                }
+            },
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Left,
+                ..
+            } => match self.state {
+                ActivatedTool::Selection => {}
+                ActivatedTool::Stroke => {
+                    self.stroke.cursor_released();
+                    self.window.request_redraw();
+                }
+            },
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(keycode),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => match keycode {
+                KeyCode::KeyB => {
+                    self.switch_tool(ActivatedTool::Stroke);
+                }
+                KeyCode::KeyS => {
+                    self.switch_tool(ActivatedTool::Selection);
+                }
+                _ => (),
+            },
             WindowEvent::RedrawRequested => {
                 self.interface.restructure();
                 self.interface.redraw();
@@ -101,7 +155,7 @@ impl Lnwindow {
             WindowEvent::Resized(size) => {
                 self.width = size.width.max(1);
                 self.height = size.height.max(1);
-                self.interface.resize(self.width, self.width);
+                self.interface.resize(self.width, self.height);
             }
             _ => (),
         }
@@ -112,4 +166,24 @@ impl Lnwindow {
         let y = 1.0 - (cursor.y * 2.0) / self.height as f64;
         [x, y]
     }
+
+    fn switch_tool(&mut self, tool: ActivatedTool) {
+        self.state = tool;
+        match tool {
+            ActivatedTool::Selection => {
+                log::info!("switch to selection");
+                self.selector.stop();
+            }
+            ActivatedTool::Stroke => {
+                log::info!("switch to stroke");
+                self.stroke.cursor_released();
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ActivatedTool {
+    Stroke,
+    Selection,
 }

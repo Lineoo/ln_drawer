@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+#[deprecated]
 mod app;
 mod layout;
 mod interface;
@@ -15,7 +16,7 @@ fn main() -> Result<(), EventLoopError> {
 
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = app::LnDrawer::default();
+    let mut app = lnwin::Lnwin::default();
     event_loop.run_app(&mut app)?;
     Ok(())
 }

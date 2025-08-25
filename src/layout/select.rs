@@ -46,4 +46,10 @@ impl Selector {
             self.selection_wireframe.set_visible(false);
         }
     }
+
+    pub fn stop(&mut self) {
+        self.selected_element = None;
+        self.hover_wireframe.set_visible(false);
+        self.selection_wireframe.set_visible(false);
+    }
 }
