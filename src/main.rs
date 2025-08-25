@@ -1,7 +1,5 @@
 #![windows_subsystem = "windows"]
 
-#[deprecated]
-mod app;
 mod layout;
 mod interface;
 mod lnwin;
