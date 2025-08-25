@@ -234,7 +234,7 @@ impl ApplicationHandler for LnDrawer {
                 match event {
                     OctoEvent::Tool { tool, event } => match event {
                         ToolEvent::Down => self.tablet_down = true,
-                        ToolEvent::Up => self.tablet_down = false,
+                        ToolEvent::Up | ToolEvent::Out => self.tablet_down = false,
                         ToolEvent::Pose(pose) => {
                             if self.tablet_down
                                 && let Some(renderer) = &mut self.renderer
