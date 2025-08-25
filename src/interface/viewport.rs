@@ -84,14 +84,14 @@ impl InterfaceViewport {
     }
 
     pub fn screen_to_world(&self, point: [f64; 2]) -> [i32; 2] {
-        let x = (point[0] / self.zoom as f64 * self.width as f64 / 2.0) as i32 + self.camera[0];
-        let y = (point[1] / self.zoom as f64 * self.height as f64 / 2.0) as i32 + self.camera[1];
+        let x = (point[0] / self.zoom as f64 * self.width as f64 / 2.0).floor() as i32 + self.camera[0];
+        let y = (point[1] / self.zoom as f64 * self.height as f64 / 2.0).floor() as i32 + self.camera[1];
         [x, y]
     }
 
     pub fn screen_to_world_relative(&self, point: [f64; 2]) -> [i32; 2] {
-        let x = (point[0] / self.zoom as f64 * self.width as f64 / 2.0) as i32;
-        let y = (point[1] / self.zoom as f64 * self.height as f64 / 2.0) as i32;
+        let x = (point[0] / self.zoom as f64 * self.width as f64 / 2.0).floor() as i32;
+        let y = (point[1] / self.zoom as f64 * self.height as f64 / 2.0).floor() as i32;
         [x, y]
     }
 
