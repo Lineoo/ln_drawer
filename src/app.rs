@@ -92,7 +92,7 @@ impl ApplicationHandler for LnDrawer {
                         .world
                         .as_mut()
                         .unwrap()
-                        .fetch::<StrokeLayer>(self.stroke.unwrap())
+                        .fetch_mut::<StrokeLayer>(self.stroke.unwrap())
                         .unwrap();
 
                     stroke.write_pixel([x, y], [15, 230, 255, 255], renderer);
@@ -122,7 +122,7 @@ impl ApplicationHandler for LnDrawer {
                     let [x, y] = renderer.screen_to_world([x, y]);
 
                     if let Some(element) = world.intersect(x, y) {
-                        let element = world.fetch_dyn(element).unwrap();
+                        let element = world.fetch_mut_dyn(element).unwrap();
                         self.selection_wireframe =
                             Some(renderer.create_wireframe(element.border(), [1.0, 0.0, 0.0, 1.0]));
                     } else {
@@ -157,7 +157,7 @@ impl ApplicationHandler for LnDrawer {
                         let [x, y] = renderer.screen_to_world([x, y]);
 
                         if let Some(element) = world.intersect_with::<ButtonRaw>(x, y) {
-                            let button = world.fetch::<ButtonRaw>(element).unwrap();
+                            let button = world.fetch_mut::<ButtonRaw>(element).unwrap();
                             button.pressed();
                         } else {
                             self.selection_wireframe = None;

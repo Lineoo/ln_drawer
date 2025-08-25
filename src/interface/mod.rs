@@ -85,6 +85,7 @@ impl Interface {
     pub fn restructure(&mut self) {
         self.painter.clean();
         self.wireframe.clean();
+        self.wireframe.update_visibility();
         self.text.clean();
     }
 

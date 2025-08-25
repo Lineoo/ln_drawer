@@ -12,6 +12,9 @@ pub struct WireframePipeline {
     removal_tx: Sender<usize>,
     removal_rx: Receiver<usize>,
 
+    visible_tx: Sender<(usize, bool)>,
+    visible_rx: Receiver<(usize, bool)>,
+
     wireframe_idx: usize,
     wireframe: HashMap<usize, WireframeBuffer>,
 
@@ -110,11 +113,14 @@ impl WireframePipeline {
         });
 
         let (removal_tx, removal_rx) = channel();
+        let (visible_tx, visible_rx) = channel();
 
         WireframePipeline {
             pipeline,
             removal_tx,
             removal_rx,
+            visible_tx,
+            visible_rx,
             wireframe_idx: 0,
             wireframe: HashMap::new(),
             viewport_bind,
@@ -129,6 +135,7 @@ impl WireframePipeline {
         device: &Device,
         queue: &Queue,
     ) -> Wireframe {
+        self.update_visibility();
         self.clean();
 
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
@@ -181,6 +188,7 @@ impl WireframePipeline {
         });
 
         let wireframe = WireframeBuffer {
+            visible: true,
             vertices,
             indices,
             bind_group,
@@ -193,6 +201,7 @@ impl WireframePipeline {
         Wireframe {
             rect,
             pipeline_remove: self.removal_tx.clone(),
+            pipeline_visible: self.visible_tx.clone(),
             pipeline_idx: self.wireframe_idx - 1,
             buffer: wireframe,
             queue: queue.clone(),
@@ -205,10 +214,18 @@ impl WireframePipeline {
         }
     }
 
+    pub fn update_visibility(&mut self) {
+        for (idx, visible) in self.visible_rx.try_iter() {
+            if let Some(wireframe) = self.wireframe.get_mut(&idx) {
+                wireframe.visible = visible;
+            }
+        }
+    }
+
     pub fn render(&self, rpass: &mut RenderPass) {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(1, Some(&self.viewport_bind), &[]);
-        for wireframe in self.wireframe.values() {
+        for wireframe in self.wireframe.values().filter(|it| it.visible) {
             rpass.set_bind_group(0, Some(&wireframe.bind_group), &[]);
             rpass.set_vertex_buffer(0, wireframe.vertices.slice(..));
             rpass.set_index_buffer(wireframe.indices.slice(..), IndexFormat::Uint32);
@@ -223,6 +240,7 @@ pub struct Wireframe {
 
     pipeline_idx: usize,
     pipeline_remove: Sender<usize>,
+    pipeline_visible: Sender<(usize, bool)>,
 
     buffer: WireframeBuffer,
     queue: Queue,
@@ -252,10 +270,20 @@ impl Wireframe {
         self.queue
             .write_buffer(&self.buffer.color, 0, bytemuck::bytes_of(&color));
     }
+    pub fn set_visible(&mut self, visible: bool) {
+        if self.buffer.visible != visible {
+            self.buffer.visible = visible;
+            if let Err(e) = self.pipeline_visible.send((self.pipeline_idx, visible)) {
+                log::warn!("Setting Wireframe visibility: {e}");
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
 struct WireframeBuffer {
+    visible: bool,
+
     vertices: Buffer,
     indices: Buffer,
 

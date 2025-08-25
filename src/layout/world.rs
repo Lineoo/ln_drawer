@@ -24,13 +24,25 @@ impl World {
         ElementHandle(self.element_idx.0 - 1)
     }
 
-    pub fn fetch<T: 'static>(&mut self, element_idx: ElementHandle) -> Option<&mut T> {
+    pub fn fetch<T: 'static>(&self, element_idx: ElementHandle) -> Option<&T> {
+        self.elements
+            .get(&element_idx)
+            .and_then(|element| element.downcast_ref())
+    }
+
+    pub fn fetch_dyn(&self, element_idx: ElementHandle) -> Option<&dyn Element> {
+        self.elements
+            .get(&element_idx)
+            .map(|element| element.as_ref())
+    }
+
+    pub fn fetch_mut<T: 'static>(&mut self, element_idx: ElementHandle) -> Option<&mut T> {
         self.elements
             .get_mut(&element_idx)
             .and_then(|element| element.downcast_mut())
     }
 
-    pub fn fetch_dyn(&mut self, element_idx: ElementHandle) -> Option<&mut dyn Element> {
+    pub fn fetch_mut_dyn(&mut self, element_idx: ElementHandle) -> Option<&mut dyn Element> {
         self.elements
             .get_mut(&element_idx)
             .map(|element| element.as_mut())
