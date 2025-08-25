@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::ops::Range;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use hashbrown::HashMap;
@@ -341,6 +342,10 @@ impl Painter {
         );
     }
 
+    pub fn start_writer(&mut self) -> PainterWriter<'_> {
+        PainterWriter { painter: self }
+    }
+
     pub fn get_border(&self) -> [i32; 4] {
         self.rect
     }
@@ -351,6 +356,58 @@ impl Painter {
 
     fn height(&self) -> u32 {
         (self.rect[1] - self.rect[3]).unsigned_abs()
+    }
+}
+
+/// A more efficient way to write data into painter's Buffer
+pub struct PainterWriter<'painter> {
+    painter: &'painter mut Painter,
+}
+impl Drop for PainterWriter<'_> {
+    fn drop(&mut self) {
+        self.flush();
+    }
+}
+impl PainterWriter<'_> {
+    pub fn set_pixel(&mut self, x: i32, y: i32, color: [u8; 4]) {
+        let width = self.painter.width();
+        let height = self.painter.height();
+
+        let x_offset = x - self.painter.rect[0];
+        let y_offset = y - self.painter.rect[1];
+
+        let x_clamped = (x_offset as u32).rem_euclid(width);
+        let y_clamped = (height - y_offset as u32).rem_euclid(height);
+
+        let start = (x_clamped + y_clamped * width) * 4;
+        let start = start as usize;
+
+        self.painter.data[start] = color[0];
+        self.painter.data[start + 1] = color[1];
+        self.painter.data[start + 2] = color[2];
+        self.painter.data[start + 3] = color[3];
+    }
+
+    pub fn flush(&mut self) {
+        self.painter.queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &self.painter.buffer.bind_texture,
+                mip_level: 0,
+                origin: Origin3d { x: 0, y: 0, z: 0 },
+                aspect: TextureAspect::All,
+            },
+            &self.painter.data,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 }
 

@@ -154,8 +154,8 @@ impl Interface {
     }
 
     #[must_use = "The text will be destroyed when being drop."]
-    pub fn create_text(&mut self, rect: [i32; 4], text: String) -> Text {
-        self.text.create(rect, &text, &self.device, &self.queue)
+    pub fn create_text(&mut self, rect: [i32; 4], text: &str) -> Text {
+        self.text.create(rect, text, &self.device, &self.queue)
     }
 
     // Viewport Shortcut //

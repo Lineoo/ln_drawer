@@ -1,11 +1,13 @@
 mod button;
 mod image;
+mod label;
 mod stroke;
 
 use std::any::Any;
 
 pub use button::ButtonRaw;
 pub use image::Image;
+pub use label::Label;
 pub use stroke::StrokeLayer;
 
 pub trait Element: Any {

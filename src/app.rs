@@ -10,8 +10,8 @@ use winit::{
 };
 
 use crate::{
-    elements::{ButtonRaw, Image, StrokeLayer},
-    interface::{Interface, Text, Wireframe},
+    elements::{ButtonRaw, Image, Label, StrokeLayer},
+    interface::{Interface, Wireframe},
     layout::world::{ElementHandle, World},
 };
 
@@ -33,8 +33,6 @@ pub struct LnDrawer {
     world: Option<World>,
     selection_wireframe: Option<Wireframe>,
     stroke: Option<ElementHandle>,
-
-    text: Option<Text>,
 }
 
 impl ApplicationHandler for LnDrawer {
@@ -242,10 +240,13 @@ impl LnDrawer {
         world.insert(ButtonRaw::new([-100, -100, 0, 0], || {
             println!("Hi there!");
         }));
+        world.insert(Label::new(
+            [0, 0, 300, 100],
+            "Hello, LnDrawer!".into(),
+            &mut renderer,
+        ));
         self.stroke = Some(world.insert(StrokeLayer::new()));
         self.world = Some(world);
-
-        self.text = Some(renderer.create_text([0, 0, 300, 300], "Hello, LnDrawer!".into()));
 
         self.window = Some(window);
         self.renderer = Some(renderer);
