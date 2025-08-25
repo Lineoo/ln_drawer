@@ -10,7 +10,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image, StrokeLayer},
+    elements::{ButtonRaw, Image, StrokeLayer},
     interface::{Interface, Text, Wireframe},
     layout::world::{ElementHandle, World},
 };
@@ -115,11 +115,28 @@ impl ApplicationHandler for LnDrawer {
                     renderer.restructure();
                     renderer.redraw();
                 }
+
+                if let Some(world) = &mut self.world
+                    && let Some(renderer) = &mut self.renderer
+                {
+                    let x = (self.cursor_position.x * 2.0) / self.width as f64 - 1.0;
+                    let y = 1.0 - (self.cursor_position.y * 2.0) / self.height as f64;
+                    let [x, y] = renderer.screen_to_world([x, y]);
+
+                    if let Some(element) = world.intersect(x, y) {
+                        let element = world.fetch_dyn(element).unwrap();
+                        self.selection_wireframe =
+                            Some(renderer.create_wireframe(element.border(), [1.0, 0.0, 0.0, 1.0]));
+                    } else {
+                        self.selection_wireframe = None;
+                    }
+                    renderer.restructure();
+                    renderer.redraw();
+                }
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 if button == MouseButton::Left
                     && let Some(renderer) = &mut self.renderer
-                    && let Some(world) = &mut self.world
                 {
                     if state == ElementState::Pressed {
                         self.cursor_start = self.cursor_position;
@@ -132,20 +149,25 @@ impl ApplicationHandler for LnDrawer {
                             ],
                             [1.0, 0.0, 0.0, 1.0],
                         ));
-                        if let Some(element) = world.intersect(
-                            (self.cursor_position.x - self.width as f64 * 0.5).floor() as i32,
-                            (self.height as f64 * 0.5 - self.cursor_position.y).floor() as i32,
-                        ) {
-                            let element = world.fetch_dyn(element).unwrap();
-                            self.selection_wireframe = Some(
-                                renderer.create_wireframe(element.border(), [1.0, 0.0, 0.0, 1.0]),
-                            );
-                        } else {
-                            self.selection_wireframe = None;
-                        }
                     } else if state == ElementState::Released {
                         self.cursor_wireframe = None;
                     }
+
+                    if let Some(world) = &mut self.world {
+                        let x = (self.cursor_position.x * 2.0) / self.width as f64 - 1.0;
+                        let y = 1.0 - (self.cursor_position.y * 2.0) / self.height as f64;
+                        let [x, y] = renderer.screen_to_world([x, y]);
+
+                        if let Some(element) = world.intersect_with::<ButtonRaw>(x, y) {
+                            let button = world.fetch::<ButtonRaw>(element).unwrap();
+                            button.pressed();
+                        } else {
+                            self.selection_wireframe = None;
+                        }
+                        renderer.restructure();
+                        renderer.redraw();
+                    }
+
                     renderer.restructure();
                     renderer.redraw();
                 }
@@ -216,6 +238,10 @@ impl LnDrawer {
         self.height = size.height;
 
         let mut world = World::new();
+        world.insert(Image::from_bytes(include_bytes!("../res/icon.png"), &mut renderer).unwrap());
+        world.insert(ButtonRaw::new([-100, -100, 0, 0], || {
+            println!("Hi there!");
+        }));
         self.stroke = Some(world.insert(StrokeLayer::new()));
         self.world = Some(world);
 

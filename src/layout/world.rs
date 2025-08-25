@@ -47,4 +47,19 @@ impl World {
         }
         None
     }
+
+    pub fn intersect_with<T: Element>(&self, x: i32, y: i32) -> Option<ElementHandle> {
+        for (idx, element) in &self.elements {
+            let border = element.border();
+
+            // Is in border
+            if (x > border[0] && x < border[2])
+                && (y > border[1] && y < border[3])
+                && element.is::<T>()
+            {
+                return Some(*idx);
+            }
+        }
+        None
+    }
 }
