@@ -10,8 +10,7 @@ use winit::{
 };
 
 use crate::{
-    interface::Interface,
-    layout::{select::Selector, stroke::StrokeManager, world::World},
+    elements::Image, interface::Interface, layout::{select::Selector, stroke::StrokeManager, world::World}
 };
 
 #[derive(Default)]
@@ -52,6 +51,8 @@ struct Lnwindow {
     width: u32,
     height: u32,
 
+    cursor: [f64; 2],
+
     state: ActivatedTool,
 
     world: World,
@@ -71,7 +72,8 @@ impl Lnwindow {
         let height = size.height.max(1);
 
         let mut interface = Interface::new(window.clone(), width, height).await;
-        
+
+        let cursor = [0.0, 0.0];
         let state = ActivatedTool::Stroke;
 
         let world = World::new();
@@ -84,6 +86,7 @@ impl Lnwindow {
             interface,
             width,
             height,
+            cursor,
             state,
             world,
             selector,
@@ -97,7 +100,7 @@ impl Lnwindow {
             WindowEvent::CursorMoved { position, .. } => {
                 let screen = self.cursor_to_screen(position);
                 let point = self.interface.screen_to_world(screen);
-                self.camera.curr_cursor = screen;
+                self.cursor = screen;
                 match self.state {
                     ActivatedTool::Selection => {
                         self.selector.cursor_position(point, &self.world);
@@ -108,8 +111,8 @@ impl Lnwindow {
                         self.window.request_redraw();
                     }
                     ActivatedTool::Move => {
-                        let dx = self.camera.start_cursor[0] - self.camera.curr_cursor[0];
-                        let dy = self.camera.start_cursor[1] - self.camera.curr_cursor[1];
+                        let dx = self.camera.start_cursor[0] - self.cursor[0];
+                        let dy = self.camera.start_cursor[1] - self.cursor[1];
                         let [dx, dy] = self.interface.screen_to_world_relative([dx, dy]);
 
                         self.interface.set_camera([
@@ -155,7 +158,7 @@ impl Lnwindow {
             } => {
                 self.camera.prev_tool = self.state;
                 self.switch_tool(ActivatedTool::Move);
-                self.camera.start_cursor = self.camera.curr_cursor;
+                self.camera.start_cursor = self.cursor;
                 self.camera.camera_orig = self.interface.get_camera();
             }
             WindowEvent::MouseInput {
@@ -165,7 +168,7 @@ impl Lnwindow {
             } => {
                 self.switch_tool(self.camera.prev_tool);
             }
-            WindowEvent::MouseWheel { delta,  .. } => {
+            WindowEvent::MouseWheel { delta, .. } => {
                 match delta {
                     MouseScrollDelta::LineDelta(_rows, lines) => {
                         let level = lines.ceil() as i32;
@@ -200,6 +203,18 @@ impl Lnwindow {
                 }
                 _ => (),
             },
+
+            WindowEvent::DroppedFile(path) => {
+                match Image::new(path, &mut self.interface) {
+                    Ok(image) => {
+                        self.world.insert(image);
+                    }
+                    Err(err) => {
+                        log::warn!("Drop File: {err}");
+                    }
+                }
+            }
+
             WindowEvent::RedrawRequested => {
                 self.interface.restructure();
                 self.interface.redraw();
@@ -228,7 +243,7 @@ impl Lnwindow {
             ActivatedTool::Stroke => {
                 self.stroke.cursor_released();
             }
-            _ => ()
+            _ => (),
         }
         self.state = tool;
     }
@@ -236,8 +251,6 @@ impl Lnwindow {
 
 struct CameraMove {
     start_cursor: [f64; 2],
-    curr_cursor: [f64; 2],
-
     camera_orig: [i32; 2],
     prev_tool: ActivatedTool,
 }
@@ -245,7 +258,6 @@ impl CameraMove {
     fn new(prev_tool: ActivatedTool) -> Self {
         CameraMove {
             start_cursor: [0.0, 0.0],
-            curr_cursor: [0.0, 0.0],
             camera_orig: [0, 0],
             prev_tool,
         }
