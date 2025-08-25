@@ -152,19 +152,19 @@ impl PainterPipeline {
             contents: bytemuck::bytes_of(&[
                 Vertex {
                     pos: [rect[0], rect[1]],
-                    uv: [0.0, 0.0],
-                },
-                Vertex {
-                    pos: [rect[0], rect[3]],
                     uv: [0.0, 1.0],
                 },
                 Vertex {
+                    pos: [rect[0], rect[3]],
+                    uv: [0.0, 0.0],
+                },
+                Vertex {
                     pos: [rect[2], rect[3]],
-                    uv: [1.0, 1.0],
+                    uv: [1.0, 0.0],
                 },
                 Vertex {
                     pos: [rect[2], rect[1]],
-                    uv: [1.0, 0.0],
+                    uv: [1.0, 1.0],
                 },
             ]),
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
@@ -306,7 +306,7 @@ impl Painter {
         let y_offset = y - self.rect[1];
 
         let x_clamped = (x_offset as u32).rem_euclid(width);
-        let y_clamped = (y_offset as u32).rem_euclid(height);
+        let y_clamped = (height - y_offset as u32).rem_euclid(height);
 
         let start = (x_clamped + y_clamped * width) * 4;
         let start = start as usize;

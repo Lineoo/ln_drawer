@@ -46,7 +46,6 @@ impl TextManager {
             &mut self.swash_cache,
             Color::rgb(0xFF, 0xFF, 0xFF),
             |x, y, w, h, color| {
-                let y = height as i32 - y;
                 let start = ((x + y * width as i32) * 4) as usize;
                 let rgba = color.as_rgba();
                 data[start] = rgba[0];
