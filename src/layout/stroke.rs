@@ -1,3 +1,5 @@
+use glam::{IVec2, Vec2};
+
 use crate::{elements::StrokeLayer, interface::Interface};
 
 /// The main component for selection.
@@ -18,10 +20,19 @@ impl StrokeManager {
     }
 
     pub fn cursor_position(&mut self, point: [i32; 2], interface: &mut Interface) {
-        self.cursor = point;
-        if self.cursor_down {   
-            self.layers[0].write_pixel(self.cursor, self.curr_color, interface);
+        if self.cursor_down {
+            let mut vernier = Vec2::new(self.cursor[0] as f32, self.cursor[1] as f32);
+            let destination = Vec2::new(point[0] as f32, point[1] as f32);
+            while vernier != destination {
+                self.layers[0].write_pixel(
+                    [vernier.x.floor() as i32, vernier.y.floor() as i32],
+                    self.curr_color,
+                    interface,
+                );
+                vernier = vernier.move_towards(destination, 0.7);
+            }
         }
+        self.cursor = point;
     }
 
     pub fn cursor_pressed(&mut self, color: [u8; 4], interface: &mut Interface) {
