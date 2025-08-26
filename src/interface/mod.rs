@@ -57,7 +57,7 @@ impl Interface {
 
         // Camera
         let camera = [0, 0];
-        let zoom = 1.0;
+        let zoom = 0;
         let viewport = InterfaceViewport::new(&device, width, height, camera, zoom);
 
         // Render Components
@@ -166,11 +166,11 @@ impl Interface {
         self.viewport.set_camera(position, &self.queue);
     }
 
-    pub fn get_zoom(&self) -> f32 {
+    pub fn get_zoom(&self) -> i32 {
         self.viewport.get_zoom()
     }
 
-    pub fn set_zoom(&mut self, zoom: f32) {
+    pub fn set_zoom(&mut self, zoom: i32) {
         self.viewport.set_zoom(zoom, &self.queue);
     }
 

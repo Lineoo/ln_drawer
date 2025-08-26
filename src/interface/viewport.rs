@@ -9,7 +9,7 @@ pub struct InterfaceViewport {
 
     camera: [i32; 2],
 
-    zoom: f32,
+    zoom: i32,
 
     buffer: Buffer,
 }
@@ -19,7 +19,7 @@ impl InterfaceViewport {
         width: u32,
         height: u32,
         camera: [i32; 2],
-        zoom: f32,
+        zoom: i32,
     ) -> InterfaceViewport {
         let viewport_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("viewport_buffer"),
@@ -28,7 +28,7 @@ impl InterfaceViewport {
                 height,
                 camera,
                 zoom,
-                _padding: 0
+                _padding: 0,
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -64,11 +64,11 @@ impl InterfaceViewport {
         );
     }
 
-    pub fn get_zoom(&self) -> f32 {
+    pub fn get_zoom(&self) -> i32 {
         self.zoom
     }
 
-    pub fn set_zoom(&mut self, zoom: f32, queue: &Queue) {
+    pub fn set_zoom(&mut self, zoom: i32, queue: &Queue) {
         self.zoom = zoom;
         queue.write_buffer(
             &self.buffer,
@@ -80,18 +80,21 @@ impl InterfaceViewport {
     pub fn world_to_screen(&self, point: [i32; 2]) -> [f64; 2] {
         let x = (point[0] - self.camera[0]) as f64 / self.width as f64 * 2.0;
         let y = (point[1] - self.camera[1]) as f64 / self.height as f64 * 2.0;
-        [x * self.zoom as f64, y * self.zoom as f64]
+        let scale = f64::powi(2.0, self.zoom);
+        [x * scale, y * scale]
     }
 
     pub fn screen_to_world(&self, point: [f64; 2]) -> [i32; 2] {
-        let x = (point[0] / self.zoom as f64 * self.width as f64 / 2.0).floor() as i32 + self.camera[0];
-        let y = (point[1] / self.zoom as f64 * self.height as f64 / 2.0).floor() as i32 + self.camera[1];
+        let scale = f64::powi(2.0, self.zoom);
+        let x = (point[0] / scale * self.width as f64 / 2.0).floor() as i32 + self.camera[0];
+        let y = (point[1] / scale * self.height as f64 / 2.0).floor() as i32 + self.camera[1];
         [x, y]
     }
 
-    pub fn screen_to_world_relative(&self, point: [f64; 2]) -> [i32; 2] {
-        let x = (point[0] / self.zoom as f64 * self.width as f64 / 2.0).floor() as i32;
-        let y = (point[1] / self.zoom as f64 * self.height as f64 / 2.0).floor() as i32;
+    pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> [i32; 2] {
+        let scale = f64::powi(2.0, self.zoom);
+        let x = (delta[0] / scale * self.width as f64 / 2.0).floor() as i32;
+        let y = (delta[1] / scale * self.height as f64 / 2.0).floor() as i32;
         [x, y]
     }
 
@@ -106,7 +109,7 @@ struct InterfaceViewportBind {
     width: u32,
     height: u32,
     camera: [i32; 2],
-    zoom: f32,
+    zoom: i32,
     /// 8 bytes alignment in WGSL
     _padding: u32,
 }

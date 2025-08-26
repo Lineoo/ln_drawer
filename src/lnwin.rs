@@ -177,15 +177,13 @@ impl Lnwindow {
                 match delta {
                     MouseScrollDelta::LineDelta(_rows, lines) => {
                         let level = lines.ceil() as i32;
-                        let factor = f32::powi(2.0, level);
                         let zoom = self.interface.get_zoom();
-                        self.interface.set_zoom(zoom * factor);
+                        self.interface.set_zoom(zoom + level);
                     }
                     MouseScrollDelta::PixelDelta(delta) => {
                         let level = delta.y.div_euclid(16.0) as i32 + 1;
-                        let factor = f32::powi(2.0, level);
                         let zoom = self.interface.get_zoom();
-                        self.interface.set_zoom(zoom * factor);
+                        self.interface.set_zoom(zoom + level);
                     }
                 }
                 self.window.request_redraw();
