@@ -50,7 +50,7 @@ impl World {
 
     pub fn intersect(&self, x: i32, y: i32) -> Option<ElementHandle> {
         for (idx, element) in &self.elements {
-            let border = element.border();
+            let border = element.get_border();
 
             // Is in border
             if (x > border[0] && x < border[2]) && (y > border[1] && y < border[3]) {
@@ -62,7 +62,7 @@ impl World {
 
     pub fn intersect_with<T: Element>(&self, x: i32, y: i32) -> Option<ElementHandle> {
         for (idx, element) in &self.elements {
-            let border = element.border();
+            let border = element.get_border();
 
             // Is in border
             if (x > border[0] && x < border[2])

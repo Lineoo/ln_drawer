@@ -94,7 +94,7 @@ impl Text {
         let mut buffer = Buffer::new(&mut font_system, metrics);
         let mut buffer = buffer.borrow_with(&mut font_system);
 
-        let rect = self.inner.get_border();
+        let rect = self.inner.get_rect();
         let width = (rect[0] - rect[2]).unsigned_abs();
         let height = (rect[1] - rect[3]).unsigned_abs();
 
@@ -116,6 +116,14 @@ impl Text {
     }
 
     pub fn get_border(&self) -> [i32; 4] {
-        self.inner.get_border()
+        self.inner.get_rect()
+    }
+
+    pub fn get_position(&self) -> [i32; 2] {
+        self.inner.get_position()
+    }
+
+    pub fn set_position(&mut self, position: [i32; 2]) {
+        self.inner.set_position(position);
     }
 }

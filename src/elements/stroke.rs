@@ -15,8 +15,16 @@ impl Element for StrokeLayer {
         "stroke".into()
     }
     // TODO: Use Optional Border
-    fn border(&self) -> [i32; 4] {
+    fn get_border(&self) -> [i32; 4] {
         [0; 4]
+    }
+
+    fn get_position(&self) -> [i32; 2] {
+        [0, 0]
+    }
+
+    fn set_position(&mut self, _position: [i32; 2]) {
+        log::warn!("try to set position of StrokeLayer");
     }
 }
 impl StrokeLayer {

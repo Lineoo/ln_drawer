@@ -12,8 +12,17 @@ impl Element for Image {
     fn name(&self) -> std::borrow::Cow<'_, str> {
         "painter".into()
     }
-    fn border(&self) -> [i32; 4] {
-        self.painter.get_border()
+
+    fn get_border(&self) -> [i32; 4] {
+        self.painter.get_rect()
+    }
+    
+    fn get_position(&self) -> [i32; 2] {
+        self.painter.get_position()
+    }
+    
+    fn set_position(&mut self, position: [i32; 2]) {
+        self.painter.set_position(position);
     }
 }
 impl Image {

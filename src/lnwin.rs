@@ -10,7 +10,7 @@ use winit::{
 };
 
 use crate::{
-    elements::Image,
+    elements::{Image, Label},
     interface::Interface,
     layout::{select::Selector, stroke::StrokeManager, world::World},
 };
@@ -121,7 +121,7 @@ impl Lnwindow {
 
                 match self.state {
                     ActivatedTool::Selection => {
-                        self.selector.cursor_position(point, &self.world);
+                        self.selector.cursor_position(point, &mut self.world);
                         self.window.request_redraw();
                     }
                     ActivatedTool::Stroke => {
@@ -136,7 +136,7 @@ impl Lnwindow {
                 ..
             } => match self.state {
                 ActivatedTool::Selection => {
-                    self.selector.cursor_click(&mut self.world);
+                    self.selector.cursor_pressed(&mut self.world);
                     self.window.request_redraw();
                 }
                 ActivatedTool::Stroke => {
@@ -149,7 +149,9 @@ impl Lnwindow {
                 button: MouseButton::Left,
                 ..
             } => match self.state {
-                ActivatedTool::Selection => {}
+                ActivatedTool::Selection => {
+                    self.selector.cursor_released();
+                }
                 ActivatedTool::Stroke => {
                     self.stroke.cursor_released();
                     self.window.request_redraw();
@@ -203,6 +205,17 @@ impl Lnwindow {
                 }
                 KeyCode::KeyS => {
                     self.switch_tool(ActivatedTool::Selection);
+                }
+                KeyCode::F1 => {
+                    self.world.insert(Label::new(
+                        [0, 0, 200, 24],
+                        "Hello, LnDrawer!".into(),
+                        &mut self.interface,
+                    ));
+                    self.world.insert(
+                        Image::from_bytes(include_bytes!("../res/icon.png"), &mut self.interface)
+                            .unwrap(),
+                    );
                 }
                 _ => (),
             },

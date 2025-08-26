@@ -12,7 +12,9 @@ pub use stroke::StrokeLayer;
 
 pub trait Element: Any {
     fn name(&self) -> std::borrow::Cow<'_, str>;
-    fn border(&self) -> [i32; 4];
+    fn get_border(&self) -> [i32; 4];
+    fn get_position(&self) -> [i32; 2];
+    fn set_position(&mut self, position: [i32; 2]);
 }
 impl dyn Element {
     pub fn is<T: Any>(&self) -> bool {

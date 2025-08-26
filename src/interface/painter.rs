@@ -345,8 +345,48 @@ impl Painter {
         PainterWriter { painter: self }
     }
 
-    pub fn get_border(&self) -> [i32; 4] {
+    pub fn get_rect(&self) -> [i32; 4] {
         self.rect
+    }
+
+    pub fn set_rect(&mut self, rect: [i32; 4]) {
+        self.rect = rect;
+        self.queue.write_buffer(
+            &self.buffer.vertices,
+            0,
+            bytemuck::bytes_of(&[
+                Vertex {
+                    pos: [rect[0], rect[1]],
+                    uv: [0.0, 1.0],
+                },
+                Vertex {
+                    pos: [rect[0], rect[3]],
+                    uv: [0.0, 0.0],
+                },
+                Vertex {
+                    pos: [rect[2], rect[3]],
+                    uv: [1.0, 0.0],
+                },
+                Vertex {
+                    pos: [rect[2], rect[1]],
+                    uv: [1.0, 1.0],
+                },
+            ]),
+        );
+    }
+
+    pub fn get_position(&self) -> [i32; 2] {
+        [self.rect[0], self.rect[1]]
+    }
+
+    pub fn set_position(&mut self, position: [i32; 2]) {
+        let (width, height) = (self.width(), self.height());
+        self.set_rect([
+            position[0],
+            position[1],
+            position[0] + width as i32,
+            position[1] + height as i32,
+        ]);
     }
 
     fn width(&self) -> u32 {
