@@ -2,9 +2,12 @@ use std::sync::Arc;
 
 use cosmic_text::*;
 use parking_lot::Mutex;
-use wgpu::{Device, Queue, RenderPass, SurfaceConfiguration};
+use wgpu::{Device, Queue, SurfaceConfiguration};
 
-use crate::interface::{InterfaceViewport, Painter, painter::PainterPipeline};
+use crate::interface::{
+    InterfaceViewport, Painter,
+    painter::{PainterBuffer, PainterPipeline},
+};
 
 pub struct TextManager {
     inner_pipeline: PainterPipeline,
@@ -69,14 +72,6 @@ impl TextManager {
             swash_cache: self.swash_cache.clone(),
         }
     }
-
-    pub fn clean(&mut self) {
-        self.inner_pipeline.clean();
-    }
-
-    pub fn render(&self, rpass: &mut RenderPass) {
-        self.inner_pipeline.render(rpass);
-    }
 }
 
 pub struct Text {
@@ -125,5 +120,9 @@ impl Text {
 
     pub fn set_position(&mut self, position: [i32; 2]) {
         self.inner.set_position(position);
+    }
+
+    pub(super) fn clone_buffer(&self) -> PainterBuffer {
+        self.inner.clone_buffer()
     }
 }

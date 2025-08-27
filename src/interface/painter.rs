@@ -1,7 +1,3 @@
-use std::borrow::Cow;
-use std::sync::mpsc::{Receiver, Sender, channel};
-
-use hashbrown::HashMap;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
@@ -9,10 +5,6 @@ use crate::interface::InterfaceViewport;
 
 pub struct PainterPipeline {
     pipeline: RenderPipeline,
-    removal_tx: Sender<usize>,
-    removal_rx: Receiver<usize>,
-    painters_idx: usize,
-    painters: HashMap<usize, PainterBuffer>,
     bind_group_layout: BindGroupLayout,
     viewport_bind: BindGroup,
 }
@@ -24,7 +16,7 @@ impl PainterPipeline {
     ) -> PainterPipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("painter_shader"),
-            source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("painter.wgsl"))),
+            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("painter.wgsl"))),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -126,13 +118,7 @@ impl PainterPipeline {
             cache: None,
         });
 
-        let (removal_tx, removal_rx) = channel();
-
         PainterPipeline {
-            painters_idx: 0,
-            painters: HashMap::new(),
-            removal_tx,
-            removal_rx,
             pipeline,
             bind_group_layout,
             viewport_bind,
@@ -248,34 +234,11 @@ impl PainterPipeline {
             bind_texture,
         };
 
-        self.painters
-            .insert(self.painters_idx, painter_buffer.clone());
-        self.painters_idx += 1;
-
         Painter {
             rect,
             data,
             buffer: painter_buffer.clone(),
             queue: queue.clone(),
-            pipeline_remove: self.removal_tx.clone(),
-            pipeline_idx: self.painters_idx - 1,
-        }
-    }
-
-    pub fn clean(&mut self) {
-        for idx in self.removal_rx.try_iter() {
-            self.painters.remove(&idx);
-        }
-    }
-
-    pub fn render(&self, rpass: &mut RenderPass) {
-        rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(1, Some(&self.viewport_bind), &[]);
-        for painter in self.painters.values() {
-            rpass.set_bind_group(0, Some(&painter.bind_group), &[]);
-            rpass.set_vertex_buffer(0, painter.vertices.slice(..));
-            rpass.set_index_buffer(painter.indices.slice(..), IndexFormat::Uint32);
-            rpass.draw_indexed(0..6, 0, 0..1);
         }
     }
 
@@ -289,17 +252,12 @@ pub struct Painter {
     rect: [i32; 4],
     data: Vec<u8>,
 
-    pipeline_idx: usize,
-    pipeline_remove: Sender<usize>,
     queue: Queue,
     buffer: PainterBuffer,
 }
 impl Drop for Painter {
     fn drop(&mut self) {
         // FIXME: when program terminate
-        if let Err(e) = self.pipeline_remove.send(self.pipeline_idx) {
-            log::warn!("Dropping Painter: {e}");
-        }
     }
 }
 impl Painter {
@@ -394,6 +352,10 @@ impl Painter {
         ]);
     }
 
+    pub(super) fn clone_buffer(&self) -> PainterBuffer {
+        self.buffer.clone()
+    }
+
     fn width(&self) -> u32 {
         (self.rect[0] - self.rect[2]).unsigned_abs()
     }
@@ -465,10 +427,10 @@ pub struct PainterBuffer {
 }
 impl PainterBuffer {
     pub fn draw(&self, rpass: &mut RenderPass) {
-            rpass.set_bind_group(0, Some(&self.bind_group), &[]);
-            rpass.set_vertex_buffer(0, self.vertices.slice(..));
-            rpass.set_index_buffer(self.indices.slice(..), IndexFormat::Uint32);
-            rpass.draw_indexed(0..6, 0, 0..1);
+        rpass.set_bind_group(0, Some(&self.bind_group), &[]);
+        rpass.set_vertex_buffer(0, self.vertices.slice(..));
+        rpass.set_index_buffer(self.indices.slice(..), IndexFormat::Uint32);
+        rpass.draw_indexed(0..6, 0, 0..1);
     }
 }
 

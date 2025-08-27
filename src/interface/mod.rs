@@ -24,6 +24,7 @@ pub struct Interface {
     painter: painter::PainterPipeline,
     text: text::TextManager,
 
+    components_idx: usize,
     components: IndexMap<usize, Component, hashbrown::DefaultHashBuilder>,
 
     viewport: InterfaceViewport,
@@ -74,8 +75,6 @@ impl Interface {
         let painter = painter::PainterPipeline::init(&device, &surface_config, &viewport);
         let text = text::TextManager::init(&device, &surface_config, &viewport);
 
-        let components = IndexMap::default();
-
         Interface {
             surface,
             surface_config,
@@ -84,7 +83,8 @@ impl Interface {
             wireframe,
             painter,
             text,
-            components,
+            components_idx: 0,
+            components: IndexMap::default(),
             viewport,
         }
     }
@@ -95,10 +95,6 @@ impl Interface {
     pub fn restructure(&mut self) {
         self.components
             .sort_by(|_, c1, _, c2| c2.z_order.cmp(&c1.z_order));
-        self.painter.clean();
-        self.wireframe.clean();
-        self.wireframe.update_visibility();
-        self.text.clean();
     }
 
     pub fn redraw(&self) {
@@ -125,10 +121,6 @@ impl Interface {
             ..Default::default()
         });
 
-        self.painter.render(&mut rpass);
-        self.wireframe.render(&mut rpass);
-        self.text.render(&mut rpass);
-
         for component in self.components.values() {
             match &component.component {
                 ComponentInner::Wireframe(wireframe) => {
@@ -136,7 +128,7 @@ impl Interface {
                     wireframe.draw(&mut rpass);
                 }
                 ComponentInner::Painter(painter) => {
-                    self.wireframe.set_pipeline(&mut rpass);
+                    self.painter.set_pipeline(&mut rpass);
                     painter.draw(&mut rpass);
                 }
             }
@@ -162,8 +154,12 @@ impl Interface {
 
     #[must_use = "The wireframe will be destroyed when being drop."]
     pub fn create_wireframe(&mut self, rect: [i32; 4], color: [f32; 4]) -> Wireframe {
-        self.wireframe
-            .create(rect, color, &self.device, &self.queue)
+        let wireframe = (self.wireframe).create(rect, color, &self.device, &self.queue);
+        self.insert(Component {
+            component: ComponentInner::Wireframe(wireframe.clone_buffer()),
+            z_order: 0,
+        });
+        wireframe
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
@@ -171,17 +167,37 @@ impl Interface {
         let width = (rect[0] - rect[2]).unsigned_abs();
         let height = (rect[1] - rect[3]).unsigned_abs();
         let empty = vec![0; (width * height * 4) as usize];
-        self.painter.create(rect, empty, &self.device, &self.queue)
+        let painter = self.painter.create(rect, empty, &self.device, &self.queue);
+        self.insert(Component {
+            component: ComponentInner::Painter(painter.clone_buffer()),
+            z_order: 0,
+        });
+        painter
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
     pub fn create_painter_with(&mut self, rect: [i32; 4], data: Vec<u8>) -> Painter {
-        self.painter.create(rect, data, &self.device, &self.queue)
+        let painter = self.painter.create(rect, data, &self.device, &self.queue);
+        self.insert(Component {
+            component: ComponentInner::Painter(painter.clone_buffer()),
+            z_order: 0,
+        });
+        painter
     }
 
     #[must_use = "The text will be destroyed when being drop."]
     pub fn create_text(&mut self, rect: [i32; 4], text: &str) -> Text {
-        self.text.create(rect, text, &self.device, &self.queue)
+        let text = self.text.create(rect, text, &self.device, &self.queue);
+        self.insert(Component {
+            component: ComponentInner::Painter(text.clone_buffer()),
+            z_order: 0,
+        });
+        text
+    }
+
+    fn insert(&mut self, component: Component) {
+        self.components.insert(self.components_idx, component);
+        self.components_idx += 1;
     }
 
     // Viewport Shortcut //
