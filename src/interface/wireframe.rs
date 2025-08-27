@@ -1,7 +1,9 @@
+use std::sync::mpsc::Sender;
+
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::interface::InterfaceViewport;
+use crate::interface::{ComponentCommand, InterfaceViewport};
 
 pub struct WireframePipeline {
     pipeline: RenderPipeline,
@@ -110,6 +112,8 @@ impl WireframePipeline {
         &mut self,
         rect: [i32; 4],
         color: [f32; 4],
+        comp_idx: usize,
+        comp_tx: Sender<(usize, ComponentCommand)>,
         device: &Device,
         queue: &Queue,
     ) -> Wireframe {
@@ -171,6 +175,8 @@ impl WireframePipeline {
 
         Wireframe {
             rect,
+            comp_idx,
+            comp_tx,
             buffer: wireframe,
             queue: queue.clone(),
         }
@@ -185,12 +191,18 @@ impl WireframePipeline {
 pub struct Wireframe {
     /// rect: [left, down, right, up]
     rect: [i32; 4],
+
+    comp_idx: usize,
+    comp_tx: Sender<(usize, ComponentCommand)>,
+
     buffer: WireframeBuffer,
     queue: Queue,
 }
 impl Drop for Wireframe {
     fn drop(&mut self) {
-        // TODO
+        if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::Destroy)) {
+            log::warn!("Dropping Wireframe: {e}");
+        }
     }
 }
 impl Wireframe {
@@ -207,12 +219,24 @@ impl Wireframe {
             ]),
         );
     }
+
     pub fn set_color(&mut self, color: [f32; 4]) {
         self.queue
             .write_buffer(&self.buffer.color, 0, bytemuck::bytes_of(&color));
     }
+
     pub fn set_visible(&mut self, visible: bool) {
-        // TODO
+        if let Err(e) =
+            (self.comp_tx).send((self.comp_idx, ComponentCommand::SetVisibility(visible)))
+        {
+            log::warn!("Set Visibility: {e}");
+        }
+    }
+
+    pub fn set_z_order(&mut self, ord: usize) {
+        if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(ord))) {
+            log::warn!("Set Visibility: {e}");
+        }
     }
 
     pub(super) fn clone_buffer(&self) -> WireframeBuffer {

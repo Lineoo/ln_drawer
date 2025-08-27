@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use std::sync::{Arc, mpsc::Sender};
 
 use cosmic_text::*;
 use parking_lot::Mutex;
 use wgpu::{Device, Queue, SurfaceConfiguration};
 
 use crate::interface::{
-    InterfaceViewport, Painter,
+    ComponentCommand, InterfaceViewport, Painter,
     painter::{PainterBuffer, PainterPipeline},
 };
 
@@ -32,7 +32,15 @@ impl TextManager {
     }
 
     #[must_use = "The text will be destroyed when being drop."]
-    pub fn create(&mut self, rect: [i32; 4], text: &str, device: &Device, queue: &Queue) -> Text {
+    pub fn create(
+        &mut self,
+        rect: [i32; 4],
+        text: &str,
+        comp_idx: usize,
+        comp_tx: Sender<(usize, ComponentCommand)>,
+        device: &Device,
+        queue: &Queue,
+    ) -> Text {
         let mut font_system = self.font_system.lock();
         let mut swash_cache = self.swash_cache.lock();
 
@@ -64,7 +72,7 @@ impl TextManager {
             },
         );
 
-        let inner = self.inner_pipeline.create(rect, data, device, queue);
+        let inner = (self.inner_pipeline).create(rect, data, comp_idx, comp_tx, device, queue);
 
         Text {
             inner,
@@ -120,6 +128,10 @@ impl Text {
 
     pub fn set_position(&mut self, position: [i32; 2]) {
         self.inner.set_position(position);
+    }
+
+    pub fn set_z_order(&mut self, ord: usize) {
+        self.inner.set_z_order(ord);
     }
 
     pub(super) fn clone_buffer(&self) -> PainterBuffer {

@@ -1,7 +1,9 @@
+use std::sync::mpsc::Sender;
+
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::interface::InterfaceViewport;
+use crate::interface::{ComponentCommand, InterfaceViewport};
 
 pub struct PainterPipeline {
     pipeline: RenderPipeline,
@@ -130,6 +132,8 @@ impl PainterPipeline {
         &mut self,
         rect: [i32; 4],
         data: Vec<u8>,
+        comp_idx: usize,
+        comp_tx: Sender<(usize, ComponentCommand)>,
         device: &Device,
         queue: &Queue,
     ) -> Painter {
@@ -237,6 +241,8 @@ impl PainterPipeline {
         Painter {
             rect,
             data,
+            comp_idx,
+            comp_tx,
             buffer: painter_buffer.clone(),
             queue: queue.clone(),
         }
@@ -252,12 +258,18 @@ pub struct Painter {
     rect: [i32; 4],
     data: Vec<u8>,
 
+    comp_idx: usize,
+    comp_tx: Sender<(usize, ComponentCommand)>,
+
     queue: Queue,
     buffer: PainterBuffer,
 }
 impl Drop for Painter {
     fn drop(&mut self) {
         // FIXME: when program terminate
+        if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::Destroy)) {
+            log::warn!("Dropping Painter: {e}");
+        }
     }
 }
 impl Painter {
@@ -350,6 +362,12 @@ impl Painter {
             position[0] + width as i32,
             position[1] + height as i32,
         ]);
+    }
+
+    pub fn set_z_order(&mut self, ord: usize) {
+        if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(ord))) {
+            log::warn!("Set Visibility: {e}");
+        }
     }
 
     pub(super) fn clone_buffer(&self) -> PainterBuffer {
