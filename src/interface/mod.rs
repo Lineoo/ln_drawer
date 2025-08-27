@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use wgpu::*;
 
 mod painter;
@@ -10,6 +11,8 @@ pub use text::Text;
 pub use viewport::InterfaceViewport;
 pub use wireframe::Wireframe;
 
+use crate::interface::{painter::PainterBuffer, wireframe::WireframeBuffer};
+
 /// Main render part
 pub struct Interface {
     surface: Surface<'static>,
@@ -21,10 +24,16 @@ pub struct Interface {
     painter: painter::PainterPipeline,
     text: text::TextManager,
 
+    components: IndexMap<usize, Component, hashbrown::DefaultHashBuilder>,
+
     viewport: InterfaceViewport,
 }
 impl Interface {
-    pub async fn new(window: impl Into<SurfaceTarget<'static>>, width: u32, height: u32) -> Interface {
+    pub async fn new(
+        window: impl Into<SurfaceTarget<'static>>,
+        width: u32,
+        height: u32,
+    ) -> Interface {
         let instance = Instance::default();
 
         let surface = instance.create_surface(window).unwrap();
@@ -65,6 +74,8 @@ impl Interface {
         let painter = painter::PainterPipeline::init(&device, &surface_config, &viewport);
         let text = text::TextManager::init(&device, &surface_config, &viewport);
 
+        let components = IndexMap::default();
+
         Interface {
             surface,
             surface_config,
@@ -73,13 +84,17 @@ impl Interface {
             wireframe,
             painter,
             text,
+            components,
             viewport,
         }
     }
 
     /// Suggested to call before [`Interface::redraw()`]. This will following jobs:
     /// - Remove unattached components
+    /// - Sort z-order
     pub fn restructure(&mut self) {
+        self.components
+            .sort_by(|_, c1, _, c2| c2.z_order.cmp(&c1.z_order));
         self.painter.clean();
         self.wireframe.clean();
         self.wireframe.update_visibility();
@@ -113,6 +128,19 @@ impl Interface {
         self.painter.render(&mut rpass);
         self.wireframe.render(&mut rpass);
         self.text.render(&mut rpass);
+
+        for component in self.components.values() {
+            match &component.component {
+                ComponentInner::Wireframe(wireframe) => {
+                    self.wireframe.set_pipeline(&mut rpass);
+                    wireframe.draw(&mut rpass);
+                }
+                ComponentInner::Painter(painter) => {
+                    self.wireframe.set_pipeline(&mut rpass);
+                    painter.draw(&mut rpass);
+                }
+            }
+        }
 
         drop(rpass);
 
@@ -186,4 +214,14 @@ impl Interface {
     pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> [i32; 2] {
         self.viewport.screen_to_world_relative(delta)
     }
+}
+
+struct Component {
+    component: ComponentInner,
+    z_order: usize,
+}
+
+enum ComponentInner {
+    Painter(PainterBuffer),
+    Wireframe(WireframeBuffer),
 }

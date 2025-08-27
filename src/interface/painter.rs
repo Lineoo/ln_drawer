@@ -278,6 +278,11 @@ impl PainterPipeline {
             rpass.draw_indexed(0..6, 0, 0..1);
         }
     }
+
+    pub fn set_pipeline(&self, rpass: &mut RenderPass) {
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(1, Some(&self.viewport_bind), &[]);
+    }
 }
 
 pub struct Painter {
@@ -451,12 +456,20 @@ impl PainterWriter<'_> {
 }
 
 #[derive(Clone)]
-struct PainterBuffer {
+pub struct PainterBuffer {
     vertices: Buffer,
     indices: Buffer,
 
     bind_group: BindGroup,
     bind_texture: Texture,
+}
+impl PainterBuffer {
+    pub fn draw(&self, rpass: &mut RenderPass) {
+            rpass.set_bind_group(0, Some(&self.bind_group), &[]);
+            rpass.set_vertex_buffer(0, self.vertices.slice(..));
+            rpass.set_index_buffer(self.indices.slice(..), IndexFormat::Uint32);
+            rpass.draw_indexed(0..6, 0, 0..1);
+    }
 }
 
 // TODO integrate into shader

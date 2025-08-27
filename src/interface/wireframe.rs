@@ -232,6 +232,11 @@ impl WireframePipeline {
             rpass.draw_indexed(0..8, 0, 0..1);
         }
     }
+
+    pub fn set_pipeline(&self, rpass: &mut RenderPass) {
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(1, Some(&self.viewport_bind), &[]);
+    }
 }
 
 pub struct Wireframe {
@@ -281,7 +286,7 @@ impl Wireframe {
 }
 
 #[derive(Clone)]
-struct WireframeBuffer {
+pub struct WireframeBuffer {
     visible: bool,
 
     vertices: Buffer,
@@ -289,4 +294,12 @@ struct WireframeBuffer {
 
     bind_group: BindGroup,
     color: Buffer,
+}
+impl WireframeBuffer {
+    pub fn draw(&self, rpass: &mut RenderPass) {
+        rpass.set_bind_group(0, Some(&self.bind_group), &[]);
+        rpass.set_vertex_buffer(0, self.vertices.slice(..));
+        rpass.set_index_buffer(self.indices.slice(..), IndexFormat::Uint32);
+        rpass.draw_indexed(0..8, 0, 0..1);
+    }
 }
