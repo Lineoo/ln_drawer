@@ -26,6 +26,10 @@ impl Element for StrokeLayer {
     fn set_position(&mut self, _position: [i32; 2]) {
         log::warn!("try to set position of StrokeLayer");
     }
+
+    fn z_index(&self) -> i64 {
+        0
+    }
 }
 impl StrokeLayer {
     pub fn new() -> StrokeLayer {

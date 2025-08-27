@@ -28,6 +28,10 @@ impl Element for ButtonRaw {
         self.rect[2] = position[0] + width as i32;
         self.rect[3] = position[1] + height as i32;
     }
+
+    fn z_index(&self) -> i64 {
+        100
+    }
 }
 impl ButtonRaw {
     pub fn new(rect: [i32; 4], action: impl FnMut() + 'static) -> ButtonRaw {

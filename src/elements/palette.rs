@@ -28,6 +28,10 @@ impl Element for Palette {
     fn set_position(&mut self, position: [i32; 2]) {
         self.painter.set_position(position);
     }
+
+    fn z_index(&self) -> i64 {
+        10
+    }
 }
 impl Palette {
     pub fn new(position: [i32; 2], interface: &mut Interface) -> Palette {
@@ -69,7 +73,8 @@ impl Element for PaletteKnob {
     }
 
     fn get_border(&self) -> [i32; 4] {
-        self.painter.get_rect()
+        let border = self.painter.get_rect();
+        [border[0] - 1, border[1] - 1, border[2] + 1, border[3] + 1]
     }
 
     fn get_position(&self) -> [i32; 2] {
@@ -84,6 +89,10 @@ impl Element for PaletteKnob {
             self.position[0] + 2,
             self.position[1] + 2,
         ]);
+    }
+
+    fn z_index(&self) -> i64 {
+        100
     }
 }
 impl PaletteKnob {
@@ -127,7 +136,7 @@ impl PaletteKnob {
 
             let hsl: Hsl = Hsl::new(0.5, cx as f32 / WIDTH as f32, cy as f32 / HEIGHT as f32);
             let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
-            
+
             [rgb.red, rgb.blue, rgb.green, 255]
         } else {
             [0xff, 0xff, 0xff, 255]

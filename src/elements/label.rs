@@ -24,6 +24,9 @@ impl Element for Label {
         self.inner.set_position(position);
     }
     
+    fn z_index(&self) -> i64 {
+        200
+    }
 }
 impl Label {
     pub fn new(rect: [i32; 4], text: String, interface: &mut Interface) -> Label {

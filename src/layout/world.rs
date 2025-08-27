@@ -1,4 +1,4 @@
-use hashbrown::HashMap;
+use indexmap::IndexMap;
 
 use crate::elements::Element;
 
@@ -8,19 +8,21 @@ pub struct ElementHandle(usize);
 
 pub struct World {
     element_idx: ElementHandle,
-    elements: HashMap<ElementHandle, Box<dyn Element>>,
+    elements: IndexMap<ElementHandle, Box<dyn Element>, hashbrown::DefaultHashBuilder>,
 }
 impl World {
     pub fn new() -> World {
         World {
             element_idx: ElementHandle(0),
-            elements: HashMap::new(),
+            elements: IndexMap::default(),
         }
     }
 
     pub fn insert(&mut self, element: impl Element + 'static) -> ElementHandle {
         self.elements.insert(self.element_idx, Box::new(element));
         self.element_idx.0 += 1;
+        self.elements
+            .sort_by(|_, c1, _, c2| c2.z_index().cmp(&c1.z_index()));
         ElementHandle(self.element_idx.0 - 1)
     }
 

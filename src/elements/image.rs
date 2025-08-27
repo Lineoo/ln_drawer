@@ -24,6 +24,10 @@ impl Element for Image {
     fn set_position(&mut self, position: [i32; 2]) {
         self.painter.set_position(position);
     }
+
+    fn z_index(&self) -> i64 {
+        0
+    }
 }
 impl Image {
     pub fn new(path: impl AsRef<Path>, interface: &mut Interface) -> Result<Image, Box<dyn Error>> {
