@@ -1,6 +1,10 @@
 use glam::{IVec2, Vec2};
 
-use crate::{elements::StrokeLayer, interface::Interface};
+use crate::{
+    elements::{PaletteKnob, StrokeLayer},
+    interface::Interface,
+    layout::world::World,
+};
 
 /// The main component for selection.
 pub struct StrokeManager {
@@ -42,5 +46,11 @@ impl StrokeManager {
 
     pub fn cursor_released(&mut self) {
         self.cursor_down = false;
+    }
+
+    pub fn update_color(&mut self, world: &mut World) {
+        for knob in world.foreach::<PaletteKnob>() {
+            self.curr_color = knob.get_color(world);
+        }
     }
 }

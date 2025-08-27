@@ -1,6 +1,7 @@
 mod button;
 mod image;
 mod label;
+mod palette;
 mod stroke;
 
 use std::any::Any;
@@ -8,6 +9,7 @@ use std::any::Any;
 pub use button::ButtonRaw;
 pub use image::Image;
 pub use label::Label;
+pub use palette::{Palette, PaletteKnob};
 pub use stroke::StrokeLayer;
 
 pub trait Element: Any {

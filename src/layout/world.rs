@@ -74,4 +74,8 @@ impl World {
         }
         None
     }
+
+    pub fn foreach<T: Element>(&self) -> impl Iterator<Item = &T> {
+        (self.elements.values()).filter_map(|element| element.downcast_ref::<T>())
+    }
 }

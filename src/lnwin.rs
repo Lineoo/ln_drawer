@@ -10,7 +10,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image, Label},
+    elements::{Image, Label, Palette, PaletteKnob},
     interface::Interface,
     layout::{select::Selector, stroke::StrokeManager, world::World},
 };
@@ -215,6 +215,10 @@ impl Lnwindow {
                             .unwrap(),
                     );
                 }
+                KeyCode::F2 => {
+                    let palette = self.world.insert(Palette::new([0, 0], &mut self.interface));
+                    self.world.insert(PaletteKnob::new(palette, &mut self.interface));
+                }
                 _ => (),
             },
 
@@ -247,16 +251,13 @@ impl Lnwindow {
     }
 
     fn switch_tool(&mut self, tool: ActivatedTool) {
-        // Final for tools
-        match self.state {
-            ActivatedTool::Selection => {
-                self.selector.stop();
-            }
-            ActivatedTool::Stroke => {
-                self.stroke.cursor_released();
-            }
+        if let ActivatedTool::Stroke = self.state {
+            self.stroke.cursor_released();
         }
         self.state = tool;
+        if let ActivatedTool::Stroke = self.state {
+            self.stroke.update_color(&mut self.world);
+        }
     }
 }
 
