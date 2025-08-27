@@ -53,7 +53,7 @@ impl World {
             let border = element.get_border();
 
             // Is in border
-            if (x > border[0] && x < border[2]) && (y > border[1] && y < border[3]) {
+            if (x >= border[0] && x < border[2]) && (y >= border[1] && y < border[3]) {
                 return Some(*idx);
             }
         }
@@ -65,8 +65,8 @@ impl World {
             let border = element.get_border();
 
             // Is in border
-            if (x > border[0] && x < border[2])
-                && (y > border[1] && y < border[3])
+            if (x >= border[0] && x < border[2])
+                && (y >= border[1] && y < border[3])
                 && element.is::<T>()
             {
                 return Some(*idx);
