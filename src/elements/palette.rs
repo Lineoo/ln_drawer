@@ -109,6 +109,7 @@ impl PaletteKnob {
             }
         }
         let painter = interface.create_painter_with(rect, data);
+        painter.set_z_order(1);
 
         PaletteKnob {
             position: [0, 0],

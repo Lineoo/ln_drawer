@@ -364,7 +364,7 @@ impl Painter {
         ]);
     }
 
-    pub fn set_z_order(&mut self, ord: usize) {
+    pub fn set_z_order(&self, ord: usize) {
         if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(ord))) {
             log::warn!("Set Visibility: {e}");
         }

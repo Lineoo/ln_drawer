@@ -130,7 +130,7 @@ impl Text {
         self.inner.set_position(position);
     }
 
-    pub fn set_z_order(&mut self, ord: usize) {
+    pub fn set_z_order(&self, ord: usize) {
         self.inner.set_z_order(ord);
     }
 

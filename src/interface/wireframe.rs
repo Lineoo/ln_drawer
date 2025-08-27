@@ -225,7 +225,7 @@ impl Wireframe {
             .write_buffer(&self.buffer.color, 0, bytemuck::bytes_of(&color));
     }
 
-    pub fn set_visible(&mut self, visible: bool) {
+    pub fn set_visible(&self, visible: bool) {
         if let Err(e) =
             (self.comp_tx).send((self.comp_idx, ComponentCommand::SetVisibility(visible)))
         {
@@ -233,7 +233,7 @@ impl Wireframe {
         }
     }
 
-    pub fn set_z_order(&mut self, ord: usize) {
+    pub fn set_z_order(&self, ord: usize) {
         if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(ord))) {
             log::warn!("Set Visibility: {e}");
         }

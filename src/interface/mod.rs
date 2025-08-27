@@ -106,7 +106,7 @@ impl Interface {
                 ComponentCommand::Destroy => {
                     self.components.swap_remove(&idx);
                     self.components
-                        .sort_by(|_, c1, _, c2| c2.z_order.cmp(&c1.z_order));
+                        .sort_by(|_, c1, _, c2| c1.z_order.cmp(&c2.z_order));
                 }
                 ComponentCommand::SetVisibility(visible) => {
                     if let Some(component) = self.components.get_mut(&idx) {
@@ -117,7 +117,7 @@ impl Interface {
                     if let Some(component) = self.components.get_mut(&idx) {
                         component.z_order = z_order;
                         self.components
-                            .sort_by(|_, c1, _, c2| c2.z_order.cmp(&c1.z_order));
+                            .sort_by(|_, c1, _, c2| c1.z_order.cmp(&c2.z_order));
                     }
                 }
             }
@@ -261,7 +261,7 @@ impl Interface {
         self.components.insert(self.components_idx, component);
         self.components_idx += 1;
         self.components
-            .sort_by(|_, c1, _, c2| c2.z_order.cmp(&c1.z_order));
+            .sort_by(|_, c1, _, c2| c1.z_order.cmp(&c2.z_order));
     }
 
     // Viewport Shortcut //

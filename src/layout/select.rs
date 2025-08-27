@@ -17,10 +17,16 @@ pub struct Selector {
 }
 impl Selector {
     pub fn new(interface: &mut Interface) -> Selector {
+        let hover_wireframe = interface.create_wireframe([0, 0, 0, 0], [0.8, 0.2, 0.2, 1.0]);
+        let selection_wireframe = interface.create_wireframe([0, 0, 0, 0], [1.0, 0.0, 0.0, 1.0]);
+
+        hover_wireframe.set_z_order(100);
+        selection_wireframe.set_z_order(100);
+
         Selector {
             cursor: [0, 0],
-            hover_wireframe: interface.create_wireframe([0, 0, 0, 0], [0.8, 0.2, 0.2, 1.0]),
-            selection_wireframe: interface.create_wireframe([0, 0, 0, 0], [1.0, 0.0, 0.0, 1.0]),
+            hover_wireframe,
+            selection_wireframe,
             selected_element: None,
             drag_start: None,
             drag_element_orig: None,
