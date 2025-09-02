@@ -42,8 +42,9 @@ impl Selector {
             let dx = self.cursor[0] - start[0];
             let dy = self.cursor[1] - start[1];
 
-            let selected = world.fetch_mut_dyn(selected).unwrap();
+            let mut selected = world.fetch_cell_dyn(selected).unwrap();
             selected.set_position([elm_orig[0] + dx, elm_orig[1] + dy]);
+            selected.update_within(world);
 
             let border = selected.get_border();
             self.selection_wireframe.set_visible(true);

@@ -91,6 +91,23 @@ impl Element for PaletteKnob {
         ]);
     }
 
+    fn update_within(&mut self, world: &World) {
+        let palette = world.fetch_cell::<Palette>(self.palette).unwrap();
+
+        let [left, down, right, up] = palette.get_border();
+        
+        let x = self.position[0].clamp(left, right);
+        let y = self.position[1].clamp(down, up);
+
+        self.position = [x, y];
+        self.painter.set_rect([
+            self.position[0] - 1,
+            self.position[1] - 1,
+            self.position[0] + 2,
+            self.position[1] + 2,
+        ]);
+    }
+
     fn z_index(&self) -> i64 {
         100
     }
