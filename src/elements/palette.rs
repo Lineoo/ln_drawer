@@ -11,6 +11,7 @@ const HEIGHT: u32 = 128;
 
 pub struct Palette {
     painter: Painter,
+    knob: Option<ElementHandle>,
 }
 impl Element for Palette {
     fn name(&self) -> std::borrow::Cow<'_, str> {
@@ -27,6 +28,26 @@ impl Element for Palette {
 
     fn set_position(&mut self, position: [i32; 2]) {
         self.painter.set_position(position);
+    }
+
+    fn update_within(&mut self, world: &World) {
+        if let Some(knob) = self.knob {
+            let mut knob = world.fetch_cell::<PaletteKnob>(knob).unwrap();
+
+            let [left, down, right, up] = self.get_border();
+
+            let x = knob.position[0].clamp(left, right);
+            let y = knob.position[1].clamp(down, up);
+
+            knob.position = [x, y];
+            let rect = [
+                knob.position[0] - 1,
+                knob.position[1] - 1,
+                knob.position[0] + 2,
+                knob.position[1] + 2,
+            ];
+            knob.painter.set_rect(rect);
+        }
     }
 
     fn z_index(&self) -> i64 {
@@ -58,6 +79,13 @@ impl Palette {
                 ],
                 data,
             ),
+            knob: None,
+        }
+    }
+
+    pub fn set_knob(&mut self, knob: ElementHandle) {
+        if let Some(old) = self.knob.replace(knob) {
+            log::warn!("replace old knob {old:?}");
         }
     }
 }
@@ -95,7 +123,7 @@ impl Element for PaletteKnob {
         let palette = world.fetch_cell::<Palette>(self.palette).unwrap();
 
         let [left, down, right, up] = palette.get_border();
-        
+
         let x = self.position[0].clamp(left, right);
         let y = self.position[1].clamp(down, up);
 

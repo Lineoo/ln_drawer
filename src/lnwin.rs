@@ -217,7 +217,9 @@ impl Lnwindow {
                 }
                 KeyCode::F2 => {
                     let palette = self.world.insert(Palette::new([0, 0], &mut self.interface));
-                    self.world.insert(PaletteKnob::new(palette, &mut self.interface));
+                    let knob = self.world.insert(PaletteKnob::new(palette, &mut self.interface));
+                    let palette = self.world.fetch_mut::<Palette>(palette).unwrap();
+                    palette.set_knob(knob);
                 }
                 _ => (),
             },

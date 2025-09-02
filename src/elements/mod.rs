@@ -19,13 +19,11 @@ pub trait Element: Any {
     fn get_border(&self) -> [i32; 4];
     fn get_position(&self) -> [i32; 2];
     fn set_position(&mut self, position: [i32; 2]);
-    
-    /// This method would be invoked after a mutable method call. This uses world cell and
-    /// only the element itself is occupied. 
-    fn update_within(&mut self, _world: &World) {
 
-    }
-    
+    /// This method would be invoked after a mutable method call. This uses world cell and
+    /// only the element itself is occupied.
+    fn update_within(&mut self, _world: &World) {}
+
     fn z_index(&self) -> i64 {
         0
     }
