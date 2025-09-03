@@ -117,8 +117,12 @@ impl World {
         None
     }
 
-    pub fn foreach<T: Element>(&self) -> impl Iterator<Item = &T> {
+    pub fn elements<T: Element>(&self) -> impl Iterator<Item = &T> {
         (self.elements.values()).filter_map(|element| element.downcast_ref::<T>())
+    }
+
+    pub fn elements_mut<T: Element>(&mut self) -> impl Iterator<Item = &mut T> {
+        (self.elements.values_mut()).filter_map(|element| element.downcast_mut::<T>())
     }
 }
 

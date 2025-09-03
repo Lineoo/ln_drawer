@@ -1,4 +1,4 @@
-use glam::{IVec2, Vec2};
+use glam::Vec2;
 
 use crate::{
     elements::{PaletteKnob, StrokeLayer},
@@ -49,7 +49,7 @@ impl StrokeManager {
     }
 
     pub fn update_color(&mut self, world: &mut World) {
-        for knob in world.foreach::<PaletteKnob>() {
+        for knob in world.elements::<PaletteKnob>() {
             self.curr_color = knob.get_color(world);
         }
     }

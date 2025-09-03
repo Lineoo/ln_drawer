@@ -1,6 +1,9 @@
-use crate::elements::Element;
+use crate::{elements::Element, layout::world::World};
 
-struct Button;
+struct Button {
+    rect: [i32; 4],
+    action: Box<dyn FnMut()>,
+}
 
 /// Only contains raw button interaction logic. See [`Button`] if a complete button
 /// including text and image is needed.
