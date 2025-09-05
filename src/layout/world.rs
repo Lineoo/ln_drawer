@@ -1,39 +1,31 @@
 use std::ops::{Deref, DerefMut};
 
-use hashbrown::HashSet;
+use hashbrown::{DefaultHashBuilder, HashSet};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
 
 use crate::elements::Element;
 
 /// Represent an element in the [`World`]. It's an handle so manual validation is needed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ElementHandle(usize);
 
+#[derive(Default)]
 pub struct World {
-    element_idx: ElementHandle,
-    elements: IndexMap<ElementHandle, Box<dyn Element>, hashbrown::DefaultHashBuilder>,
-
+    curr_idx: ElementHandle,
+    elements: IndexMap<ElementHandle, Box<dyn Element>, DefaultHashBuilder>,
     occupied: Mutex<HashSet<ElementHandle>>,
 }
 impl World {
-    pub fn new() -> World {
-        World {
-            element_idx: ElementHandle(0),
-            elements: IndexMap::default(),
-            occupied: Mutex::new(HashSet::new()),
-        }
-    }
-
     pub fn insert(&mut self, element: impl Element + 'static) -> ElementHandle {
-        self.elements.insert(self.element_idx, Box::new(element));
-        self.element_idx.0 += 1;
+        self.elements.insert(self.curr_idx, Box::new(element));
+        self.curr_idx.0 += 1;
         self.elements
             .sort_by(|_, c1, _, c2| c2.z_index().cmp(&c1.z_index()));
-        ElementHandle(self.element_idx.0 - 1)
+        ElementHandle(self.curr_idx.0 - 1)
     }
 
-    pub fn fetch<T: 'static>(&self, element_idx: ElementHandle) -> Option<&T> {
+    pub fn fetch<T: Element + 'static>(&self, element_idx: ElementHandle) -> Option<&T> {
         self.elements
             .get(&element_idx)
             .and_then(|element| element.downcast_ref())
@@ -45,7 +37,10 @@ impl World {
             .map(|element| element.as_ref())
     }
 
-    pub fn fetch_mut<T: 'static>(&mut self, element_idx: ElementHandle) -> Option<&mut T> {
+    pub fn fetch_mut<T: Element + 'static>(
+        &mut self,
+        element_idx: ElementHandle,
+    ) -> Option<&mut T> {
         self.elements
             .get_mut(&element_idx)
             .and_then(|element| element.downcast_mut())
@@ -60,7 +55,10 @@ impl World {
     // TODO not panic pls
     // TODO move fetch codes to the guard
 
-    pub fn fetch_cell<T: 'static>(&self, element_idx: ElementHandle) -> Option<WorldCell<'_, T>> {
+    pub fn fetch_cell<T: Element + 'static>(
+        &self,
+        element_idx: ElementHandle,
+    ) -> Option<WorldCell<'_, T>> {
         let mut occupied = self.occupied.lock();
 
         assert!(!occupied.contains(&element_idx), "{element_idx:?} occupied");
@@ -88,6 +86,34 @@ impl World {
             world: self,
             idx: element_idx,
         })
+    }
+
+    // TODO Singleton-optimization
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single<T: Element + 'static>(&self) -> Option<&T> {
+        let mut ret = None;
+        for element in self.elements::<T>() {
+            if ret.is_none() {
+                ret.replace(element);
+            } else {
+                return None;
+            }
+        }
+        ret
+    }
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single_mut<T: Element + 'static>(&mut self) -> Option<&mut T> {
+        let mut ret = None;
+        for element in self.elements_mut::<T>() {
+            if ret.is_none() {
+                ret.replace(element);
+            } else {
+                return None;
+            }
+        }
+        ret
     }
 
     pub fn intersect(&self, x: i32, y: i32) -> Option<ElementHandle> {
@@ -123,6 +149,14 @@ impl World {
 
     pub fn elements_mut<T: Element>(&mut self) -> impl Iterator<Item = &mut T> {
         (self.elements.values_mut()).filter_map(|element| element.downcast_mut::<T>())
+    }
+
+    pub fn elements_dyn(&self) -> impl Iterator<Item = &dyn Element> {
+        self.elements.values().map(|elem| elem.as_ref())
+    }
+
+    pub fn elements_mut_dyn(&mut self) -> impl Iterator<Item = &mut dyn Element> {
+        self.elements.values_mut().map(|elem| elem.as_mut())
     }
 }
 

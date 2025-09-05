@@ -78,7 +78,7 @@ impl Lnwindow {
         let cursor = [0.0, 0.0];
         let state = ActivatedTool::Stroke;
 
-        let world = World::new();
+        let world = World::default();
         let selector = Selector::new(&mut interface);
         let stroke = StrokeManager::new();
         let camera = CameraMove::default();
