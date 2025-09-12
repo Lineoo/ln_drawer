@@ -1,6 +1,10 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    any::Any,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
-use hashbrown::{DefaultHashBuilder, HashSet};
+use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
 
@@ -14,6 +18,9 @@ pub struct ElementHandle(usize);
 pub struct World {
     curr_idx: ElementHandle,
     elements: IndexMap<ElementHandle, Box<dyn Element>, DefaultHashBuilder>,
+    observers: HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &mut World)>>>,
+
+    // FIXME: in move
     occupied: Mutex<HashSet<ElementHandle>>,
 }
 impl World {
@@ -25,73 +32,92 @@ impl World {
         ElementHandle(self.curr_idx.0 - 1)
     }
 
-    pub fn fetch<T: Element + 'static>(&self, element_idx: ElementHandle) -> Option<&T> {
+    pub fn contains(&self, handle: ElementHandle) -> bool {
+        self.elements.contains_key(&handle)
+    }
+
+    pub fn contains_type<T: Element>(&self, handle: ElementHandle) -> bool {
         self.elements
-            .get(&element_idx)
+            .get(&handle)
+            .is_some_and(|element| element.is::<T>())
+    }
+
+    pub fn fetch<T: Element>(&self, handle: ElementHandle) -> Option<&T> {
+        self.elements
+            .get(&handle)
             .and_then(|element| element.downcast_ref())
     }
 
-    pub fn fetch_dyn(&self, element_idx: ElementHandle) -> Option<&dyn Element> {
-        self.elements
-            .get(&element_idx)
-            .map(|element| element.as_ref())
+    pub fn fetch_dyn(&self, handle: ElementHandle) -> Option<&dyn Element> {
+        self.elements.get(&handle).map(|element| element.as_ref())
     }
 
-    pub fn fetch_mut<T: Element + 'static>(
-        &mut self,
-        element_idx: ElementHandle,
-    ) -> Option<&mut T> {
+    pub fn fetch_mut<T: Element>(&mut self, handle: ElementHandle) -> Option<&mut T> {
         self.elements
-            .get_mut(&element_idx)
+            .get_mut(&handle)
             .and_then(|element| element.downcast_mut())
     }
 
-    pub fn fetch_mut_dyn(&mut self, element_idx: ElementHandle) -> Option<&mut dyn Element> {
+    pub fn fetch_mut_dyn(&mut self, handle: ElementHandle) -> Option<&mut dyn Element> {
         self.elements
-            .get_mut(&element_idx)
+            .get_mut(&handle)
             .map(|element| element.as_mut())
     }
 
     // TODO not panic pls
     // TODO move fetch codes to the guard
+    // FIXME immutable reference should be unaccessible while cell is fetched (New: WorldMutex)
 
-    pub fn fetch_cell<T: Element + 'static>(
-        &self,
-        element_idx: ElementHandle,
-    ) -> Option<WorldCell<'_, T>> {
+    pub fn fetch_cell<T: Element>(&self, handle: ElementHandle) -> Option<WorldCell<'_, T>> {
         let mut occupied = self.occupied.lock();
 
-        assert!(!occupied.contains(&element_idx), "{element_idx:?} occupied");
-        let element = self.elements.get(&element_idx)?.downcast_ref()? as *const T;
-        occupied.insert(element_idx);
+        assert!(!occupied.contains(&handle), "{handle:?} occupied");
+        let element = self.elements.get(&handle)?.downcast_ref()? as *const T;
+        occupied.insert(handle);
 
         Some(WorldCell {
             // Cast safety: only one access is allowed
             ptr: element as *mut T,
             world: self,
-            idx: element_idx,
+            idx: handle,
         })
     }
 
-    pub fn fetch_cell_dyn(&self, element_idx: ElementHandle) -> Option<WorldCell<'_, dyn Element>> {
+    pub fn fetch_cell_dyn(&self, handle: ElementHandle) -> Option<WorldCell<'_, dyn Element>> {
         let mut occupied = self.occupied.lock();
 
-        assert!(!occupied.contains(&element_idx), "{element_idx:?} occupied");
-        let element = self.elements.get(&element_idx)?.as_ref() as *const dyn Element;
-        occupied.insert(element_idx);
+        assert!(!occupied.contains(&handle), "{handle:?} occupied");
+        let element = self.elements.get(&handle)?.as_ref() as *const dyn Element;
+        occupied.insert(handle);
 
         Some(WorldCell {
             // Cast safety: only one access is allowed
             ptr: element as *mut dyn Element,
             world: self,
-            idx: element_idx,
+            idx: handle,
         })
+    }
+
+    pub fn entry<T: Element>(&mut self, handle: ElementHandle) -> WorldElement<'_, T> {
+        WorldElement {
+            world: self,
+            handle,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn entry_dyn(&mut self, handle: ElementHandle) -> WorldElement<'_, dyn Element> {
+        WorldElement {
+            world: self,
+            handle,
+            _marker: PhantomData,
+        }
     }
 
     // TODO Singleton-optimization
 
     /// Return `Some` if there is ONLY one element of target type.
-    pub fn single<T: Element + 'static>(&self) -> Option<&T> {
+    pub fn single<T: Element>(&self) -> Option<&T> {
         let mut ret = None;
         for element in self.elements::<T>() {
             if ret.is_none() {
@@ -104,7 +130,7 @@ impl World {
     }
 
     /// Return `Some` if there is ONLY one element of target type.
-    pub fn single_mut<T: Element + 'static>(&mut self) -> Option<&mut T> {
+    pub fn single_mut<T: Element>(&mut self) -> Option<&mut T> {
         let mut ret = None;
         for element in self.elements_mut::<T>() {
             if ret.is_none() {
@@ -160,6 +186,7 @@ impl World {
     }
 }
 
+/// A world's limitedly mutable element reference.
 pub struct WorldCell<'world, T: ?Sized> {
     ptr: *mut T,
     world: &'world World,
@@ -182,5 +209,59 @@ impl<T: ?Sized> Drop for WorldCell<'_, T> {
     fn drop(&mut self) {
         let mut occupied = self.world.occupied.lock();
         occupied.remove(&self.idx);
+    }
+}
+
+/// A full mutable world reference with specific element selected.
+pub struct WorldElement<'world, T: ?Sized> {
+    world: &'world mut World,
+    handle: ElementHandle,
+    _marker: PhantomData<T>,
+}
+impl<T: Element> Deref for WorldElement<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        self.world.fetch(self.handle).unwrap()
+    }
+}
+impl<T: Element> DerefMut for WorldElement<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.world.fetch_mut(self.handle).unwrap()
+    }
+}
+impl Deref for WorldElement<'_, dyn Element> {
+    type Target = dyn Element;
+    fn deref(&self) -> &Self::Target {
+        self.world.fetch_dyn(self.handle).unwrap()
+    }
+}
+impl DerefMut for WorldElement<'_, dyn Element> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.world.fetch_mut_dyn(self.handle).unwrap()
+    }
+}
+impl<T: Element> WorldElement<'_, T> {
+    pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &mut World) + 'static) {
+        let observers = self.world.observers.entry(self.handle).or_default();
+        observers.push(Box::new(move |event, world| {
+            if let Some(event) = event.downcast_ref::<E>() {
+                action(event, world);
+            }
+        }));
+    }
+
+    pub fn trigger<E: 'static>(&mut self, event: E) {
+        if let Some(mut observers) = self.world.observers.remove(&self.handle) {
+            for observer in &mut observers {
+                observer(&event, self.world);
+            }
+
+            // If new observers are added during the scope, move it
+            if let Some(changed) = self.world.observers.get_mut(&self.handle) {
+                observers.append(changed);
+            }
+
+            self.world.observers.insert(self.handle, observers);
+        }
     }
 }
