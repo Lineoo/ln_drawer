@@ -11,7 +11,7 @@ const HEIGHT: u32 = 128;
 
 pub struct Palette {
     painter: Painter,
-    knob: Option<ElementHandle>,
+    knob: Painter,
 }
 impl Element for Palette {
     fn name(&self) -> std::borrow::Cow<'_, str> {
@@ -30,26 +30,13 @@ impl Element for Palette {
         self.painter.set_position(position);
     }
 
-    fn update_within(&mut self, world: &World) {
-        if let Some(knob) = self.knob {
-            let mut knob = world.fetch_cell::<PaletteKnob>(knob).unwrap();
-
-            let [left, down, right, up] = self.get_border();
-
-            let x = knob.position[0].clamp(left, right);
-            let y = knob.position[1].clamp(down, up);
-
-            knob.position = [x, y];
-            knob.painter.set_position([x - 1, y - 1]);
-        }
-    }
-
     fn z_index(&self) -> i64 {
         10
     }
 }
 impl Palette {
     pub fn new(position: [i32; 2], interface: &mut Interface) -> Palette {
+        // Palette //
         let mut data = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
         for x in 0..128 {
             for y in 0..128 {
@@ -62,73 +49,17 @@ impl Palette {
                 data[start + 3] = 255;
             }
         }
+        let painter = interface.create_painter_with(
+            [
+                position[0],
+                position[1],
+                position[0] + 128,
+                position[1] + 128,
+            ],
+            data,
+        );
 
-        Palette {
-            painter: interface.create_painter_with(
-                [
-                    position[0],
-                    position[1],
-                    position[0] + 128,
-                    position[1] + 128,
-                ],
-                data,
-            ),
-            knob: None,
-        }
-    }
-
-    pub fn set_knob(&mut self, knob: ElementHandle) {
-        if let Some(old) = self.knob.replace(knob) {
-            log::warn!("replace old knob {old:?}");
-        }
-    }
-}
-
-pub struct PaletteKnob {
-    position: [i32; 2],
-    painter: Painter,
-    palette: ElementHandle,
-}
-impl Element for PaletteKnob {
-    fn name(&self) -> std::borrow::Cow<'_, str> {
-        "palette_knob".into()
-    }
-
-    fn get_border(&self) -> [i32; 4] {
-        let border = self.painter.get_rect();
-        [border[0] - 1, border[1] - 1, border[2] + 1, border[3] + 1]
-    }
-
-    fn get_position(&self) -> [i32; 2] {
-        self.position
-    }
-
-    fn set_position(&mut self, position: [i32; 2]) {
-        self.position = position;
-        self.painter
-            .set_position([self.position[0] - 1, self.position[1] - 1]);
-    }
-
-    fn update_within(&mut self, world: &World) {
-        let palette = world.fetch_cell::<Palette>(self.palette).unwrap();
-
-        let [left, down, right, up] = palette.get_border();
-
-        let x = self.position[0].clamp(left, right);
-        let y = self.position[1].clamp(down, up);
-
-        self.position = [x, y];
-        self.painter
-            .set_position([self.position[0] - 1, self.position[1] - 1]);
-    }
-
-    fn z_index(&self) -> i64 {
-        100
-    }
-}
-impl PaletteKnob {
-    pub fn new(palette: ElementHandle, interface: &mut Interface) -> PaletteKnob {
-        let position = [0, 0];
+        // Picker Knob //
         let rect = [
             position[0] - 1,
             position[1] - 1,
@@ -148,29 +79,33 @@ impl PaletteKnob {
                 }
             }
         }
-        let mut painter = interface.create_painter_with(rect, data);
-        painter.set_z_order(1);
+        let mut knob = interface.create_painter_with(rect, data);
+        knob.set_z_order(1);
 
-        PaletteKnob {
-            position: [0, 0],
-            painter,
-            palette,
-        }
+        Palette { painter, knob }
     }
 
-    pub fn get_color(&self, world: &World) -> [u8; 4] {
-        if let Some(palette) = world.fetch::<Palette>(self.palette) {
-            let x = self.position[0] - palette.get_position()[0];
-            let y = self.position[1] - palette.get_position()[1];
-            let cx = x.rem_euclid(WIDTH as i32);
-            let cy = y.rem_euclid(HEIGHT as i32);
+    pub fn get_knob_position(&self) -> [i32; 2] {
+        let raw_pos = self.knob.get_position();
+        [raw_pos[0] + 1, raw_pos[1] + 1]
+    }
 
-            let hsl: Hsl = Hsl::new(0.5, cx as f32 / WIDTH as f32, cy as f32 / HEIGHT as f32);
-            let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
+    pub fn set_knob_position(&mut self, position: [i32; 2]) {
+        self.knob.set_position([position[0] - 1, position[1] - 1]);
+    }
 
-            [rgb.red, rgb.blue, rgb.green, 255]
-        } else {
-            [0xff, 0xff, 0xff, 255]
-        }
+    pub fn pick_color(&self) -> [u8; 4] {
+        let base_position = self.painter.get_position();
+        let knob_position = self.get_knob_position();
+
+        let x = knob_position[0] - base_position[0];
+        let y = knob_position[1] - base_position[1];
+        let cx = x.rem_euclid(WIDTH as i32);
+        let cy = y.rem_euclid(HEIGHT as i32);
+
+        let hsl: Hsl = Hsl::new(0.5, cx as f32 / WIDTH as f32, cy as f32 / HEIGHT as f32);
+        let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
+
+        [rgb.red, rgb.blue, rgb.green, 255]
     }
 }

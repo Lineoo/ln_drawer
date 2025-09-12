@@ -3,7 +3,7 @@ use std::sync::mpsc::Sender;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::interface::{ComponentCommand, InterfaceBuffered, InterfaceViewport};
+use crate::interface::{ComponentCommand, InterfaceViewport};
 
 pub struct PainterPipeline {
     pipeline: RenderPipeline,
@@ -274,7 +274,6 @@ impl Drop for Painter {
         }
     }
 }
-impl InterfaceBuffered for Painter {}
 impl Painter {
     pub fn open_writer(&mut self) -> PainterWriter<'_> {
         PainterWriter { painter: self }

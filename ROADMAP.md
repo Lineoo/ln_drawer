@@ -46,13 +46,17 @@
     - 添加的图像 `Image`
     - 节点连接 `NodeLink`
     - 交互按钮 `Button`
-    - 文本编辑栏
-- 总体的各种功能支持，绘制、工具与导入，承接 IO 和用户输入 `world`
-    - 框选
-    - 相交检测 / 按钮
     - 用于实现 stroke 的笔画管理器 `StrokeManager`
+    - 文本编辑栏
+- 总体逻辑上的的各种功能支持，绘制与工具 `world`
+    - 与 interface *完全无关*！World 里的东西完全不需要渲染（甚至不需要 winit 和 wgpu）就应该可以使用。
+    - 框选，相交检测 / 按钮
+    - 物理系统
+    - 运行 Shell，动态链接/组件，OS 程序
+    - Element 之间的更新业务逻辑
+    - 带有一个事件注册系统，提供一个原生的 Observer / Trigger 系统
     - 添加图像的入口，甚至是截图工具
-- 输入转接，处理各类平台与输入转换为标准交互给 World 使用 `inbox`
+- 输入转接，导入，承接 IO 和用户输入，处理各类平台与输入转换为标准交互给 World 使用 `inbox`
     - 移动平台：触摸，各类传感器，虚拟输入法
     - PC 平台：笔输入，触摸，鼠标，键盘
 - 窗口管理，与 winit 直接交互 `lnwin`
@@ -84,7 +88,32 @@
 4. 分层绘制：分离实时绘制和最终合成
 5. 事件过滤：基于时间和距离阈值过滤过多的鼠标事件
 
-# Interface 模式
+# 修改器模式
+使用 dyn + Trait
+
+```rust
+// impl World
+// fn insert<T: Element>(&mut self, T) -> WorldEntry<'_, T>
+let handle = world.insert(child_obj)
+    .observe(|event: PositionChange, world: &World| {
+
+    })
+    .observe_with(ChildOf(parent))
+    .observe_with(ClampPosition { up, down, left, right });
+
+world.entry_dyn(handle) // WorldEntry<'_, T>
+    .trigger(ChangePosition([10, 20]));
+
+impl<T: PositionedElement> Modifier<T> for ChildOf {
+    type Event = PositionChange
+
+    fn attach(&mut self, target: WorldEntry<T>) {
+        
+    }
+}
+```
+
+# (未使用) Interface 模式
 类 descriptor
 ```rust
 struct InterfaceHandle<T: InterfaceBuffer> {

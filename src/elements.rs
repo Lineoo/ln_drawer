@@ -9,7 +9,7 @@ use std::any::Any;
 pub use button::ButtonRaw;
 pub use image::Image;
 pub use label::Label;
-pub use palette::{Palette, PaletteKnob};
+pub use palette::Palette;
 pub use stroke::StrokeLayer;
 
 use crate::layout::world::World;
@@ -38,6 +38,11 @@ impl dyn Element {
     pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
         (self as &mut dyn Any).downcast_mut()
     }
+}
+
+pub trait PositionedElement: Element {
+    fn get_position(&self) -> [i32; 2];
+    fn set_position(&mut self, position: [i32; 2]);
 }
 
 // TODO ElementBuilder

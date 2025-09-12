@@ -1,7 +1,7 @@
 use glam::Vec2;
 
 use crate::{
-    elements::{PaletteKnob, StrokeLayer},
+    elements::{Palette, StrokeLayer},
     interface::Interface,
     layout::world::World,
 };
@@ -48,9 +48,9 @@ impl StrokeManager {
         self.cursor_down = false;
     }
 
-    pub fn update_color(&mut self, world: &mut World) {
-        for knob in world.elements::<PaletteKnob>() {
-            self.curr_color = knob.get_color(world);
+    pub fn update_color(&mut self, world: &World) {
+        if let Some(palette) = world.single::<Palette>() {
+            self.curr_color = palette.pick_color();
         }
     }
 }
