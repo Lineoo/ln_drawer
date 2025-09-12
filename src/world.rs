@@ -4,8 +4,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use hashbrown::{DefaultHashBuilder, HashMap};
-use indexmap::IndexMap;
+use hashbrown::HashMap;
 use parking_lot::Mutex;
 
 use crate::elements::Element;
@@ -18,15 +17,13 @@ pub struct ElementHandle(usize);
 #[expect(clippy::type_complexity)]
 pub struct World {
     curr_idx: ElementHandle,
-    elements: IndexMap<ElementHandle, Box<dyn Element>, DefaultHashBuilder>,
+    elements: HashMap<ElementHandle, Box<dyn Element>>,
     observers: HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &mut World)>>>,
 }
 impl World {
     pub fn insert(&mut self, element: impl Element + 'static) -> ElementHandle {
         self.elements.insert(self.curr_idx, Box::new(element));
         self.curr_idx.0 += 1;
-        self.elements
-            .sort_by(|_, c1, _, c2| c2.z_index().cmp(&c1.z_index()));
         ElementHandle(self.curr_idx.0 - 1)
     }
 
@@ -111,33 +108,6 @@ impl World {
             }
         }
         ret
-    }
-
-    pub fn intersect(&self, x: i32, y: i32) -> Option<ElementHandle> {
-        for (idx, element) in &self.elements {
-            let border = element.get_border();
-
-            // Is in border
-            if (x >= border[0] && x < border[2]) && (y >= border[1] && y < border[3]) {
-                return Some(*idx);
-            }
-        }
-        None
-    }
-
-    pub fn intersect_with<T: Element>(&self, x: i32, y: i32) -> Option<ElementHandle> {
-        for (idx, element) in &self.elements {
-            let border = element.get_border();
-
-            // Is in border
-            if (x >= border[0] && x < border[2])
-                && (y >= border[1] && y < border[3])
-                && element.is::<T>()
-            {
-                return Some(*idx);
-            }
-        }
-        None
     }
 
     pub fn elements<T: Element>(&self) -> impl Iterator<Item = &T> {

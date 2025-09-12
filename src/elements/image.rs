@@ -8,27 +8,7 @@ use crate::{
 pub struct Image {
     painter: Painter,
 }
-impl Element for Image {
-    fn name(&self) -> std::borrow::Cow<'_, str> {
-        "painter".into()
-    }
-
-    fn get_border(&self) -> [i32; 4] {
-        self.painter.get_rect()
-    }
-    
-    fn get_position(&self) -> [i32; 2] {
-        self.painter.get_position()
-    }
-    
-    fn set_position(&mut self, position: [i32; 2]) {
-        self.painter.set_position(position);
-    }
-
-    fn z_index(&self) -> i64 {
-        0
-    }
-}
+impl Element for Image {}
 impl Image {
     pub fn new(path: impl AsRef<Path>, interface: &mut Interface) -> Result<Image, Box<dyn Error>> {
         let reader = image::ImageReader::open(path)?;

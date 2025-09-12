@@ -7,36 +7,12 @@ use crate::{
 
 const CHUNK_SIZE: i32 = 512;
 
+#[derive(Default)]
 pub struct StrokeLayer {
     chunks: HashMap<[i32; 2], StrokeChunk>,
 }
-impl Element for StrokeLayer {
-    fn name(&self) -> std::borrow::Cow<'_, str> {
-        "stroke".into()
-    }
-    // TODO: Use Optional Border
-    fn get_border(&self) -> [i32; 4] {
-        [0; 4]
-    }
-
-    fn get_position(&self) -> [i32; 2] {
-        [0, 0]
-    }
-
-    fn set_position(&mut self, _position: [i32; 2]) {
-        log::warn!("try to set position of StrokeLayer");
-    }
-
-    fn z_index(&self) -> i64 {
-        0
-    }
-}
+impl Element for StrokeLayer {}
 impl StrokeLayer {
-    pub fn new() -> StrokeLayer {
-        StrokeLayer {
-            chunks: HashMap::new(),
-        }
-    }
     pub fn write_pixel(&mut self, point: [i32; 2], color: [u8; 4], interface: &mut Interface) {
         let chunk_key = [
             point[0].div_euclid(CHUNK_SIZE),
