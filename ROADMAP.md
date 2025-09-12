@@ -47,11 +47,14 @@
     - 节点连接 `NodeLink`
     - 交互按钮 `Button`
     - 文本编辑栏
-- 总体的各种功能支持，绘制、工具与导入，承接 IO 和用户输入 `layout`
+- 总体的各种功能支持，绘制、工具与导入，承接 IO 和用户输入 `world`
     - 框选
     - 相交检测 / 按钮
     - 用于实现 stroke 的笔画管理器 `StrokeManager`
     - 添加图像的入口，甚至是截图工具
+- 输入转接，处理各类平台与输入转换为标准交互给 World 使用 `inbox`
+    - 移动平台：触摸，各类传感器，虚拟输入法
+    - PC 平台：笔输入，触摸，鼠标，键盘
 - 窗口管理，与 winit 直接交互 `lnwin`
     - 全屏覆盖层
     - 输入处理
@@ -80,6 +83,37 @@
 3. 双缓冲纹理：避免读写冲突
 4. 分层绘制：分离实时绘制和最终合成
 5. 事件过滤：基于时间和距离阈值过滤过多的鼠标事件
+
+# Interface 模式
+类 descriptor
+```rust
+struct InterfaceHandle<T: InterfaceBuffer> {
+    tx: Sender<(usize, T::Descriptor)>
+    comp_idx: usize,
+}
+
+let mut text: InterfaceHandle<TextBuffer> = interface.create_text(TextDescriptor {
+    text: Some("hi"),
+    size: Some(24.0),
+    color: None, // Use default value
+    rect: None, // default value??
+    ..Default::default()
+});
+text.set_value(TextDescriptor {
+    text: Some("hi"),
+    size: Some(24.0),
+    color: None, // Keep unchanged
+    ..Default::default()
+})
+``` 
+
+Factory
+```rust
+let mut text: Text = interface.create_text();
+text.set_text("hello");
+text.set_z_order(1); // 渲染支持由 interface 提供，数据由组件自己负责
+text.flush();
+```
 
 # 史记
 现在是九月，更新放缓

@@ -5,8 +5,7 @@ use parking_lot::Mutex;
 use wgpu::{Device, Queue, SurfaceConfiguration};
 
 use crate::interface::{
-    ComponentCommand, InterfaceViewport, Painter,
-    painter::{PainterBuffer, PainterPipeline},
+    painter::{PainterBuffer, PainterPipeline}, ComponentCommand, InterfaceBuffered, InterfaceViewport, Painter
 };
 
 pub struct TextManager {
@@ -106,7 +105,7 @@ impl Text {
         buffer.set_text(text, &attrs, Shaping::Advanced);
         buffer.shape_until_scroll(true);
 
-        let mut writer = self.inner.start_writer();
+        let mut writer = self.inner.open_writer();
 
         buffer.draw(
             &mut swash_cache,
@@ -130,7 +129,11 @@ impl Text {
         self.inner.set_position(position);
     }
 
-    pub fn set_z_order(&self, ord: usize) {
+    pub fn get_z_order(&mut self) -> usize {
+        self.inner.get_z_order()
+    }
+
+    pub fn set_z_order(&mut self, ord: usize) {
         self.inner.set_z_order(ord);
     }
 

@@ -3,7 +3,7 @@ use std::sync::mpsc::Sender;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::interface::{ComponentCommand, InterfaceViewport};
+use crate::interface::{ComponentCommand, InterfaceBuffered, InterfaceViewport};
 
 pub struct PainterPipeline {
     pipeline: RenderPipeline,
@@ -241,6 +241,7 @@ impl PainterPipeline {
         Painter {
             rect,
             data,
+            z_order: 0,
             comp_idx,
             comp_tx,
             buffer: painter_buffer.clone(),
@@ -257,6 +258,7 @@ impl PainterPipeline {
 pub struct Painter {
     rect: [i32; 4],
     data: Vec<u8>,
+    z_order: usize,
 
     comp_idx: usize,
     comp_tx: Sender<(usize, ComponentCommand)>,
@@ -272,7 +274,33 @@ impl Drop for Painter {
         }
     }
 }
+impl InterfaceBuffered for Painter {}
 impl Painter {
+    pub fn open_writer(&mut self) -> PainterWriter<'_> {
+        PainterWriter { painter: self }
+    }
+
+    pub fn get_pixel(&self, x: i32, y: i32) -> [u8; 4] {
+        let width = self.width();
+        let height = self.height();
+
+        let x_offset = x - self.rect[0];
+        let y_offset = y - self.rect[1];
+
+        let x_clamped = (x_offset).rem_euclid(width as i32) as u32;
+        let y_clamped = (height as i32 - 1 - y_offset).rem_euclid(height as i32) as u32;
+
+        let start = (x_clamped + y_clamped * width) * 4;
+        let start = start as usize;
+
+        [
+            self.data[start],
+            self.data[start + 1],
+            self.data[start + 2],
+            self.data[start + 3],
+        ]
+    }
+
     pub fn set_pixel(&mut self, x: i32, y: i32, color: [u8; 4]) {
         let width = self.width();
         let height = self.height();
@@ -316,15 +344,11 @@ impl Painter {
         );
     }
 
-    pub fn start_writer(&mut self) -> PainterWriter<'_> {
-        PainterWriter { painter: self }
-    }
-
     pub fn get_rect(&self) -> [i32; 4] {
         self.rect
     }
 
-    pub fn set_rect(&mut self, rect: [i32; 4]) {
+    fn set_rect(&mut self, rect: [i32; 4]) {
         self.rect = rect;
         self.queue.write_buffer(
             &self.buffer.vertices,
@@ -364,8 +388,15 @@ impl Painter {
         ]);
     }
 
-    pub fn set_z_order(&self, ord: usize) {
-        if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(ord))) {
+    pub fn get_z_order(&self) -> usize {
+        self.z_order
+    }
+
+    pub fn set_z_order(&mut self, ord: usize) {
+        self.z_order = ord;
+        if let Err(e) =
+            (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(self.z_order)))
+        {
             log::warn!("Set Visibility: {e}");
         }
     }
@@ -384,15 +415,20 @@ impl Painter {
 }
 
 /// A more efficient way to write data into painter's Buffer
+/// TODO Smaller ranged writing
 pub struct PainterWriter<'painter> {
     painter: &'painter mut Painter,
 }
 impl Drop for PainterWriter<'_> {
     fn drop(&mut self) {
-        self.flush();
+        self.close();
     }
 }
 impl PainterWriter<'_> {
+    pub fn get_pixel(&self, x: i32, y: i32) -> [u8; 4] {
+        self.painter.get_pixel(x, y)
+    }
+
     pub fn set_pixel(&mut self, x: i32, y: i32, color: [u8; 4]) {
         let width = self.painter.width();
         let height = self.painter.height();
@@ -412,7 +448,7 @@ impl PainterWriter<'_> {
         self.painter.data[start + 3] = color[3];
     }
 
-    pub fn flush(&mut self) {
+    pub fn close(&mut self) {
         self.painter.queue.write_texture(
             TexelCopyTextureInfo {
                 texture: &self.painter.buffer.bind_texture,

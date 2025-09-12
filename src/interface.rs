@@ -296,6 +296,8 @@ impl Interface {
     }
 }
 
+trait InterfaceBuffered {}
+
 struct Component {
     component: ComponentInner,
     z_order: usize,

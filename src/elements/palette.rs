@@ -40,13 +40,7 @@ impl Element for Palette {
             let y = knob.position[1].clamp(down, up);
 
             knob.position = [x, y];
-            let rect = [
-                knob.position[0] - 1,
-                knob.position[1] - 1,
-                knob.position[0] + 2,
-                knob.position[1] + 2,
-            ];
-            knob.painter.set_rect(rect);
+            knob.painter.set_position([x - 1, y - 1]);
         }
     }
 
@@ -111,12 +105,8 @@ impl Element for PaletteKnob {
 
     fn set_position(&mut self, position: [i32; 2]) {
         self.position = position;
-        self.painter.set_rect([
-            self.position[0] - 1,
-            self.position[1] - 1,
-            self.position[0] + 2,
-            self.position[1] + 2,
-        ]);
+        self.painter
+            .set_position([self.position[0] - 1, self.position[1] - 1]);
     }
 
     fn update_within(&mut self, world: &World) {
@@ -128,12 +118,8 @@ impl Element for PaletteKnob {
         let y = self.position[1].clamp(down, up);
 
         self.position = [x, y];
-        self.painter.set_rect([
-            self.position[0] - 1,
-            self.position[1] - 1,
-            self.position[0] + 2,
-            self.position[1] + 2,
-        ]);
+        self.painter
+            .set_position([self.position[0] - 1, self.position[1] - 1]);
     }
 
     fn z_index(&self) -> i64 {
@@ -162,7 +148,7 @@ impl PaletteKnob {
                 }
             }
         }
-        let painter = interface.create_painter_with(rect, data);
+        let mut painter = interface.create_painter_with(rect, data);
         painter.set_z_order(1);
 
         PaletteKnob {
