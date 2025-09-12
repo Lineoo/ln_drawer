@@ -113,6 +113,10 @@ impl<T: PositionedElement> Modifier<T> for ChildOf {
 }
 ```
 
+# 主交互逻辑
+
+
+
 # (未使用) Interface 模式
 类 descriptor
 ```rust

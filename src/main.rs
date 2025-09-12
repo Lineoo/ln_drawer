@@ -1,10 +1,10 @@
 #![windows_subsystem = "windows"]
 
-mod elements;
-mod interface;
-mod layout;
-mod lnwin;
-mod world;
+pub mod elements;
+pub mod interface;
+pub mod layout;
+pub mod lnwin;
+pub mod world;
 
 use winit::{
     error::EventLoopError,

@@ -12,7 +12,6 @@ use winit::{
 use crate::{
     elements::{Image, Label, Palette},
     interface::Interface,
-    layout::{select::Selector, stroke::StrokeManager},
     world::World,
 };
 
@@ -55,13 +54,11 @@ struct Lnwindow {
     height: u32,
 
     cursor: [f64; 2],
-
-    state: ActivatedTool,
+    
+    camera_cursor_start: [f64; 2],
+    camera_origin: Option<[i32; 2]>,
 
     world: World,
-    selector: Selector,
-    stroke: StrokeManager,
-    camera: CameraMove,
 }
 impl Lnwindow {
     pub async fn new(event_loop: &ActiveEventLoop) -> Lnwindow {
@@ -74,105 +71,76 @@ impl Lnwindow {
         let width = size.width.max(1);
         let height = size.height.max(1);
 
-        let mut interface = Interface::new(window.clone(), width, height).await;
-
-        let cursor = [0.0, 0.0];
-        let state = ActivatedTool::Stroke;
-
-        let world = World::default();
-        let selector = Selector::new(&mut interface);
-        let stroke = StrokeManager::new();
-        let camera = CameraMove::default();
+        let interface = Interface::new(window.clone(), width, height).await;
 
         Lnwindow {
             window,
             interface,
             width,
             height,
-            cursor,
-            state,
-            world,
-            selector,
-            stroke,
-            camera,
+            cursor: [0.0, 0.0],
+            camera_cursor_start: [0.0, 0.0],
+            camera_origin: None,
+            world: World::default(),
         }
     }
 
     pub fn window_event(&mut self, event: WindowEvent) {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
-                let screen = self.cursor_to_screen(position);
+                self.cursor = self.cursor_to_screen(position);
+                let point = self.interface.screen_to_world(self.cursor);
 
-                // The viewport is updated before the viewport transform
-                if self.camera.active {
-                    let dx = self.camera.start_cursor[0] - screen[0];
-                    let dy = self.camera.start_cursor[1] - screen[1];
+                // The viewport needs to be updated before the viewport transform
+                if let Some(camera_orig) = &mut self.camera_origin {
+                    let dx = self.camera_cursor_start[0] - self.cursor[0];
+                    let dy = self.camera_cursor_start[1] - self.cursor[1];
                     let [dx, dy] = self.interface.screen_to_world_relative([dx, dy]);
 
-                    self.interface.set_camera([
-                        self.camera.camera_orig[0] + dx,
-                        self.camera.camera_orig[1] + dy,
-                    ]);
+                    self.interface
+                        .set_camera([camera_orig[0] + dx, camera_orig[1] + dy]);
 
                     self.window.request_redraw();
                 }
 
-                let point = self.interface.screen_to_world(screen);
-                self.cursor = screen;
+                // TODO
 
-                match self.state {
-                    ActivatedTool::Selection => {
-                        self.selector.cursor_position(point, &mut self.world);
-                        self.window.request_redraw();
-                    }
-                    ActivatedTool::Stroke => {
-                        self.stroke.cursor_position(point, &mut self.interface);
-                        self.window.request_redraw();
-                    }
-                }
+                self.window.request_redraw();
             }
+
+            // Major Interaction //
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
                 ..
-            } => match self.state {
-                ActivatedTool::Selection => {
-                    self.selector.cursor_pressed(&mut self.world);
-                    self.window.request_redraw();
-                }
-                ActivatedTool::Stroke => {
-                    self.stroke.cursor_pressed([0xff; 4], &mut self.interface);
-                    self.window.request_redraw();
-                }
-            },
+            } => {
+                // TODO
+                self.window.request_redraw();
+            }
             WindowEvent::MouseInput {
                 state: ElementState::Released,
                 button: MouseButton::Left,
                 ..
-            } => match self.state {
-                ActivatedTool::Selection => {
-                    self.selector.cursor_released();
-                }
-                ActivatedTool::Stroke => {
-                    self.stroke.cursor_released();
-                    self.window.request_redraw();
-                }
-            },
+            } => {
+                // TODO
+                self.window.request_redraw();
+            }
+
+            // Camera Move //
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Middle,
                 ..
             } => {
-                self.camera.active = true;
-                self.camera.start_cursor = self.cursor;
-                self.camera.camera_orig = self.interface.get_camera();
+                self.camera_cursor_start = self.cursor;
+                self.camera_origin = Some(self.interface.get_camera());
             }
             WindowEvent::MouseInput {
                 state: ElementState::Released,
                 button: MouseButton::Middle,
                 ..
             } => {
-                self.camera.active = false;
+                self.camera_origin = None;
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 match delta {
@@ -189,6 +157,8 @@ impl Lnwindow {
                 }
                 self.window.request_redraw();
             }
+
+            // Keyboard //
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -199,12 +169,6 @@ impl Lnwindow {
                     },
                 ..
             } => match keycode {
-                KeyCode::KeyB => {
-                    self.switch_tool(ActivatedTool::Stroke);
-                }
-                KeyCode::KeyS => {
-                    self.switch_tool(ActivatedTool::Selection);
-                }
                 KeyCode::F1 => {
                     self.world.insert(Label::new(
                         [0, 0, 200, 24],
@@ -222,6 +186,7 @@ impl Lnwindow {
                 _ => (),
             },
 
+            // Misc //
             WindowEvent::DroppedFile(path) => match Image::new(path, &mut self.interface) {
                 Ok(image) => {
                     self.world.insert(image);
@@ -231,6 +196,7 @@ impl Lnwindow {
                 }
             },
 
+            // Render //
             WindowEvent::RedrawRequested => {
                 self.interface.restructure();
                 self.interface.redraw();
@@ -240,6 +206,7 @@ impl Lnwindow {
                 self.height = size.height.max(1);
                 self.interface.resize(self.width, self.height);
             }
+
             _ => (),
         }
     }
@@ -249,27 +216,4 @@ impl Lnwindow {
         let y = 1.0 - (cursor.y * 2.0) / self.height as f64;
         [x, y]
     }
-
-    fn switch_tool(&mut self, tool: ActivatedTool) {
-        if let ActivatedTool::Stroke = self.state {
-            self.stroke.cursor_released();
-        }
-        self.state = tool;
-        if let ActivatedTool::Stroke = self.state {
-            self.stroke.update_color(&self.world);
-        }
-    }
-}
-
-#[derive(Default)]
-struct CameraMove {
-    start_cursor: [f64; 2],
-    camera_orig: [i32; 2],
-    active: bool,
-}
-
-#[derive(Clone, Copy)]
-enum ActivatedTool {
-    Stroke,
-    Selection,
 }
