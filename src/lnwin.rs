@@ -12,7 +12,8 @@ use winit::{
 use crate::{
     elements::{Image, Label, Palette},
     interface::Interface,
-    layout::{select::Selector, stroke::StrokeManager, world::World},
+    layout::{select::Selector, stroke::StrokeManager},
+    world::World,
 };
 
 #[derive(Default)]

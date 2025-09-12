@@ -3,7 +3,6 @@ use palette::{FromColor, Hsl, rgb::Rgb};
 use crate::{
     elements::Element,
     interface::{Interface, Painter},
-    layout::world::{ElementHandle, World},
 };
 
 const WIDTH: u32 = 128;

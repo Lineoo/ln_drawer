@@ -1,6 +1,6 @@
 use crate::{
     interface::{Interface, Wireframe},
-    layout::world::{ElementHandle, World},
+    world::{ElementHandle, World},
 };
 
 /// The main component for selection.
@@ -32,7 +32,7 @@ impl Selector {
             drag_element_orig: None,
         }
     }
-    
+
     pub fn cursor_position(&mut self, point: [i32; 2], world: &mut World) {
         self.cursor = point;
         if let Some(selected) = self.selected_element
@@ -82,7 +82,7 @@ impl Selector {
         self.drag_start = None;
         self.drag_element_orig = None;
     }
-    
+
     pub fn stop(&mut self) {
         self.selected_element = None;
         self.hover_wireframe.set_visible(false);

@@ -12,7 +12,7 @@ pub use label::Label;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;
 
-use crate::layout::world::World;
+use crate::world::World;
 
 pub trait Element: Any {
     fn name(&self) -> std::borrow::Cow<'_, str>;

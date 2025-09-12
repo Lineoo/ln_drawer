@@ -3,7 +3,7 @@ use glam::Vec2;
 use crate::{
     elements::{Palette, StrokeLayer},
     interface::Interface,
-    layout::world::World,
+    world::World,
 };
 
 /// The main component for selection.
