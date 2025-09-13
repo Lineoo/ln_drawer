@@ -40,11 +40,7 @@ pub struct Interface {
 }
 impl Element for Interface {}
 impl Interface {
-    pub async fn new(
-        window: impl Into<SurfaceTarget<'static>>,
-        width: u32,
-        height: u32,
-    ) -> Interface {
+    pub async fn new(window: impl Into<SurfaceTarget<'static>>, viewport: &Viewport) -> Interface {
         let instance = Instance::default();
 
         let surface = instance.create_surface(window).unwrap();
@@ -70,15 +66,10 @@ impl Interface {
             .unwrap();
 
         // Surface Configuration
-        let width = width.max(1);
-        let height = height.max(1);
-
-        let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
-
-        // Camera
-        let camera = [0, 0];
-        let zoom = 0;
-        let viewport = InterfaceViewport::new(&device, width, height, camera, zoom);
+        let surface_config = surface
+            .get_default_config(&adapter, viewport.width, viewport.height)
+            .unwrap();
+        let viewport = InterfaceViewport::new(viewport, &device);
 
         // Render Components
         let wireframe = wireframe::WireframePipeline::init(&device, &surface_config, &viewport);
@@ -177,15 +168,9 @@ impl Interface {
     }
 
     pub fn resize(&mut self, viewport: &Viewport) {
-        let width = viewport.width.max(1);
-        let height = viewport.height.max(1);
-
-        self.viewport.resize(width, height, &self.queue);
-        self.viewport.set_camera(viewport.camera, &self.queue);
-        self.viewport.set_zoom(viewport.zoom, &self.queue);
-
-        self.surface_config.width = width;
-        self.surface_config.height = height;
+        self.viewport.resize(viewport, &self.queue);
+        self.surface_config.width = viewport.width;
+        self.surface_config.height = viewport.height;
         self.surface.configure(&self.device, &self.surface_config);
     }
 

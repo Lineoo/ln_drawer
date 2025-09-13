@@ -67,7 +67,7 @@ impl Lnwindow {
             camera: [0, 0],
             zoom: 0,
         };
-        let interface = Interface::new(window.clone(), viewport.width, viewport.height).await;
+        let interface = Interface::new(window.clone(), &viewport).await;
 
         let mut world = World::default();
         world.insert(interface);
@@ -93,12 +93,7 @@ impl Lnwindow {
                     let dy = self.camera_cursor_start[1] - self.cursor[1];
                     let [dx, dy] = self.viewport.screen_to_world_relative([dx, dy]);
 
-                    {
-                        let this = &mut self.viewport;
-                        let position = [camera_orig[0] + dx, camera_orig[1] + dy];
-                        this.camera = position;
-                    };
-
+                    self.viewport.camera = [camera_orig[0] + dx, camera_orig[1] + dy];
                     self.window.request_redraw();
                 }
 
@@ -135,10 +130,7 @@ impl Lnwindow {
                 ..
             } => {
                 self.camera_cursor_start = self.cursor;
-                self.camera_origin = Some({
-                    let this = &self.viewport;
-                    this.camera
-                });
+                self.camera_origin = Some(self.viewport.camera);
             }
             WindowEvent::MouseInput {
                 state: ElementState::Released,
@@ -151,27 +143,11 @@ impl Lnwindow {
                 match delta {
                     MouseScrollDelta::LineDelta(_rows, lines) => {
                         let level = lines.ceil() as i32;
-                        let zoom = {
-                            let this = &self.viewport;
-                            this.zoom
-                        };
-                        {
-                            let this = &mut self.viewport;
-                            let zoom = zoom + level;
-                            this.zoom = zoom;
-                        };
+                        self.viewport.zoom += level;
                     }
                     MouseScrollDelta::PixelDelta(delta) => {
                         let level = delta.y.div_euclid(16.0) as i32 + 1;
-                        let zoom = {
-                            let this = &self.viewport;
-                            this.zoom
-                        };
-                        {
-                            let this = &mut self.viewport;
-                            let zoom = zoom + level;
-                            this.zoom = zoom;
-                        };
+                        self.viewport.zoom += level;
                     }
                 }
                 self.window.request_redraw();
