@@ -3,6 +3,7 @@ use palette::{FromColor, Hsl, rgb::Rgb};
 use crate::{
     elements::Element,
     interface::{Interface, Painter},
+    world::World,
 };
 
 const WIDTH: u32 = 128;
@@ -14,7 +15,9 @@ pub struct Palette {
 }
 impl Element for Palette {}
 impl Palette {
-    pub fn new(position: [i32; 2], interface: &mut Interface) -> Palette {
+    pub fn new(position: [i32; 2], world: &mut World) -> Palette {
+        let interface = world.single_mut::<Interface>().unwrap();
+
         // Palette //
         let mut data = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
         for x in 0..128 {

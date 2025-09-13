@@ -1,6 +1,7 @@
 use crate::{
     elements::Element,
     interface::{Interface, Text},
+    world::World,
 };
 
 pub struct Label {
@@ -9,7 +10,8 @@ pub struct Label {
 }
 impl Element for Label {}
 impl Label {
-    pub fn new(rect: [i32; 4], text: String, interface: &mut Interface) -> Label {
+    pub fn new(rect: [i32; 4], text: String, world: &mut World) -> Label {
+        let interface = world.single_mut::<Interface>().unwrap();
         let inner = interface.create_text(rect, &text);
         Label { text, inner }
     }

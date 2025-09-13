@@ -9,7 +9,11 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::{elements::StrokeLayer, interface::Interface, world::World};
+use crate::{
+    elements::{Image, Label, Palette, StrokeLayer},
+    interface::Interface,
+    world::World,
+};
 
 #[derive(Default)]
 pub struct Lnwin {
@@ -165,23 +169,33 @@ impl Lnwindow {
                 ..
             } => match keycode {
                 KeyCode::F1 => {
-                    // self.world.insert(Label::new(
-                    //     [0, 0, 200, 24],
-                    //     "Hello, LnDrawer!".into(),
-                    //     &mut self.interface,
-                    // ));
-                    // self.world.insert(
-                    //     Image::from_bytes(include_bytes!("../res/icon.png"), &mut self.interface)
-                    //         .unwrap(),
-                    // );
+                    let label =
+                        Label::new([0, 0, 200, 24], "Hello, LnDrawer!".into(), &mut self.world);
+                    self.world.insert(label);
+
+                    let world =
+                        Image::from_bytes(include_bytes!("../res/icon.png"), &mut self.world)
+                            .unwrap();
+                    self.world.insert(world);
                 }
                 KeyCode::F2 => {
-                    // self.world.insert(Palette::new([0, 0], &mut self.interface));
+                    let palette = Palette::new([0, 0], &mut self.world);
+                    self.world.insert(palette);
                 }
                 KeyCode::F3 => {
                     self.world.insert(StrokeLayer::default());
                 }
                 _ => (),
+            },
+
+            // Misc //
+            WindowEvent::DroppedFile(path) => match Image::new(path, &mut self.world) {
+                Ok(image) => {
+                    self.world.insert(image);
+                }
+                Err(err) => {
+                    log::warn!("Drop File: {err}");
+                }
             },
 
             // Render //
