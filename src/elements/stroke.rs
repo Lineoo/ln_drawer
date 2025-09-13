@@ -3,6 +3,8 @@ use hashbrown::HashMap;
 use crate::{
     elements::Element,
     interface::{Interface, Painter},
+    lnwin::PointerEvent,
+    world::{ElementHandle, WorldQueue},
 };
 
 const CHUNK_SIZE: i32 = 512;
@@ -11,7 +13,41 @@ const CHUNK_SIZE: i32 = 512;
 pub struct StrokeLayer {
     chunks: HashMap<[i32; 2], StrokeChunk>,
 }
-impl Element for StrokeLayer {}
+impl Element for StrokeLayer {
+    fn when_inserted(&mut self, handle: ElementHandle, queue: &mut WorldQueue) {
+        queue.queue(move |world| {
+            let mut cursor_down = false;
+            (world.entry::<StrokeLayer>(handle).unwrap()).observe::<PointerEvent>(
+                move |event, world| {
+                    let mut stroke = world.fetch_mut::<StrokeLayer>(handle).unwrap();
+                    match event {
+                        PointerEvent::Moved(position) => {
+                            if cursor_down {
+                                stroke.write_pixel(
+                                    *position,
+                                    [0xff; 4],
+                                    &mut world.single_mut::<Interface>().unwrap(),
+                                );
+                            }
+                        }
+                        PointerEvent::Pressed(position) => {
+                            cursor_down = true;
+                            stroke.write_pixel(
+                                *position,
+                                [0xff; 4],
+                                // FIXME ADD INTERFACE INTO WORLD!!!!!!!!!!!!!
+                                &mut world.single_mut::<Interface>().unwrap(),
+                            );
+                        }
+                        PointerEvent::Released(_) => {
+                            cursor_down = false;
+                        }
+                    }
+                },
+            );
+        });
+    }
+}
 impl StrokeLayer {
     pub fn write_pixel(&mut self, point: [i32; 2], color: [u8; 4], interface: &mut Interface) {
         let chunk_key = [

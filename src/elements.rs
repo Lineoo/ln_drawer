@@ -12,12 +12,12 @@ pub use label::Label;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;
 
-use crate::world::{ElementHandle, WorldCell, WorldQueue};
+use crate::world::{ElementHandle, WorldQueue};
 
 #[expect(unused_variables)]
 pub trait Element: Any {
-    fn when_inserted(&mut self, this: ElementHandle, queue: &mut WorldQueue) {}
-    fn when_removed(&mut self, this: ElementHandle, queue: &mut WorldQueue) {}
+    fn when_inserted(&mut self, handle: ElementHandle, queue: &mut WorldQueue) {}
+    fn when_removed(&mut self, handle: ElementHandle, queue: &mut WorldQueue) {}
 }
 impl dyn Element {
     pub fn is<T: Any>(&self) -> bool {

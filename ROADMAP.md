@@ -128,6 +128,8 @@ impl<T: PositionedElement> Modifier<T> for ChildOf {
 
 采用全局广播的模式：键盘和鼠标时间全局广播，一般会有一些普通元素以及上面提到的*活跃工具*在监听这些事件，而主要就是那个活跃工具会负责比较重要的功能
 
+# 是否 panic ？
+这个问题针对 WorldCell 的 fetch* 家族，目前所有 fetch* 会在已借用的情况下 panic 而有一个专门的 try_fetch* 家族不 panic （但没有专门的 Error ）
 
 # (未使用) Interface 模式
 类 descriptor

@@ -13,7 +13,10 @@ pub use text::Text;
 pub use viewport::InterfaceViewport;
 pub use wireframe::Wireframe;
 
-use crate::interface::{painter::PainterBuffer, wireframe::WireframeBuffer};
+use crate::{
+    elements::Element,
+    interface::{painter::PainterBuffer, wireframe::WireframeBuffer},
+};
 
 /// Main render part
 pub struct Interface {
@@ -34,6 +37,7 @@ pub struct Interface {
 
     viewport: InterfaceViewport,
 }
+impl Element for Interface {}
 impl Interface {
     pub async fn new(
         window: impl Into<SurfaceTarget<'static>>,

@@ -10,7 +10,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image, Label, Palette},
+    elements::{Image, Label, Palette, StrokeLayer},
     interface::Interface,
     world::World,
 };
@@ -54,7 +54,7 @@ struct Lnwindow {
     height: u32,
 
     cursor: [f64; 2],
-    
+
     camera_cursor_start: [f64; 2],
     camera_origin: Option<[i32; 2]>,
 
@@ -89,10 +89,8 @@ impl Lnwindow {
         self.world.trigger(&event);
         match event {
             WindowEvent::CursorMoved { position, .. } => {
-                self.cursor = self.cursor_to_screen(position);
-                let point = self.interface.screen_to_world(self.cursor);
-
                 // The viewport needs to be updated before the viewport transform
+                self.cursor = self.cursor_to_screen(position);
                 if let Some(camera_orig) = &mut self.camera_origin {
                     let dx = self.camera_cursor_start[0] - self.cursor[0];
                     let dy = self.camera_cursor_start[1] - self.cursor[1];
@@ -104,7 +102,8 @@ impl Lnwindow {
                     self.window.request_redraw();
                 }
 
-                // TODO
+                let point = self.interface.screen_to_world(self.cursor);
+                self.world.trigger(&PointerEvent::Moved(point));
 
                 self.window.request_redraw();
             }
@@ -115,7 +114,8 @@ impl Lnwindow {
                 button: MouseButton::Left,
                 ..
             } => {
-                // TODO
+                let point = self.interface.screen_to_world(self.cursor);
+                self.world.trigger(&PointerEvent::Pressed(point));
                 self.window.request_redraw();
             }
             WindowEvent::MouseInput {
@@ -123,7 +123,8 @@ impl Lnwindow {
                 button: MouseButton::Left,
                 ..
             } => {
-                // TODO
+                let point = self.interface.screen_to_world(self.cursor);
+                self.world.trigger(&PointerEvent::Released(point));
                 self.window.request_redraw();
             }
 
@@ -184,6 +185,9 @@ impl Lnwindow {
                 KeyCode::F2 => {
                     self.world.insert(Palette::new([0, 0], &mut self.interface));
                 }
+                KeyCode::F3 => {
+                    self.world.insert(StrokeLayer::default());
+                }
                 _ => (),
             },
 
@@ -217,4 +221,11 @@ impl Lnwindow {
         let y = 1.0 - (cursor.y * 2.0) / self.height as f64;
         [x, y]
     }
+}
+
+/// Pointer that has been transformed into world-space
+pub enum PointerEvent {
+    Moved([i32; 2]),
+    Pressed([i32; 2]),
+    Released([i32; 2]),
 }

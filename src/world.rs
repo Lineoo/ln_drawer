@@ -74,20 +74,28 @@ impl World {
         }
     }
 
-    pub fn entry<T: Element>(&mut self, handle: ElementHandle) -> WorldElement<'_, T> {
-        WorldElement {
+    pub fn entry<T: Element>(&mut self, handle: ElementHandle) -> Option<WorldElement<'_, T>> {
+        if !self.elements.contains_key(&handle) {
+            return None;
+        }
+
+        Some(WorldElement {
             world: self,
             handle,
             _marker: PhantomData,
-        }
+        })
     }
 
-    pub fn entry_dyn(&mut self, handle: ElementHandle) -> WorldElement<'_, dyn Element> {
-        WorldElement {
+    pub fn entry_dyn(&mut self, handle: ElementHandle) -> Option<WorldElement<'_, dyn Element>> {
+        if !self.elements.contains_key(&handle) {
+            return None;
+        }
+
+        Some(WorldElement {
             world: self,
             handle,
             _marker: PhantomData,
-        }
+        })
     }
 
     /// Global trigger. Will trigger every element listening to this event.
@@ -298,6 +306,44 @@ impl WorldCell<'_> {
             world: self,
             handle,
         })
+    }
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single<T: Element>(&self) -> Option<Ref<'_, T>> {
+        let mut ret = None;
+        for (handle, element) in self.elements.iter() {
+            let occupied = self.occupied.lock();
+            if occupied.contains_key(handle) || !element.is::<T>() {
+                continue;
+            }
+
+            if ret.is_none() {
+                ret.replace(*handle);
+            } else {
+                return None;
+            }
+        }
+
+        self.fetch(ret?)
+    }
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
+        let mut ret = None;
+        for (handle, element) in self.elements.iter() {
+            let occupied = self.occupied.lock();
+            if occupied.contains_key(handle) || !element.is::<T>() {
+                continue;
+            }
+
+            if ret.is_none() {
+                ret.replace(*handle);
+            } else {
+                return None;
+            }
+        }
+
+        self.fetch_mut(ret?)
     }
 
     // Direct occupation skipping the lock
