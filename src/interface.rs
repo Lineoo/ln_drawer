@@ -16,6 +16,7 @@ pub use wireframe::Wireframe;
 use crate::{
     elements::Element,
     interface::{painter::PainterBuffer, wireframe::WireframeBuffer},
+    lnwin::Viewport,
 };
 
 /// Main render part
@@ -175,11 +176,13 @@ impl Interface {
         texture.present();
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        let width = width.max(1);
-        let height = height.max(1);
+    pub fn resize(&mut self, viewport: &Viewport) {
+        let width = viewport.width.max(1);
+        let height = viewport.height.max(1);
 
         self.viewport.resize(width, height, &self.queue);
+        self.viewport.set_camera(viewport.camera, &self.queue);
+        self.viewport.set_zoom(viewport.zoom, &self.queue);
 
         self.surface_config.width = width;
         self.surface_config.height = height;
@@ -266,37 +269,6 @@ impl Interface {
         self.components_idx += 1;
         self.components
             .sort_by(|_, c1, _, c2| c1.z_order.cmp(&c2.z_order));
-    }
-
-    // Viewport Shortcut //
-
-    pub fn get_camera(&self) -> [i32; 2] {
-        self.viewport.get_camera()
-    }
-
-    pub fn set_camera(&mut self, position: [i32; 2]) {
-        self.viewport.set_camera(position, &self.queue);
-    }
-
-    pub fn get_zoom(&self) -> i32 {
-        self.viewport.get_zoom()
-    }
-
-    pub fn set_zoom(&mut self, zoom: i32) {
-        self.viewport.set_zoom(zoom, &self.queue);
-    }
-
-    pub fn world_to_screen(&self, point: [i32; 2]) -> [f64; 2] {
-        self.viewport.world_to_screen(point)
-    }
-
-    pub fn screen_to_world(&self, point: [f64; 2]) -> [i32; 2] {
-        self.viewport.screen_to_world(point)
-    }
-
-    /// This ignore the camera position, useful for relative point like mouse dragging
-    pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> [i32; 2] {
-        self.viewport.screen_to_world_relative(delta)
     }
 }
 
