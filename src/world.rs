@@ -24,7 +24,7 @@ pub struct World {
     curr_idx: ElementHandle,
     elements: HashMap<ElementHandle, Box<dyn Element>>,
     singletons: HashMap<TypeId, Singleton>,
-    observers: HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &mut WorldCell)>>>,
+    observers: HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &mut WorldQueue)>>>,
 }
 impl World {
     pub fn insert(&mut self, element: impl Element + 'static) -> ElementHandle {
@@ -39,6 +39,9 @@ impl World {
         let element = self.fetch_mut_dyn(handle).unwrap();
         element.when_inserted(handle, &mut queue);
         queue.flush(self);
+
+        // ElementInserted
+        self.trigger(&ElementInserted(handle));
 
         // singleton cache
         self.singletons
@@ -122,18 +125,13 @@ impl World {
 
     /// Global trigger. Will trigger every element listening to this event.
     pub fn trigger<E: 'static>(&mut self, event: &E) {
-        // Manually construct to allow `observers` and `elements` can be separately mutable
-        let mut cell = WorldCell {
-            elements: &mut self.elements,
-            singletons: &self.singletons,
-            occupied: Mutex::default(),
-        };
-
+        let mut queue = WorldQueue::default();
         for observers in self.observers.values_mut() {
             for observer in observers {
-                observer(event, &mut cell);
+                observer(event, &mut queue);
             }
         }
+        queue.flush(self);
     }
 
     /// Return `Some` if there is ONLY one element of target type.
@@ -448,7 +446,7 @@ impl DerefMut for WorldElement<'_, dyn Element> {
     }
 }
 impl<T: ?Sized> WorldElement<'_, T> {
-    pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &mut WorldCell) + 'static) {
+    pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &mut WorldQueue) + 'static) {
         let observers = self.world.observers.entry(self.handle).or_default();
         observers.push(Box::new(move |event, world| {
             if let Some(event) = event.downcast_ref::<E>() {
@@ -458,18 +456,13 @@ impl<T: ?Sized> WorldElement<'_, T> {
     }
 
     pub fn trigger<E: 'static>(&mut self, event: &E) {
-        // Manually construct to allow `observers` and `elements` can be separately mutable
-        let mut cell = WorldCell {
-            elements: &mut self.world.elements,
-            singletons: &self.world.singletons,
-            occupied: Mutex::default(),
-        };
-
+        let mut queue = WorldQueue::default();
         if let Some(observers) = self.world.observers.get_mut(&self.handle) {
             for observer in observers {
-                observer(event, &mut cell);
+                observer(event, &mut queue);
             }
         }
+        queue.flush(self.world);
     }
 }
 
@@ -489,3 +482,8 @@ impl WorldQueue {
         }
     }
 }
+
+// World Events
+
+pub struct ElementInserted(pub ElementHandle);
+pub struct ElementRemoved(pub ElementHandle);

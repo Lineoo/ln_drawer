@@ -18,21 +18,25 @@ impl Element for StrokeLayer {
         queue.queue(move |world| {
             let mut cursor_down = false;
             let mut stroke = world.entry::<StrokeLayer>(handle).unwrap();
-            stroke.observe::<PointerEvent>(move |event, world| {
-                let mut stroke = world.fetch_mut::<StrokeLayer>(handle).unwrap();
-                match event {
-                    PointerEvent::Moved(position) => {
-                        if cursor_down {
-                            stroke.write_pixel(*position, [0xff; 4], world);
-                        }
-                    }
-                    PointerEvent::Pressed(position) => {
-                        cursor_down = true;
-                        stroke.write_pixel(*position, [0xff; 4], world);
-                    }
-                    PointerEvent::Released(_) => {
-                        cursor_down = false;
-                    }
+            stroke.observe::<PointerEvent>(move |&event, queue| match event {
+                PointerEvent::Moved(position) if cursor_down => {
+                    queue.queue(move |world| {
+                        let world = world.cell();
+                        let mut stroke = world.fetch_mut::<StrokeLayer>(handle).unwrap();
+                        stroke.write_pixel(position, [0xff; 4], &world);
+                    });
+                }
+                PointerEvent::Moved(_) => {}
+                PointerEvent::Pressed(position) => {
+                    cursor_down = true;
+                    queue.queue(move |world| {
+                        let world = world.cell();
+                        let mut stroke = world.fetch_mut::<StrokeLayer>(handle).unwrap();
+                        stroke.write_pixel(position, [0xff; 4], &world);
+                    });
+                }
+                PointerEvent::Released(_) => {
+                    cursor_down = false;
                 }
             });
         });

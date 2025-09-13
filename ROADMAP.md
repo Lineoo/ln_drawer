@@ -183,3 +183,11 @@ interface 现在在 lnwin 的逻辑（需要分离）：
     - 所以我可能希望 viewport 独立到 lnwin 这里，再被发送到 interface，这样同时也不需要迁移相机移动的代码
 3. 渲染重绘
     - 没关系，一个单例解决。
+
+# Intersect 实现
+采用对应的元素直接生成一个绑定自己的 Intersection 元素（带有监听器，在主元素删除时会跟着删除）
+
+调用 IntersectManager 的 intersect 方法时，会遍历所有的 Intersection 元素并找到 z-order 最大的那个返回。
+
+- TODO 需要更高效率的单一类型遍历，可以带 Singleton 一起
+- TODO 以后会做四叉树优化。

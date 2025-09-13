@@ -1,5 +1,6 @@
 mod button;
 mod image;
+mod intersect;
 mod label;
 mod palette;
 mod stroke;

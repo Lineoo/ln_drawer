@@ -252,6 +252,7 @@ impl Viewport {
 }
 
 /// Pointer that has been transformed into world-space
+#[derive(Clone, Copy)]
 pub enum PointerEvent {
     Moved([i32; 2]),
     Pressed([i32; 2]),
