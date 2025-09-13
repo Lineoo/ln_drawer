@@ -1,7 +1,7 @@
 use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
-    elements::Element,
+    elements::{Element, PositionedElement},
     interface::{Interface, Painter},
     world::World,
 };
@@ -14,6 +14,15 @@ pub struct Palette {
     knob: Painter,
 }
 impl Element for Palette {}
+impl PositionedElement for Palette {
+    fn get_position(&self) -> [i32; 2] {
+        self.painter.get_position()
+    }
+
+    fn set_position(&mut self, position: [i32; 2]) {
+        self.painter.set_position(position);
+    }
+}
 impl Palette {
     pub fn new(position: [i32; 2], world: &mut World) -> Palette {
         let interface = world.single_mut::<Interface>().unwrap();
@@ -65,14 +74,6 @@ impl Palette {
         knob.set_z_order(1);
 
         Palette { painter, knob }
-    }
-
-    pub fn get_position(&self) -> [i32; 2] {
-        self.painter.get_position()
-    }
-
-    pub fn set_position(&mut self, position: [i32; 2]) {
-        self.painter.set_position(position);
     }
 
     pub fn get_knob_position(&self) -> [i32; 2] {
