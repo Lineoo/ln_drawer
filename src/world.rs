@@ -18,7 +18,7 @@ pub struct ElementHandle(usize);
 pub struct World {
     curr_idx: ElementHandle,
     elements: HashMap<ElementHandle, Box<dyn Element>>,
-    observers: HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &mut World)>>>,
+    observers: HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &mut WorldCell)>>>,
 }
 impl World {
     pub fn insert(&mut self, element: impl Element + 'static) -> ElementHandle {
@@ -61,7 +61,7 @@ impl World {
 
     pub fn cell(&mut self) -> WorldCell<'_> {
         WorldCell {
-            world: self,
+            elements: &mut self.elements,
             occupied: Mutex::new(HashMap::new()),
         }
     }
@@ -79,6 +79,21 @@ impl World {
             world: self,
             handle,
             _marker: PhantomData,
+        }
+    }
+
+    /// Global trigger. Will trigger every element listening to this event.
+    pub fn trigger<E: 'static>(&mut self, event: &E) {
+        // Manually construct to allow `observers` and `elements` can be separately mutable
+        let mut cell = WorldCell {
+            elements: &mut self.elements,
+            occupied: Mutex::default(),
+        };
+
+        for observers in self.observers.values_mut() {
+            for observer in observers {
+                observer(event, &mut cell);
+            }
         }
     }
 
@@ -127,9 +142,9 @@ impl World {
     }
 }
 
-// Center of multiple accesses in world
+// Center of multiple accesses in world, which also prevents constructional changes
 pub struct WorldCell<'world> {
-    world: &'world mut World,
+    elements: &'world mut HashMap<ElementHandle, Box<dyn Element>>,
     occupied: Mutex<HashMap<ElementHandle, isize>>,
 }
 impl WorldCell<'_> {
@@ -142,7 +157,7 @@ impl WorldCell<'_> {
         }
 
         *cnt += 1;
-        let element = self.world.elements.get(&handle)?.downcast_ref()?;
+        let element = self.elements.get(&handle)?.downcast_ref()?;
 
         Some(Ref {
             ptr: element as *const T,
@@ -160,7 +175,7 @@ impl WorldCell<'_> {
         }
 
         *cnt += 1;
-        let element = self.world.elements.get(&handle)?.as_ref();
+        let element = self.elements.get(&handle)?.as_ref();
 
         Some(Ref {
             ptr: element as *const dyn Element,
@@ -178,7 +193,7 @@ impl WorldCell<'_> {
         }
 
         *cnt -= 1;
-        let element = self.world.elements.get(&handle)?.downcast_ref()?;
+        let element = self.elements.get(&handle)?.downcast_ref()?;
 
         Some(RefMut {
             ptr: element as *const T as *mut T,
@@ -196,7 +211,7 @@ impl WorldCell<'_> {
         }
 
         *cnt -= 1;
-        let element = self.world.elements.get(&handle)?.as_ref();
+        let element = self.elements.get(&handle)?.as_ref();
 
         Some(RefMut {
             ptr: element as *const dyn Element as *mut dyn Element,
@@ -214,7 +229,7 @@ impl WorldCell<'_> {
         }
 
         *cnt += 1;
-        let element = self.world.elements.get(&handle)?.downcast_ref()?;
+        let element = self.elements.get(&handle)?.downcast_ref()?;
 
         Some(Ref {
             ptr: element as *const T,
@@ -232,7 +247,7 @@ impl WorldCell<'_> {
         }
 
         *cnt += 1;
-        let element = self.world.elements.get(&handle)?.as_ref();
+        let element = self.elements.get(&handle)?.as_ref();
 
         Some(Ref {
             ptr: element as *const dyn Element,
@@ -250,7 +265,7 @@ impl WorldCell<'_> {
         }
 
         *cnt -= 1;
-        let element = self.world.elements.get(&handle)?.downcast_ref()?;
+        let element = self.elements.get(&handle)?.downcast_ref()?;
 
         Some(RefMut {
             ptr: element as *const T as *mut T,
@@ -268,13 +283,23 @@ impl WorldCell<'_> {
         }
 
         *cnt -= 1;
-        let element = self.world.elements.get(&handle)?.as_ref();
+        let element = self.elements.get(&handle)?.as_ref();
 
         Some(RefMut {
             ptr: element as *const dyn Element as *mut dyn Element,
             world: self,
             handle,
         })
+    }
+
+    // Direct occupation skipping the lock
+
+    pub fn occupy<T: Element>(&mut self, handle: ElementHandle) -> Option<&mut T> {
+        self.elements.get_mut(&handle)?.downcast_mut()
+    }
+
+    pub fn occupy_dyn(&mut self, handle: ElementHandle) -> Option<&mut dyn Element> {
+        self.elements.get_mut(&handle).map(|elm| elm.as_mut())
     }
 }
 
@@ -343,31 +368,6 @@ impl<T: Element> DerefMut for WorldElement<'_, T> {
         self.world.fetch_mut(self.handle).unwrap()
     }
 }
-impl<T: Element> WorldElement<'_, T> {
-    pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &mut World) + 'static) {
-        let observers = self.world.observers.entry(self.handle).or_default();
-        observers.push(Box::new(move |event, world| {
-            if let Some(event) = event.downcast_ref::<E>() {
-                action(event, world);
-            }
-        }));
-    }
-
-    pub fn trigger<E: 'static>(&mut self, event: E) {
-        if let Some(mut observers) = self.world.observers.remove(&self.handle) {
-            for observer in &mut observers {
-                observer(&event, self.world);
-            }
-
-            // If new observers are added during the scope, move it
-            if let Some(changed) = self.world.observers.get_mut(&self.handle) {
-                observers.append(changed);
-            }
-
-            self.world.observers.insert(self.handle, observers);
-        }
-    }
-}
 impl Deref for WorldElement<'_, dyn Element> {
     type Target = dyn Element;
     fn deref(&self) -> &Self::Target {
@@ -377,5 +377,29 @@ impl Deref for WorldElement<'_, dyn Element> {
 impl DerefMut for WorldElement<'_, dyn Element> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.world.fetch_mut_dyn(self.handle).unwrap()
+    }
+}
+impl<T: ?Sized> WorldElement<'_, T> {
+    pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &mut WorldCell) + 'static) {
+        let observers = self.world.observers.entry(self.handle).or_default();
+        observers.push(Box::new(move |event, world| {
+            if let Some(event) = event.downcast_ref::<E>() {
+                action(event, world);
+            }
+        }));
+    }
+
+    pub fn trigger<E: 'static>(&mut self, event: &E) {
+        // Manually construct to allow `observers` and `elements` can be separately mutable
+        let mut cell = WorldCell {
+            elements: &mut self.world.elements,
+            occupied: Mutex::default(),
+        };
+
+        if let Some(observers) = self.world.observers.get_mut(&self.handle) {
+            for observer in observers {
+                observer(event, &mut cell);
+            }
+        }
     }
 }

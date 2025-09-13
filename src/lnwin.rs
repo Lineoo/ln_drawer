@@ -86,6 +86,7 @@ impl Lnwindow {
     }
 
     pub fn window_event(&mut self, event: WindowEvent) {
+        self.world.trigger(&event);
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = self.cursor_to_screen(position);
