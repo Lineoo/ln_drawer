@@ -1,5 +1,5 @@
 use std::{
-    any::Any,
+    any::{Any, TypeId},
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -13,15 +13,23 @@ use crate::elements::Element;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ElementHandle(usize);
 
+enum Singleton {
+    Unique(ElementHandle),
+    Multiple(usize),
+}
+
 #[derive(Default)]
 #[expect(clippy::type_complexity)]
 pub struct World {
     curr_idx: ElementHandle,
     elements: HashMap<ElementHandle, Box<dyn Element>>,
+    singletons: HashMap<TypeId, Singleton>,
     observers: HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &mut WorldCell)>>>,
 }
 impl World {
     pub fn insert(&mut self, element: impl Element + 'static) -> ElementHandle {
+        let type_id = element.type_id();
+
         self.elements.insert(self.curr_idx, Box::new(element));
         self.curr_idx.0 += 1;
         let handle = ElementHandle(self.curr_idx.0 - 1);
@@ -31,6 +39,19 @@ impl World {
         let element = self.fetch_mut_dyn(handle).unwrap();
         element.when_inserted(handle, &mut queue);
         queue.flush(self);
+
+        // singleton cache
+        self.singletons
+            .entry(type_id)
+            .and_modify(|status| match status {
+                Singleton::Unique(_) => {
+                    *status = Singleton::Multiple(2);
+                }
+                Singleton::Multiple(cnt) => {
+                    *cnt += 1;
+                }
+            })
+            .or_insert(Singleton::Unique(handle));
 
         handle
     }
@@ -70,6 +91,7 @@ impl World {
     pub fn cell(&mut self) -> WorldCell<'_> {
         WorldCell {
             elements: &mut self.elements,
+            singletons: &self.singletons,
             occupied: Mutex::new(HashMap::new()),
         }
     }
@@ -103,6 +125,7 @@ impl World {
         // Manually construct to allow `observers` and `elements` can be separately mutable
         let mut cell = WorldCell {
             elements: &mut self.elements,
+            singletons: &self.singletons,
             occupied: Mutex::default(),
         };
 
@@ -113,32 +136,22 @@ impl World {
         }
     }
 
-    // TODO Singleton-optimization
-
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<&T> {
-        let mut ret = None;
-        for element in self.elements::<T>() {
-            if ret.is_none() {
-                ret.replace(element);
-            } else {
-                return None;
-            }
+        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
+            self.elements.get(handle)?.downcast_ref()
+        } else {
+            None
         }
-        ret
     }
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single_mut<T: Element>(&mut self) -> Option<&mut T> {
-        let mut ret = None;
-        for element in self.elements_mut::<T>() {
-            if ret.is_none() {
-                ret.replace(element);
-            } else {
-                return None;
-            }
+        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
+            self.elements.get_mut(handle)?.downcast_mut()
+        } else {
+            None
         }
-        ret
     }
 
     pub fn elements<T: Element>(&self) -> impl Iterator<Item = &T> {
@@ -161,6 +174,7 @@ impl World {
 // Center of multiple accesses in world, which also prevents constructional changes
 pub struct WorldCell<'world> {
     elements: &'world mut HashMap<ElementHandle, Box<dyn Element>>,
+    singletons: &'world HashMap<TypeId, Singleton>,
     occupied: Mutex<HashMap<ElementHandle, isize>>,
 }
 impl WorldCell<'_> {
@@ -308,42 +322,42 @@ impl WorldCell<'_> {
         })
     }
 
+    // Singleton
+
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<Ref<'_, T>> {
-        let mut ret = None;
-        for (handle, element) in self.elements.iter() {
-            let occupied = self.occupied.lock();
-            if occupied.contains_key(handle) || !element.is::<T>() {
-                continue;
-            }
-
-            if ret.is_none() {
-                ret.replace(*handle);
-            } else {
-                return None;
-            }
+        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
+            self.fetch(*handle)
+        } else {
+            None
         }
-
-        self.fetch(ret?)
     }
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
-        let mut ret = None;
-        for (handle, element) in self.elements.iter() {
-            let occupied = self.occupied.lock();
-            if occupied.contains_key(handle) || !element.is::<T>() {
-                continue;
-            }
-
-            if ret.is_none() {
-                ret.replace(*handle);
-            } else {
-                return None;
-            }
+        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
+            self.fetch_mut(*handle)
+        } else {
+            None
         }
+    }
 
-        self.fetch_mut(ret?)
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn try_single<T: Element>(&self) -> Option<Ref<'_, T>> {
+        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
+            self.try_fetch(*handle)
+        } else {
+            None
+        }
+    }
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn try_single_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
+        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
+            self.try_fetch_mut(*handle)
+        } else {
+            None
+        }
     }
 
     // Direct occupation skipping the lock
@@ -447,6 +461,7 @@ impl<T: ?Sized> WorldElement<'_, T> {
         // Manually construct to allow `observers` and `elements` can be separately mutable
         let mut cell = WorldCell {
             elements: &mut self.world.elements,
+            singletons: &self.world.singletons,
             occupied: Mutex::default(),
         };
 
