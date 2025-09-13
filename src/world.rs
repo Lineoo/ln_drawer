@@ -24,7 +24,15 @@ impl World {
     pub fn insert(&mut self, element: impl Element + 'static) -> ElementHandle {
         self.elements.insert(self.curr_idx, Box::new(element));
         self.curr_idx.0 += 1;
-        ElementHandle(self.curr_idx.0 - 1)
+        let handle = ElementHandle(self.curr_idx.0 - 1);
+
+        // when_inserted
+        let mut queue = WorldQueue::default();
+        let element = self.fetch_mut_dyn(handle).unwrap();
+        element.when_inserted(handle, &mut queue);
+        queue.flush(self);
+
+        handle
     }
 
     pub fn contains(&self, handle: ElementHandle) -> bool {
@@ -202,7 +210,7 @@ impl WorldCell<'_> {
         })
     }
 
-    pub fn fetch_mut_dyn(&mut self, handle: ElementHandle) -> Option<RefMut<'_, dyn Element>> {
+    pub fn fetch_mut_dyn(&self, handle: ElementHandle) -> Option<RefMut<'_, dyn Element>> {
         let mut occupied = self.occupied.lock();
 
         let cnt = occupied.entry(handle).or_default();
@@ -274,7 +282,7 @@ impl WorldCell<'_> {
         })
     }
 
-    pub fn try_fetch_mut_dyn(&mut self, handle: ElementHandle) -> Option<RefMut<'_, dyn Element>> {
+    pub fn try_fetch_mut_dyn(&self, handle: ElementHandle) -> Option<RefMut<'_, dyn Element>> {
         let mut occupied = self.occupied.lock();
 
         let cnt = occupied.entry(handle).or_default();
@@ -400,6 +408,23 @@ impl<T: ?Sized> WorldElement<'_, T> {
             for observer in observers {
                 observer(event, &mut cell);
             }
+        }
+    }
+}
+
+#[derive(Default)]
+#[expect(clippy::type_complexity)]
+pub struct WorldQueue {
+    queue: Vec<Box<dyn FnOnce(&mut World)>>,
+}
+impl WorldQueue {
+    pub fn queue(&mut self, ops: impl FnOnce(&mut World) + 'static) {
+        self.queue.push(Box::new(ops));
+    }
+
+    fn flush(self, world: &mut World) {
+        for cmd in self.queue {
+            cmd(world);
         }
     }
 }
