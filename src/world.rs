@@ -25,20 +25,20 @@ pub struct World {
 }
 impl Default for World {
     fn default() -> Self {
-        let mut elements = HashMap::new();
+        let mut elements = HashMap::<_, Box<dyn Element>>::new();
         let mut singletons = HashMap::new();
 
-        elements.insert(
-            ElementHandle(0),
-            Box::new(Observers(HashMap::new())) as Box<dyn Element>,
-        );
+        elements.insert(ElementHandle(0), Box::new(Observers(HashMap::new())));
         singletons.insert(
             TypeId::of::<Observers>(),
             Singleton::Unique(ElementHandle(0)),
         );
 
+        elements.insert(ElementHandle(1), Box::new(Queue(Vec::new())));
+        singletons.insert(TypeId::of::<Queue>(), Singleton::Unique(ElementHandle(1)));
+
         World {
-            curr_idx: ElementHandle(1),
+            curr_idx: ElementHandle(2),
             elements,
             singletons,
         }
@@ -53,10 +53,10 @@ impl World {
         let handle = ElementHandle(self.curr_idx.0 - 1);
 
         // when_inserted
-        let mut queue = WorldQueue::default();
-        let element = self.fetch_mut_dyn(handle).unwrap();
-        element.when_inserted(handle, &mut queue);
-        queue.flush(self);
+        let cell = self.cell();
+        let mut element = cell.fetch_mut_dyn(handle).unwrap();
+        element.when_inserted(handle, &cell);
+        drop(element);
 
         // ElementInserted
         self.trigger(&ElementInserted(handle));
@@ -109,14 +109,6 @@ impl World {
             .map(|element| element.as_mut())
     }
 
-    pub fn cell(&mut self) -> WorldCell<'_> {
-        WorldCell {
-            elements: &mut self.elements,
-            singletons: &self.singletons,
-            occupied: Mutex::new(HashMap::new()),
-        }
-    }
-
     pub fn entry<T: Element>(&mut self, handle: ElementHandle) -> Option<WorldElement<'_, T>> {
         if !self.elements.contains_key(&handle) {
             return None;
@@ -141,18 +133,6 @@ impl World {
         })
     }
 
-    /// Global trigger. Will trigger every element listening to this event.
-    pub fn trigger<E: 'static>(&mut self, event: &E) {
-        let mut queue = WorldQueue::default();
-        let observers = self.single_mut::<Observers>().unwrap();
-        for observers in observers.0.values_mut() {
-            for observer in observers {
-                observer(event, &mut queue);
-            }
-        }
-        queue.flush(self);
-    }
-
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<&T> {
         if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
@@ -168,6 +148,24 @@ impl World {
             self.elements.get_mut(handle)?.downcast_mut()
         } else {
             None
+        }
+    }
+
+    pub fn cell(&mut self) -> WorldCell<'_> {
+        WorldCell {
+            world: self,
+            occupied: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Global trigger. Will trigger every element listening to this event.
+    pub fn trigger<E: 'static>(&mut self, event: &E) {
+        let cell = self.cell();
+        let mut observers = cell.single_mut::<Observers>().unwrap();
+        for observers in observers.0.values_mut() {
+            for observer in observers {
+                observer(event, &cell);
+            }
         }
     }
 
@@ -188,10 +186,60 @@ impl World {
     }
 }
 
+/// A full mutable world reference with specific element selected.
+pub struct WorldElement<'world, T: ?Sized> {
+    world: &'world mut World,
+    handle: ElementHandle,
+    _marker: PhantomData<T>,
+}
+impl<T: Element> Deref for WorldElement<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        self.world.fetch(self.handle).unwrap()
+    }
+}
+impl<T: Element> DerefMut for WorldElement<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.world.fetch_mut(self.handle).unwrap()
+    }
+}
+impl Deref for WorldElement<'_, dyn Element> {
+    type Target = dyn Element;
+    fn deref(&self) -> &Self::Target {
+        self.world.fetch_dyn(self.handle).unwrap()
+    }
+}
+impl DerefMut for WorldElement<'_, dyn Element> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.world.fetch_mut_dyn(self.handle).unwrap()
+    }
+}
+impl<T: ?Sized> WorldElement<'_, T> {
+    pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &WorldCell) + 'static) {
+        let observers = self.world.single_mut::<Observers>().unwrap();
+        let observers = observers.0.entry(self.handle).or_default();
+        observers.push(Box::new(move |event, world| {
+            if let Some(event) = event.downcast_ref::<E>() {
+                action(event, world);
+            }
+        }));
+    }
+
+    pub fn trigger<E: 'static>(&mut self, event: &E) {
+        let cell = self.world.cell();
+        let mut observers = cell.single_mut::<Observers>().unwrap();
+        if let Some(observers) = observers.0.get_mut(&self.handle) {
+            for observer in observers {
+                observer(event, &cell);
+            }
+        }
+    }
+}
+
 // Center of multiple accesses in world, which also prevents constructional changes
 pub struct WorldCell<'world> {
-    elements: &'world mut HashMap<ElementHandle, Box<dyn Element>>,
-    singletons: &'world HashMap<TypeId, Singleton>,
+    world: &'world mut World,
+    // TODO use RefCell to optimize single-threaded situation
     occupied: Mutex<HashMap<ElementHandle, isize>>,
 }
 impl WorldCell<'_> {
@@ -204,7 +252,7 @@ impl WorldCell<'_> {
         }
 
         *cnt += 1;
-        let element = self.elements.get(&handle)?.downcast_ref()?;
+        let element = self.world.elements.get(&handle)?.downcast_ref()?;
 
         Some(Ref {
             ptr: element as *const T,
@@ -222,7 +270,7 @@ impl WorldCell<'_> {
         }
 
         *cnt += 1;
-        let element = self.elements.get(&handle)?.as_ref();
+        let element = self.world.elements.get(&handle)?.as_ref();
 
         Some(Ref {
             ptr: element as *const dyn Element,
@@ -240,7 +288,7 @@ impl WorldCell<'_> {
         }
 
         *cnt -= 1;
-        let element = self.elements.get(&handle)?.downcast_ref()?;
+        let element = self.world.elements.get(&handle)?.downcast_ref()?;
 
         Some(RefMut {
             ptr: element as *const T as *mut T,
@@ -258,79 +306,7 @@ impl WorldCell<'_> {
         }
 
         *cnt -= 1;
-        let element = self.elements.get(&handle)?.as_ref();
-
-        Some(RefMut {
-            ptr: element as *const dyn Element as *mut dyn Element,
-            world: self,
-            handle,
-        })
-    }
-
-    pub fn try_fetch<T: Element>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
-        let mut occupied = self.occupied.lock();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt < 0 {
-            return None;
-        }
-
-        *cnt += 1;
-        let element = self.elements.get(&handle)?.downcast_ref()?;
-
-        Some(Ref {
-            ptr: element as *const T,
-            world: self,
-            handle,
-        })
-    }
-
-    pub fn try_fetch_dyn(&self, handle: ElementHandle) -> Option<Ref<'_, dyn Element>> {
-        let mut occupied = self.occupied.lock();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt < 0 {
-            return None;
-        }
-
-        *cnt += 1;
-        let element = self.elements.get(&handle)?.as_ref();
-
-        Some(Ref {
-            ptr: element as *const dyn Element,
-            world: self,
-            handle,
-        })
-    }
-
-    pub fn try_fetch_mut<T: Element>(&self, handle: ElementHandle) -> Option<RefMut<'_, T>> {
-        let mut occupied = self.occupied.lock();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt != 0 {
-            return None;
-        }
-
-        *cnt -= 1;
-        let element = self.elements.get(&handle)?.downcast_ref()?;
-
-        Some(RefMut {
-            ptr: element as *const T as *mut T,
-            world: self,
-            handle,
-        })
-    }
-
-    pub fn try_fetch_mut_dyn(&self, handle: ElementHandle) -> Option<RefMut<'_, dyn Element>> {
-        let mut occupied = self.occupied.lock();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt != 0 {
-            return None;
-        }
-
-        *cnt -= 1;
-        let element = self.elements.get(&handle)?.as_ref();
+        let element = self.world.elements.get(&handle)?.as_ref();
 
         Some(RefMut {
             ptr: element as *const dyn Element as *mut dyn Element,
@@ -343,48 +319,92 @@ impl WorldCell<'_> {
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<Ref<'_, T>> {
-        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
+        if let Some(Singleton::Unique(handle)) = self.world.singletons.get(&TypeId::of::<T>()) {
             self.fetch(*handle)
         } else {
             None
         }
     }
 
+    pub fn entry<T: Element>(&self, handle: ElementHandle) -> Option<WorldCellElement<'_, T>> {
+        if !self.world.elements.contains_key(&handle) {
+            return None;
+        }
+
+        let mut occupied = self.occupied.lock();
+
+        let cnt = occupied.entry(handle).or_default();
+        if *cnt != 0 {
+            panic!("{handle:?} is borrowed");
+        }
+
+        *cnt -= 1;
+        let element = self.world.elements.get(&handle)?.downcast_ref()?;
+
+        Some(WorldCellElement {
+            ptr: element as *const T as *mut T,
+            world: self,
+            handle,
+            _marker: PhantomData,
+        })
+    }
+
+    pub fn entry_dyn(&self, handle: ElementHandle) -> Option<WorldCellElement<'_, dyn Element>> {
+        if !self.world.elements.contains_key(&handle) {
+            return None;
+        }
+
+        let mut occupied = self.occupied.lock();
+        let element = self.world.elements.get(&handle)?.as_ref();
+
+        let cnt = occupied.entry(handle).or_default();
+        if *cnt != 0 {
+            panic!("{handle:?} is borrowed");
+        }
+
+        *cnt -= 1;
+
+        Some(WorldCellElement {
+            ptr: element as *const dyn Element as *mut dyn Element,
+            world: self,
+            handle,
+            _marker: PhantomData,
+        })
+    }
+
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
-        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
+        if let Some(Singleton::Unique(handle)) = self.world.singletons.get(&TypeId::of::<T>()) {
             self.fetch_mut(*handle)
         } else {
             None
         }
     }
 
-    /// Return `Some` if there is ONLY one element of target type.
-    pub fn try_single<T: Element>(&self) -> Option<Ref<'_, T>> {
-        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
-            self.try_fetch(*handle)
-        } else {
-            None
-        }
+    pub fn world(&mut self) -> &mut World {
+        self.world
     }
 
-    /// Return `Some` if there is ONLY one element of target type.
-    pub fn try_single_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
-        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
-            self.try_fetch_mut(*handle)
-        } else {
-            None
-        }
+    /// Global trigger. Will trigger every element listening to this event. This will be delayed
+    /// until the cell is closed.
+    ///
+    /// This function has some limit since the event is delayed until cell closed, thus acquiring the ownership
+    /// of the event.
+    pub fn trigger<E: 'static>(&self, event: E) {
+        let mut queue = self.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            world.trigger(&event);
+        }));
     }
 
     // Direct occupation skipping the lock
 
     pub fn occupy<T: Element>(&mut self, handle: ElementHandle) -> Option<&mut T> {
-        self.elements.get_mut(&handle)?.downcast_mut()
+        self.world.elements.get_mut(&handle)?.downcast_mut()
     }
 
     pub fn occupy_dyn(&mut self, handle: ElementHandle) -> Option<&mut dyn Element> {
-        self.elements.get_mut(&handle).map(|elm| elm.as_mut())
+        self.world.elements.get_mut(&handle).map(|elm| elm.as_mut())
     }
 }
 
@@ -436,79 +456,98 @@ impl<T: ?Sized> Drop for RefMut<'_, T> {
     }
 }
 
-/// A full mutable world reference with specific element selected.
-pub struct WorldElement<'world, T: ?Sized> {
-    world: &'world mut World,
+/// A world cell reference with specific element selected. The borrowing behavior is the same as
+/// mutably borrowing.
+pub struct WorldCellElement<'world, T: ?Sized> {
+    ptr: *mut T,
+    world: &'world WorldCell<'world>,
     handle: ElementHandle,
     _marker: PhantomData<T>,
 }
-impl<T: Element> Deref for WorldElement<'_, T> {
+impl<T: ?Sized> Deref for WorldCellElement<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        self.world.fetch(self.handle).unwrap()
+        // SAFETY: guaranteed by World's cell_occupied
+        unsafe { self.ptr.as_ref().unwrap() }
     }
 }
-impl<T: Element> DerefMut for WorldElement<'_, T> {
+impl<T: ?Sized> DerefMut for WorldCellElement<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.world.fetch_mut(self.handle).unwrap()
+        // SAFETY: guaranteed by World's cell_occupied
+        unsafe { self.ptr.as_mut().unwrap() }
     }
 }
-impl Deref for WorldElement<'_, dyn Element> {
-    type Target = dyn Element;
-    fn deref(&self) -> &Self::Target {
-        self.world.fetch_dyn(self.handle).unwrap()
+impl<T: ?Sized> Drop for WorldCellElement<'_, T> {
+    fn drop(&mut self) {
+        let mut occupied = self.world.occupied.lock();
+        let cnt = occupied.get_mut(&self.handle).unwrap();
+        *cnt += 1;
     }
 }
-impl DerefMut for WorldElement<'_, dyn Element> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.world.fetch_mut_dyn(self.handle).unwrap()
-    }
-}
-impl<T: ?Sized> WorldElement<'_, T> {
-    pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &mut WorldQueue) + 'static) {
-        let observers = self.world.single_mut::<Observers>().unwrap();
-        let observers = observers.0.entry(self.handle).or_default();
-        observers.push(Box::new(move |event, world| {
-            if let Some(event) = event.downcast_ref::<E>() {
-                action(event, world);
-            }
+impl<T: Element> WorldCellElement<'_, T> {
+    /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
+    /// effect (by its adding order instead).
+    pub fn observe<E: 'static>(&mut self, action: impl FnMut(&E, &WorldCell) + 'static) {
+        let handle = self.handle;
+        let mut queue = self.world.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry::<T>(handle).unwrap();
+            this.observe(action);
         }));
     }
 
-    pub fn trigger<E: 'static>(&mut self, event: &E) {
-        let mut queue = WorldQueue::default();
-        let observers = self.world.single_mut::<Observers>().unwrap();
-        if let Some(observers) = observers.0.get_mut(&self.handle) {
-            for observer in observers {
-                observer(event, &mut queue);
-            }
-        }
-        queue.flush(self.world);
+    /// This will be delayed until the cell is closed. So not all observers in the cell scope could receive the
+    /// trigger (by its triggering order instead).
+    ///
+    /// This function has some limit since the event is delayed until cell closed, thus acquiring the ownership
+    /// of the event.
+    pub fn trigger<E: 'static>(&mut self, event: E) {
+        let handle = self.handle;
+        let mut queue = self.world.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry::<T>(handle).unwrap();
+            this.trigger(&event);
+        }));
+    }
+}
+impl WorldCellElement<'_, dyn Element> {
+    /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
+    /// effect (by its adding order instead).
+    pub fn observe<E: 'static>(&mut self, action: impl FnMut(&E, &WorldCell) + 'static) {
+        let handle = self.handle;
+        let mut queue = self.world.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry_dyn(handle).unwrap();
+            this.observe(action);
+        }));
+    }
+
+    /// This will be delayed until the cell is closed. So not all observers in the cell scope could receive the
+    /// trigger (by its triggering order instead).
+    ///
+    /// This function has some limit since the event is delayed until cell closed, thus acquiring the ownership
+    /// of the event.
+    pub fn trigger<E: 'static>(&mut self, event: E) {
+        let handle = self.handle;
+        let mut queue = self.world.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry_dyn(handle).unwrap();
+            this.trigger(&event);
+        }));
     }
 }
 
-#[derive(Default)]
+// Internal Element #0
 #[expect(clippy::type_complexity)]
-pub struct WorldQueue {
-    queue: Vec<Box<dyn FnOnce(&mut World)>>,
-}
-impl WorldQueue {
-    pub fn queue(&mut self, ops: impl FnOnce(&mut World) + 'static) {
-        self.queue.push(Box::new(ops));
-    }
-
-    fn flush(self, world: &mut World) {
-        for cmd in self.queue {
-            cmd(world);
-        }
-    }
-}
-
-#[expect(clippy::type_complexity)]
-struct Observers(HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &mut WorldQueue)>>>);
+struct Observers(HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &WorldCell)>>>);
 impl Element for Observers {}
 
-// World Events
+// Internal Element #1
+#[derive(Default)]
+#[expect(clippy::type_complexity)]
+struct Queue(Vec<Box<dyn FnOnce(&mut World)>>);
+impl Element for Queue {}
 
+// World Events
 pub struct ElementInserted(pub ElementHandle);
 pub struct ElementRemoved(pub ElementHandle);

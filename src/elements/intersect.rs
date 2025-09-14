@@ -1,6 +1,6 @@
 use crate::{
     elements::Element,
-    world::{ElementHandle, ElementRemoved, World, WorldQueue},
+    world::{ElementHandle, ElementRemoved, World, WorldCell},
 };
 
 #[derive(Default)]
@@ -25,12 +25,10 @@ pub struct Intersection {
     z_order: isize,
 }
 impl Element for Intersection {
-    fn when_inserted(&mut self, handle: ElementHandle, queue: &mut WorldQueue) {
-        queue.queue(move |world| {
-            let mut this = world.entry::<Intersection>(handle).unwrap();
-            this.observe::<ElementRemoved>(|this, queue| {
-                todo!("remove along with the host");
-            });
+    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
+        let mut this = world.entry::<Intersection>(handle).unwrap();
+        this.observe::<ElementRemoved>(|this, queue| {
+            todo!("remove along with the host");
         });
     }
 }
