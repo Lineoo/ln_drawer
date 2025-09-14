@@ -191,3 +191,24 @@ interface 现在在 lnwin 的逻辑（需要分离）：
 
 - TODO 需要更高效率的单一类型遍历，可以带 Singleton 一起
 - TODO 以后会做四叉树优化。
+
+# 为什么 Observers 需要成为一个 Element
+首先单例优化已经完成了，没有性能上的考量。
+
+Observer 系统是 world 非常基础、底层的一个功能——但是，还是不够底层。这个不够底层说的是相对于元素插入删除、元素内部可变性而言不够底层。
+
+如果 Observer 系统和 Element 同一级存储，那么：
+- `World` 将会负责 Observer 和 Element
+- `WorldCell` 不能负责 Observer，有内部可变性
+
+那么，为什么没有一个 `WorldDeref` 的对象不负责 Observer 没有内部可变性？（实际上在作业过程中我发现我非常需要这样一个对象，但无奈再多一个结构体实在太让人抓狂了）
+
+非常不整齐。所以这是我想要的：
+- `World` 只负责 Element
+- `WorldCell` 也只负责 Element，只是多了一个内部可变性
+
+那么 Observer 放在哪里呢？
+1. 我们可以新建一个 `ObservedWorld` 来存放 World 和 Observers
+2. 或者把 Observers 作为一个特殊单例放进 World
+
+综合考虑下来，我觉得还是把 Observers 作为一个特殊单例放进 World 里面。不过这应该是一个纯内部的修改。

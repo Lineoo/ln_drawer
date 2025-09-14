@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use crate::elements::Element;
 
 /// Represent an element in the [`World`]. It's an handle so manual validation is needed.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ElementHandle(usize);
 
 enum Singleton {
@@ -18,13 +18,31 @@ enum Singleton {
     Multiple(usize),
 }
 
-#[derive(Default)]
-#[expect(clippy::type_complexity)]
 pub struct World {
     curr_idx: ElementHandle,
     elements: HashMap<ElementHandle, Box<dyn Element>>,
     singletons: HashMap<TypeId, Singleton>,
-    observers: HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &mut WorldQueue)>>>,
+}
+impl Default for World {
+    fn default() -> Self {
+        let mut elements = HashMap::new();
+        let mut singletons = HashMap::new();
+
+        elements.insert(
+            ElementHandle(0),
+            Box::new(Observers(HashMap::new())) as Box<dyn Element>,
+        );
+        singletons.insert(
+            TypeId::of::<Observers>(),
+            Singleton::Unique(ElementHandle(0)),
+        );
+
+        World {
+            curr_idx: ElementHandle(1),
+            elements,
+            singletons,
+        }
+    }
 }
 impl World {
     pub fn insert(&mut self, element: impl Element + 'static) -> ElementHandle {
@@ -126,7 +144,8 @@ impl World {
     /// Global trigger. Will trigger every element listening to this event.
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         let mut queue = WorldQueue::default();
-        for observers in self.observers.values_mut() {
+        let observers = self.single_mut::<Observers>().unwrap();
+        for observers in observers.0.values_mut() {
             for observer in observers {
                 observer(event, &mut queue);
             }
@@ -447,7 +466,8 @@ impl DerefMut for WorldElement<'_, dyn Element> {
 }
 impl<T: ?Sized> WorldElement<'_, T> {
     pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &mut WorldQueue) + 'static) {
-        let observers = self.world.observers.entry(self.handle).or_default();
+        let observers = self.world.single_mut::<Observers>().unwrap();
+        let observers = observers.0.entry(self.handle).or_default();
         observers.push(Box::new(move |event, world| {
             if let Some(event) = event.downcast_ref::<E>() {
                 action(event, world);
@@ -457,7 +477,8 @@ impl<T: ?Sized> WorldElement<'_, T> {
 
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         let mut queue = WorldQueue::default();
-        if let Some(observers) = self.world.observers.get_mut(&self.handle) {
+        let observers = self.world.single_mut::<Observers>().unwrap();
+        if let Some(observers) = observers.0.get_mut(&self.handle) {
             for observer in observers {
                 observer(event, &mut queue);
             }
@@ -482,6 +503,10 @@ impl WorldQueue {
         }
     }
 }
+
+#[expect(clippy::type_complexity)]
+struct Observers(HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &mut WorldQueue)>>>);
+impl Element for Observers {}
 
 // World Events
 
