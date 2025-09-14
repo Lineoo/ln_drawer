@@ -192,28 +192,6 @@ pub struct WorldElement<'world, T: ?Sized> {
     handle: ElementHandle,
     _marker: PhantomData<T>,
 }
-impl<T: Element> Deref for WorldElement<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        self.world.fetch(self.handle).unwrap()
-    }
-}
-impl<T: Element> DerefMut for WorldElement<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.world.fetch_mut(self.handle).unwrap()
-    }
-}
-impl Deref for WorldElement<'_, dyn Element> {
-    type Target = dyn Element;
-    fn deref(&self) -> &Self::Target {
-        self.world.fetch_dyn(self.handle).unwrap()
-    }
-}
-impl DerefMut for WorldElement<'_, dyn Element> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.world.fetch_mut_dyn(self.handle).unwrap()
-    }
-}
 impl<T: ?Sized> WorldElement<'_, T> {
     pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &WorldCell) + 'static) {
         let observers = self.world.single_mut::<Observers>().unwrap();
@@ -331,18 +309,7 @@ impl WorldCell<'_> {
             return None;
         }
 
-        let mut occupied = self.occupied.lock();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt != 0 {
-            panic!("{handle:?} is borrowed");
-        }
-
-        *cnt -= 1;
-        let element = self.world.elements.get(&handle)?.downcast_ref()?;
-
         Some(WorldCellElement {
-            ptr: element as *const T as *mut T,
             world: self,
             handle,
             _marker: PhantomData,
@@ -354,18 +321,7 @@ impl WorldCell<'_> {
             return None;
         }
 
-        let mut occupied = self.occupied.lock();
-        let element = self.world.elements.get(&handle)?.as_ref();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt != 0 {
-            panic!("{handle:?} is borrowed");
-        }
-
-        *cnt -= 1;
-
         Some(WorldCellElement {
-            ptr: element as *const dyn Element as *mut dyn Element,
             world: self,
             handle,
             _marker: PhantomData,
@@ -456,33 +412,11 @@ impl<T: ?Sized> Drop for RefMut<'_, T> {
     }
 }
 
-/// A world cell reference with specific element selected. The borrowing behavior is the same as
-/// mutably borrowing.
+/// A world cell reference with specific element selected. No borrowing effect.
 pub struct WorldCellElement<'world, T: ?Sized> {
-    ptr: *mut T,
     world: &'world WorldCell<'world>,
     handle: ElementHandle,
     _marker: PhantomData<T>,
-}
-impl<T: ?Sized> Deref for WorldCellElement<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        // SAFETY: guaranteed by World's cell_occupied
-        unsafe { self.ptr.as_ref().unwrap() }
-    }
-}
-impl<T: ?Sized> DerefMut for WorldCellElement<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        // SAFETY: guaranteed by World's cell_occupied
-        unsafe { self.ptr.as_mut().unwrap() }
-    }
-}
-impl<T: ?Sized> Drop for WorldCellElement<'_, T> {
-    fn drop(&mut self) {
-        let mut occupied = self.world.occupied.lock();
-        let cnt = occupied.get_mut(&self.handle).unwrap();
-        *cnt += 1;
-    }
 }
 impl<T: Element> WorldCellElement<'_, T> {
     /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
