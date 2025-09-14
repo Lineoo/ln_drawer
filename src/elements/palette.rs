@@ -1,9 +1,13 @@
 use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
-    elements::{Element, PositionedElement},
+    elements::{
+        Element, IntersectManager, PositionedElement,
+        intersect::{IntersectHit, Intersection},
+    },
     interface::{Interface, Painter},
-    world::World,
+    lnwin::PointerEvent,
+    world::{ElementHandle, World, WorldCell},
 };
 
 const WIDTH: u32 = 128;
@@ -13,7 +17,24 @@ pub struct Palette {
     painter: Painter,
     knob: Painter,
 }
-impl Element for Palette {}
+impl Element for Palette {
+    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
+        let mut this = world.entry_dyn(handle).unwrap();
+        let mut intersect = world.single_mut::<IntersectManager>().unwrap();
+        intersect.register(Intersection {
+            host: handle,
+            rect: self.painter.get_rect(),
+            z_order: 100,
+        });
+        this.observe::<IntersectHit>(move |event, world| match event.0 {
+            PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
+                let mut this = world.fetch_mut::<Palette>(handle).unwrap();
+                this.set_knob_position(point);
+            }
+            _ => (),
+        });
+    }
+}
 impl PositionedElement for Palette {
     fn get_position(&self) -> [i32; 2] {
         self.painter.get_position()
@@ -82,7 +103,11 @@ impl Palette {
     }
 
     pub fn set_knob_position(&mut self, position: [i32; 2]) {
-        self.knob.set_position([position[0] - 1, position[1] - 1]);
+        let rect = self.painter.get_rect();
+        let x = position[0].clamp(rect[0], rect[2] - 1);
+        let y = position[1].clamp(rect[1], rect[3] - 1);
+
+        self.knob.set_position([x - 1, y - 1]);
     }
 
     pub fn pick_color(&self) -> [u8; 4] {

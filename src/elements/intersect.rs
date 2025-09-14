@@ -17,21 +17,24 @@ pub struct IntersectManager {
 impl Element for IntersectManager {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
         let mut this = world.entry_dyn(handle).unwrap();
+        let mut pressed = false;
         let mut pointer_on = None;
         this.observe::<PointerEvent>(move |&event, world| {
             let this = world.fetch::<IntersectManager>(handle).unwrap();
             if let PointerEvent::Pressed(point) = event {
+                pressed = true;
                 pointer_on = this.intersect(point)
             }
 
             if let Some(pointer_on) = pointer_on {
                 let mut pointer_on = world.entry_dyn(pointer_on).unwrap();
                 pointer_on.trigger(IntersectHit(event));
-            } else {
+            } else if pressed {
                 world.trigger(IntersectFail(event));
             }
 
             if let PointerEvent::Released(_) = event {
+                pressed = false;
                 pointer_on = None;
             }
         });
@@ -50,8 +53,8 @@ impl IntersectManager {
         let max_order = isize::MIN;
         for intersection in &self.boxes {
             if (intersection.z_order > max_order)
-                && (intersection.rect[0] < point[0] && point[0] < intersection.rect[2])
-                && (intersection.rect[1] < point[1] && point[1] < intersection.rect[3])
+                && (intersection.rect[0] <= point[0] && point[0] < intersection.rect[2])
+                && (intersection.rect[1] <= point[1] && point[1] < intersection.rect[3])
             {
                 top_result = Some(intersection.host);
             }

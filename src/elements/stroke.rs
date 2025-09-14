@@ -1,7 +1,7 @@
 use hashbrown::HashMap;
 
 use crate::{
-    elements::Element,
+    elements::{Element, Palette, intersect::IntersectFail},
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     world::{ElementHandle, WorldCell},
@@ -15,22 +15,16 @@ pub struct StrokeLayer {
 }
 impl Element for StrokeLayer {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut cursor_down = false;
         let mut stroke = world.entry::<StrokeLayer>(handle).unwrap();
-        stroke.observe::<PointerEvent>(move |&event, world| match event {
-            PointerEvent::Moved(position) if cursor_down => {
+        stroke.observe::<IntersectFail>(move |event, world| match event.0 {
+            PointerEvent::Moved(position) | PointerEvent::Pressed(position) => {
                 let mut stroke = world.fetch_mut::<StrokeLayer>(handle).unwrap();
-                stroke.write_pixel(position, [0xff; 4], world);
+                let color = (world.single::<Palette>())
+                    .map(|palette| palette.pick_color())
+                    .unwrap_or([0xff; 4]);
+                stroke.write_pixel(position, color, world);
             }
-            PointerEvent::Moved(_) => {}
-            PointerEvent::Pressed(position) => {
-                cursor_down = true;
-                let mut stroke = world.fetch_mut::<StrokeLayer>(handle).unwrap();
-                stroke.write_pixel(position, [0xff; 4], world);
-            }
-            PointerEvent::Released(_) => {
-                cursor_down = false;
-            }
+            _ => (),
         });
     }
 }
