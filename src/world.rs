@@ -1,6 +1,5 @@
 use std::{
     any::{Any, TypeId},
-    marker::PhantomData,
     ops::{Deref, DerefMut},
 };
 
@@ -110,7 +109,7 @@ impl World {
             .map(|element| element.as_mut())
     }
 
-    pub fn entry<T: Element>(&mut self, handle: ElementHandle) -> Option<WorldElement<'_, T>> {
+    pub fn entry(&mut self, handle: ElementHandle) -> Option<WorldElement<'_>> {
         if !self.elements.contains_key(&handle) {
             return None;
         }
@@ -118,19 +117,6 @@ impl World {
         Some(WorldElement {
             world: self,
             handle,
-            _marker: PhantomData,
-        })
-    }
-
-    pub fn entry_dyn(&mut self, handle: ElementHandle) -> Option<WorldElement<'_, dyn Element>> {
-        if !self.elements.contains_key(&handle) {
-            return None;
-        }
-
-        Some(WorldElement {
-            world: self,
-            handle,
-            _marker: PhantomData,
         })
     }
 
@@ -188,12 +174,11 @@ impl World {
 }
 
 /// A full mutable world reference with specific element selected.
-pub struct WorldElement<'world, T: ?Sized> {
+pub struct WorldElement<'world> {
     world: &'world mut World,
     handle: ElementHandle,
-    _marker: PhantomData<T>,
 }
-impl<T: ?Sized> WorldElement<'_, T> {
+impl WorldElement<'_> {
     pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &WorldCell) + 'static) {
         let observers = self.world.single_mut::<Observers>().unwrap();
         let observers = observers.0.entry(self.handle).or_default();
@@ -316,7 +301,7 @@ impl WorldCell<'_> {
         }
     }
 
-    pub fn entry<T: Element>(&self, handle: ElementHandle) -> Option<WorldCellElement<'_, T>> {
+    pub fn entry(&self, handle: ElementHandle) -> Option<WorldCellElement<'_>> {
         if !self.world.elements.contains_key(&handle) {
             return None;
         }
@@ -324,19 +309,6 @@ impl WorldCell<'_> {
         Some(WorldCellElement {
             world: self,
             handle,
-            _marker: PhantomData,
-        })
-    }
-
-    pub fn entry_dyn(&self, handle: ElementHandle) -> Option<WorldCellElement<'_, dyn Element>> {
-        if !self.world.elements.contains_key(&handle) {
-            return None;
-        }
-
-        Some(WorldCellElement {
-            world: self,
-            handle,
-            _marker: PhantomData,
         })
     }
 
@@ -425,19 +397,18 @@ impl<T: ?Sized> Drop for RefMut<'_, T> {
 }
 
 /// A world cell reference with specific element selected. No borrowing effect.
-pub struct WorldCellElement<'world, T: ?Sized> {
+pub struct WorldCellElement<'world> {
     world: &'world WorldCell<'world>,
     handle: ElementHandle,
-    _marker: PhantomData<T>,
 }
-impl<T: Element> WorldCellElement<'_, T> {
+impl WorldCellElement<'_> {
     /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(&mut self, action: impl FnMut(&E, &WorldCell) + 'static) {
         let handle = self.handle;
         let mut queue = self.world.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
-            let mut this = world.entry::<T>(handle).unwrap();
+            let mut this = world.entry(handle).unwrap();
             this.observe(action);
         }));
     }
@@ -451,33 +422,7 @@ impl<T: Element> WorldCellElement<'_, T> {
         let handle = self.handle;
         let mut queue = self.world.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
-            let mut this = world.entry::<T>(handle).unwrap();
-            this.trigger(&event);
-        }));
-    }
-}
-impl WorldCellElement<'_, dyn Element> {
-    /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
-    /// effect (by its adding order instead).
-    pub fn observe<E: 'static>(&mut self, action: impl FnMut(&E, &WorldCell) + 'static) {
-        let handle = self.handle;
-        let mut queue = self.world.single_mut::<Queue>().unwrap();
-        queue.0.push(Box::new(move |world| {
-            let mut this = world.entry_dyn(handle).unwrap();
-            this.observe(action);
-        }));
-    }
-
-    /// This will be delayed until the cell is closed. So not all observers in the cell scope could receive the
-    /// trigger (by its triggering order instead).
-    ///
-    /// This function has some limit since the event is delayed until cell closed, thus acquiring the ownership
-    /// of the event.
-    pub fn trigger<E: 'static>(&mut self, event: E) {
-        let handle = self.handle;
-        let mut queue = self.world.single_mut::<Queue>().unwrap();
-        queue.0.push(Box::new(move |world| {
-            let mut this = world.entry_dyn(handle).unwrap();
+            let mut this = world.entry(handle).unwrap();
             this.trigger(&event);
         }));
     }

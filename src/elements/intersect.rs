@@ -16,7 +16,7 @@ pub struct IntersectManager {
 }
 impl Element for IntersectManager {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry_dyn(handle).unwrap();
+        let mut this = world.entry(handle).unwrap();
         let mut pressed = false;
         let mut pointer_on = None;
         this.observe::<PointerEvent>(move |&event, world| {
@@ -27,7 +27,7 @@ impl Element for IntersectManager {
             }
 
             if let Some(pointer_on) = pointer_on {
-                let mut pointer_on = world.entry_dyn(pointer_on).unwrap();
+                let mut pointer_on = world.entry(pointer_on).unwrap();
                 pointer_on.trigger(IntersectHit(event));
             } else if pressed {
                 world.trigger(IntersectFail(event));

@@ -15,7 +15,7 @@ pub struct ButtonRaw {
 }
 impl Element for ButtonRaw {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry_dyn(handle).unwrap();
+        let mut this = world.entry(handle).unwrap();
         let mut intersect = world.single_mut::<IntersectManager>().unwrap();
         intersect.register(Intersection {
             host: handle,
