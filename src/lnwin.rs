@@ -10,7 +10,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image, Label, Palette, StrokeLayer},
+    elements::{ButtonRaw, Image, IntersectManager, Label, Palette, StrokeLayer},
     interface::Interface,
     world::World,
 };
@@ -184,6 +184,11 @@ impl Lnwindow {
                 }
                 KeyCode::F3 => {
                     self.world.insert(StrokeLayer::default());
+                }
+                KeyCode::F4 => {
+                    self.world.insert(IntersectManager::default());
+                    self.world
+                        .insert(ButtonRaw::new([0, 0, 100, 100], || println!("Button hit!")));
                 }
                 _ => (),
             },

@@ -9,6 +9,7 @@ use std::any::Any;
 
 pub use button::ButtonRaw;
 pub use image::Image;
+pub use intersect::IntersectManager;
 pub use label::Label;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;

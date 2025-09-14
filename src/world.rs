@@ -57,6 +57,7 @@ impl World {
         let mut element = cell.fetch_mut_dyn(handle).unwrap();
         element.when_inserted(handle, &cell);
         drop(element);
+        drop(cell);
 
         // ElementInserted
         self.trigger(&ElementInserted(handle));
@@ -219,6 +220,17 @@ pub struct WorldCell<'world> {
     world: &'world mut World,
     // TODO use RefCell to optimize single-threaded situation
     occupied: Mutex<HashMap<ElementHandle, isize>>,
+}
+impl Drop for WorldCell<'_> {
+    fn drop(&mut self) {
+        let queue = self.world.single_mut::<Queue>().unwrap();
+        let mut buf = Vec::new();
+        buf.append(&mut queue.0);
+
+        for cmd in buf {
+            cmd(self.world);
+        }
+    }
 }
 impl WorldCell<'_> {
     pub fn fetch<T: Element>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {

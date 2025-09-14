@@ -1,4 +1,11 @@
-use crate::elements::{Element, PositionedElement};
+use crate::{
+    elements::{
+        Element, IntersectManager, PositionedElement,
+        intersect::{IntersectHit, Intersection},
+    },
+    lnwin::PointerEvent,
+    world::{ElementHandle, WorldCell},
+};
 
 /// Only contains raw button interaction logic. See [`Button`] if a complete button
 /// including text and image is needed.
@@ -6,7 +13,23 @@ pub struct ButtonRaw {
     rect: [i32; 4],
     action: Box<dyn FnMut()>,
 }
-impl Element for ButtonRaw {}
+impl Element for ButtonRaw {
+    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
+        let mut this = world.entry_dyn(handle).unwrap();
+        let mut intersect = world.single_mut::<IntersectManager>().unwrap();
+        intersect.register(Intersection {
+            host: handle,
+            rect: self.rect,
+            z_order: 0,
+        });
+        this.observe::<IntersectHit>(move |event, world| {
+            if let IntersectHit(PointerEvent::Pressed(_)) = event {
+                let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
+                (this.action)();
+            }
+        });
+    }
+}
 impl PositionedElement for ButtonRaw {
     fn get_position(&self) -> [i32; 2] {
         [self.rect[0], self.rect[1]]
@@ -26,10 +49,6 @@ impl ButtonRaw {
             rect,
             action: Box::new(action),
         }
-    }
-
-    pub fn pressed(&mut self) {
-        (self.action)()
     }
 
     fn width(&self) -> u32 {
