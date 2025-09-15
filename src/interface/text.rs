@@ -5,8 +5,9 @@ use parking_lot::Mutex;
 use wgpu::{Device, Queue, SurfaceConfiguration};
 
 use crate::interface::{
-    ComponentCommand, InterfaceViewport, Painter,
+    ComponentCommand, Painter,
     painter::{PainterBuffer, PainterPipeline},
+    viewport::InterfaceViewport,
 };
 
 pub struct TextManager {

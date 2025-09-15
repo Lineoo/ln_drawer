@@ -6,24 +6,24 @@ use wgpu::*;
 use crate::interface::ComponentCommand;
 use crate::interface::viewport::InterfaceViewport;
 
-pub struct WireframePipeline {
+pub struct SquarePipeline {
     pipeline: RenderPipeline,
     viewport_bind: BindGroup,
 }
 
-impl WireframePipeline {
+impl SquarePipeline {
     pub fn init(
         device: &Device,
         surface: &SurfaceConfiguration,
         viewport: &InterfaceViewport,
-    ) -> WireframePipeline {
+    ) -> SquarePipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("wireframe_shader"),
-            source: ShaderSource::Wgsl(include_str!("wireframe.wgsl").into()),
+            label: Some("square_shader"),
+            source: ShaderSource::Wgsl(include_str!("square.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("wireframe_bind_group_layout"),
+            label: Some("square_bind_group_layout"),
             entries: &[BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::FRAGMENT,
@@ -37,7 +37,7 @@ impl WireframePipeline {
         });
 
         let viewport_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("wireframe_viewport_bind_group_layout"),
+            label: Some("square_viewport_bind_group_layout"),
             entries: &[BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::VERTEX,
@@ -51,7 +51,7 @@ impl WireframePipeline {
         });
 
         let viewport_bind = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("wireframe_viewport_bind_group"),
+            label: Some("square_viewport_bind_group"),
             layout: &viewport_layout,
             entries: &[BindGroupEntry {
                 binding: 0,
@@ -64,13 +64,13 @@ impl WireframePipeline {
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("wireframe_layout"),
+            label: Some("square_layout"),
             bind_group_layouts: &[&bind_group_layout, &viewport_layout],
             push_constant_ranges: &[],
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("wireframe_pipeline"),
+            label: Some("square_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader,
@@ -87,7 +87,7 @@ impl WireframePipeline {
                 }],
             },
             primitive: PrimitiveState {
-                topology: PrimitiveTopology::LineList,
+                topology: PrimitiveTopology::TriangleStrip,
                 ..Default::default()
             },
             fragment: Some(FragmentState {
@@ -106,13 +106,13 @@ impl WireframePipeline {
             cache: None,
         });
 
-        WireframePipeline {
+        SquarePipeline {
             pipeline,
             viewport_bind,
         }
     }
 
-    #[must_use = "The wireframe will be destroyed when being drop."]
+    #[must_use = "The square will be destroyed when being drop."]
     pub fn create(
         &mut self,
         rect: [i32; 4],
@@ -121,9 +121,9 @@ impl WireframePipeline {
         comp_tx: Sender<(usize, ComponentCommand)>,
         device: &Device,
         queue: &Queue,
-    ) -> Wireframe {
+    ) -> Square {
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("wireframe_vertex_buffer"),
+            label: Some("square_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
                 [rect[0], rect[1]],
                 [rect[0], rect[3]],
@@ -133,8 +133,8 @@ impl WireframePipeline {
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
         let indices = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("wireframe_index_buffer"),
-            contents: bytemuck::bytes_of(&[0, 1, 1, 2, 2, 3, 3, 0]),
+            label: Some("square_index_buffer"),
+            contents: bytemuck::bytes_of(&[0, 1, 3, 2]),
             usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
         });
 
@@ -145,7 +145,7 @@ impl WireframePipeline {
         });
 
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("wireframe_bind_group_layout"),
+            label: Some("square_bind_group_layout"),
             entries: &[BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::FRAGMENT,
@@ -159,7 +159,7 @@ impl WireframePipeline {
         });
 
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("wireframe_bind_group"),
+            label: Some("square_bind_group"),
             layout: &bind_group_layout,
             entries: &[BindGroupEntry {
                 binding: 0,
@@ -171,18 +171,18 @@ impl WireframePipeline {
             }],
         });
 
-        let wireframe = WireframeBuffer {
+        let square = SquareBuffer {
             vertices,
             indices,
             bind_group,
             color,
         };
 
-        Wireframe {
+        Square {
             rect,
             comp_idx,
             comp_tx,
-            buffer: wireframe,
+            buffer: square,
             queue: queue.clone(),
         }
     }
@@ -193,24 +193,24 @@ impl WireframePipeline {
     }
 }
 
-pub struct Wireframe {
+pub struct Square {
     /// rect: [left, down, right, up]
     rect: [i32; 4],
 
     comp_idx: usize,
     comp_tx: Sender<(usize, ComponentCommand)>,
 
-    buffer: WireframeBuffer,
+    buffer: SquareBuffer,
     queue: Queue,
 }
-impl Drop for Wireframe {
+impl Drop for Square {
     fn drop(&mut self) {
         if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::Destroy)) {
             log::warn!("Dropping Wireframe: {e}");
         }
     }
 }
-impl Wireframe {
+impl Square {
     pub fn set_rect(&mut self, rect: [i32; 4]) {
         self.rect = rect;
         self.queue.write_buffer(
@@ -244,24 +244,24 @@ impl Wireframe {
         }
     }
 
-    pub(super) fn clone_buffer(&self) -> WireframeBuffer {
+    pub(super) fn clone_buffer(&self) -> SquareBuffer {
         self.buffer.clone()
     }
 }
 
 #[derive(Clone)]
-pub struct WireframeBuffer {
+pub struct SquareBuffer {
     vertices: Buffer,
     indices: Buffer,
 
     bind_group: BindGroup,
     color: Buffer,
 }
-impl WireframeBuffer {
+impl SquareBuffer {
     pub fn draw(&self, rpass: &mut RenderPass) {
         rpass.set_bind_group(0, Some(&self.bind_group), &[]);
         rpass.set_vertex_buffer(0, self.vertices.slice(..));
         rpass.set_index_buffer(self.indices.slice(..), IndexFormat::Uint32);
-        rpass.draw_indexed(0..8, 0, 0..1);
+        rpass.draw_indexed(0..4, 0, 0..1);
     }
 }

@@ -3,7 +3,8 @@ use std::sync::mpsc::Sender;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::interface::{ComponentCommand, InterfaceViewport};
+use crate::interface::ComponentCommand;
+use crate::interface::viewport::InterfaceViewport;
 
 pub struct PainterPipeline {
     pipeline: RenderPipeline,

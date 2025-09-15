@@ -4,18 +4,22 @@ use indexmap::IndexMap;
 use wgpu::*;
 
 mod painter;
+mod square;
 mod text;
 mod viewport;
 mod wireframe;
 
 pub use painter::Painter;
+pub use square::Square;
 pub use text::Text;
-pub use viewport::InterfaceViewport;
 pub use wireframe::Wireframe;
 
 use crate::{
     elements::Element,
-    interface::{painter::PainterBuffer, wireframe::WireframeBuffer},
+    interface::{
+        painter::PainterBuffer, square::SquareBuffer, viewport::InterfaceViewport,
+        wireframe::WireframeBuffer,
+    },
     lnwin::Viewport,
 };
 
@@ -27,6 +31,7 @@ pub struct Interface {
     queue: Queue,
 
     wireframe: wireframe::WireframePipeline,
+    square: square::SquarePipeline,
     painter: painter::PainterPipeline,
     text: text::TextManager,
 
@@ -73,6 +78,7 @@ impl Interface {
 
         // Render Components
         let wireframe = wireframe::WireframePipeline::init(&device, &surface_config, &viewport);
+        let square = square::SquarePipeline::init(&device, &surface_config, &viewport);
         let painter = painter::PainterPipeline::init(&device, &surface_config, &viewport);
         let text = text::TextManager::init(&device, &surface_config, &viewport);
 
@@ -84,6 +90,7 @@ impl Interface {
             device,
             queue,
             wireframe,
+            square,
             painter,
             text,
             components_tx,
@@ -153,6 +160,10 @@ impl Interface {
                     self.wireframe.set_pipeline(&mut rpass);
                     wireframe.draw(&mut rpass);
                 }
+                ComponentInner::Square(square) => {
+                    self.square.set_pipeline(&mut rpass);
+                    square.draw(&mut rpass);
+                }
                 ComponentInner::Painter(painter) => {
                     self.painter.set_pipeline(&mut rpass);
                     painter.draw(&mut rpass);
@@ -190,6 +201,24 @@ impl Interface {
             visible: true,
         });
         wireframe
+    }
+
+    #[must_use = "The wireframe will be destroyed when being drop."]
+    pub fn create_square(&mut self, rect: [i32; 4], color: [f32; 4]) -> Square {
+        let square = (self.square).create(
+            rect,
+            color,
+            self.components_idx,
+            self.components_tx.clone(),
+            &self.device,
+            &self.queue,
+        );
+        self.insert(Component {
+            component: ComponentInner::Square(square.clone_buffer()),
+            z_order: 0,
+            visible: true,
+        });
+        square
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
@@ -266,6 +295,7 @@ struct Component {
 enum ComponentInner {
     Painter(PainterBuffer),
     Wireframe(WireframeBuffer),
+    Square(SquareBuffer),
 }
 
 enum ComponentCommand {

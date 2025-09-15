@@ -3,6 +3,7 @@ use crate::{
         Element, IntersectManager, PositionedElement,
         intersect::{IntersectHit, Intersection},
     },
+    interface::{Interface, Square},
     lnwin::PointerEvent,
     world::{ElementHandle, WorldCell},
 };
@@ -12,6 +13,7 @@ use crate::{
 pub struct ButtonRaw {
     rect: [i32; 4],
     action: Box<dyn FnMut()>,
+    square: Option<Square>,
 }
 impl Element for ButtonRaw {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
@@ -28,6 +30,8 @@ impl Element for ButtonRaw {
                 (this.action)();
             }
         });
+        let mut interface = world.single_mut::<Interface>().unwrap();
+        self.square = Some(interface.create_square(self.rect, [1.0, 1.0, 1.0, 0.6]));
     }
 }
 impl PositionedElement for ButtonRaw {
@@ -48,6 +52,7 @@ impl ButtonRaw {
         ButtonRaw {
             rect,
             action: Box::new(action),
+            square: None,
         }
     }
 
