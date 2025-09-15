@@ -239,3 +239,6 @@ Observer 系统是 world 非常基础、底层的一个功能——但是，还�
 右键菜单是取代目前使用 Fn 键来创建、管理组件的最佳人选。
 
 因为我们想要跨平台跨到移动端去，所以我们就不创建新窗口来实现右键菜单了，而是在右键的瞬间在对应位置创建一个右键菜单 Element。
+
+# observer 优化
+使用 `HashMap<(ElementHandle, TypeId), SmallVec<Observer, 1>>`

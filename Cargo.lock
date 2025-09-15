@@ -1250,6 +1250,7 @@ dependencies = [
  "palette",
  "parking_lot",
  "pollster",
+ "smallvec",
  "thiserror 2.0.16",
  "tokio",
  "wgpu",

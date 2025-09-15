@@ -1,10 +1,11 @@
 use std::{
     any::{Any, TypeId},
+    cell::RefCell,
     ops::{Deref, DerefMut},
 };
 
 use hashbrown::HashMap;
-use parking_lot::Mutex;
+use smallvec::SmallVec;
 
 use crate::elements::Element;
 
@@ -141,7 +142,7 @@ impl World {
     pub fn cell(&mut self) -> WorldCell<'_> {
         WorldCell {
             world: self,
-            occupied: Mutex::new(HashMap::new()),
+            occupied: RefCell::new(HashMap::new()),
         }
     }
 
@@ -149,8 +150,8 @@ impl World {
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         let cell = self.cell();
         let mut observers = cell.single_mut::<Observers>().unwrap();
-        for observers in observers.0.values_mut() {
-            for observer in observers {
+        if let Some(observers_typed) = observers.0.get_mut(&TypeId::of::<E>()) {
+            for observer in observers_typed.values_mut().flatten() {
                 observer(event, &cell);
             }
         }
@@ -181,19 +182,21 @@ pub struct WorldElement<'world> {
 impl WorldElement<'_> {
     pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &WorldCell) + 'static) {
         let observers = self.world.single_mut::<Observers>().unwrap();
-        let observers = observers.0.entry(self.handle).or_default();
-        observers.push(Box::new(move |event, world| {
-            if let Some(event) = event.downcast_ref::<E>() {
-                action(event, world);
-            }
+        let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
+        let observers_typed_element = observers_typed.entry(self.handle).or_default();
+        observers_typed_element.push(Box::new(move |event, world| {
+            let event = event.downcast_ref::<E>().unwrap();
+            action(event, world);
         }));
     }
 
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         let cell = self.world.cell();
         let mut observers = cell.single_mut::<Observers>().unwrap();
-        if let Some(observers) = observers.0.get_mut(&self.handle) {
-            for observer in observers {
+        if let Some(observers_typed) = observers.0.get_mut(&TypeId::of::<E>())
+            && let Some(observers_typed_element) = observers_typed.get_mut(&self.handle)
+        {
+            for observer in observers_typed_element {
                 observer(event, &cell);
             }
         }
@@ -204,7 +207,7 @@ impl WorldElement<'_> {
 pub struct WorldCell<'world> {
     world: &'world mut World,
     // TODO use RefCell to optimize single-threaded situation
-    occupied: Mutex<HashMap<ElementHandle, isize>>,
+    occupied: RefCell<HashMap<ElementHandle, isize>>,
 }
 impl Drop for WorldCell<'_> {
     fn drop(&mut self) {
@@ -219,7 +222,7 @@ impl Drop for WorldCell<'_> {
 }
 impl WorldCell<'_> {
     pub fn fetch<T: Element>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
-        let mut occupied = self.occupied.lock();
+        let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
         if *cnt < 0 {
@@ -237,7 +240,7 @@ impl WorldCell<'_> {
     }
 
     pub fn fetch_dyn(&self, handle: ElementHandle) -> Option<Ref<'_, dyn Element>> {
-        let mut occupied = self.occupied.lock();
+        let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
         if *cnt < 0 {
@@ -255,7 +258,7 @@ impl WorldCell<'_> {
     }
 
     pub fn fetch_mut<T: Element>(&self, handle: ElementHandle) -> Option<RefMut<'_, T>> {
-        let mut occupied = self.occupied.lock();
+        let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
         if *cnt != 0 {
@@ -273,7 +276,7 @@ impl WorldCell<'_> {
     }
 
     pub fn fetch_mut_dyn(&self, handle: ElementHandle) -> Option<RefMut<'_, dyn Element>> {
-        let mut occupied = self.occupied.lock();
+        let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
         if *cnt != 0 {
@@ -363,7 +366,7 @@ impl<T: ?Sized> Deref for Ref<'_, T> {
 }
 impl<T: ?Sized> Drop for Ref<'_, T> {
     fn drop(&mut self) {
-        let mut occupied = self.world.occupied.lock();
+        let mut occupied = self.world.occupied.borrow_mut();
         let cnt = occupied.get_mut(&self.handle).unwrap();
         *cnt -= 1;
     }
@@ -390,7 +393,7 @@ impl<T: ?Sized> DerefMut for RefMut<'_, T> {
 }
 impl<T: ?Sized> Drop for RefMut<'_, T> {
     fn drop(&mut self) {
-        let mut occupied = self.world.occupied.lock();
+        let mut occupied = self.world.occupied.borrow_mut();
         let cnt = occupied.get_mut(&self.handle).unwrap();
         *cnt += 1;
     }
@@ -429,8 +432,8 @@ impl WorldCellElement<'_> {
 }
 
 // Internal Element #0
-#[expect(clippy::type_complexity)]
-struct Observers(HashMap<ElementHandle, Vec<Box<dyn FnMut(&dyn Any, &WorldCell)>>>);
+type Observer = Box<dyn FnMut(&dyn Any, &WorldCell)>;
+struct Observers(HashMap<TypeId, HashMap<ElementHandle, SmallVec<[Observer; 1]>>>);
 impl Element for Observers {}
 
 // Internal Element #1
