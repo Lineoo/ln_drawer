@@ -242,3 +242,6 @@ Observer 系统是 world 非常基础、底层的一个功能——但是，还�
 
 # observer 优化
 使用 `HashMap<(ElementHandle, TypeId), SmallVec<Observer, 1>>`
+
+# IntersectElement
+既然有了 PositionedElement 的服务……这个也很正常对吧？使用 Observer 就可以很轻松的实现它。

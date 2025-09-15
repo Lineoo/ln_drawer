@@ -1,14 +1,27 @@
 use crate::{
-    elements::{Element, PositionedElement},
+    elements::{Element, IntersectManager, PositionedElement, intersect::Intersection},
     interface::{Interface, Text},
-    world::World,
+    world::{ElementHandle, World, WorldCell},
 };
 
 pub struct Label {
     text: String,
     inner: Text,
 }
-impl Element for Label {}
+impl Element for Label {
+    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
+        let mut intersect = world.single_mut::<IntersectManager>().unwrap();
+        intersect.register(Intersection {
+            host: handle,
+            rect: self.inner.get_rect(),
+            z_order: 0,
+        });
+    }
+
+    fn as_positioned(&mut self) -> Option<&mut dyn PositionedElement> {
+        Some(self)
+    }
+}
 impl PositionedElement for Label {
     fn get_position(&self) -> [i32; 2] {
         self.inner.get_position()

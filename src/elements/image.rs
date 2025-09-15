@@ -1,15 +1,28 @@
 use std::{error::Error, path::Path};
 
 use crate::{
-    elements::{Element, PositionedElement},
+    elements::{Element, IntersectManager, PositionedElement, intersect::Intersection},
     interface::{Interface, Painter},
-    world::World,
+    world::{ElementHandle, World, WorldCell},
 };
 
 pub struct Image {
     painter: Painter,
 }
-impl Element for Image {}
+impl Element for Image {
+    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
+        let mut intersect = world.single_mut::<IntersectManager>().unwrap();
+        intersect.register(Intersection {
+            host: handle,
+            rect: self.painter.get_rect(),
+            z_order: 0,
+        });
+    }
+
+    fn as_positioned(&mut self) -> Option<&mut dyn PositionedElement> {
+        Some(self)
+    }
+}
 impl PositionedElement for Image {
     fn get_position(&self) -> [i32; 2] {
         self.painter.get_position()

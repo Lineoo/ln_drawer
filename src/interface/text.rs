@@ -119,7 +119,7 @@ impl Text {
         );
     }
 
-    pub fn get_border(&self) -> [i32; 4] {
+    pub fn get_rect(&self) -> [i32; 4] {
         self.inner.get_rect()
     }
 
