@@ -155,10 +155,11 @@ impl World {
     /// Global trigger. Will trigger every element listening to this event.
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         let cell = self.cell();
-        let mut observers = cell.single_mut::<Observers>().unwrap();
-        if let Some(observers_typed) = observers.0.get_mut(&TypeId::of::<E>()) {
-            for observer in observers_typed.values_mut().flatten() {
-                observer(event, &cell);
+        let observers = cell.single_mut::<Observers>().unwrap();
+        if let Some(observers_typed) = observers.0.get(&TypeId::of::<E>()) {
+            for observer in observers_typed.values().flatten() {
+                let mut observer = cell.fetch_mut::<Observer>(*observer).unwrap();
+                (observer.0)(event, &cell);
             }
         }
     }
@@ -187,23 +188,25 @@ pub struct WorldEntry<'world> {
 }
 impl WorldEntry<'_> {
     pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &WorldCell) + 'static) {
+        let handle = self.world.insert(Observer(Box::new(move |event, world| {
+            let event = event.downcast_ref::<E>().unwrap();
+            action(event, world);
+        })));
         let observers = self.world.single_mut::<Observers>().unwrap();
         let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
         let observers_typed_element = observers_typed.entry(self.handle).or_default();
-        observers_typed_element.push(Box::new(move |event, world| {
-            let event = event.downcast_ref::<E>().unwrap();
-            action(event, world);
-        }));
+        observers_typed_element.push(handle);
     }
 
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         let cell = self.world.cell();
-        let mut observers = cell.single_mut::<Observers>().unwrap();
-        if let Some(observers_typed) = observers.0.get_mut(&TypeId::of::<E>())
-            && let Some(observers_typed_element) = observers_typed.get_mut(&self.handle)
+        let observers = cell.single::<Observers>().unwrap();
+        if let Some(observers_typed) = observers.0.get(&TypeId::of::<E>())
+            && let Some(observers_typed_element) = observers_typed.get(&self.handle)
         {
             for observer in observers_typed_element {
-                observer(event, &cell);
+                let mut observer = cell.fetch_mut::<Observer>(*observer).unwrap();
+                (observer.0)(event, &cell);
             }
         }
     }
@@ -538,9 +541,11 @@ impl WorldCellEntry<'_> {
 
 // Internal Element #0
 #[derive(Default)]
-struct Observers(HashMap<TypeId, HashMap<ElementHandle, SmallVec<[Observer; 1]>>>);
-type Observer = Box<dyn FnMut(&dyn Any, &WorldCell)>;
+struct Observers(HashMap<TypeId, HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>>);
+#[expect(clippy::type_complexity)]
+struct Observer(Box<dyn FnMut(&dyn Any, &WorldCell)>);
 impl Element for Observers {}
+impl Element for Observer {}
 
 // Internal Element #1
 #[derive(Default)]
