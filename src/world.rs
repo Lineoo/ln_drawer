@@ -28,17 +28,23 @@ impl Default for World {
         let mut elements = HashMap::<_, Box<dyn Element>>::new();
         let mut singletons = HashMap::new();
 
-        elements.insert(ElementHandle(0), Box::new(Observers(HashMap::new())));
+        elements.insert(ElementHandle(0), Box::new(Observers::default()));
         singletons.insert(
             TypeId::of::<Observers>(),
             Singleton::Unique(ElementHandle(0)),
         );
 
-        elements.insert(ElementHandle(1), Box::new(Queue(Vec::new())));
+        elements.insert(ElementHandle(1), Box::new(Queue::default()));
         singletons.insert(TypeId::of::<Queue>(), Singleton::Unique(ElementHandle(1)));
 
+        elements.insert(ElementHandle(2), Box::new(Services::default()));
+        singletons.insert(
+            TypeId::of::<Services>(),
+            Singleton::Unique(ElementHandle(2)),
+        );
+
         World {
-            curr_idx: ElementHandle(2),
+            curr_idx: ElementHandle(3),
             elements,
             singletons,
         }
@@ -110,12 +116,12 @@ impl World {
             .map(|element| element.as_mut())
     }
 
-    pub fn entry(&mut self, handle: ElementHandle) -> Option<WorldElement<'_>> {
+    pub fn entry(&mut self, handle: ElementHandle) -> Option<WorldEntry<'_>> {
         if !self.elements.contains_key(&handle) {
             return None;
         }
 
-        Some(WorldElement {
+        Some(WorldEntry {
             world: self,
             handle,
         })
@@ -175,11 +181,11 @@ impl World {
 }
 
 /// A full mutable world reference with specific element selected.
-pub struct WorldElement<'world> {
+pub struct WorldEntry<'world> {
     world: &'world mut World,
     handle: ElementHandle,
 }
-impl WorldElement<'_> {
+impl WorldEntry<'_> {
     pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &WorldCell) + 'static) {
         let observers = self.world.single_mut::<Observers>().unwrap();
         let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
@@ -200,6 +206,79 @@ impl WorldElement<'_> {
                 observer(event, &cell);
             }
         }
+    }
+
+    pub fn register<U: ?Sized + 'static>(
+        &mut self,
+        service: impl Fn(&dyn Element) -> &U + 'static,
+    ) {
+        let cell = self.world.cell();
+        let mut services = cell.single_mut::<Services>().unwrap();
+        let services_typed = (services.0)
+            .entry(TypeId::of::<ServicesTyped<U>>())
+            .or_insert_with(|| Box::new(ServicesTyped::<U>(HashMap::new())))
+            .downcast_mut::<ServicesTyped<U>>()
+            .unwrap();
+
+        let popback = services_typed.0.insert(self.handle, Box::new(service));
+        if popback.is_some() {
+            log::error!(
+                "duplicated service of type \"{}\" is registered on {:?}",
+                std::any::type_name::<U>(),
+                self.handle
+            );
+        }
+    }
+
+    pub fn register_mut<U: ?Sized + 'static>(
+        &mut self,
+        service: impl Fn(&mut dyn Element) -> &mut U + 'static,
+    ) {
+        let cell = self.world.cell();
+        let mut services = cell.single_mut::<Services>().unwrap();
+        let services_typed = (services.0)
+            .entry(TypeId::of::<ServicesTypedMut<U>>())
+            .or_insert_with(|| Box::new(ServicesTypedMut::<U>(HashMap::new())))
+            .downcast_mut::<ServicesTypedMut<U>>()
+            .unwrap();
+
+        let popback = services_typed.0.insert(self.handle, Box::new(service));
+        if popback.is_some() {
+            log::error!(
+                "duplicated service of type \"{}\" is registered on {:?}",
+                std::any::type_name::<U>(),
+                self.handle
+            );
+        }
+    }
+
+    pub fn service<U: ?Sized + 'static>(&self) -> Option<&U> {
+        let services = self.world.single::<Services>().unwrap();
+        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<U>>()) {
+            let services_typed = services_typed.downcast_ref::<ServicesTyped<U>>().unwrap();
+            if let Some(service) = services_typed.0.get(&self.handle) {
+                let this = self.world.fetch_dyn(self.handle).unwrap();
+                return Some(service(this));
+            }
+        }
+        None
+    }
+
+    pub fn service_mut<U: ?Sized + 'static>(&mut self) -> Option<&mut U> {
+        // SAFETY: The main element and the service are apparently accessed separately
+        let services = self.world.single::<Services>().unwrap() as *const Services;
+        if let Some(services_typed) =
+            unsafe { (*services).0.get(&TypeId::of::<ServicesTypedMut<U>>()) }
+        {
+            let services_typed = services_typed
+                .downcast_ref::<ServicesTypedMut<U>>()
+                .unwrap();
+            if let Some(service) = services_typed.0.get(&self.handle) {
+                let this = self.world.fetch_mut_dyn(self.handle).unwrap();
+                return Some(service(this));
+            }
+        }
+        None
     }
 }
 
@@ -304,12 +383,12 @@ impl WorldCell<'_> {
         }
     }
 
-    pub fn entry(&self, handle: ElementHandle) -> Option<WorldCellElement<'_>> {
+    pub fn entry(&self, handle: ElementHandle) -> Option<WorldCellEntry<'_>> {
         if !self.world.elements.contains_key(&handle) {
             return None;
         }
 
-        Some(WorldCellElement {
+        Some(WorldCellEntry {
             world: self,
             handle,
         })
@@ -400,11 +479,11 @@ impl<T: ?Sized> Drop for RefMut<'_, T> {
 }
 
 /// A world cell reference with specific element selected. No borrowing effect.
-pub struct WorldCellElement<'world> {
+pub struct WorldCellEntry<'world> {
     world: &'world WorldCell<'world>,
     handle: ElementHandle,
 }
-impl WorldCellElement<'_> {
+impl WorldCellEntry<'_> {
     /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(&mut self, action: impl FnMut(&E, &WorldCell) + 'static) {
@@ -429,11 +508,38 @@ impl WorldCellElement<'_> {
             this.trigger(&event);
         }));
     }
+
+    /// This will be delayed until the cell is closed.
+    pub fn register<U: ?Sized + 'static>(
+        &mut self,
+        service: impl Fn(&dyn Element) -> &U + 'static,
+    ) {
+        let handle = self.handle;
+        let mut queue = self.world.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry(handle).unwrap();
+            this.register(service);
+        }));
+    }
+
+    /// This will be delayed until the cell is closed.
+    pub fn register_mut<U: ?Sized + 'static>(
+        &mut self,
+        service: impl Fn(&mut dyn Element) -> &mut U + 'static,
+    ) {
+        let handle = self.handle;
+        let mut queue = self.world.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry(handle).unwrap();
+            this.register_mut(service);
+        }));
+    }
 }
 
 // Internal Element #0
-type Observer = Box<dyn FnMut(&dyn Any, &WorldCell)>;
+#[derive(Default)]
 struct Observers(HashMap<TypeId, HashMap<ElementHandle, SmallVec<[Observer; 1]>>>);
+type Observer = Box<dyn FnMut(&dyn Any, &WorldCell)>;
 impl Element for Observers {}
 
 // Internal Element #1
@@ -442,6 +548,59 @@ impl Element for Observers {}
 struct Queue(Vec<Box<dyn FnOnce(&mut World)>>);
 impl Element for Queue {}
 
+// Internal Element #2
+#[derive(Default)]
+struct Services(HashMap<TypeId, Box<dyn Any>>);
+struct ServicesTyped<U: ?Sized>(HashMap<ElementHandle, Service<U>>);
+struct ServicesTypedMut<U: ?Sized>(HashMap<ElementHandle, ServiceMut<U>>);
+type Service<U> = Box<dyn Fn(&dyn Element) -> &U>;
+type ServiceMut<U> = Box<dyn Fn(&mut dyn Element) -> &mut U>;
+impl Element for Services {}
+
 // World Events
 pub struct ElementInserted(pub ElementHandle);
 pub struct ElementRemoved(pub ElementHandle);
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        elements::Element,
+        world::{ElementHandle, World, WorldCell},
+    };
+
+    struct TestElement {
+        position: [i32; 2],
+    }
+    impl Element for TestElement {
+        fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
+            (world.entry(handle).unwrap())
+                .register(|this| &this.downcast_ref::<TestElement>().unwrap().position);
+            (world.entry(handle).unwrap())
+                .register_mut(|this| &mut this.downcast_mut::<TestElement>().unwrap().position);
+        }
+    }
+
+    #[test]
+    fn service() {
+        let mut world = World::default();
+        let handle = world.insert(TestElement {
+            position: [42, 123],
+        });
+        let mut entry = world.entry(handle).unwrap();
+        let position = entry.service_mut::<[i32; 2]>().unwrap();
+        assert_eq!(position, &[42, 123]);
+        position[1] = 321;
+        let position = entry.service::<[i32; 2]>().unwrap();
+        assert_eq!(position, &[42, 321]);
+    }
+
+    #[test]
+    fn unregistered_service() {
+        let mut world = World::default();
+        let handle = world.insert(TestElement {
+            position: [42, 123],
+        });
+        let mut entry = world.entry(handle).unwrap();
+        assert_eq!(entry.service_mut::<i32>(), None);
+    }
+}
