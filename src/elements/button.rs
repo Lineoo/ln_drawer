@@ -1,6 +1,6 @@
 use crate::{
     elements::{
-        Element, PositionedElement,
+        Element, ElementExt, PositionedElement,
         intersect::{IntersectHit, Intersection},
     },
     interface::{Interface, Square},
@@ -34,6 +34,8 @@ impl Element for ButtonRaw {
 
         let mut interface = world.single_mut::<Interface>().unwrap();
         self.square = Some(interface.create_square(self.rect, [1.0, 1.0, 1.0, 0.6]));
+
+        self.register::<dyn PositionedElement>(handle, world);
     }
 }
 impl PositionedElement for ButtonRaw {

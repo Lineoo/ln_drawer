@@ -2,7 +2,7 @@ use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
     elements::{
-        Element, PositionedElement,
+        Element, ElementExt, PositionedElement,
         intersect::{IntersectHit, Intersection},
     },
     interface::{Interface, Painter},
@@ -36,8 +36,7 @@ impl Element for Palette {
             _ => (),
         });
 
-        this.register::<dyn PositionedElement>(|this| this.downcast_ref::<Palette>().unwrap());
-        this.register_mut::<dyn PositionedElement>(|this| this.downcast_mut::<Palette>().unwrap());
+        self.register::<dyn PositionedElement>(handle, world);
     }
 }
 impl PositionedElement for Palette {

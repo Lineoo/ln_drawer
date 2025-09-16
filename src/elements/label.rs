@@ -1,5 +1,5 @@
 use crate::{
-    elements::{Element, PositionedElement, intersect::Intersection},
+    elements::{Element, ElementExt, PositionedElement, intersect::Intersection},
     interface::{Interface, Text},
     world::{ElementHandle, World, WorldCell},
 };
@@ -17,9 +17,7 @@ impl Element for Label {
         });
         world.entry(intersect).unwrap().depend(handle);
 
-        let mut this = world.entry(handle).unwrap();
-        this.register::<dyn PositionedElement>(|this| this.downcast_ref::<Label>().unwrap());
-        this.register_mut::<dyn PositionedElement>(|this| this.downcast_mut::<Label>().unwrap());
+        self.register::<dyn PositionedElement>(handle, world);
     }
 }
 impl PositionedElement for Label {

@@ -1,4 +1,5 @@
 #![windows_subsystem = "windows"]
+#![feature(unsize)]
 
 pub mod elements;
 pub mod interface;
