@@ -168,6 +168,33 @@ impl World {
         })
     }
 
+    pub fn foreach<T: ?Sized + 'static>(&self, mut action: impl FnMut(&T)) {
+        let services = self.single::<Services>().unwrap();
+        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<T>>()) {
+            let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
+            services_typed.0.iter().for_each(|(handle, converter)| {
+                let service = converter(self.elements.get(handle).unwrap().as_ref());
+                action(service);
+            });
+        }
+    }
+
+    pub fn foreach_mut<T: ?Sized + 'static>(&mut self, mut action: impl FnMut(&mut T)) {
+        let services = self.single::<Services>().unwrap() as *const Services;
+        let services = unsafe { services.as_ref().unwrap() };
+        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTypedMut<T>>()) {
+            let services_typed = services_typed
+                .downcast_ref::<ServicesTypedMut<T>>()
+                .unwrap();
+            services_typed.0.iter().for_each(|(handle, converter)| {
+                let service = converter(self.elements.get_mut(handle).unwrap().as_mut());
+                action(service);
+            });
+        }
+    }
+
+    // Singleton
+
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<&T> {
         if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
@@ -203,22 +230,6 @@ impl World {
                 (observer.0)(event, &cell);
             }
         }
-    }
-
-    pub fn elements<T: Element>(&self) -> impl Iterator<Item = &T> {
-        (self.elements.values()).filter_map(|element| element.downcast_ref::<T>())
-    }
-
-    pub fn elements_mut<T: Element>(&mut self) -> impl Iterator<Item = &mut T> {
-        (self.elements.values_mut()).filter_map(|element| element.downcast_mut::<T>())
-    }
-
-    pub fn elements_dyn(&self) -> impl Iterator<Item = &dyn Element> {
-        self.elements.values().map(|elem| elem.as_ref())
-    }
-
-    pub fn elements_mut_dyn(&mut self) -> impl Iterator<Item = &mut dyn Element> {
-        self.elements.values_mut().map(|elem| elem.as_mut())
     }
 }
 
@@ -448,6 +459,44 @@ impl WorldCell<'_> {
             world: self,
             handle,
         })
+    }
+
+    pub fn foreach<T: ?Sized + 'static>(&self, mut action: impl FnMut(&T)) {
+        let services = self.world.single::<Services>().unwrap();
+        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<T>>()) {
+            let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
+            services_typed.0.iter().for_each(|(handle, converter)| {
+                let occupied = self.occupied.borrow();
+                if occupied.get(handle).is_some_and(|cnt| *cnt < 0) {
+                    log::warn!("{handle:?} is mutably borrowed during `foreach`, skipped");
+                    return;
+                }
+
+                let service = converter(self.world.elements.get(handle).unwrap().as_ref());
+                action(service);
+            });
+        }
+    }
+
+    pub fn foreach_mut<T: ?Sized + 'static>(&self, mut action: impl FnMut(&mut T)) {
+        let services = self.world.single::<Services>().unwrap();
+        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTypedMut<T>>()) {
+            let services_typed = services_typed
+                .downcast_ref::<ServicesTypedMut<T>>()
+                .unwrap();
+            services_typed.0.iter().for_each(|(handle, converter)| {
+                let occupied = self.occupied.borrow();
+                if occupied.get(handle).is_some_and(|cnt| *cnt != 0) {
+                    log::warn!("{handle:?} is borrowed during `foreach_mut`, skipped");
+                    return;
+                }
+
+                let element = self.world.elements.get(handle).unwrap().as_ref();
+                let element = element as *const dyn Element as *mut dyn Element;
+                let service = converter(unsafe { element.as_mut().unwrap() });
+                action(service);
+            });
+        }
     }
 
     // Singleton

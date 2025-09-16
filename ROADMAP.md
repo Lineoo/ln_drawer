@@ -267,3 +267,20 @@ Observer 系统是 world 非常基础、底层的一个功能——但是，还�
 目前 Intersect 的拖拽使用 Service 转化 `dyn PositionElement` 和 `Intersection` 来进行，但是使用 Service 没有办法做出多碰撞箱（Service 唯一性），同时 Intersection 的位置同步更新也是有一点 `unwrap` 灾难的。
 
 所以，我觉得首先可以把 Intersection 也变成 Element 保存，再使用 Service 系统更改 `dyn PositionElement`，并在更改后时候发出信号 `PositionChanged` 并由下面 Intersection 的 Observers 来检测进行位置更新
+
+# cell 下的即时更新
+目前 cell 不支持结构性更改。但是就像 Bevy 使用 `Entities` 堆来提前返回 Entity 指针一样，我们在 cell 模式下也可以专门维护一个 handle 状态，这样就可以支持 insert 的同时完成即时返回，别的工作放到 queue 里完成。而且就像之前说的，remove 的实现也可以同样。
+
+# Commit 格式
+我发现 commit 的分类我完全就是在乱写（
+
+以后这么个格式：首先我还是用中文写（因为我是中！国！人！），然后模块开头，如果是优化或者修复在用点号分隔加上，然后再是标题。
+
+比如：
+- `image.feat: 图像模块`
+- `label.remove`
+- `button: 小修改`
+- `world.fix: 某个 BUG`
+- `mixed.clean: 清理代码`
+- `proj.ROADMAP`
+- `ver: v0.1.0-alpha4`
