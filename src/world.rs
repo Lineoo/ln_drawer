@@ -295,7 +295,10 @@ pub struct WorldEntry<'world> {
     handle: ElementHandle,
 }
 impl WorldEntry<'_> {
-    pub fn observe<E: 'static>(&mut self, mut action: impl FnMut(&E, &WorldCell) + 'static) {
+    pub fn observe<E: 'static>(
+        &mut self,
+        mut action: impl FnMut(&E, &WorldCell) + 'static,
+    ) -> ElementHandle {
         let handle = self.world.insert(Observer(Box::new(move |event, world| {
             let event = event.downcast_ref::<E>().unwrap();
             action(event, world);
@@ -304,6 +307,7 @@ impl WorldEntry<'_> {
         let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
         let observers_typed_element = observers_typed.entry(self.handle).or_default();
         observers_typed_element.push(handle);
+        handle
     }
 
     pub fn trigger<E: 'static>(&mut self, event: &E) {
@@ -777,13 +781,21 @@ pub struct WorldCellEntry<'world> {
 impl WorldCellEntry<'_> {
     /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
     /// effect (by its adding order instead).
-    pub fn observe<E: 'static>(&mut self, action: impl FnMut(&E, &WorldCell) + 'static) {
+    pub fn observe<E: 'static>(
+        &mut self,
+        action: impl FnMut(&E, &WorldCell) + 'static,
+    ) -> ElementHandle {
         let handle = self.handle;
+        let mut cell_idx = self.world.cell_idx.borrow_mut();
+        cell_idx.0 += 1;
+        let estimate_handle = ElementHandle(cell_idx.0 - 1);
         let mut queue = self.world.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
-            this.observe(action);
+            let actual_handle = this.observe(action);
+            debug_assert_eq!(actual_handle, estimate_handle);
         }));
+        estimate_handle
     }
 
     /// This will be delayed until the cell is closed. So not all observers in the cell scope could receive the
@@ -830,6 +842,8 @@ impl WorldCellEntry<'_> {
     /// will be removed as well. Useful for keeping handle valid.
     pub fn depend(&mut self, other: ElementHandle) {
         let handle = self.handle;
+        let mut cell_idx = self.world.cell_idx.borrow_mut();
+        cell_idx.0 += 1;
         let mut queue = self.world.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
