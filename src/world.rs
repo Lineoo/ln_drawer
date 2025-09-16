@@ -271,7 +271,8 @@ impl World {
         WorldCell {
             world: self,
             occupied: RefCell::new(HashMap::new()),
-            cell_idx,
+            cell_idx: RefCell::new(cell_idx),
+            removed: HashSet::new(),
         }
     }
 
@@ -386,7 +387,7 @@ impl WorldEntry<'_> {
 pub struct WorldCell<'world> {
     world: &'world mut World,
     occupied: RefCell<HashMap<ElementHandle, isize>>,
-    cell_idx: ElementHandle,
+    cell_idx: RefCell<ElementHandle>,
 }
 impl Drop for WorldCell<'_> {
     fn drop(&mut self) {
@@ -402,9 +403,10 @@ impl Drop for WorldCell<'_> {
 impl WorldCell<'_> {
     /// Cell-mode insertion cannot perform the operation immediately so the inserted element cannot be
     /// fetched until end of the cell span.
-    pub fn insert<T: Element + 'static>(&mut self, element: T) -> ElementHandle {
-        self.cell_idx.0 += 1;
-        let estimate_handle = ElementHandle(self.cell_idx.0 - 1);
+    pub fn insert<T: Element + 'static>(&self, element: T) -> ElementHandle {
+        let mut cell_idx = self.cell_idx.borrow_mut();
+        cell_idx.0 += 1;
+        let estimate_handle = ElementHandle(cell_idx.0 - 1);
         let mut queue = self.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let actual_handle = world.insert(element);
