@@ -381,6 +381,10 @@ impl WorldEntry<'_> {
             }
         });
     }
+
+    pub fn destroy(self) {
+        self.world.remove(self.handle);
+    }
 }
 
 // Center of multiple accesses in world, which also prevents constructional changes
@@ -631,7 +635,7 @@ impl WorldCell<'_> {
                 if self.removed.borrow().contains(handle) {
                     return;
                 }
-                
+
                 let occupied = self.occupied.borrow();
                 if occupied.get(handle).is_some_and(|cnt| *cnt < 0) {
                     log::warn!("{handle:?} is mutably borrowed during `foreach`, skipped");
@@ -831,6 +835,10 @@ impl WorldCellEntry<'_> {
             let mut this = world.entry(handle).unwrap();
             this.depend(other);
         }));
+    }
+
+    pub fn destroy(self) {
+        self.world.remove(self.handle);
     }
 }
 
