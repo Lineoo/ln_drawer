@@ -4,7 +4,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 
 use crate::elements::Element;
@@ -272,7 +272,7 @@ impl World {
             world: self,
             occupied: RefCell::new(HashMap::new()),
             cell_idx: RefCell::new(cell_idx),
-            removed: HashSet::new(),
+            removed: RefCell::default(),
         }
     }
 
@@ -388,6 +388,7 @@ pub struct WorldCell<'world> {
     world: &'world mut World,
     occupied: RefCell<HashMap<ElementHandle, isize>>,
     cell_idx: RefCell<ElementHandle>,
+    removed: RefCell<HashSet<ElementHandle>>,
 }
 impl Drop for WorldCell<'_> {
     fn drop(&mut self) {
@@ -415,7 +416,69 @@ impl WorldCell<'_> {
         estimate_handle
     }
 
+    /// Cell-mode removal cannot access the element immediately so we can't return the value of removed element.
+    pub fn remove(&self, handle: ElementHandle) -> bool {
+        let mut occupied = self.occupied.borrow_mut();
+
+        let cnt = occupied.entry(handle).or_default();
+        if *cnt != 0 {
+            panic!("{handle:?} is borrowed");
+        }
+
+        if !self.contains(handle) {
+            return false;
+        }
+
+        let mut removed = self.removed.borrow_mut();
+        removed.insert(handle);
+
+        let mut queue = self.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let popback = world.remove(handle);
+            debug_assert!(popback.is_some());
+        }));
+
+        true
+    }
+
+    /// Check whether target element can be borrowed immutably
+    pub fn occupied(&self, handle: ElementHandle) -> bool {
+        let occupied = self.occupied.borrow();
+        occupied.get(&handle).is_some_and(|cnt| *cnt < 0)
+    }
+
+    /// Check whether target element can be borrowed mutably
+    pub fn occupied_mut(&self, handle: ElementHandle) -> bool {
+        let occupied = self.occupied.borrow();
+        occupied.get(&handle).is_some_and(|cnt| *cnt != 0)
+    }
+
+    pub fn contains(&self, handle: ElementHandle) -> bool {
+        if self.removed.borrow().contains(&handle) {
+            return false;
+        }
+        self.world.contains(handle)
+    }
+
+    pub fn contains_type<T: ?Sized + 'static>(&self, handle: ElementHandle) -> bool {
+        if self.removed.borrow().contains(&handle) {
+            return false;
+        }
+        self.world.contains_type::<T>(handle)
+    }
+
+    pub fn contains_raw<T: Element>(&self, handle: ElementHandle) -> bool {
+        if self.removed.borrow().contains(&handle) {
+            return false;
+        }
+        self.world.contains_raw::<T>(handle)
+    }
+
     pub fn fetch<T: ?Sized + 'static>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
+        if self.removed.borrow().contains(&handle) {
+            return None;
+        }
+
         let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
@@ -440,6 +503,10 @@ impl WorldCell<'_> {
     }
 
     pub fn fetch_raw<T: Element>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
+        if self.removed.borrow().contains(&handle) {
+            return None;
+        }
+
         let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
@@ -458,6 +525,10 @@ impl WorldCell<'_> {
     }
 
     pub fn fetch_dyn(&self, handle: ElementHandle) -> Option<Ref<'_, dyn Element>> {
+        if self.removed.borrow().contains(&handle) {
+            return None;
+        }
+
         let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
@@ -476,6 +547,10 @@ impl WorldCell<'_> {
     }
 
     pub fn fetch_mut<T: ?Sized + 'static>(&self, handle: ElementHandle) -> Option<RefMut<'_, T>> {
+        if self.removed.borrow().contains(&handle) {
+            return None;
+        }
+
         let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
@@ -505,6 +580,10 @@ impl WorldCell<'_> {
     }
 
     pub fn fetch_mut_raw<T: Element>(&self, handle: ElementHandle) -> Option<RefMut<'_, T>> {
+        if self.removed.borrow().contains(&handle) {
+            return None;
+        }
+
         let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
@@ -523,6 +602,10 @@ impl WorldCell<'_> {
     }
 
     pub fn fetch_mut_dyn(&self, handle: ElementHandle) -> Option<RefMut<'_, dyn Element>> {
+        if self.removed.borrow().contains(&handle) {
+            return None;
+        }
+
         let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
@@ -556,6 +639,10 @@ impl WorldCell<'_> {
         if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<T>>()) {
             let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
             services_typed.0.iter().for_each(|(handle, converter)| {
+                if self.removed.borrow().contains(handle) {
+                    return;
+                }
+                
                 let occupied = self.occupied.borrow();
                 if occupied.get(handle).is_some_and(|cnt| *cnt < 0) {
                     log::warn!("{handle:?} is mutably borrowed during `foreach`, skipped");
@@ -575,6 +662,10 @@ impl WorldCell<'_> {
                 .downcast_ref::<ServicesTypedMut<T>>()
                 .unwrap();
             services_typed.0.iter().for_each(|(handle, converter)| {
+                if self.removed.borrow().contains(handle) {
+                    return;
+                }
+
                 let occupied = self.occupied.borrow();
                 if occupied.get(handle).is_some_and(|cnt| *cnt != 0) {
                     log::warn!("{handle:?} is borrowed during `foreach_mut`, skipped");
