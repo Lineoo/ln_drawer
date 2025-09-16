@@ -364,6 +364,10 @@ impl WorldEntry<'_> {
     /// will be removed as well. Useful for keeping handle valid.
     pub fn depend(&mut self, other: ElementHandle) {
         let handle = self.handle;
+        if !self.world.contains(other) {
+            log::error!("{handle:?} try to depend on {other:?}, which does not exist");
+            return;
+        }
         self.observe::<ElementRemoved>(move |event, world| {
             if event.0 == other {
                 // TODO wait until cell-mode removal is implemented
