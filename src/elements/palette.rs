@@ -58,7 +58,11 @@ impl PositionedElement for Palette {
     }
 
     fn set_position(&mut self, position: [i32; 2]) {
+        let origin = self.get_position();
+        let delta = [position[0] - origin[0], position[1] - origin[1]];
+        let knob_origin = self.get_knob_position();
         self.painter.set_position(position);
+        self.set_knob_position([knob_origin[0] + delta[0], knob_origin[1] + delta[1]]);
     }
 }
 impl Palette {
