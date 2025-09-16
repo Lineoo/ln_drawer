@@ -359,6 +359,21 @@ impl WorldEntry<'_> {
             );
         }
     }
+
+    /// Declare a dependency relationship. When the `other` Element is removed, this element
+    /// will be removed as well. Useful for keeping handle valid.
+    pub fn depend(&mut self, other: ElementHandle) {
+        let handle = self.handle;
+        self.observe::<ElementRemoved>(move |event, world| {
+            if event.0 == other {
+                // TODO wait until cell-mode removal is implemented
+                let mut queue = world.single_mut::<Queue>().unwrap();
+                queue.0.push(Box::new(move |world| {
+                    world.remove(handle);
+                }));
+            }
+        });
+    }
 }
 
 // Center of multiple accesses in world, which also prevents constructional changes
@@ -691,6 +706,17 @@ impl WorldCellEntry<'_> {
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
             this.register_mut(service);
+        }));
+    }
+
+    /// Declare a dependency relationship. When the `other` Element is removed, this element
+    /// will be removed as well. Useful for keeping handle valid.
+    pub fn depend(&mut self, other: ElementHandle) {
+        let handle = self.handle;
+        let mut queue = self.world.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry(handle).unwrap();
+            this.depend(other);
         }));
     }
 }

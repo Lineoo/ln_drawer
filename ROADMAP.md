@@ -256,11 +256,22 @@ Observer 系统是 world 非常基础、底层的一个功能——但是，还�
 那么 `contains_type` 方法就应该另有一个变体 `contains_type_raw` 来判断原始类型
 
 # 父子依赖关系
-- 父对象 A，子对象 B
-- 子对象在初始化时 `depend` 生成了两个 Observer
-    - 第一个 E，监听 A，在 A 被删除时删除 B，清理时会删除 E 和 F
-    - 第二个 F，监听 B，在 B 被删除时删除 E，清理时会删除 F
-- 当 Observer 被删除时会自动清理索引
+在句柄模式下尤为重要，需要保证对方永远处于有效状态。
+
+- ~~父对象 A，子对象 B~~
+- ~~子对象在初始化时 `depend` 生成了两个 Observer~~
+    - ~~第一个 E，监听 A，在 A 被删除时删除 B，清理时会删除 E 和 F~~
+    - ~~第二个 F，监听 B，在 B 被删除时删除 E，清理时会删除 F~~
+- ~~当 Observer 被删除时会自动清理索引~~
+
+~~depend 互依赖也是可行的，删除任意一个都会删除对方~~
+
+~~如果单独删除 E 或者 F 则会导致世界无效状态，所以 E 和 F 的句柄需要保持内部。~~
+
+我完全把目前系统的 Observer 想错了……因为删除的时候的那个 ElementRemoved 是*全局广播*的！
+我完全只需要把 Observer 挂在自己下面即可！
+
+嗯……没错 Observer 对自己监听的对象算是有一个自带的 depend。这是用 Observer 实现依赖的关键。不过如果你重复添加了一个 depend 的话倒也不会有很大问题。
 
 # 拖曳拖曳拖曳手柄
 我！要！——把！所有！东西！——全部！！变成 Element ！！！啊！啊！啊！！！！
@@ -289,6 +300,8 @@ Observer 系统是 world 非常基础、底层的一个功能——但是，还�
 # World 继续升级
 - remove 功能
 - 在 remove 的基础上添加原生的 depend 指令
+- entry 模式下的 destroy 指令
+- observe 指令支持返回对应的 handle
 - cell 模式的自定义 queue 命令
-- cell 模式的 contains 查询
 - cell 模式的 insert 和 remove 等结构性功能
+- cell 模式的 contains 查询
