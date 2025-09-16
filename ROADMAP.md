@@ -77,7 +77,7 @@
 使用后处理 update_within() 函数。
 
 # 世界
-处于精度/距离效应的考量，世界的坐标使用整数像素单位存储（PhysicalPosition）。
+出于精度/距离效应的考量，世界的坐标使用整数像素单位存储（PhysicalPosition）。
 
 而无限缩放则使用数值嵌套来实现。
 
@@ -89,7 +89,7 @@
 4. 分层绘制：分离实时绘制和最终合成
 5. 事件过滤：基于时间和距离阈值过滤过多的鼠标事件
 
-# 修改器模式
+# （未使用）修改器模式
 使用 dyn + Trait
 
 ```rust
@@ -128,7 +128,7 @@ impl<T: PositionedElement> Modifier<T> for ChildOf {
 
 采用全局广播的模式：键盘和鼠标时间全局广播，一般会有一些普通元素以及上面提到的*活跃工具*在监听这些事件，而主要就是那个活跃工具会负责比较重要的功能
 
-# 是否 panic ？
+# （已解决）是否 panic ？
 这个问题针对 WorldCell 的 fetch* 家族，目前所有 fetch* 会在已借用的情况下 panic 而有一个专门的 try_fetch* 家族不 panic （但没有专门的 Error ）
 
 # (未使用) Interface 模式
@@ -240,8 +240,30 @@ Observer 系统是 world 非常基础、底层的一个功能——但是，还�
 
 因为我们想要跨平台跨到移动端去，所以我们就不创建新窗口来实现右键菜单了，而是在右键的瞬间在对应位置创建一个右键菜单 Element。
 
-# observer 优化
+# （已完成）observer 优化
 使用 `HashMap<(ElementHandle, TypeId), SmallVec<Observer, 1>>`
 
 # IntersectElement
 既然有了 PositionedElement 的服务……这个也很正常对吧？使用 Observer 就可以很轻松的实现它。
+
+# 有关 Service
+我还没有写对应的 RFC 我就写好了 Service……说真的写完之后发现好麻烦我不喜欢这个东西……
+
+还是简单写一下 Service 是怎么用的吧，就是说，它允许将某个 Element 以任意形式读取。比如原本我们只能获取 `dyn Element` 类型或者原类型 `T`，有了 Service 之后我们就可以同时读取它注册好的类型 `dyn PositionElement` 或者其他类型 `U: ?Sized`
+
+之后那个 `service` 和 `service_mut` 函数我们可能就直接集成到 `fetch` 家族里面去，这样 cell 模式下我们也能够使用，也可能更加简单方便。
+
+那么 `contains_type` 方法就应该另有一个变体 `contains_type_raw` 来判断原始类型
+
+# 父子依赖关系
+- 父对象 A，子对象 B
+- 子对象在初始化时 `depend` 生成了两个 Observer
+    - 第一个 E，监听 A，在 A 被删除时删除 B，清理时会删除 E 和 F
+    - 第二个 F，监听 B，在 B 被删除时删除 E，清理时会删除 F
+
+# 拖曳拖曳拖曳手柄
+我！要！——把！所有！东西！——全部！！变成 Element ！！！啊！啊！啊！！！！
+
+目前 Intersect 的拖拽使用 Service 转化 `dyn PositionElement` 和 `Intersection` 来进行，但是使用 Service 没有办法做出多碰撞箱（Service 唯一性），同时 Intersection 的位置同步更新也是有一点 `unwrap` 灾难的。
+
+所以，我觉得首先可以把 Intersection 也变成 Element 保存，再使用 Service 系统更改 `dyn PositionElement`，并在更改后时候发出信号 `PositionChanged` 并由下面 Intersection 的 Observers 来检测进行位置更新
