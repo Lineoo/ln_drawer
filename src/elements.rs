@@ -20,10 +20,6 @@ use crate::world::{ElementHandle, WorldCell};
 pub trait Element: Any {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {}
     fn when_removed(&mut self, handle: ElementHandle, world: &WorldCell) {}
-
-    fn as_positioned(&mut self) -> Option<&mut dyn PositionedElement> {
-        None
-    }
 }
 impl dyn Element {
     pub fn is<T: Any>(&self) -> bool {
@@ -41,5 +37,3 @@ pub trait PositionedElement: Element {
     fn get_position(&self) -> [i32; 2];
     fn set_position(&mut self, position: [i32; 2]);
 }
-
-// TODO ElementBuilder

@@ -2,7 +2,7 @@ use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
     elements::{
-        Element, IntersectManager, PositionedElement,
+        Element, PositionedElement,
         intersect::{IntersectHit, Intersection},
     },
     interface::{Interface, Painter},
@@ -20,12 +20,14 @@ pub struct Palette {
 impl Element for Palette {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
         let mut this = world.entry(handle).unwrap();
-        let mut intersect = world.single_mut::<IntersectManager>().unwrap();
-        intersect.register(Intersection {
+
+        let intersect = world.insert(Intersection {
             host: handle,
             rect: self.painter.get_rect(),
             z_order: 100,
         });
+        world.entry(intersect).unwrap().depend(handle);
+
         this.observe::<IntersectHit>(move |event, world| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
                 let mut this = world.fetch_mut::<Palette>(handle).unwrap();
@@ -33,6 +35,9 @@ impl Element for Palette {
             }
             _ => (),
         });
+
+        this.register::<dyn PositionedElement>(|this| this.downcast_ref::<Palette>().unwrap());
+        this.register_mut::<dyn PositionedElement>(|this| this.downcast_mut::<Palette>().unwrap());
     }
 }
 impl PositionedElement for Palette {

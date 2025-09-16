@@ -1,5 +1,5 @@
 use crate::{
-    elements::{Element, IntersectManager, PositionedElement, intersect::Intersection},
+    elements::{Element, PositionedElement, intersect::Intersection},
     interface::{Interface, Text},
     world::{ElementHandle, World, WorldCell},
 };
@@ -10,16 +10,16 @@ pub struct Label {
 }
 impl Element for Label {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut intersect = world.single_mut::<IntersectManager>().unwrap();
-        intersect.register(Intersection {
+        let intersect = world.insert(Intersection {
             host: handle,
             rect: self.inner.get_rect(),
             z_order: 0,
         });
-    }
+        world.entry(intersect).unwrap().depend(handle);
 
-    fn as_positioned(&mut self) -> Option<&mut dyn PositionedElement> {
-        Some(self)
+        let mut this = world.entry(handle).unwrap();
+        this.register::<dyn PositionedElement>(|this| this.downcast_ref::<Label>().unwrap());
+        this.register_mut::<dyn PositionedElement>(|this| this.downcast_mut::<Label>().unwrap());
     }
 }
 impl PositionedElement for Label {

@@ -1,6 +1,6 @@
 use crate::{
     elements::{
-        Element, IntersectManager, PositionedElement,
+        Element, PositionedElement,
         intersect::{IntersectHit, Intersection},
     },
     interface::{Interface, Square},
@@ -18,18 +18,20 @@ pub struct ButtonRaw {
 impl Element for ButtonRaw {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
         let mut this = world.entry(handle).unwrap();
-        let mut intersect = world.single_mut::<IntersectManager>().unwrap();
-        intersect.register(Intersection {
+        let intersect = world.insert(Intersection {
             host: handle,
             rect: self.rect,
             z_order: 0,
         });
+        world.entry(intersect).unwrap().depend(handle);
+
         this.observe::<IntersectHit>(move |event, world| {
             if let IntersectHit(PointerEvent::Pressed(_)) = event {
                 let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
                 (this.action)();
             }
         });
+
         let mut interface = world.single_mut::<Interface>().unwrap();
         self.square = Some(interface.create_square(self.rect, [1.0, 1.0, 1.0, 0.6]));
     }

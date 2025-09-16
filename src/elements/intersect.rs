@@ -4,9 +4,9 @@ use winit::{
 };
 
 use crate::{
-    elements::Element,
+    elements::{Element, PositionedElement},
     lnwin::PointerEvent,
-    world::{ElementHandle, ElementRemoved, WorldCell},
+    world::{ElementHandle, WorldCell},
 };
 
 pub struct Intersection {
@@ -14,11 +14,11 @@ pub struct Intersection {
     pub rect: [i32; 4],
     pub z_order: isize,
 }
+impl Element for Intersection {}
 
 #[derive(Default)]
 pub struct IntersectManager {
     dragging: bool,
-    boxes: Vec<Intersection>,
 }
 impl Element for IntersectManager {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
@@ -32,23 +32,22 @@ impl Element for IntersectManager {
             let this = world.fetch::<IntersectManager>(handle).unwrap();
             if let PointerEvent::Pressed(point) = event {
                 pressed = true;
-                pointer_on = this.intersect(point)
+                pointer_on = this.intersect(world, point);
             }
 
             if this.dragging {
-                if let Some(pointer_on) = pointer_on {
-                    let mut pointer_on = world.fetch_mut_dyn(pointer_on).unwrap();
-                    if let Some(positioned) = pointer_on.as_positioned() {
-                        if let PointerEvent::Pressed(point) = event {
-                            element_start = positioned.get_position();
-                            pointer_start = point;
-                        }
-                        if let PointerEvent::Moved(point) = event {
-                            let delta = [point[0] - pointer_start[0], point[1] - pointer_start[1]];
-                            let position =
-                                [element_start[0] + delta[0], element_start[1] + delta[1]];
-                            positioned.set_position(position);
-                        }
+                if let Some(pointer_on) = pointer_on
+                    && let Some(mut positioned) =
+                        world.fetch_mut::<dyn PositionedElement>(pointer_on)
+                {
+                    if let PointerEvent::Pressed(point) = event {
+                        element_start = positioned.get_position();
+                        pointer_start = point;
+                    }
+                    if let PointerEvent::Moved(point) = event {
+                        let delta = [point[0] - pointer_start[0], point[1] - pointer_start[1]];
+                        let position = [element_start[0] + delta[0], element_start[1] + delta[1]];
+                        positioned.set_position(position);
                     }
                 }
             } else if let Some(pointer_on) = pointer_on {
@@ -87,27 +86,20 @@ impl Element for IntersectManager {
                 }
             }
         });
-        this.observe::<ElementRemoved>(|this, queue| {
-            todo!("remove along with the host");
-        });
     }
 }
 impl IntersectManager {
-    pub fn register(&mut self, intersection: Intersection) {
-        self.boxes.push(intersection);
-    }
-
-    pub fn intersect(&self, point: [i32; 2]) -> Option<ElementHandle> {
+    pub fn intersect(&self, world: &WorldCell, point: [i32; 2]) -> Option<ElementHandle> {
         let mut top_result = None;
         let max_order = isize::MIN;
-        for intersection in &self.boxes {
+        world.foreach::<Intersection>(|intersection| {
             if (intersection.z_order > max_order)
                 && (intersection.rect[0] <= point[0] && point[0] < intersection.rect[2])
                 && (intersection.rect[1] <= point[1] && point[1] < intersection.rect[3])
             {
                 top_result = Some(intersection.host);
             }
-        }
+        });
         top_result
     }
 }
