@@ -94,20 +94,36 @@ impl World {
             .is_some_and(|element| element.is::<T>())
     }
 
-    pub fn fetch<T: Element>(&self, handle: ElementHandle) -> Option<&T> {
-        self.elements
-            .get(&handle)
-            .and_then(|element| element.downcast_ref())
+    pub fn fetch<T: 'static>(&self, handle: ElementHandle) -> Option<&T> {
+        let element = self.elements.get(&handle)?.as_ref();
+
+        element.downcast_ref().or_else(|| {
+            let services = self.single::<Services>().unwrap();
+            let services_typed = services.0.get(&TypeId::of::<ServicesTyped<T>>())?;
+            let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
+            let service = services_typed.0.get(&handle)?;
+            Some(service(element))
+        })
     }
 
     pub fn fetch_dyn(&self, handle: ElementHandle) -> Option<&dyn Element> {
         self.elements.get(&handle).map(|element| element.as_ref())
     }
 
-    pub fn fetch_mut<T: Element>(&mut self, handle: ElementHandle) -> Option<&mut T> {
-        self.elements
-            .get_mut(&handle)
-            .and_then(|element| element.downcast_mut())
+    pub fn fetch_mut<T: 'static>(&mut self, handle: ElementHandle) -> Option<&mut T> {
+        let services = self.single::<Services>().unwrap() as *const Services;
+        let element = self.elements.get_mut(&handle)?.as_mut();
+        let element_ptr = element as *mut dyn Element;
+
+        element.downcast_mut().or_else(|| {
+            let services = unsafe { services.as_ref().unwrap() };
+            let services_typed = services.0.get(&TypeId::of::<ServicesTypedMut<T>>())?;
+            let services_typed = services_typed
+                .downcast_ref::<ServicesTypedMut<T>>()
+                .unwrap();
+            let service = services_typed.0.get(&handle)?;
+            Some(service(unsafe { element_ptr.as_mut().unwrap() }))
+        })
     }
 
     pub fn fetch_mut_dyn(&mut self, handle: ElementHandle) -> Option<&mut dyn Element> {
@@ -254,41 +270,11 @@ impl WorldEntry<'_> {
             );
         }
     }
-
-    pub fn service<U: ?Sized + 'static>(&self) -> Option<&U> {
-        let services = self.world.single::<Services>().unwrap();
-        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<U>>()) {
-            let services_typed = services_typed.downcast_ref::<ServicesTyped<U>>().unwrap();
-            if let Some(service) = services_typed.0.get(&self.handle) {
-                let this = self.world.fetch_dyn(self.handle).unwrap();
-                return Some(service(this));
-            }
-        }
-        None
-    }
-
-    pub fn service_mut<U: ?Sized + 'static>(&mut self) -> Option<&mut U> {
-        // SAFETY: The main element and the service are apparently accessed separately
-        let services = self.world.single::<Services>().unwrap() as *const Services;
-        if let Some(services_typed) =
-            unsafe { (*services).0.get(&TypeId::of::<ServicesTypedMut<U>>()) }
-        {
-            let services_typed = services_typed
-                .downcast_ref::<ServicesTypedMut<U>>()
-                .unwrap();
-            if let Some(service) = services_typed.0.get(&self.handle) {
-                let this = self.world.fetch_mut_dyn(self.handle).unwrap();
-                return Some(service(this));
-            }
-        }
-        None
-    }
 }
 
 // Center of multiple accesses in world, which also prevents constructional changes
 pub struct WorldCell<'world> {
     world: &'world mut World,
-    // TODO use RefCell to optimize single-threaded situation
     occupied: RefCell<HashMap<ElementHandle, isize>>,
 }
 impl Drop for WorldCell<'_> {
@@ -303,7 +289,7 @@ impl Drop for WorldCell<'_> {
     }
 }
 impl WorldCell<'_> {
-    pub fn fetch<T: Element>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
+    pub fn fetch<T: 'static>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
         let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
@@ -312,10 +298,19 @@ impl WorldCell<'_> {
         }
 
         *cnt += 1;
-        let element = self.world.elements.get(&handle)?.downcast_ref()?;
+        let element = self.world.elements.get(&handle)?.as_ref();
+
+        let ptr = element.downcast_ref().map(|r| r as *const T);
+        let ptr = ptr.or_else(|| {
+            let services = self.world.single::<Services>().unwrap();
+            let services_typed = services.0.get(&TypeId::of::<ServicesTyped<T>>())?;
+            let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
+            let service = services_typed.0.get(&handle)?;
+            Some(service(element) as *const T)
+        })?;
 
         Some(Ref {
-            ptr: element as *const T,
+            ptr,
             world: self,
             handle,
         })
@@ -339,7 +334,7 @@ impl WorldCell<'_> {
         })
     }
 
-    pub fn fetch_mut<T: Element>(&self, handle: ElementHandle) -> Option<RefMut<'_, T>> {
+    pub fn fetch_mut<T: 'static>(&self, handle: ElementHandle) -> Option<RefMut<'_, T>> {
         let mut occupied = self.occupied.borrow_mut();
 
         let cnt = occupied.entry(handle).or_default();
@@ -348,10 +343,24 @@ impl WorldCell<'_> {
         }
 
         *cnt -= 1;
-        let element = self.world.elements.get(&handle)?.downcast_ref()?;
+        let element = self.world.elements.get(&handle)?.as_ref();
+
+        let ptr = element.downcast_ref().map(|r| r as *const T as *mut T);
+        let ptr = ptr.or_else(|| {
+            // SAFETY: The services set is immutable during cell span
+            let services = self.world.single::<Services>().unwrap();
+            let services_typed = services.0.get(&TypeId::of::<ServicesTypedMut<T>>())?;
+            let services_typed = services_typed
+                .downcast_ref::<ServicesTypedMut<T>>()
+                .unwrap();
+            let service = services_typed.0.get(&handle)?;
+            let element = element as *const dyn Element as *mut dyn Element;
+            let element = unsafe { element.as_mut().unwrap() };
+            Some(service(element) as *mut T)
+        })?;
 
         Some(RefMut {
-            ptr: element as *const T as *mut T,
+            ptr,
             world: self,
             handle,
         })
@@ -375,17 +384,6 @@ impl WorldCell<'_> {
         })
     }
 
-    // Singleton
-
-    /// Return `Some` if there is ONLY one element of target type.
-    pub fn single<T: Element>(&self) -> Option<Ref<'_, T>> {
-        if let Some(Singleton::Unique(handle)) = self.world.singletons.get(&TypeId::of::<T>()) {
-            self.fetch(*handle)
-        } else {
-            None
-        }
-    }
-
     pub fn entry(&self, handle: ElementHandle) -> Option<WorldCellEntry<'_>> {
         if !self.world.elements.contains_key(&handle) {
             return None;
@@ -395,6 +393,17 @@ impl WorldCell<'_> {
             world: self,
             handle,
         })
+    }
+
+    // Singleton
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single<T: Element>(&self) -> Option<Ref<'_, T>> {
+        if let Some(Singleton::Unique(handle)) = self.world.singletons.get(&TypeId::of::<T>()) {
+            self.fetch(*handle)
+        } else {
+            None
+        }
     }
 
     /// Return `Some` if there is ONLY one element of target type.
@@ -420,16 +429,6 @@ impl WorldCell<'_> {
         queue.0.push(Box::new(move |world| {
             world.trigger(&event);
         }));
-    }
-
-    // Direct occupation skipping the lock
-
-    pub fn occupy<T: Element>(&mut self, handle: ElementHandle) -> Option<&mut T> {
-        self.world.elements.get_mut(&handle)?.downcast_mut()
-    }
-
-    pub fn occupy_dyn(&mut self, handle: ElementHandle) -> Option<&mut dyn Element> {
-        self.world.elements.get_mut(&handle).map(|elm| elm.as_mut())
     }
 }
 
@@ -591,12 +590,9 @@ mod test {
         let handle = world.insert(TestElement {
             position: [42, 123],
         });
-        let mut entry = world.entry(handle).unwrap();
-        let position = entry.service_mut::<[i32; 2]>().unwrap();
+        let position = world.fetch_mut::<[i32; 2]>(handle).unwrap();
         assert_eq!(position, &[42, 123]);
         position[1] = 321;
-        let position = entry.service::<[i32; 2]>().unwrap();
-        assert_eq!(position, &[42, 321]);
     }
 
     #[test]
@@ -605,7 +601,6 @@ mod test {
         let handle = world.insert(TestElement {
             position: [42, 123],
         });
-        let mut entry = world.entry(handle).unwrap();
-        assert_eq!(entry.service_mut::<i32>(), None);
+        assert_eq!(world.fetch::<i32>(handle), None);
     }
 }
