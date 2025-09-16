@@ -91,6 +91,59 @@ impl World {
         handle
     }
 
+    pub fn remove(&mut self, handle: ElementHandle) -> Option<Box<dyn Element>> {
+        let type_id = (**self.elements.get(&handle)?).type_id();
+
+        // ElementRemoved
+        self.trigger(&ElementRemoved(handle));
+
+        // when_removed
+        let cell = self.cell();
+        let mut element = cell.fetch_mut_dyn(handle).unwrap();
+        element.when_removed(handle, &cell);
+        drop(element);
+        drop(cell);
+
+        // remove related services
+        for services_typed in &mut self.single_mut::<Services>().unwrap().0 {
+            services_typed.1.remove(&handle);
+        }
+
+        // singleton cache
+        let singleton = self.singletons.get_mut(&type_id).unwrap();
+        match singleton {
+            Singleton::Unique(_) => {
+                self.singletons.remove(&type_id);
+            }
+            Singleton::Multiple(cnt) => {
+                // We don't actually consider the situation that multiple elements being remove until
+                // one is left. In such case, even though there technically is only *one* element, which
+                // should be singleton, but mostly it won't be used as a singleton, and use loops to cache
+                // it is basically a waste. So we won't implement it.
+                *cnt -= 1;
+                if *cnt == 0 {
+                    self.singletons.remove(&type_id);
+                }
+            }
+        }
+
+        // clean invalid observers
+        let mut attached_observers = Vec::with_capacity(4);
+        for observers_typed in &self.single::<Observers>().unwrap().0 {
+            if let Some(observers_typed_element) = (observers_typed.1).get(&handle) {
+                for observer in observers_typed_element {
+                    attached_observers.push(*observer);
+                }
+            }
+        }
+
+        for observer in attached_observers {
+            self.remove(observer);
+        }
+
+        self.elements.remove(&handle)
+    }
+
     pub fn contains(&self, handle: ElementHandle) -> bool {
         self.elements.contains_key(&handle)
     }
@@ -658,12 +711,34 @@ impl Element for Queue {}
 
 // Internal Element #2
 #[derive(Default)]
-struct Services(HashMap<TypeId, Box<dyn Any>>);
+struct Services(HashMap<TypeId, Box<dyn ServicesPart>>);
 struct ServicesTyped<U: ?Sized>(HashMap<ElementHandle, Service<U>>);
 struct ServicesTypedMut<U: ?Sized>(HashMap<ElementHandle, ServiceMut<U>>);
 type Service<U> = Box<dyn Fn(&dyn Element) -> &U>;
 type ServiceMut<U> = Box<dyn Fn(&mut dyn Element) -> &mut U>;
 impl Element for Services {}
+
+trait ServicesPart: Any {
+    fn remove(&mut self, handle: &ElementHandle);
+}
+impl<U: ?Sized + 'static> ServicesPart for ServicesTyped<U> {
+    fn remove(&mut self, handle: &ElementHandle) {
+        self.0.remove(handle);
+    }
+}
+impl<U: ?Sized + 'static> ServicesPart for ServicesTypedMut<U> {
+    fn remove(&mut self, handle: &ElementHandle) {
+        self.0.remove(handle);
+    }
+}
+impl dyn ServicesPart {
+    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
+        (self as &dyn Any).downcast_ref()
+    }
+    pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
+        (self as &mut dyn Any).downcast_mut()
+    }
+}
 
 // World Events
 pub struct ElementInserted(pub ElementHandle);

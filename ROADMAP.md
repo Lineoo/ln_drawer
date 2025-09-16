@@ -260,6 +260,7 @@ Observer 系统是 world 非常基础、底层的一个功能——但是，还�
 - 子对象在初始化时 `depend` 生成了两个 Observer
     - 第一个 E，监听 A，在 A 被删除时删除 B，清理时会删除 E 和 F
     - 第二个 F，监听 B，在 B 被删除时删除 E，清理时会删除 F
+- 当 Observer 被删除时会自动清理索引
 
 # 拖曳拖曳拖曳手柄
 我！要！——把！所有！东西！——全部！！变成 Element ！！！啊！啊！啊！！！！
@@ -284,3 +285,10 @@ Observer 系统是 world 非常基础、底层的一个功能——但是，还�
 - `mixed.clean: 清理代码`
 - `proj.ROADMAP`
 - `ver: v0.1.0-alpha4`
+
+# World 继续升级
+- remove 功能
+- 在 remove 的基础上添加原生的 depend 指令
+- cell 模式的自定义 queue 命令
+- cell 模式的 contains 查询
+- cell 模式的 insert 和 remove 等结构性功能
