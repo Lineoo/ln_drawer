@@ -68,8 +68,8 @@ impl Element for IntersectManager {
             if let WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
-                        physical_key: PhysicalKey::Code(keycode),
-                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::KeyS),
+                        state,
                         repeat: false,
                         ..
                     },
@@ -77,14 +77,9 @@ impl Element for IntersectManager {
             } = event
             {
                 let mut this = world.fetch_mut::<IntersectManager>(handle).unwrap();
-                match keycode {
-                    KeyCode::KeyS => {
-                        this.dragging = true;
-                    }
-                    KeyCode::KeyB => {
-                        this.dragging = false;
-                    }
-                    _ => (),
+                this.dragging = match state {
+                    ElementState::Pressed => true,
+                    ElementState::Released => false,
                 }
             }
         });
