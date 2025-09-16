@@ -210,17 +210,6 @@ impl World {
             .map(|element| element.as_mut())
     }
 
-    pub fn entry(&mut self, handle: ElementHandle) -> Option<WorldEntry<'_>> {
-        if !self.elements.contains_key(&handle) {
-            return None;
-        }
-
-        Some(WorldEntry {
-            world: self,
-            handle,
-        })
-    }
-
     pub fn foreach<T: ?Sized + 'static>(&self, mut action: impl FnMut(&T)) {
         let services = self.single::<Services>().unwrap();
         if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<T>>()) {
@@ -274,6 +263,17 @@ impl World {
             cell_idx: RefCell::new(cell_idx),
             removed: RefCell::default(),
         }
+    }
+
+    pub fn entry(&mut self, handle: ElementHandle) -> Option<WorldEntry<'_>> {
+        if !self.contains(handle) {
+            return None;
+        }
+
+        Some(WorldEntry {
+            world: self,
+            handle,
+        })
     }
 
     /// Global trigger. Will trigger every element listening to this event.
@@ -623,17 +623,6 @@ impl WorldCell<'_> {
         })
     }
 
-    pub fn entry(&self, handle: ElementHandle) -> Option<WorldCellEntry<'_>> {
-        if !self.world.elements.contains_key(&handle) {
-            return None;
-        }
-
-        Some(WorldCellEntry {
-            world: self,
-            handle,
-        })
-    }
-
     pub fn foreach<T: ?Sized + 'static>(&self, mut action: impl FnMut(&T)) {
         let services = self.world.single::<Services>().unwrap();
         if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<T>>()) {
@@ -702,6 +691,17 @@ impl WorldCell<'_> {
 
     pub fn world(&mut self) -> &mut World {
         self.world
+    }
+
+    pub fn entry(&self, handle: ElementHandle) -> Option<WorldCellEntry<'_>> {
+        if !self.contains(handle) {
+            return None;
+        }
+
+        Some(WorldCellEntry {
+            world: self,
+            handle,
+        })
     }
 
     /// Global trigger. Will trigger every element listening to this event. This will be delayed
