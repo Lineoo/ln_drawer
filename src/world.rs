@@ -261,6 +261,7 @@ impl World {
             world: self,
             occupied: RefCell::new(HashMap::new()),
             cell_idx: RefCell::new(cell_idx),
+            inserted: RefCell::default(),
             removed: RefCell::default(),
         }
     }
@@ -396,6 +397,7 @@ pub struct WorldCell<'world> {
     world: &'world mut World,
     occupied: RefCell<HashMap<ElementHandle, isize>>,
     cell_idx: RefCell<ElementHandle>,
+    inserted: RefCell<HashSet<ElementHandle>>,
     removed: RefCell<HashSet<ElementHandle>>,
 }
 impl Drop for WorldCell<'_> {
@@ -411,11 +413,15 @@ impl Drop for WorldCell<'_> {
 }
 impl WorldCell<'_> {
     /// Cell-mode insertion cannot perform the operation immediately so the inserted element cannot be
-    /// fetched until end of the cell span.
+    /// fetched until end of the cell span. One exception is entry, which can still be used normally.
     pub fn insert<T: Element + 'static>(&self, element: T) -> ElementHandle {
         let mut cell_idx = self.cell_idx.borrow_mut();
         cell_idx.0 += 1;
         let estimate_handle = ElementHandle(cell_idx.0 - 1);
+
+        let mut inserted = self.inserted.borrow_mut();
+        inserted.insert(estimate_handle);
+
         let mut queue = self.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let actual_handle = world.insert(element);
@@ -461,6 +467,7 @@ impl WorldCell<'_> {
         occupied.get(&handle).is_some_and(|cnt| *cnt != 0)
     }
 
+    /// Insertion happened within the cell scope will not be included
     pub fn contains(&self, handle: ElementHandle) -> bool {
         if self.removed.borrow().contains(&handle) {
             return false;
@@ -468,6 +475,7 @@ impl WorldCell<'_> {
         self.world.contains(handle)
     }
 
+    /// Insertion happened within the cell scope will not be included
     pub fn contains_type<T: ?Sized + 'static>(&self, handle: ElementHandle) -> bool {
         if self.removed.borrow().contains(&handle) {
             return false;
@@ -475,6 +483,7 @@ impl WorldCell<'_> {
         self.world.contains_type::<T>(handle)
     }
 
+    /// Insertion happened within the cell scope will not be included
     pub fn contains_raw<T: Element>(&self, handle: ElementHandle) -> bool {
         if self.removed.borrow().contains(&handle) {
             return false;
@@ -702,7 +711,7 @@ impl WorldCell<'_> {
     }
 
     pub fn entry(&self, handle: ElementHandle) -> Option<WorldCellEntry<'_>> {
-        if !self.contains(handle) {
+        if !(self.contains(handle) || self.inserted.borrow().contains(&handle)) {
             return None;
         }
 
@@ -789,6 +798,10 @@ impl WorldCellEntry<'_> {
         let mut cell_idx = self.world.cell_idx.borrow_mut();
         cell_idx.0 += 1;
         let estimate_handle = ElementHandle(cell_idx.0 - 1);
+
+        let mut inserted = self.world.inserted.borrow_mut();
+        inserted.insert(estimate_handle);
+
         let mut queue = self.world.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
@@ -844,6 +857,11 @@ impl WorldCellEntry<'_> {
         let handle = self.handle;
         let mut cell_idx = self.world.cell_idx.borrow_mut();
         cell_idx.0 += 1;
+        let estimate_handle = ElementHandle(cell_idx.0 - 1);
+
+        let mut inserted = self.world.inserted.borrow_mut();
+        inserted.insert(estimate_handle);
+
         let mut queue = self.world.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
