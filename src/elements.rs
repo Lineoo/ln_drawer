@@ -38,6 +38,8 @@ pub trait PositionedElement: Element {
     fn set_position(&mut self, position: [i32; 2]);
 }
 
+pub struct PositionChanged;
+
 trait ElementExt: Element + Sized {
     fn register<U>(&mut self, handle: ElementHandle, world: &WorldCell)
     where

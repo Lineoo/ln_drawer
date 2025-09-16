@@ -4,7 +4,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{Element, PositionedElement},
+    elements::{Element, PositionChanged, PositionedElement},
     lnwin::PointerEvent,
     world::{ElementHandle, WorldCell},
 };
@@ -48,6 +48,8 @@ impl Element for IntersectManager {
                         let delta = [point[0] - pointer_start[0], point[1] - pointer_start[1]];
                         let position = [element_start[0] + delta[0], element_start[1] + delta[1]];
                         positioned.set_position(position);
+                        let mut entry = world.entry(pointer_on).unwrap();
+                        entry.trigger(PositionChanged);
                     }
                 }
             } else if let Some(pointer_on) = pointer_on {

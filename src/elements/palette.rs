@@ -2,7 +2,7 @@ use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
     elements::{
-        Element, ElementExt, PositionedElement,
+        Element, ElementExt, PositionChanged, PositionedElement,
         intersect::{IntersectHit, Intersection},
     },
     interface::{Interface, Painter},
@@ -34,6 +34,19 @@ impl Element for Palette {
                 this.set_knob_position(point);
             }
             _ => (),
+        });
+
+        this.observe::<PositionChanged>(move |_event, world| {
+            let position = world
+                .fetch::<dyn PositionedElement>(handle)
+                .unwrap()
+                .get_position();
+            let mut intersect = world.fetch_mut::<Intersection>(intersect).unwrap();
+            
+            intersect.rect[2] = intersect.rect[2] - intersect.rect[0] + position[0];
+            intersect.rect[3] = intersect.rect[3] - intersect.rect[1] + position[1];
+            intersect.rect[0] = position[0];
+            intersect.rect[1] = position[1];
         });
 
         self.register::<dyn PositionedElement>(handle, world);

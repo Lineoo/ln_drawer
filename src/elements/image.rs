@@ -1,7 +1,7 @@
 use std::{error::Error, path::Path};
 
 use crate::{
-    elements::{Element, ElementExt, PositionedElement, intersect::Intersection},
+    elements::{Element, ElementExt, PositionChanged, PositionedElement, intersect::Intersection},
     interface::{Interface, Painter},
     world::{ElementHandle, World, WorldCell},
 };
@@ -17,6 +17,18 @@ impl Element for Image {
             z_order: 0,
         });
         world.entry(intersect).unwrap().depend(handle);
+        (world.entry(handle).unwrap()).observe::<PositionChanged>(move |_event, world| {
+            let position = world
+                .fetch::<dyn PositionedElement>(handle)
+                .unwrap()
+                .get_position();
+            let mut intersect = world.fetch_mut::<Intersection>(intersect).unwrap();
+            
+            intersect.rect[2] = intersect.rect[2] - intersect.rect[0] + position[0];
+            intersect.rect[3] = intersect.rect[3] - intersect.rect[1] + position[1];
+            intersect.rect[0] = position[0];
+            intersect.rect[1] = position[1];
+        });
 
         self.register::<dyn PositionedElement>(handle, world);
     }

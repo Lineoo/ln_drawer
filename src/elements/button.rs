@@ -1,6 +1,6 @@
 use crate::{
     elements::{
-        Element, ElementExt, PositionedElement,
+        Element, ElementExt, PositionChanged, PositionedElement,
         intersect::{IntersectHit, Intersection},
     },
     interface::{Interface, Square},
@@ -30,6 +30,18 @@ impl Element for ButtonRaw {
                 let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
                 (this.action)();
             }
+        });
+        this.observe::<PositionChanged>(move |_event, world| {
+            let position = world
+                .fetch::<dyn PositionedElement>(handle)
+                .unwrap()
+                .get_position();
+            let mut intersect = world.fetch_mut::<Intersection>(intersect).unwrap();
+            
+            intersect.rect[2] = intersect.rect[2] - intersect.rect[0] + position[0];
+            intersect.rect[3] = intersect.rect[3] - intersect.rect[1] + position[1];
+            intersect.rect[0] = position[0];
+            intersect.rect[1] = position[1];
         });
 
         let mut interface = world.single_mut::<Interface>().unwrap();
