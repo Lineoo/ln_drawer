@@ -30,38 +30,57 @@ impl Element for IntersectManager {
         let mut element_start = [0, 0];
         this.observe::<PointerEvent>(move |&event, world| {
             let this = world.fetch::<IntersectManager>(handle).unwrap();
-            if let PointerEvent::Pressed(point) = event {
-                pressed = true;
-                pointer_on = this.intersect(world, point);
-            }
 
-            if this.dragging {
-                if let Some(pointer_on) = pointer_on
-                    && let Some(mut positioned) =
-                        world.fetch_mut::<dyn PositionedElement>(pointer_on)
-                {
-                    if let PointerEvent::Pressed(point) = event {
-                        element_start = positioned.get_position();
-                        pointer_start = point;
+            let (PointerEvent::Moved(point)
+            | PointerEvent::Pressed(point)
+            | PointerEvent::Released(point)) = event;
+
+            if !pressed {
+                let pointer_onto = this.intersect(world, point);
+                if pointer_on != pointer_onto {
+                    if let Some(pointer_on) = pointer_on {
+                        world.entry(pointer_on).unwrap().trigger(PointerLeave);
                     }
-                    if let PointerEvent::Moved(point) = event {
-                        let delta = [point[0] - pointer_start[0], point[1] - pointer_start[1]];
-                        let position = [element_start[0] + delta[0], element_start[1] + delta[1]];
-                        positioned.set_position(position);
-                        let mut entry = world.entry(pointer_on).unwrap();
-                        entry.trigger(PositionChanged);
+                    if let Some(pointer_onto) = pointer_onto {
+                        world.entry(pointer_onto).unwrap().trigger(PointerEnter);
                     }
                 }
-            } else if let Some(pointer_on) = pointer_on {
-                let mut pointer_on = world.entry(pointer_on).unwrap();
-                pointer_on.trigger(IntersectHit(event));
-            } else if pressed {
-                world.trigger(IntersectFail(event));
+                pointer_on = pointer_onto;
+            }
+
+            if let PointerEvent::Pressed(_) = event {
+                pressed = true;
+            }
+
+            if pressed {
+                if this.dragging {
+                    if let Some(pointer_on) = pointer_on
+                        && let Some(mut positioned) =
+                            world.fetch_mut::<dyn PositionedElement>(pointer_on)
+                    {
+                        if let PointerEvent::Pressed(point) = event {
+                            element_start = positioned.get_position();
+                            pointer_start = point;
+                        }
+                        if let PointerEvent::Moved(point) = event {
+                            let delta = [point[0] - pointer_start[0], point[1] - pointer_start[1]];
+                            let position =
+                                [element_start[0] + delta[0], element_start[1] + delta[1]];
+                            positioned.set_position(position);
+                            let mut entry = world.entry(pointer_on).unwrap();
+                            entry.trigger(PositionChanged);
+                        }
+                    }
+                } else if let Some(pointer_on) = pointer_on {
+                    let mut pointer_on = world.entry(pointer_on).unwrap();
+                    pointer_on.trigger(IntersectHit(event));
+                } else {
+                    world.trigger(IntersectFail(event));
+                }
             }
 
             if let PointerEvent::Released(_) = event {
                 pressed = false;
-                pointer_on = None;
             }
         });
         this.observe::<WindowEvent>(move |event, world| {
@@ -100,6 +119,9 @@ impl IntersectManager {
         top_result
     }
 }
+
+pub struct PointerEnter;
+pub struct PointerLeave;
 
 pub struct IntersectHit(pub PointerEvent);
 pub struct IntersectFail(pub PointerEvent);

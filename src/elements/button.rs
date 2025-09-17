@@ -1,7 +1,7 @@
 use crate::{
     elements::{
         Element, ElementExt, PositionChanged, PositionedElement,
-        intersect::{IntersectHit, Intersection},
+        intersect::{IntersectHit, Intersection, PointerEnter, PointerLeave},
     },
     interface::{Interface, Square},
     lnwin::PointerEvent,
@@ -44,8 +44,19 @@ impl Element for ButtonRaw {
             intersect.rect[1] = position[1];
         });
 
+        this.observe::<PointerEnter>(move |_event, world| {
+            let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
+            this.square.as_mut().unwrap().set_visible(true);
+        });
+        this.observe::<PointerLeave>(move |_event, world| {
+            let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
+            this.square.as_mut().unwrap().set_visible(false);
+        });
+
         let mut interface = world.single_mut::<Interface>().unwrap();
-        self.square = Some(interface.create_square(self.rect, [1.0, 1.0, 1.0, 0.6]));
+        let square = interface.create_square(self.rect, [1.0, 1.0, 1.0, 0.6]);
+        square.set_visible(false);
+        self.square = Some(square);
 
         self.register::<dyn PositionedElement>(handle, world);
     }
