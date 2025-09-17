@@ -1,6 +1,6 @@
 use crate::{
     elements::{
-        Element, ElementExt, PositionChanged, PositionedElement,
+        Element, PositionElementExt, PositionChanged, PositionedElement,
         intersect::{IntersectHit, Intersection, PointerEnter, PointerLeave},
     },
     interface::{Interface, Square},
@@ -56,7 +56,7 @@ impl Element for ButtonRaw {
         square.set_visible(false);
         self.square = Some(square);
 
-        self.register::<dyn PositionedElement>(handle, world);
+        self.register_position(handle, world);
     }
 }
 impl PositionedElement for ButtonRaw {

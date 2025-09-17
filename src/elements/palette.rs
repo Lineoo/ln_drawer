@@ -2,7 +2,7 @@ use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
     elements::{
-        Element, ElementExt, PositionChanged, PositionedElement,
+        Element, PositionElementExt, PositionChanged, PositionedElement,
         intersect::{IntersectHit, Intersection},
     },
     interface::{Interface, Painter},
@@ -47,7 +47,7 @@ impl Element for Palette {
             intersect.rect.origin = position;
         });
 
-        self.register::<dyn PositionedElement>(handle, world);
+        self.register_position(handle, world);
     }
 }
 impl PositionedElement for Palette {
@@ -63,7 +63,8 @@ impl PositionedElement for Palette {
         let knob_position = knob_origin + delta;
 
         self.painter.set_position(position.into_array());
-        self.knob.set_position([knob_position.x - 1, knob_position.y - 1]);
+        self.knob
+            .set_position([knob_position.x - 1, knob_position.y - 1]);
     }
 }
 impl Palette {

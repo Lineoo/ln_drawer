@@ -1,5 +1,5 @@
 use crate::{
-    elements::{Element, ElementExt, PositionChanged, PositionedElement, intersect::Intersection},
+    elements::{Element, PositionElementExt, PositionChanged, PositionedElement, intersect::Intersection},
     interface::{Interface, Text},
     measures::{Position, Rectangle},
     world::{ElementHandle, World, WorldCell},
@@ -27,7 +27,7 @@ impl Element for Label {
             intersect.rect.origin = position;
         });
 
-        self.register::<dyn PositionedElement>(handle, world);
+        self.register_position(handle, world);
     }
 }
 impl PositionedElement for Label {

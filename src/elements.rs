@@ -5,7 +5,7 @@ mod label;
 mod palette;
 mod stroke;
 
-use std::{any::Any, marker::Unsize};
+use std::any::Any;
 
 pub use button::ButtonRaw;
 pub use image::Image;
@@ -41,17 +41,13 @@ pub trait PositionedElement: Element {
     fn set_position(&mut self, position: Position);
 }
 
-pub struct PositionChanged;
-
-trait ElementExt: Element + Sized {
-    fn register<U>(&mut self, handle: ElementHandle, world: &WorldCell)
-    where
-        U: ?Sized + 'static,
-        Self: Unsize<U>,
-    {
+trait PositionElementExt: PositionedElement + Sized {
+    fn register_position(&mut self, handle: ElementHandle, world: &WorldCell) {
         let mut this = world.entry(handle).unwrap();
-        this.register::<U>(|this| this.downcast_ref::<Self>().unwrap());
-        this.register_mut::<U>(|this| this.downcast_mut::<Self>().unwrap());
+        this.register::<dyn PositionedElement>(|this| this.downcast_ref::<Self>().unwrap());
+        this.register_mut::<dyn PositionedElement>(|this| this.downcast_mut::<Self>().unwrap());
     }
 }
-impl<T: Element> ElementExt for T {}
+impl<T: PositionedElement> PositionElementExt for T {}
+
+pub struct PositionChanged;

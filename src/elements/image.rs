@@ -1,7 +1,7 @@
 use std::{error::Error, path::Path};
 
 use crate::{
-    elements::{Element, ElementExt, PositionChanged, PositionedElement, intersect::Intersection},
+    elements::{Element, PositionElementExt, PositionChanged, PositionedElement, intersect::Intersection},
     interface::{Interface, Painter},
     measures::{Position, Rectangle},
     world::{ElementHandle, World, WorldCell},
@@ -28,7 +28,7 @@ impl Element for Image {
             intersect.rect.origin = position;
         });
 
-        self.register::<dyn PositionedElement>(handle, world);
+        self.register_position(handle, world);
     }
 }
 impl PositionedElement for Image {
