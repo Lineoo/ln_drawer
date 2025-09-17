@@ -277,6 +277,14 @@ impl World {
         })
     }
 
+    /// Global observer. Will observe only globally triggered event.
+    pub fn observe<E: 'static>(
+        &mut self,
+        action: impl FnMut(&E, &WorldCell) + 'static,
+    ) -> ElementHandle {
+        self.entry(ElementHandle(0)).unwrap().observe(action)
+    }
+
     /// Global trigger. Will trigger every element listening to this event.
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         let cell = self.cell();
@@ -719,6 +727,15 @@ impl WorldCell<'_> {
             world: self,
             handle,
         })
+    }
+
+    /// Global observer. Will observe only globally triggered event. This will be delayed
+    /// until the cell is closed.
+    pub fn observe<E: 'static>(
+        &mut self,
+        action: impl FnMut(&E, &WorldCell) + 'static,
+    ) -> ElementHandle {
+        self.entry(ElementHandle(0)).unwrap().observe(action)
     }
 
     /// Global trigger. Will trigger every element listening to this event. This will be delayed
