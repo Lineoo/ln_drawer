@@ -20,12 +20,10 @@ fn vs_main(@location(0) world_space: vec2i, @location(1) uv: vec2f) -> VertexOut
     var output: VertexOutput;
 
     output.pos = vec4f(
-        2.0 * vec2f(world_space - viewport.camera) / vec2f(
-            f32(viewport.width),
-            f32(viewport.height)
-        ) * pow(2.0, f32(viewport.zoom)),
-        0.0, 
-        1.0
+        (2.0 * vec2f(world_space - viewport.camera)
+        * pow(2.0, f32(viewport.zoom)) + uv * 0.5)
+        / vec2f(f32(viewport.width), f32(viewport.height)),
+        0.0, 1.0
     );
     output.uv = uv;
 

@@ -102,7 +102,7 @@ impl PainterPipeline {
                 }],
             },
             primitive: PrimitiveState {
-                topology: PrimitiveTopology::TriangleList,
+                topology: PrimitiveTopology::TriangleStrip,
                 ..Default::default()
             },
             fragment: Some(FragmentState {
@@ -163,7 +163,7 @@ impl PainterPipeline {
 
         let indices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("painter_index_buffer"),
-            contents: bytemuck::bytes_of(&[0, 1, 2, 0, 3, 2]),
+            contents: bytemuck::bytes_of(&[0, 1, 3, 2]),
             usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
         });
 
@@ -484,7 +484,7 @@ impl PainterBuffer {
         rpass.set_bind_group(0, Some(&self.bind_group), &[]);
         rpass.set_vertex_buffer(0, self.vertices.slice(..));
         rpass.set_index_buffer(self.indices.slice(..), IndexFormat::Uint32);
-        rpass.draw_indexed(0..6, 0, 0..1);
+        rpass.draw_indexed(0..4, 0, 0..1);
     }
 }
 
