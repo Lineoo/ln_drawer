@@ -37,7 +37,7 @@ impl Element for ButtonRaw {
                 .unwrap()
                 .get_position();
             let mut intersect = world.fetch_mut::<Intersection>(intersect).unwrap();
-            
+
             intersect.rect[2] = intersect.rect[2] - intersect.rect[0] + position[0];
             intersect.rect[3] = intersect.rect[3] - intersect.rect[1] + position[1];
             intersect.rect[0] = position[0];
@@ -61,6 +61,9 @@ impl PositionedElement for ButtonRaw {
         self.rect[1] = position[1];
         self.rect[2] = position[0] + width as i32;
         self.rect[3] = position[1] + height as i32;
+        if let Some(square) = &mut self.square {
+            square.set_rect(self.rect);
+        }
     }
 }
 impl ButtonRaw {
