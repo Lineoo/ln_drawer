@@ -76,6 +76,17 @@ impl Lnwindow {
         let mut world = World::default();
         world.insert(interface);
 
+        world.insert(IntersectManager::default());
+        world.insert(StrokeLayer::default());
+        
+        let palette = Palette::new([0, 0], &mut world);
+        world.insert(palette);
+        world.insert(ButtonRaw::new([0, 0, 100, 100], || println!("Button hit!")));
+        let label = Label::new([0, 0, 200, 24], "Hello, LnDrawer!".into(), &mut world);
+        world.insert(label);
+        let image = Image::from_bytes(include_bytes!("../res/icon.png"), &mut world).unwrap();
+        world.insert(image);
+
         Lnwindow {
             window,
             viewport,
@@ -156,42 +167,6 @@ impl Lnwindow {
                 }
                 self.window.request_redraw();
             }
-
-            // Keyboard //
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(keycode),
-                        state: ElementState::Pressed,
-                        repeat: false,
-                        ..
-                    },
-                ..
-            } => match keycode {
-                KeyCode::F1 => {
-                    let label =
-                        Label::new([0, 0, 200, 24], "Hello, LnDrawer!".into(), &mut self.world);
-                    self.world.insert(label);
-
-                    let world =
-                        Image::from_bytes(include_bytes!("../res/icon.png"), &mut self.world)
-                            .unwrap();
-                    self.world.insert(world);
-                }
-                KeyCode::F2 => {
-                    let palette = Palette::new([0, 0], &mut self.world);
-                    self.world.insert(palette);
-                }
-                KeyCode::F3 => {
-                    self.world.insert(StrokeLayer::default());
-                }
-                KeyCode::F4 => {
-                    self.world.insert(IntersectManager::default());
-                    self.world
-                        .insert(ButtonRaw::new([0, 0, 100, 100], || println!("Button hit!")));
-                }
-                _ => (),
-            },
 
             // Misc //
             WindowEvent::DroppedFile(path) => match Image::new(path, &mut self.world) {
