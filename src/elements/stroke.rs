@@ -22,7 +22,7 @@ impl Element for StrokeLayer {
                 let color = (world.single::<Palette>())
                     .map(|palette| palette.pick_color())
                     .unwrap_or([0xff; 4]);
-                stroke.write_pixel(position, color, world);
+                stroke.write_pixel(position.into_array(), color, world);
             }
             _ => (),
         });

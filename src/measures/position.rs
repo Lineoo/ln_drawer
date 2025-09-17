@@ -2,7 +2,7 @@ use std::{fmt, ops};
 
 use crate::measures::delta::Delta;
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
     pub x: i32,
     pub y: i32,
@@ -60,6 +60,10 @@ impl ops::Sub for Position {
     }
 }
 impl Position {
+    pub fn new(x: i32, y: i32) -> Position {
+        Position { x, y }
+    }
+
     pub fn into_array(self) -> [i32; 2] {
         [self.x, self.y]
     }

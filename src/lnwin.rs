@@ -3,15 +3,15 @@ use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
-    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::ActiveEventLoop,
-    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
 use crate::{
     elements::{ButtonRaw, Image, IntersectManager, Label, Palette, StrokeLayer},
     interface::Interface,
+    measures::{Position, Rectangle},
     world::World,
 };
 
@@ -78,10 +78,13 @@ impl Lnwindow {
 
         world.insert(IntersectManager::default());
         world.insert(StrokeLayer::default());
-        
+
         let palette = Palette::new([0, 0], &mut world);
         world.insert(palette);
-        world.insert(ButtonRaw::new([0, 0, 100, 100], || println!("Button hit!")));
+        world.insert(ButtonRaw::new(
+            Rectangle::from_array([0, 0, 100, 100]),
+            || println!("Button hit!"),
+        ));
         let label = Label::new([0, 0, 200, 24], "Hello, LnDrawer!".into(), &mut world);
         world.insert(label);
         let image = Image::from_bytes(include_bytes!("../res/icon.png"), &mut world).unwrap();
@@ -209,18 +212,18 @@ impl Viewport {
         [x, y]
     }
 
-    pub fn world_to_screen(&self, point: [i32; 2]) -> [f64; 2] {
-        let x = (point[0] - self.camera[0]) as f64 / self.width as f64 * 2.0;
-        let y = (point[1] - self.camera[1]) as f64 / self.height as f64 * 2.0;
+    pub fn world_to_screen(&self, point: Position) -> [f64; 2] {
+        let x = (point.x - self.camera[0]) as f64 / self.width as f64 * 2.0;
+        let y = (point.x - self.camera[1]) as f64 / self.height as f64 * 2.0;
         let scale = f64::powi(2.0, self.zoom);
         [x * scale, y * scale]
     }
 
-    pub fn screen_to_world(&self, point: [f64; 2]) -> [i32; 2] {
+    pub fn screen_to_world(&self, point: [f64; 2]) -> Position {
         let scale = f64::powi(2.0, self.zoom);
         let x = (point[0] / scale * self.width as f64 / 2.0).floor() as i32 + self.camera[0];
         let y = (point[1] / scale * self.height as f64 / 2.0).floor() as i32 + self.camera[1];
-        [x, y]
+        Position::new(x, y)
     }
 
     pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> [i32; 2] {
@@ -234,7 +237,7 @@ impl Viewport {
 /// Pointer that has been transformed into world-space
 #[derive(Clone, Copy)]
 pub enum PointerEvent {
-    Moved([i32; 2]),
-    Pressed([i32; 2]),
-    Released([i32; 2]),
+    Moved(Position),
+    Pressed(Position),
+    Released(Position),
 }

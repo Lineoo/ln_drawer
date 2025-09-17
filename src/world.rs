@@ -944,17 +944,18 @@ pub struct ElementRemoved(pub ElementHandle);
 mod test {
     use crate::{
         elements::{Element, PositionedElement},
+        measures::Position,
         world::{ElementHandle, World, WorldCell},
     };
 
     struct TestElement {
-        position: [i32; 2],
+        position: Position,
     }
     impl PositionedElement for TestElement {
-        fn get_position(&self) -> [i32; 2] {
+        fn get_position(&self) -> Position {
             self.position
         }
-        fn set_position(&mut self, position: [i32; 2]) {
+        fn set_position(&mut self, position: Position) {
             self.position = position;
         }
     }
@@ -977,18 +978,20 @@ mod test {
     fn service() {
         let mut world = World::default();
         let handle = world.insert(TestElement {
-            position: [42, 123],
+            position: Position::new(42, 123),
         });
-        let position = world.fetch_mut::<[i32; 2]>(handle).unwrap();
-        assert_eq!(position, &[42, 123]);
-        position[1] = 321;
+        let position = world.fetch_mut::<Position>(handle).unwrap();
+        assert_eq!(position, &Position::new(42, 123));
+        position.x = 321;
+        let position = world.fetch::<Position>(handle).unwrap();
+        assert_eq!(position, &Position::new(42, 321));
     }
 
     #[test]
     fn unregistered_service() {
         let mut world = World::default();
         let handle = world.insert(TestElement {
-            position: [42, 123],
+            position: Position::new(42, 123),
         });
         assert_eq!(world.fetch::<i32>(handle), None);
     }
@@ -997,9 +1000,9 @@ mod test {
     fn dynamic_service() {
         let mut world = World::default();
         let handle = world.insert(TestElement {
-            position: [42, 123],
+            position: Position::new(42, 123),
         });
         let position = world.fetch::<dyn PositionedElement>(handle).unwrap();
-        assert_eq!(position.get_position(), [42, 123]);
+        assert_eq!(position.get_position(), Position::new(42, 123));
     }
 }

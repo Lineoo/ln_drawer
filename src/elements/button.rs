@@ -5,13 +5,14 @@ use crate::{
     },
     interface::{Interface, Square},
     lnwin::PointerEvent,
+    measures::{Position, Rectangle},
     world::{ElementHandle, WorldCell},
 };
 
 /// Only contains raw button interaction logic. See [`Button`] if a complete button
 /// including text and image is needed.
 pub struct ButtonRaw {
-    rect: [i32; 4],
+    rect: Rectangle,
     action: Box<dyn FnMut()>,
     square: Option<Square>,
 }
@@ -38,10 +39,7 @@ impl Element for ButtonRaw {
                 .get_position();
             let mut intersect = world.fetch_mut::<Intersection>(intersect).unwrap();
 
-            intersect.rect[2] = intersect.rect[2] - intersect.rect[0] + position[0];
-            intersect.rect[3] = intersect.rect[3] - intersect.rect[1] + position[1];
-            intersect.rect[0] = position[0];
-            intersect.rect[1] = position[1];
+            intersect.rect.origin = position;
         });
 
         this.observe::<PointerEnter>(move |_event, world| {
@@ -54,7 +52,7 @@ impl Element for ButtonRaw {
         });
 
         let mut interface = world.single_mut::<Interface>().unwrap();
-        let square = interface.create_square(self.rect, [1.0, 1.0, 1.0, 0.6]);
+        let square = interface.create_square(self.rect.into_array(), [1.0, 1.0, 1.0, 0.6]);
         square.set_visible(false);
         self.square = Some(square);
 
@@ -62,35 +60,23 @@ impl Element for ButtonRaw {
     }
 }
 impl PositionedElement for ButtonRaw {
-    fn get_position(&self) -> [i32; 2] {
-        [self.rect[0], self.rect[1]]
+    fn get_position(&self) -> Position {
+        self.rect.origin
     }
 
-    fn set_position(&mut self, position: [i32; 2]) {
-        let (width, height) = (self.width(), self.height());
-        self.rect[0] = position[0];
-        self.rect[1] = position[1];
-        self.rect[2] = position[0] + width as i32;
-        self.rect[3] = position[1] + height as i32;
+    fn set_position(&mut self, position: Position) {
+        self.rect.origin = position;
         if let Some(square) = &mut self.square {
-            square.set_rect(self.rect);
+            square.set_rect(self.rect.into_array());
         }
     }
 }
 impl ButtonRaw {
-    pub fn new(rect: [i32; 4], action: impl FnMut() + 'static) -> ButtonRaw {
+    pub fn new(rect: Rectangle, action: impl FnMut() + 'static) -> ButtonRaw {
         ButtonRaw {
             rect,
             action: Box::new(action),
             square: None,
         }
-    }
-
-    fn width(&self) -> u32 {
-        (self.rect[0] - self.rect[2]).unsigned_abs()
-    }
-
-    fn height(&self) -> u32 {
-        (self.rect[1] - self.rect[3]).unsigned_abs()
     }
 }

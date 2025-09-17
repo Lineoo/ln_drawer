@@ -1,6 +1,7 @@
 use crate::{
     elements::{Element, ElementExt, PositionChanged, PositionedElement, intersect::Intersection},
     interface::{Interface, Text},
+    measures::{Position, Rectangle},
     world::{ElementHandle, World, WorldCell},
 };
 
@@ -12,7 +13,7 @@ impl Element for Label {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
         let intersect = world.insert(Intersection {
             host: handle,
-            rect: self.inner.get_rect(),
+            rect: Rectangle::from_array(self.inner.get_rect()),
             z_order: 0,
         });
         world.entry(intersect).unwrap().depend(handle);
@@ -22,23 +23,20 @@ impl Element for Label {
                 .unwrap()
                 .get_position();
             let mut intersect = world.fetch_mut::<Intersection>(intersect).unwrap();
-            
-            intersect.rect[2] = intersect.rect[2] - intersect.rect[0] + position[0];
-            intersect.rect[3] = intersect.rect[3] - intersect.rect[1] + position[1];
-            intersect.rect[0] = position[0];
-            intersect.rect[1] = position[1];
+
+            intersect.rect.origin = position;
         });
 
         self.register::<dyn PositionedElement>(handle, world);
     }
 }
 impl PositionedElement for Label {
-    fn get_position(&self) -> [i32; 2] {
-        self.inner.get_position()
+    fn get_position(&self) -> Position {
+        Position::from_array(self.inner.get_position())
     }
 
-    fn set_position(&mut self, position: [i32; 2]) {
-        self.inner.set_position(position);
+    fn set_position(&mut self, position: Position) {
+        self.inner.set_position(position.into_array());
     }
 }
 impl Label {

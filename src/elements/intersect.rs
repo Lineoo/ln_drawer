@@ -6,12 +6,13 @@ use winit::{
 use crate::{
     elements::{Element, PositionChanged, PositionedElement},
     lnwin::PointerEvent,
+    measures::{Position, Rectangle},
     world::{ElementHandle, WorldCell},
 };
 
 pub struct Intersection {
     pub host: ElementHandle,
-    pub rect: [i32; 4],
+    pub rect: Rectangle,
     pub z_order: isize,
 }
 impl Element for Intersection {}
@@ -26,8 +27,8 @@ impl Element for IntersectManager {
         let mut pressed = false;
         let mut pointer_on = None;
         // Dragging
-        let mut pointer_start = [0, 0];
-        let mut element_start = [0, 0];
+        let mut pointer_start = Position::default();
+        let mut element_start = Position::default();
         this.observe::<PointerEvent>(move |&event, world| {
             let this = world.fetch::<IntersectManager>(handle).unwrap();
 
@@ -63,9 +64,8 @@ impl Element for IntersectManager {
                             pointer_start = point;
                         }
                         if let PointerEvent::Moved(point) = event {
-                            let delta = [point[0] - pointer_start[0], point[1] - pointer_start[1]];
-                            let position =
-                                [element_start[0] + delta[0], element_start[1] + delta[1]];
+                            let delta = point - pointer_start;
+                            let position = element_start + delta;
                             positioned.set_position(position);
                             let mut entry = world.entry(pointer_on).unwrap();
                             entry.trigger(PositionChanged);
@@ -105,14 +105,11 @@ impl Element for IntersectManager {
     }
 }
 impl IntersectManager {
-    pub fn intersect(&self, world: &WorldCell, point: [i32; 2]) -> Option<ElementHandle> {
+    pub fn intersect(&self, world: &WorldCell, point: Position) -> Option<ElementHandle> {
         let mut top_result = None;
         let max_order = isize::MIN;
         world.foreach::<Intersection>(|intersection| {
-            if (intersection.z_order > max_order)
-                && (intersection.rect[0] <= point[0] && point[0] < intersection.rect[2])
-                && (intersection.rect[1] <= point[1] && point[1] < intersection.rect[3])
-            {
+            if (intersection.z_order > max_order) && intersection.rect.contains(point) {
                 top_result = Some(intersection.host);
             }
         });

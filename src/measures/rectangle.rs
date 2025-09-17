@@ -2,7 +2,7 @@ use std::{fmt, ops};
 
 use crate::measures::{delta::Delta, position::Position};
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Rectangle {
     pub origin: Position,
     pub extend: Delta,
@@ -56,6 +56,13 @@ impl ops::SubAssign<Delta> for Rectangle {
     }
 }
 impl Rectangle {
+    pub fn new(left: i32, down: i32, right: i32, up: i32) -> Rectangle {
+        Rectangle {
+            origin: Position::new(left, down),
+            extend: Position::new(right, up) - Position::new(left, down),
+        }
+    }
+
     #[inline]
     pub fn width(self) -> u32 {
         self.extend.x as u32
@@ -84,6 +91,11 @@ impl Rectangle {
     #[inline]
     pub fn up(self) -> i32 {
         self.origin.y + self.extend.y
+    }
+
+    pub fn contains(self, position: Position) -> bool {
+        (self.left() <= position.x && position.x < self.right())
+            && (self.down() <= position.y && position.y < self.up())
     }
 
     pub fn into_array(self) -> [i32; 4] {

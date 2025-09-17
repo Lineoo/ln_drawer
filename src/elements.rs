@@ -14,7 +14,10 @@ pub use label::Label;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;
 
-use crate::world::{ElementHandle, WorldCell};
+use crate::{
+    measures::Position,
+    world::{ElementHandle, WorldCell},
+};
 
 #[expect(unused_variables)]
 pub trait Element: Any {
@@ -34,8 +37,8 @@ impl dyn Element {
 }
 
 pub trait PositionedElement: Element {
-    fn get_position(&self) -> [i32; 2];
-    fn set_position(&mut self, position: [i32; 2]);
+    fn get_position(&self) -> Position;
+    fn set_position(&mut self, position: Position);
 }
 
 pub struct PositionChanged;

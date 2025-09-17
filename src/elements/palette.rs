@@ -7,6 +7,7 @@ use crate::{
     },
     interface::{Interface, Painter},
     lnwin::PointerEvent,
+    measures::{Position, Rectangle},
     world::{ElementHandle, World, WorldCell},
 };
 
@@ -23,7 +24,7 @@ impl Element for Palette {
 
         let intersect = world.insert(Intersection {
             host: handle,
-            rect: self.painter.get_rect(),
+            rect: Rectangle::from_array(self.painter.get_rect()),
             z_order: 100,
         });
         world.entry(intersect).unwrap().depend(handle);
@@ -42,27 +43,27 @@ impl Element for Palette {
                 .unwrap()
                 .get_position();
             let mut intersect = world.fetch_mut::<Intersection>(intersect).unwrap();
-            
-            intersect.rect[2] = intersect.rect[2] - intersect.rect[0] + position[0];
-            intersect.rect[3] = intersect.rect[3] - intersect.rect[1] + position[1];
-            intersect.rect[0] = position[0];
-            intersect.rect[1] = position[1];
+
+            intersect.rect.origin = position;
         });
 
         self.register::<dyn PositionedElement>(handle, world);
     }
 }
 impl PositionedElement for Palette {
-    fn get_position(&self) -> [i32; 2] {
-        self.painter.get_position()
+    fn get_position(&self) -> Position {
+        Position::from_array(self.painter.get_position())
     }
 
-    fn set_position(&mut self, position: [i32; 2]) {
+    fn set_position(&mut self, position: Position) {
         let origin = self.get_position();
-        let delta = [position[0] - origin[0], position[1] - origin[1]];
+        let delta = position - origin;
+
         let knob_origin = self.get_knob_position();
-        self.painter.set_position(position);
-        self.set_knob_position([knob_origin[0] + delta[0], knob_origin[1] + delta[1]]);
+        let knob_position = knob_origin + delta;
+
+        self.painter.set_position(position.into_array());
+        self.knob.set_position([knob_position.x - 1, knob_position.y - 1]);
     }
 }
 impl Palette {
@@ -118,25 +119,25 @@ impl Palette {
         Palette { painter, knob }
     }
 
-    pub fn get_knob_position(&self) -> [i32; 2] {
+    pub fn get_knob_position(&self) -> Position {
         let raw_pos = self.knob.get_position();
-        [raw_pos[0] + 1, raw_pos[1] + 1]
+        Position::from_array([raw_pos[0] + 1, raw_pos[1] + 1])
     }
 
-    pub fn set_knob_position(&mut self, position: [i32; 2]) {
+    pub fn set_knob_position(&mut self, position: Position) {
         let rect = self.painter.get_rect();
-        let x = position[0].clamp(rect[0], rect[2] - 1);
-        let y = position[1].clamp(rect[1], rect[3] - 1);
+        let x = position.x.clamp(rect[0], rect[2] - 1);
+        let y = position.y.clamp(rect[1], rect[3] - 1);
 
         self.knob.set_position([x - 1, y - 1]);
     }
 
     pub fn pick_color(&self) -> [u8; 4] {
-        let base_position = self.painter.get_position();
+        let base_position = self.get_position();
         let knob_position = self.get_knob_position();
 
-        let x = knob_position[0] - base_position[0];
-        let y = knob_position[1] - base_position[1];
+        let x = knob_position.x - base_position.x;
+        let y = knob_position.y - base_position.y;
         let cx = x.rem_euclid(WIDTH as i32);
         let cy = y.rem_euclid(HEIGHT as i32);
 

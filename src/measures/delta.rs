@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Delta {
     pub x: i32,
     pub y: i32,
