@@ -4,6 +4,7 @@
 pub mod elements;
 pub mod interface;
 pub mod lnwin;
+pub mod measures;
 pub mod world;
 
 use winit::{
