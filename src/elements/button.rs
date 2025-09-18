@@ -1,7 +1,6 @@
 use crate::{
     elements::{
-        Element, PositionElementExt, PositionChanged, PositionedElement,
-        intersect::{IntersectHit, Intersection, PointerEnter, PointerLeave},
+        intersect::{IntersectHit, Intersection, PointerEnter, PointerLeave}, Element, OrderElement, OrderElementExt, PositionChanged, PositionElementExt, PositionedElement
     },
     interface::{Interface, Square},
     lnwin::PointerEvent,
@@ -13,6 +12,7 @@ use crate::{
 /// including text and image is needed.
 pub struct ButtonRaw {
     rect: Rectangle,
+    order: isize,
     action: Box<dyn FnMut(&WorldCell)>,
     square: Option<Square>,
 }
@@ -22,7 +22,7 @@ impl Element for ButtonRaw {
         let intersect = world.insert(Intersection {
             host: handle,
             rect: self.rect,
-            z_order: 0,
+            z_order: self.order,
         });
         world.entry(intersect).unwrap().depend(handle);
 
@@ -53,10 +53,12 @@ impl Element for ButtonRaw {
 
         let mut interface = world.single_mut::<Interface>().unwrap();
         let square = interface.create_square(self.rect.into_array(), [1.0, 1.0, 1.0, 0.6]);
+        square.set_z_order(self.order);
         square.set_visible(false);
         self.square = Some(square);
 
         self.register_position(handle, world);
+        self.register_order(handle, world);
     }
 }
 impl PositionedElement for ButtonRaw {
@@ -71,10 +73,23 @@ impl PositionedElement for ButtonRaw {
         }
     }
 }
+impl OrderElement for ButtonRaw {
+    fn get_order(&self) -> isize {
+        self.order
+    }
+
+    fn set_order(&mut self, order: isize) {
+        self.order = order;
+        if let Some(square) = &mut self.square {
+            square.set_z_order(order);
+        }
+    }
+}
 impl ButtonRaw {
     pub fn new(rect: Rectangle, action: impl FnMut(&WorldCell) + 'static) -> ButtonRaw {
         ButtonRaw {
             rect,
+            order: 0,
             action: Box::new(action),
             square: None,
         }

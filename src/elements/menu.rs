@@ -1,5 +1,5 @@
 use crate::{
-    elements::{ButtonRaw, Element, Label, PositionedElement},
+    elements::{ButtonRaw, Element, Label, OrderElement, PositionedElement},
     interface::{Interface, Square},
     measures::{Delta, Position, Rectangle},
     world::{ElementHandle, WorldCell},
@@ -14,10 +14,17 @@ impl Element for Menu {
             self.get_position() + Delta::new(10, 10),
             Rectangle::from_array(self.frame.get_rect()).right_up() - Delta::new(10, 10),
         );
-        let button1 = world.insert(ButtonRaw::new(rect1, move |world| {
+
+        let mut button1 = ButtonRaw::new(rect1, move |world| {
             world.insert(Label::new(rect1, "New Label".into(), world));
-        }));
-        let button1_text = world.insert(Label::new(rect1, "Label".into(), world));
+        });
+        button1.set_order(100);
+        let button1 = world.insert(button1);
+
+        let mut button1_text = Label::new(rect1, "Label".into(), world);
+        button1_text.set_order(110);
+        let button1_text = world.insert(button1_text);
+
         world.entry(button1).unwrap().depend(handle);
         world.entry(button1_text).unwrap().depend(handle);
     }
@@ -38,6 +45,7 @@ impl Menu {
             extend: Delta::new(200, 40),
         };
         let frame = interface.create_square(rect.into_array(), [0.1, 0.1, 0.1, 1.0]);
+        frame.set_z_order(90);
 
         Menu { frame }
     }

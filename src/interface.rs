@@ -288,7 +288,7 @@ impl Interface {
 
 struct Component {
     component: ComponentInner,
-    z_order: usize,
+    z_order: isize,
     visible: bool,
 }
 
@@ -300,6 +300,6 @@ enum ComponentInner {
 
 enum ComponentCommand {
     Destroy,
-    SetZOrder(usize),
+    SetZOrder(isize),
     SetVisibility(bool),
 }

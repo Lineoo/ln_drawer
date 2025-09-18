@@ -131,11 +131,11 @@ impl Text {
         self.inner.set_position(position);
     }
 
-    pub fn get_z_order(&mut self) -> usize {
+    pub fn get_z_order(&self) -> isize {
         self.inner.get_z_order()
     }
 
-    pub fn set_z_order(&mut self, ord: usize) {
+    pub fn set_z_order(&mut self, ord: isize) {
         self.inner.set_z_order(ord);
     }
 

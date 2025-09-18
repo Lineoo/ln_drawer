@@ -259,7 +259,7 @@ impl PainterPipeline {
 pub struct Painter {
     rect: [i32; 4],
     data: Vec<u8>,
-    z_order: usize,
+    z_order: isize,
 
     comp_idx: usize,
     comp_tx: Sender<(usize, ComponentCommand)>,
@@ -388,11 +388,11 @@ impl Painter {
         ]);
     }
 
-    pub fn get_z_order(&self) -> usize {
+    pub fn get_z_order(&self) -> isize {
         self.z_order
     }
 
-    pub fn set_z_order(&mut self, ord: usize) {
+    pub fn set_z_order(&mut self, ord: isize) {
         self.z_order = ord;
         if let Err(e) =
             (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(self.z_order)))

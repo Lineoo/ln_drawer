@@ -1,7 +1,10 @@
 use std::{error::Error, path::Path};
 
 use crate::{
-    elements::{Element, PositionElementExt, PositionChanged, PositionedElement, intersect::Intersection},
+    elements::{
+        Element, OrderElement, OrderElementExt, PositionChanged, PositionElementExt,
+        PositionedElement, intersect::Intersection,
+    },
     interface::{Interface, Painter},
     measures::{Position, Rectangle},
     world::{ElementHandle, World, WorldCell},
@@ -29,6 +32,7 @@ impl Element for Image {
         });
 
         self.register_position(handle, world);
+        self.register_order(handle, world);
     }
 }
 impl PositionedElement for Image {
@@ -38,6 +42,15 @@ impl PositionedElement for Image {
 
     fn set_position(&mut self, position: Position) {
         self.painter.set_position(position.into_array());
+    }
+}
+impl OrderElement for Image {
+    fn get_order(&self) -> isize {
+        self.painter.get_z_order()
+    }
+
+    fn set_order(&mut self, order: isize) {
+        self.painter.set_z_order(order);
     }
 }
 impl Image {

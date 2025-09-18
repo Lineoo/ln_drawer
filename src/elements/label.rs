@@ -1,6 +1,7 @@
 use crate::{
     elements::{
-        Element, PositionChanged, PositionElementExt, PositionedElement, intersect::Intersection,
+        Element, OrderElement, OrderElementExt, PositionChanged, PositionElementExt,
+        PositionedElement, intersect::Intersection,
     },
     interface::{Interface, Text},
     measures::{Position, Rectangle},
@@ -30,6 +31,7 @@ impl Element for Label {
         });
 
         self.register_position(handle, world);
+        self.register_order(handle, world);
     }
 }
 impl PositionedElement for Label {
@@ -39,6 +41,15 @@ impl PositionedElement for Label {
 
     fn set_position(&mut self, position: Position) {
         self.inner.set_position(position.into_array());
+    }
+}
+impl OrderElement for Label {
+    fn get_order(&self) -> isize {
+        self.inner.get_z_order()
+    }
+
+    fn set_order(&mut self, order: isize) {
+        self.inner.set_z_order(order);
     }
 }
 impl Label {
