@@ -43,3 +43,8 @@ impl ops::SubAssign for Delta {
         self.y -= rhs.y;
     }
 }
+impl Delta {
+    pub fn new(x: i32, y: i32) -> Delta {
+        Delta { x, y }
+    }
+}

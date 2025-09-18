@@ -2,6 +2,7 @@ mod button;
 mod image;
 mod intersect;
 mod label;
+mod menu;
 mod palette;
 mod stroke;
 
@@ -11,6 +12,7 @@ pub use button::ButtonRaw;
 pub use image::Image;
 pub use intersect::IntersectManager;
 pub use label::Label;
+pub use menu::Menu;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;
 

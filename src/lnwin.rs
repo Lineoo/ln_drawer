@@ -9,7 +9,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{ButtonRaw, Image, IntersectManager, Label, Palette, StrokeLayer},
+    elements::{ButtonRaw, Image, IntersectManager, Label, Menu, Palette, StrokeLayer},
     interface::Interface,
     measures::{Position, Rectangle},
     world::World,
@@ -83,9 +83,13 @@ impl Lnwindow {
         world.insert(palette);
         world.insert(ButtonRaw::new(
             Rectangle::from_array([0, 0, 100, 100]),
-            || println!("Button hit!"),
+            |_| println!("Button hit!"),
         ));
-        let label = Label::new([0, 0, 200, 24], "Hello, LnDrawer!".into(), &mut world);
+        let label = Label::new(
+            Rectangle::new(0, 0, 200, 24),
+            "Hello, LnDrawer!".into(),
+            &world.cell(),
+        );
         world.insert(label);
         let image = Image::from_bytes(include_bytes!("../res/icon.png"), &mut world).unwrap();
         world.insert(image);
@@ -138,6 +142,17 @@ impl Lnwindow {
             } => {
                 let point = self.viewport.screen_to_world(self.cursor);
                 self.world.trigger(&PointerEvent::Released(point));
+                self.window.request_redraw();
+            }
+
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => {
+                let point = self.viewport.screen_to_world(self.cursor);
+                let world = self.world.cell();
+                world.insert(Menu::new(point, &mut world.single_mut().unwrap()));
                 self.window.request_redraw();
             }
 

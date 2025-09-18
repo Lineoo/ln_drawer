@@ -1,8 +1,10 @@
 use crate::{
-    elements::{Element, PositionElementExt, PositionChanged, PositionedElement, intersect::Intersection},
+    elements::{
+        Element, PositionChanged, PositionElementExt, PositionedElement, intersect::Intersection,
+    },
     interface::{Interface, Text},
     measures::{Position, Rectangle},
-    world::{ElementHandle, World, WorldCell},
+    world::{ElementHandle, WorldCell},
 };
 
 pub struct Label {
@@ -40,9 +42,9 @@ impl PositionedElement for Label {
     }
 }
 impl Label {
-    pub fn new(rect: [i32; 4], text: String, world: &mut World) -> Label {
-        let interface = world.single_mut::<Interface>().unwrap();
-        let inner = interface.create_text(rect, &text);
+    pub fn new(rect: Rectangle, text: String, world: &WorldCell) -> Label {
+        let mut interface = world.single_mut::<Interface>().unwrap();
+        let inner = interface.create_text(rect.into_array(), &text);
         Label { text, inner }
     }
 }

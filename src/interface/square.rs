@@ -211,6 +211,10 @@ impl Drop for Square {
     }
 }
 impl Square {
+    pub fn get_rect(&self) -> [i32; 4] {
+        self.rect
+    }
+
     pub fn set_rect(&mut self, rect: [i32; 4]) {
         self.rect = rect;
         self.queue.write_buffer(
@@ -223,6 +227,20 @@ impl Square {
                 [rect[2], rect[1]],
             ]),
         );
+    }
+
+    pub fn get_position(&self) -> [i32; 2] {
+        [self.rect[0], self.rect[1]]
+    }
+
+    pub fn set_position(&mut self, position: [i32; 2]) {
+        let (width, height) = (self.width(), self.height());
+        self.set_rect([
+            position[0],
+            position[1],
+            position[0] + width as i32,
+            position[1] + height as i32,
+        ]);
     }
 
     pub fn set_color(&mut self, color: [f32; 4]) {
@@ -246,6 +264,14 @@ impl Square {
 
     pub(super) fn clone_buffer(&self) -> SquareBuffer {
         self.buffer.clone()
+    }
+    
+    fn width(&self) -> u32 {
+        (self.rect[0] - self.rect[2]).unsigned_abs()
+    }
+
+    fn height(&self) -> u32 {
+        (self.rect[1] - self.rect[3]).unsigned_abs()
     }
 }
 

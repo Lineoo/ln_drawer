@@ -63,6 +63,10 @@ impl Rectangle {
         }
     }
 
+    pub fn from_points(orig: Position, dest: Position) -> Rectangle {
+        Rectangle::new(orig.x, orig.y, dest.x, dest.y)
+    }
+
     #[inline]
     pub fn width(self) -> u32 {
         self.extend.x as u32
@@ -91,6 +95,11 @@ impl Rectangle {
     #[inline]
     pub fn up(self) -> i32 {
         self.origin.y + self.extend.y
+    }
+
+    #[inline]
+    pub fn right_up(self) -> Position {
+        self.origin + self.extend
     }
 
     pub fn contains(self, position: Position) -> bool {

@@ -13,7 +13,7 @@ use crate::{
 /// including text and image is needed.
 pub struct ButtonRaw {
     rect: Rectangle,
-    action: Box<dyn FnMut()>,
+    action: Box<dyn FnMut(&WorldCell)>,
     square: Option<Square>,
 }
 impl Element for ButtonRaw {
@@ -29,7 +29,7 @@ impl Element for ButtonRaw {
         this.observe::<IntersectHit>(move |event, world| {
             if let IntersectHit(PointerEvent::Pressed(_)) = event {
                 let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
-                (this.action)();
+                (this.action)(world);
             }
         });
         this.observe::<PositionChanged>(move |_event, world| {
@@ -72,7 +72,7 @@ impl PositionedElement for ButtonRaw {
     }
 }
 impl ButtonRaw {
-    pub fn new(rect: Rectangle, action: impl FnMut() + 'static) -> ButtonRaw {
+    pub fn new(rect: Rectangle, action: impl FnMut(&WorldCell) + 'static) -> ButtonRaw {
         ButtonRaw {
             rect,
             action: Box::new(action),
