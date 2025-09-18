@@ -15,7 +15,7 @@ pub struct ElementHandle(usize);
 
 enum Singleton {
     Unique(ElementHandle),
-    Multiple(usize),
+    Multiple,
 }
 
 pub struct World {
@@ -68,12 +68,9 @@ impl World {
         // singleton cache
         self.singletons
             .entry(type_id)
-            .and_modify(|status| match status {
-                Singleton::Unique(_) => {
-                    *status = Singleton::Multiple(2);
-                }
-                Singleton::Multiple(cnt) => {
-                    *cnt += 1;
+            .and_modify(|status| {
+                if let Singleton::Unique(_) = status {
+                    *status = Singleton::Multiple;
                 }
             })
             .or_insert(Singleton::Unique(handle));
@@ -115,16 +112,11 @@ impl World {
             Singleton::Unique(_) => {
                 self.singletons.remove(&type_id);
             }
-            Singleton::Multiple(cnt) => {
-                // We don't actually consider the situation that multiple elements being remove until
-                // one is left. In such case, even though there technically is only *one* element, which
-                // should be singleton, but mostly it won't be used as a singleton, and use loops to cache
-                // it is basically a waste. So we won't implement it.
-                *cnt -= 1;
-                if *cnt == 0 {
-                    self.singletons.remove(&type_id);
-                }
-            }
+            // We don't actually consider the situation that multiple elements being remove until
+            // one is left. In such case, even though there technically is only *one* element, which
+            // should be singleton, but mostly it won't be used as a singleton, and use loops to cache
+            // it is basically a waste. So we won't implement it.
+            Singleton::Multiple => {}
         }
 
         // clean invalid observers
@@ -451,12 +443,9 @@ impl WorldCell<'_> {
             world
                 .singletons
                 .entry(type_id)
-                .and_modify(|status| match status {
-                    Singleton::Unique(_) => {
-                        *status = Singleton::Multiple(2);
-                    }
-                    Singleton::Multiple(cnt) => {
-                        *cnt += 1;
+                .and_modify(|status| {
+                    if let Singleton::Unique(_) = status {
+                        *status = Singleton::Multiple;
                     }
                 })
                 .or_insert(Singleton::Unique(estimate_handle));
