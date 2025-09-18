@@ -49,6 +49,10 @@ impl Element for IntersectManager {
                 pointer_on = pointer_onto;
             }
 
+            if pointer_on.is_some_and(|it| !world.contains(it)) {
+                pointer_on = None;
+            }
+
             if let PointerEvent::Pressed(_) = event {
                 pressed = true;
             }
@@ -107,9 +111,10 @@ impl Element for IntersectManager {
 impl IntersectManager {
     pub fn intersect(&self, world: &WorldCell, point: Position) -> Option<ElementHandle> {
         let mut top_result = None;
-        let max_order = isize::MIN;
+        let mut max_order = isize::MIN;
         world.foreach::<Intersection>(|intersection| {
             if (intersection.z_order > max_order) && intersection.rect.contains(point) {
+                max_order = intersection.z_order;
                 top_result = Some(intersection.host);
             }
         });
