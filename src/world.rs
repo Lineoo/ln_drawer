@@ -128,17 +128,17 @@ impl World {
         }
 
         // clean invalid observers
-        let mut attached_observers = Vec::with_capacity(4);
-        for observers_typed in &self.single::<Observers>().unwrap().0 {
-            if let Some(observers_typed_element) = (observers_typed.1).get(&handle) {
+        let mut attached_observers = Vec::with_capacity(8);
+        for observers_typed in self.single_mut::<Observers>().unwrap().0.values_mut() {
+            if let Some(observers_typed_element) = observers_typed.remove(&handle) {
                 for observer in observers_typed_element {
-                    attached_observers.push(*observer);
+                    attached_observers.push(observer);
                 }
             }
         }
-
         for observer in attached_observers {
-            self.remove(observer);
+            self.trigger(&ElementRemoved(handle));
+            self.elements.remove(&observer);
         }
 
         self.elements.remove(&handle)
@@ -489,6 +489,9 @@ impl WorldCell<'_> {
 
         let mut removed = self.removed.borrow_mut();
         removed.insert(handle);
+
+        drop(occupied);
+        drop(removed);
 
         let mut queue = self.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
