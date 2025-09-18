@@ -410,6 +410,8 @@ pub struct WorldCell<'world> {
 }
 impl Drop for WorldCell<'_> {
     fn drop(&mut self) {
+        self.world.curr_idx = *self.cell_idx.get_mut();
+
         let queue = self.world.single_mut::<Queue>().unwrap();
         let mut buf = Vec::new();
         buf.append(&mut queue.0);
@@ -423,6 +425,8 @@ impl WorldCell<'_> {
     /// Cell-mode insertion cannot perform the operation immediately so the inserted element cannot be
     /// fetched until end of the cell span. One exception is entry, which can still be used normally.
     pub fn insert<T: Element + 'static>(&self, element: T) -> ElementHandle {
+        // get estimate_handle
+        // cell-mode insertion depends on *retained* handle
         let mut cell_idx = self.cell_idx.borrow_mut();
         cell_idx.0 += 1;
         let estimate_handle = ElementHandle(cell_idx.0 - 1);
@@ -432,8 +436,40 @@ impl WorldCell<'_> {
 
         let mut queue = self.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
-            let actual_handle = world.insert(element);
-            debug_assert_eq!(actual_handle, estimate_handle);
+            let type_id = element.type_id();
+
+            world.elements.insert(estimate_handle, Box::new(element));
+
+            // this-type service register
+            let mut entry = world.entry(estimate_handle).unwrap();
+            entry.register::<T>(|this| this.downcast_ref::<T>().unwrap());
+            entry.register_mut::<T>(|this| this.downcast_mut::<T>().unwrap());
+            entry.register::<dyn Element>(|this| this.downcast_ref::<T>().unwrap());
+            entry.register_mut::<dyn Element>(|this| this.downcast_mut::<T>().unwrap());
+
+            // singleton cache
+            world
+                .singletons
+                .entry(type_id)
+                .and_modify(|status| match status {
+                    Singleton::Unique(_) => {
+                        *status = Singleton::Multiple(2);
+                    }
+                    Singleton::Multiple(cnt) => {
+                        *cnt += 1;
+                    }
+                })
+                .or_insert(Singleton::Unique(estimate_handle));
+
+            // when_inserted
+            let cell = world.cell();
+            let mut element = cell.fetch_mut_dyn(estimate_handle).unwrap();
+            element.when_inserted(estimate_handle, &cell);
+            drop(element);
+            drop(cell);
+
+            // ElementInserted
+            world.trigger(&ElementInserted(estimate_handle));
         }));
         estimate_handle
     }
@@ -809,22 +845,24 @@ impl WorldCellEntry<'_> {
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(
         &mut self,
-        action: impl FnMut(&E, &WorldCell) + 'static,
+        mut action: impl FnMut(&E, &WorldCell) + 'static,
     ) -> ElementHandle {
+        let estimate_handle = self.world.insert(Observer(Box::new(move |event, world| {
+            let event = event.downcast_ref::<E>().unwrap();
+            action(event, world);
+        })));
+
+        // observer will be registered in queue to prevent that some event triggered
+        // before the insertion above hasn't even done yet
         let handle = self.handle;
-        let mut cell_idx = self.world.cell_idx.borrow_mut();
-        cell_idx.0 += 1;
-        let estimate_handle = ElementHandle(cell_idx.0 - 1);
-
-        let mut inserted = self.world.inserted.borrow_mut();
-        inserted.insert(estimate_handle);
-
         let mut queue = self.world.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
-            let mut this = world.entry(handle).unwrap();
-            let actual_handle = this.observe(action);
-            debug_assert_eq!(actual_handle, estimate_handle);
+            let observers = world.single_mut::<Observers>().unwrap();
+            let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
+            let observers_typed_element = observers_typed.entry(handle).or_default();
+            observers_typed_element.push(estimate_handle);
         }));
+
         estimate_handle
     }
 
@@ -870,20 +908,24 @@ impl WorldCellEntry<'_> {
 
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
+    ///
+    /// This will be delayed until the cell is closed. It still works even if the `other` is
+    /// inserted in this cell-scope.
     pub fn depend(&mut self, other: ElementHandle) {
         let handle = self.handle;
-        let mut cell_idx = self.world.cell_idx.borrow_mut();
-        cell_idx.0 += 1;
-        let estimate_handle = ElementHandle(cell_idx.0 - 1);
-
-        let mut inserted = self.world.inserted.borrow_mut();
-        inserted.insert(estimate_handle);
-
-        let mut queue = self.world.single_mut::<Queue>().unwrap();
-        queue.0.push(Box::new(move |world| {
-            let mut this = world.entry(handle).unwrap();
-            this.depend(other);
-        }));
+        if !(self.world.contains(other) || self.world.inserted.borrow().contains(&other)) {
+            log::error!("{handle:?} try to depend on {other:?}, which does not exist");
+            return;
+        }
+        self.observe::<ElementRemoved>(move |event, world| {
+            if event.0 == other {
+                // TODO wait until cell-mode removal is implemented
+                let mut queue = world.single_mut::<Queue>().unwrap();
+                queue.0.push(Box::new(move |world| {
+                    world.remove(handle);
+                }));
+            }
+        });
     }
 
     pub fn destroy(self) {
