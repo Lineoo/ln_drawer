@@ -2,13 +2,13 @@ use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
     elements::{
-        Element, PositionElementExt, PositionChanged, PositionedElement,
+        Element, PositionChanged, PositionElementExt, PositionedElement,
         intersect::{IntersectHit, Intersection},
     },
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
-    world::{ElementHandle, World, WorldCell},
+    world::{ElementHandle, WorldCell},
 };
 
 const WIDTH: u32 = 128;
@@ -68,9 +68,7 @@ impl PositionedElement for Palette {
     }
 }
 impl Palette {
-    pub fn new(position: Position, world: &mut World) -> Palette {
-        let interface = world.single_mut::<Interface>().unwrap();
-
+    pub fn new(position: Position, interface: &mut Interface) -> Palette {
         // Palette //
         let mut data = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
         for x in 0..128 {
@@ -85,12 +83,7 @@ impl Palette {
             }
         }
         let painter = interface.create_painter_with(
-            [
-                position.x,
-                position.y,
-                position.x + 128,
-                position.y + 128,
-            ],
+            [position.x, position.y, position.x + 128, position.y + 128],
             data,
         );
 

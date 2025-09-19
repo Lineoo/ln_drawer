@@ -7,7 +7,7 @@ use crate::{
     },
     interface::{Interface, Painter},
     measures::{Position, Rectangle},
-    world::{ElementHandle, World, WorldCell},
+    world::{ElementHandle, WorldCell},
 };
 
 pub struct Image {
@@ -54,11 +54,10 @@ impl OrderElement for Image {
     }
 }
 impl Image {
-    pub fn new(path: impl AsRef<Path>, world: &mut World) -> Result<Image, Box<dyn Error>> {
+    pub fn new(path: impl AsRef<Path>, interface: &mut Interface) -> Result<Image, Box<dyn Error>> {
         let reader = image::ImageReader::open(path)?;
         let image = reader.decode()?;
 
-        let interface = world.single_mut::<Interface>().unwrap();
         let painter = interface.create_painter_with(
             [0, 0, image.width() as i32, image.height() as i32],
             Vec::from(image.as_bytes()),
@@ -67,10 +66,9 @@ impl Image {
         Ok(Image { painter })
     }
 
-    pub fn from_bytes(bytes: &[u8], world: &mut World) -> Result<Image, Box<dyn Error>> {
+    pub fn from_bytes(bytes: &[u8], interface: &mut Interface) -> Result<Image, Box<dyn Error>> {
         let image = image::load_from_memory(bytes)?;
 
-        let interface = world.single_mut::<Interface>().unwrap();
         let painter = interface.create_painter_with(
             [0, 0, image.width() as i32, image.height() as i32],
             Vec::from(image.as_bytes()),

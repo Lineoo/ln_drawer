@@ -9,9 +9,9 @@ use winit::{
 };
 
 use crate::{
-    elements::{ButtonRaw, Image, IntersectManager, Label, Menu, Palette, StrokeLayer},
+    elements::{Image, IntersectManager, Menu, StrokeLayer},
     interface::Interface,
-    measures::{Position, Rectangle},
+    measures::Position,
     world::World,
 };
 
@@ -78,21 +78,6 @@ impl Lnwindow {
 
         world.insert(IntersectManager::default());
         world.insert(StrokeLayer::default());
-
-        let palette = Palette::new([0, 0], &mut world);
-        world.insert(palette);
-        world.insert(ButtonRaw::new(
-            Rectangle::from_array([0, 0, 100, 100]),
-            |_| println!("Button hit!"),
-        ));
-        let label = Label::new(
-            Rectangle::new(0, 0, 200, 24),
-            "Hello, LnDrawer!".into(),
-            &world.cell(),
-        );
-        world.insert(label);
-        let image = Image::from_bytes(include_bytes!("../res/icon.png"), &mut world).unwrap();
-        world.insert(image);
 
         Lnwindow {
             window,
@@ -187,14 +172,16 @@ impl Lnwindow {
             }
 
             // Misc //
-            WindowEvent::DroppedFile(path) => match Image::new(path, &mut self.world) {
-                Ok(image) => {
-                    self.world.insert(image);
+            WindowEvent::DroppedFile(path) => {
+                match Image::new(path, self.world.single_mut().unwrap()) {
+                    Ok(image) => {
+                        self.world.insert(image);
+                    }
+                    Err(err) => {
+                        log::warn!("Drop File: {err}");
+                    }
                 }
-                Err(err) => {
-                    log::warn!("Drop File: {err}");
-                }
-            },
+            }
 
             // Render //
             WindowEvent::RedrawRequested => {
