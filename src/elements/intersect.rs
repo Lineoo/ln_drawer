@@ -53,6 +53,10 @@ impl Element for IntersectManager {
                 pointer_on = None;
             }
 
+            if let Some(pointer_on) = pointer_on {
+                world.entry(pointer_on).unwrap().trigger(PointerHover(point));
+            }
+
             if let PointerEvent::Pressed(_) = event {
                 pressed = true;
             }
@@ -123,6 +127,7 @@ impl IntersectManager {
 }
 
 pub struct PointerEnter;
+pub struct PointerHover(pub Position);
 pub struct PointerLeave;
 
 pub struct IntersectHit(pub PointerEvent);
