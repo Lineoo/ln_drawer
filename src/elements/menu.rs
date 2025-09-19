@@ -1,5 +1,7 @@
 use crate::{
-    elements::{ButtonRaw, Element, Label, OrderElement, PositionedElement},
+    elements::{
+        ButtonRaw, Element, Label, OrderElement, PositionedElement, intersect::IntersectFail,
+    },
     interface::{Interface, Square},
     measures::{Delta, Position, Rectangle},
     world::{ElementHandle, WorldCell},
@@ -17,16 +19,21 @@ impl Element for Menu {
 
         let mut button1 = ButtonRaw::new(rect1, move |world| {
             world.insert(Label::new(rect1, "New Label".into(), world));
+            world.remove(handle);
         });
-        button1.set_order(100);
+        button1.set_order(110);
         let button1 = world.insert(button1);
 
         let mut button1_text = Label::new(rect1, "Label".into(), world);
-        button1_text.set_order(110);
+        button1_text.set_order(100);
         let button1_text = world.insert(button1_text);
 
         world.entry(button1).unwrap().depend(handle);
         world.entry(button1_text).unwrap().depend(handle);
+
+        (world.entry(handle).unwrap()).observe::<IntersectFail>(move |_event, world| {
+            world.remove(handle);
+        });
     }
 }
 impl PositionedElement for Menu {

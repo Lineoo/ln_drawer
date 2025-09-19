@@ -17,7 +17,7 @@ impl Element for Label {
         let intersect = world.insert(Intersection {
             host: handle,
             rect: Rectangle::from_array(self.inner.get_rect()),
-            z_order: 0,
+            z_order: self.get_order(),
         });
         world.entry(intersect).unwrap().depend(handle);
         (world.entry(handle).unwrap()).observe::<PositionChanged>(move |_event, world| {
