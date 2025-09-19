@@ -465,13 +465,6 @@ impl WorldCell<'_> {
 
     /// Cell-mode removal cannot access the element immediately so we can't return the value of removed element.
     pub fn remove(&self, handle: ElementHandle) -> bool {
-        let mut occupied = self.occupied.borrow_mut();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt != 0 {
-            panic!("{handle:?} is borrowed");
-        }
-
         if !self.contains(handle) {
             return false;
         }
@@ -479,7 +472,6 @@ impl WorldCell<'_> {
         let mut removed = self.removed.borrow_mut();
         removed.insert(handle);
 
-        drop(occupied);
         drop(removed);
 
         let mut queue = self.single_mut::<Queue>().unwrap();
