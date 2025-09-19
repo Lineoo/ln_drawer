@@ -68,7 +68,7 @@ impl PositionedElement for Palette {
     }
 }
 impl Palette {
-    pub fn new(position: [i32; 2], world: &mut World) -> Palette {
+    pub fn new(position: Position, world: &mut World) -> Palette {
         let interface = world.single_mut::<Interface>().unwrap();
 
         // Palette //
@@ -86,20 +86,20 @@ impl Palette {
         }
         let painter = interface.create_painter_with(
             [
-                position[0],
-                position[1],
-                position[0] + 128,
-                position[1] + 128,
+                position.x,
+                position.y,
+                position.x + 128,
+                position.y + 128,
             ],
             data,
         );
 
         // Picker Knob //
         let rect = [
-            position[0] - 1,
-            position[1] - 1,
-            position[0] + 2,
-            position[1] + 2,
+            position.x - 1,
+            position.y - 1,
+            position.x + 2,
+            position.y + 2,
         ];
 
         let mut data = vec![0u8; 3 * 3 * 4];
