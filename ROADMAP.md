@@ -339,3 +339,83 @@ that.trigger(ElementUpdate);
 所以就有了这次更新最破坏性的更改：`World::trigger` 不再是遍历触发了，实际上 World 的 observer 相关代码现在就只是挂载到了 Element#0 （即 Observers 内部组件）上了。
 
 ~~但是看上去仍然很丑。所以我让 observer 能够找到自己（并且可以摧毁自己）~~因为破坏性太大而取消了计划。
+
+# 编写简化
+1. `Handle` 类型和 `Fetchable`
+我不是类型疯批，但是简单地划分 `Handle` 功能或许是不错的事情。
+- trait: `Fetchable`, `Fetchable::Output`
+- `StrongHandle<T = dyn Element>` -> `T` or panic!
+- `Handle<T = dyn Element>` -> `Option<T>`
+
+2. `Event<E>` 类型
+对 observer 的 event 使用 Deref 进行一点封装，并实现：
+- observer 能够获取自己的 handle
+
+3. `Inserter`
+```rust
+impl Text {
+    pub fn new(text: String) -> TextDescriptor {
+        /* .. */
+    }
+}
+impl Inserter for TextDescriptor {
+    fn insert_with(self, world: &mut World) {
+
+    }
+}
+```
+
+也可以匿名：
+```rust
+impl Text {
+    pub fn new(text: String) -> impl Inserter {
+        move |world| {
+            let interface = world.single_mut::<Interface>().unwrap();
+            interface.create_painter(/* .. */);
+            /* .. */
+        }
+    }
+}
+```
+
+问题是这种写法会积极阻止 non-Element 场景的应用，也就是 text 无法被单独直接管理，所以还有待商榷吧。
+
+# 有关 Text 的移动
+主要是因为 Text 的*交互*问题。因为鼠标交互是只存在于 element 层面的，如果为了 hit 支持而编写一大堆 glue code 那才是真得要命。再加上其实原先 text 也没有和 wgpu 有多么多么深厚的交互（基本还是使用 painter 完成的），所以干脆就不要了。
+
+然后就是有关其他地方对 text 的引用了，虽然 text 现在确实是元素了，但是这并不意味着（也从不意味着）你一定得把它插入到 World 中才能使用。
+
+# Element 的创建
+上面提到了 non-Element 场景。我们鼓励这种场景下的使用！所以推荐的写法：
+```rust
+impl Foo {
+    pub fn new(property: Property, interface: &mut Interface) -> Foo {
+        /* .. */
+    }
+}
+```
+
+不推荐的写法：
+```rust
+impl Bar {
+    pub fn new(property: Property, world: &WorldCell) -> Bar {
+        /* .. 使用 &mut World 也是同理 .. */
+    }
+}
+```
+
+```rust
+impl Baz {
+    pub fn new(property: Property) {
+    }
+}
+impl Element for Baz {
+    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
+        // 过度包揽了自己不该干的活儿
+        let interface = world.single_mut::<Interface>().unwrap();
+        let inner = interface.create_painter(/* .. */);
+        // 不应该存在 inner 为 None 的非法状态！（除非有特定使用场景）
+        self.inner = Some(inner);
+    }
+}
+```

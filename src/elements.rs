@@ -1,7 +1,7 @@
 mod button;
 mod image;
 mod intersect;
-mod label;
+mod text;
 mod menu;
 mod palette;
 mod stroke;
@@ -12,7 +12,7 @@ use std::any::Any;
 pub use button::ButtonRaw;
 pub use image::Image;
 pub use intersect::Intersect;
-pub use label::Label;
+pub use text::{Text, TextManager};
 pub use menu::Menu;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;

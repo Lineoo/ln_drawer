@@ -1,9 +1,11 @@
 use crate::{
     elements::{
-        ButtonRaw, Element, Image, Label, Palette, PositionElementExt, PositionedElement,
+        ButtonRaw, Element, Image, OrderElement, Palette, PositionElementExt, PositionedElement,
+        Text,
+        text::TextManager,
         tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
     },
-    interface::{Interface, Square, Text},
+    interface::{Interface, Square},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
     world::{ElementHandle, ElementInserted, WorldCell},
@@ -99,7 +101,11 @@ impl PointerHittable for Menu {
     }
 }
 impl Menu {
-    pub fn new(position: Position, interface: &mut Interface) -> Menu {
+    pub fn new(
+        position: Position,
+        text_manager: &mut TextManager,
+        interface: &mut Interface,
+    ) -> Menu {
         let rect = Rectangle {
             origin: position,
             extend: Delta::new(
@@ -122,13 +128,18 @@ impl Menu {
             };
             let frame = interface.create_square(rect.into_array(), [0.2, 0.2, 0.2, 1.0]);
             frame.set_z_order(100);
-            let mut _text = interface.create_text(rect.into_array(), "Label");
-            _text.set_z_order(110);
+            let mut _text = Text::new(rect, "Label".into(), text_manager, interface);
+            _text.set_order(110);
             entries.push(MenuEntry {
                 frame,
                 _text,
                 action: Box::new(move |world| {
-                    world.insert(Label::new(rect, "New Label".into(), world));
+                    world.insert(Text::new(
+                        rect,
+                        "New Label".into(),
+                        &mut world.single_mut().unwrap(),
+                        &mut world.single_mut().unwrap(),
+                    ));
                 }),
             });
         }
@@ -139,8 +150,8 @@ impl Menu {
             };
             let frame = interface.create_square(rect.into_array(), [0.2, 0.2, 0.2, 1.0]);
             frame.set_z_order(100);
-            let mut _text = interface.create_text(rect.into_array(), "Palette");
-            _text.set_z_order(110);
+            let mut _text = Text::new(rect, "Palette".into(), text_manager, interface);
+            _text.set_order(110);
             entries.push(MenuEntry {
                 frame,
                 _text,
@@ -157,8 +168,8 @@ impl Menu {
             };
             let frame = interface.create_square(rect.into_array(), [0.2, 0.2, 0.2, 1.0]);
             frame.set_z_order(100);
-            let mut _text = interface.create_text(rect.into_array(), "Button");
-            _text.set_z_order(110);
+            let mut _text = Text::new(rect, "Button".into(), text_manager, interface);
+            _text.set_order(110);
             entries.push(MenuEntry {
                 frame,
                 _text,
@@ -180,8 +191,8 @@ impl Menu {
             };
             let frame = interface.create_square(rect.into_array(), [0.2, 0.2, 0.2, 1.0]);
             frame.set_z_order(100);
-            let mut _text = interface.create_text(rect.into_array(), "LnDrawer Logo");
-            _text.set_z_order(110);
+            let mut _text = Text::new(rect, "LnDrawer Logo".into(), text_manager, interface);
+            _text.set_order(110);
             entries.push(MenuEntry {
                 frame,
                 _text,

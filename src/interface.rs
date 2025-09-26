@@ -5,13 +5,11 @@ use wgpu::*;
 
 mod painter;
 mod square;
-mod text;
 mod viewport;
 mod wireframe;
 
 pub use painter::Painter;
 pub use square::Square;
-pub use text::Text;
 pub use wireframe::Wireframe;
 
 use crate::{
@@ -33,7 +31,6 @@ pub struct Interface {
     wireframe: wireframe::WireframePipeline,
     square: square::SquarePipeline,
     painter: painter::PainterPipeline,
-    text: text::TextManager,
 
     components_tx: Sender<(usize, ComponentCommand)>,
     components_rx: Receiver<(usize, ComponentCommand)>,
@@ -80,7 +77,6 @@ impl Interface {
         let wireframe = wireframe::WireframePipeline::init(&device, &surface_config, &viewport);
         let square = square::SquarePipeline::init(&device, &surface_config, &viewport);
         let painter = painter::PainterPipeline::init(&device, &surface_config, &viewport);
-        let text = text::TextManager::init(&device, &surface_config, &viewport);
 
         let (components_tx, components_rx) = channel();
 
@@ -92,7 +88,6 @@ impl Interface {
             wireframe,
             square,
             painter,
-            text,
             components_tx,
             components_rx,
             components_idx: 0,
@@ -258,24 +253,6 @@ impl Interface {
             visible: true,
         });
         painter
-    }
-
-    #[must_use = "The text will be destroyed when being drop."]
-    pub fn create_text(&mut self, rect: [i32; 4], text: &str) -> Text {
-        let text = self.text.create(
-            rect,
-            text,
-            self.components_idx,
-            self.components_tx.clone(),
-            &self.device,
-            &self.queue,
-        );
-        self.insert(Component {
-            component: ComponentInner::Painter(text.clone_buffer()),
-            z_order: 0,
-            visible: true,
-        });
-        text
     }
 
     fn insert(&mut self, component: Component) {

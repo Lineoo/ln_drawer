@@ -9,7 +9,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{Intersect, Image, Menu, PointerHitter, StrokeLayer},
+    elements::{Image, Intersect, Menu, PointerHitter, StrokeLayer, TextManager},
     interface::Interface,
     measures::Position,
     world::World,
@@ -77,6 +77,7 @@ impl Lnwindow {
         world.insert(interface);
 
         world.insert(Intersect::default());
+        world.insert(TextManager::default());
         let stroke = world.insert(StrokeLayer::default());
         let mut selection = PointerHitter::default();
         selection.set_fallback(stroke);
@@ -140,7 +141,11 @@ impl Lnwindow {
             } => {
                 let point = self.viewport.screen_to_world(self.cursor);
                 let world = self.world.cell();
-                world.insert(Menu::new(point, &mut world.single_mut().unwrap()));
+                world.insert(Menu::new(
+                    point,
+                    &mut world.single_mut().unwrap(),
+                    &mut world.single_mut().unwrap(),
+                ));
                 self.window.request_redraw();
             }
 
