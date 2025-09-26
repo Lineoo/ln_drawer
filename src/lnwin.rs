@@ -9,7 +9,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image, IntersectManager, Menu, StrokeLayer},
+    elements::{Intersect, Image, Menu, PointerHitter, StrokeLayer},
     interface::Interface,
     measures::Position,
     world::World,
@@ -76,8 +76,11 @@ impl Lnwindow {
         let mut world = World::default();
         world.insert(interface);
 
-        world.insert(IntersectManager::default());
-        world.insert(StrokeLayer::default());
+        world.insert(Intersect::default());
+        let stroke = world.insert(StrokeLayer::default());
+        let mut selection = PointerHitter::default();
+        selection.set_fallback(stroke);
+        world.insert(selection);
 
         Lnwindow {
             window,

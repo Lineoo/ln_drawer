@@ -92,7 +92,7 @@ impl World {
         let type_id = (**self.elements.get(&handle)?).type_id();
 
         // ElementRemoved
-        self.trigger(&ElementRemoved(handle));
+        self.entry(handle).unwrap().trigger(&ElementRemoved);
 
         // when_removed
         let cell = self.cell();
@@ -120,6 +120,7 @@ impl World {
         }
 
         // clean invalid observers
+        // FIXME notice that this will leave invalid registry in observers map if the element itself is an observer.
         let mut attached_observers = Vec::with_capacity(8);
         for observers_typed in self.single_mut::<Observers>().unwrap().0.values_mut() {
             if let Some(observers_typed_element) = observers_typed.remove(&handle) {
@@ -129,8 +130,7 @@ impl World {
             }
         }
         for observer in attached_observers {
-            self.trigger(&ElementRemoved(handle));
-            self.elements.remove(&observer);
+            self.remove(observer);
         }
 
         self.elements.remove(&handle)
@@ -269,7 +269,8 @@ impl World {
         })
     }
 
-    /// Global observer. Will observe only globally triggered event.
+    /// Notice that it's *NOT* observing events world-wide! It's only observe events triggered also
+    /// directly on world, which is useful when you don't have a specific element to attach the event.
     pub fn observe<E: 'static>(
         &mut self,
         action: impl FnMut(&E, &WorldCell) + 'static,
@@ -277,16 +278,9 @@ impl World {
         self.entry(ElementHandle(0)).unwrap().observe(action)
     }
 
-    /// Global trigger. Will trigger every element listening to this event.
+    /// Will only trigger the observers mounted on the world. See [`World::observer`] for more.
     pub fn trigger<E: 'static>(&mut self, event: &E) {
-        let cell = self.cell();
-        let observers = cell.single_mut::<Observers>().unwrap();
-        if let Some(observers_typed) = observers.0.get(&TypeId::of::<E>()) {
-            for observer in observers_typed.values().flatten() {
-                let mut observer = cell.fetch_mut::<Observer>(*observer).unwrap();
-                (observer.0)(event, &cell);
-            }
-        }
+        self.entry(ElementHandle(0)).unwrap().trigger(event);
     }
 }
 
@@ -300,7 +294,7 @@ impl WorldEntry<'_> {
         &mut self,
         mut action: impl FnMut(&E, &WorldCell) + 'static,
     ) -> ElementHandle {
-        let handle = self.world.insert(Observer(Box::new(move |event, world| {
+        let handle = (self.world).insert(Observer(Box::new(move |event, world| {
             let event = event.downcast_ref::<E>().unwrap();
             action(event, world);
         })));
@@ -318,8 +312,9 @@ impl WorldEntry<'_> {
             && let Some(observers_typed_element) = observers_typed.get(&self.handle)
         {
             for observer in observers_typed_element {
-                let mut observer = cell.fetch_mut::<Observer>(*observer).unwrap();
-                (observer.0)(event, &cell);
+                if let Some(mut observer) = cell.fetch_mut_raw::<Observer>(*observer) {
+                    (observer.0)(event, &cell);
+                }
             }
         }
     }
@@ -376,14 +371,9 @@ impl WorldEntry<'_> {
             log::error!("{handle:?} try to depend on {other:?}, which does not exist");
             return;
         }
-        self.observe::<ElementRemoved>(move |event, world| {
-            if event.0 == other {
-                // TODO wait until cell-mode removal is implemented
-                let mut queue = world.single_mut::<Queue>().unwrap();
-                queue.0.push(Box::new(move |world| {
-                    world.remove(handle);
-                }));
-            }
+        let mut other = self.world.entry(other).unwrap();
+        other.observe(move |ElementRemoved, world| {
+            world.remove(handle);
         });
     }
 
@@ -668,7 +658,7 @@ impl WorldCell<'_> {
         })
     }
 
-    pub fn foreach<T: ?Sized + 'static>(&self, mut action: impl FnMut(&T)) {
+    pub fn foreach<T: ?Sized + 'static>(&self, mut action: impl FnMut(&T, ElementHandle)) {
         let services = self.world.single::<Services>().unwrap();
         if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<T>>()) {
             let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
@@ -684,12 +674,12 @@ impl WorldCell<'_> {
                 }
 
                 let service = converter(self.world.elements.get(handle).unwrap().as_ref());
-                action(service);
+                action(service, *handle);
             });
         }
     }
 
-    pub fn foreach_mut<T: ?Sized + 'static>(&self, mut action: impl FnMut(&mut T)) {
+    pub fn foreach_mut<T: ?Sized + 'static>(&self, mut action: impl FnMut(&mut T, ElementHandle)) {
         let services = self.world.single::<Services>().unwrap();
         if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTypedMut<T>>()) {
             let services_typed = services_typed
@@ -709,7 +699,7 @@ impl WorldCell<'_> {
                 let element = self.world.elements.get(handle).unwrap().as_ref();
                 let element = element as *const dyn Element as *mut dyn Element;
                 let service = converter(unsafe { element.as_mut().unwrap() });
-                action(service);
+                action(service, *handle);
             });
         }
     }
@@ -749,25 +739,23 @@ impl WorldCell<'_> {
         })
     }
 
-    /// Global observer. Will observe only globally triggered event. This will be delayed
-    /// until the cell is closed.
+    /// Notice that it's *NOT* observing events world-wide! It's only observe events triggered also
+    /// directly on world, which is useful when you don't have a specific element to attach the event.
+    ///
+    /// This will be delayed until the cell is closed.
     pub fn observe<E: 'static>(
-        &mut self,
+        &self,
         action: impl FnMut(&E, &WorldCell) + 'static,
     ) -> ElementHandle {
         self.entry(ElementHandle(0)).unwrap().observe(action)
     }
 
-    /// Global trigger. Will trigger every element listening to this event. This will be delayed
-    /// until the cell is closed.
+    /// Will only trigger the observers mounted on the world. See [`WorldCell::observer`] for more.
     ///
     /// This function has some limit since the event is delayed until cell closed, thus acquiring the ownership
     /// of the event.
     pub fn trigger<E: 'static>(&self, event: E) {
-        let mut queue = self.single_mut::<Queue>().unwrap();
-        queue.0.push(Box::new(move |world| {
-            world.trigger(&event);
-        }));
+        self.entry(ElementHandle(0)).unwrap().trigger(event);
     }
 }
 
@@ -901,14 +889,9 @@ impl WorldCellEntry<'_> {
             log::error!("{handle:?} try to depend on {other:?}, which does not exist");
             return;
         }
-        self.observe::<ElementRemoved>(move |event, world| {
-            if event.0 == other {
-                // TODO wait until cell-mode removal is implemented
-                let mut queue = world.single_mut::<Queue>().unwrap();
-                queue.0.push(Box::new(move |world| {
-                    world.remove(handle);
-                }));
-            }
+        let mut other = self.world.entry(other).unwrap();
+        other.observe(move |ElementRemoved, world| {
+            world.remove(handle);
         });
     }
 
@@ -962,9 +945,9 @@ impl dyn ServicesPart {
     }
 }
 
-// World Events
 pub struct ElementInserted(pub ElementHandle);
-pub struct ElementRemoved(pub ElementHandle);
+pub struct ElementUpdate;
+pub struct ElementRemoved;
 
 #[cfg(test)]
 mod test {

@@ -2,12 +2,12 @@ use std::{error::Error, path::Path};
 
 use crate::{
     elements::{
-        Element, OrderElement, OrderElementExt, PositionChanged, PositionElementExt,
-        PositionedElement, intersect::Intersection,
+        Element, OrderElement, OrderElementExt, PositionElementExt, PositionedElement,
+        intersect::Collider,
     },
     interface::{Interface, Painter},
     measures::{Position, Rectangle},
-    world::{ElementHandle, WorldCell},
+    world::{ElementHandle, ElementUpdate, WorldCell},
 };
 
 pub struct Image {
@@ -15,18 +15,17 @@ pub struct Image {
 }
 impl Element for Image {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let intersect = world.insert(Intersection {
-            host: handle,
+        let intersect = world.insert(Collider {
             rect: Rectangle::from_array(self.painter.get_rect()),
             z_order: 0,
         });
         world.entry(intersect).unwrap().depend(handle);
-        (world.entry(handle).unwrap()).observe::<PositionChanged>(move |_event, world| {
+        (world.entry(handle).unwrap()).observe::<ElementUpdate>(move |_event, world| {
             let position = world
                 .fetch::<dyn PositionedElement>(handle)
                 .unwrap()
                 .get_position();
-            let mut intersect = world.fetch_mut::<Intersection>(intersect).unwrap();
+            let mut intersect = world.fetch_mut::<Collider>(intersect).unwrap();
 
             intersect.rect.origin = position;
         });

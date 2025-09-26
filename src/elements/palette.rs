@@ -2,8 +2,8 @@ use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
     elements::{
-        Element, PositionChanged, PositionElementExt, PositionedElement,
-        intersect::{IntersectHit, Intersection},
+        Element, PositionElementExt, PositionedElement,
+        tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
     },
     interface::{Interface, Painter},
     lnwin::PointerEvent,
@@ -22,14 +22,7 @@ impl Element for Palette {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
         let mut this = world.entry(handle).unwrap();
 
-        let intersect = world.insert(Intersection {
-            host: handle,
-            rect: Rectangle::from_array(self.painter.get_rect()),
-            z_order: 100,
-        });
-        world.entry(intersect).unwrap().depend(handle);
-
-        this.observe::<IntersectHit>(move |event, world| match event.0 {
+        this.observe::<PointerHit>(move |event, world| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
                 let mut this = world.fetch_mut::<Palette>(handle).unwrap();
                 this.set_knob_position(point);
@@ -37,17 +30,8 @@ impl Element for Palette {
             _ => (),
         });
 
-        this.observe::<PositionChanged>(move |_event, world| {
-            let position = world
-                .fetch::<dyn PositionedElement>(handle)
-                .unwrap()
-                .get_position();
-            let mut intersect = world.fetch_mut::<Intersection>(intersect).unwrap();
-
-            intersect.rect.origin = position;
-        });
-
         self.register_position(handle, world);
+        self.register_hittable(handle, world);
     }
 }
 impl PositionedElement for Palette {
@@ -65,6 +49,15 @@ impl PositionedElement for Palette {
         self.painter.set_position(position.into_array());
         self.knob
             .set_position([knob_position.x - 1, knob_position.y - 1]);
+    }
+}
+impl PointerHittable for Palette {
+    fn get_hitting_rect(&self) -> Rectangle {
+        Rectangle::from_array(self.painter.get_rect())
+    }
+
+    fn get_hitting_order(&self) -> isize {
+        self.painter.get_z_order()
     }
 }
 impl Palette {

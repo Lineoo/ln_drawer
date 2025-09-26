@@ -1,7 +1,7 @@
 use crate::{
     elements::{
-        ButtonRaw, Element, Image, Label, Palette, PositionedElement,
-        intersect::{IntersectFail, IntersectHit, Intersection, PointerHover, PointerLeave},
+        ButtonRaw, Element, Image, Label, Palette, PositionElementExt, PositionedElement,
+        tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
     },
     interface::{Interface, Square, Text},
     lnwin::PointerEvent,
@@ -27,33 +27,37 @@ pub struct Menu {
 }
 impl Element for Menu {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        (world.entry(handle).unwrap()).observe::<PointerHover>(move |event, world| {
-            let mut this = world.fetch_mut::<Menu>(handle).unwrap();
-            let frame = Rectangle::from_array(this.frame.get_rect());
+        let obs = world.observe::<PointerEvent>(move |event, world| {
+            if let &PointerEvent::Moved(point) = event {
+                let mut this = world.fetch_mut::<Menu>(handle).unwrap();
+                let frame = Rectangle::from_array(this.frame.get_rect());
 
-            let &PointerHover(point) = event;
-            let delta1 = point - frame.origin;
-            let delta2 = frame.right_up() - point;
-            if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
-                let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
-                let rect = this.entries[index].frame.get_rect();
-                this.select_frame.set_rect(rect);
-                this.select_frame.set_visible(true);
-            } else {
-                this.select_frame.set_visible(false);
+                let delta1 = point - frame.origin;
+                let delta2 = frame.right_up() - point;
+                if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
+                    let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
+                    let rect = this.entries[index].frame.get_rect();
+                    this.select_frame.set_rect(rect);
+                    this.select_frame.set_visible(true);
+                } else {
+                    this.select_frame.set_visible(false);
+                }
+            } else if let &PointerEvent::Pressed(point) = event {
+                let this = world.fetch::<Menu>(handle).unwrap();
+                let frame = Rectangle::from_array(this.frame.get_rect());
+                if !frame.contains(point) {
+                    world.remove(handle);
+                }
             }
         });
 
-        (world.entry(handle).unwrap()).observe::<PointerLeave>(move |_event, world| {
-            let this = world.fetch_mut::<Menu>(handle).unwrap();
-            this.select_frame.set_visible(false);
-        });
+        world.entry(obs).unwrap().depend(handle);
 
-        (world.entry(handle).unwrap()).observe::<IntersectHit>(move |event, world| {
+        (world.entry(handle).unwrap()).observe::<PointerHit>(move |event, world| {
             let this = world.fetch::<Menu>(handle).unwrap();
             let frame = Rectangle::from_array(this.frame.get_rect());
 
-            if let &IntersectHit(PointerEvent::Pressed(point)) = event {
+            if let &PointerHit(PointerEvent::Pressed(point)) = event {
                 let delta1 = point - frame.origin;
                 let delta2 = frame.right_up() - point;
                 if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
@@ -64,22 +68,16 @@ impl Element for Menu {
             }
         });
 
-        let intersect = world.insert(Intersection {
-            host: handle,
-            rect: Rectangle::from_array(self.frame.get_rect()),
-            z_order: 120,
-        });
-        world.entry(intersect).unwrap().depend(handle);
-
-        (world.entry(handle).unwrap()).observe::<IntersectFail>(move |_event, world| {
-            world.remove(handle);
-        });
-
-        (world.entry(handle).unwrap()).observe::<ElementInserted>(move |event, world| {
+        let obs = world.observe::<ElementInserted>(move |event, world| {
             if world.contains_type::<Menu>(event.0) && event.0 != handle {
                 world.remove(handle);
             }
         });
+
+        world.entry(obs).unwrap().depend(handle);
+
+        self.register_position(handle, world);
+        self.register_hittable(handle, world);
     }
 }
 impl PositionedElement for Menu {
@@ -89,6 +87,15 @@ impl PositionedElement for Menu {
 
     fn set_position(&mut self, position: Position) {
         self.frame.set_position(position.into_array());
+    }
+}
+impl PointerHittable for Menu {
+    fn get_hitting_rect(&self) -> Rectangle {
+        Rectangle::from_array(self.frame.get_rect())
+    }
+
+    fn get_hitting_order(&self) -> isize {
+        100
     }
 }
 impl Menu {

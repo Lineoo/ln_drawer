@@ -305,3 +305,37 @@ Observer 系统是 world 非常基础、底层的一个功能——但是，还�
 - observe 指令支持返回对应的 handle
 - cell 模式的自定义 queue 命令
 - cell 模式的 contains 查询
+
+# intersect 功能划分
+Intersect 包括了：
+- 相交检测/优化
+- Intersection 碰撞体注册
+
+不包括：
+- 选择/移动物体 pointer
+- 右键菜单 Menu / Tooltip
+- 聚焦物体与输入 Focus / TextEdit
+
+# observer 优化
+现在我们推荐 observer 的正统用法。这意味着以下写法是不推荐的：
+```rust
+struct ElementUpdate(ElementHandle);
+listener.observe::<ElementUpdate>(/* .. is that thing updated? */);
+world.trigger(ElementUpdate(handle));
+```
+
+而以下是推荐的:
+```rust
+struct ElementUpdate;
+let obv = that.observe::<ElementUpdate>(/* .. I need to send it back to the listener .. */)
+(world.entry(obv).unwrap()).depend(listener);
+that.trigger(ElementUpdate);
+```
+
+其实本身第二种写法是挺好的，比第一种效率要高，也是 observer 的正统用法，但是问题其有效性……需要一个额外的 observer 的 depend 来做有效性保证。看上去太丑了！
+
+而且有关 `ElementInserted` 最难搞的其实是我不知道它应该挂载在哪里（
+
+所以就有了这次更新最破坏性的更改：`World::trigger` 不再是遍历触发了，实际上 World 的 observer 相关代码现在就只是挂载到了 Element#0 （即 Observers 内部组件）上了。
+
+~~但是看上去仍然很丑。所以我让 observer 能够找到自己（并且可以摧毁自己）~~因为破坏性太大而取消了计划。

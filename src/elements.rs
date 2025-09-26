@@ -5,16 +5,18 @@ mod label;
 mod menu;
 mod palette;
 mod stroke;
+mod tools;
 
 use std::any::Any;
 
 pub use button::ButtonRaw;
 pub use image::Image;
-pub use intersect::IntersectManager;
+pub use intersect::Intersect;
 pub use label::Label;
 pub use menu::Menu;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;
+pub use tools::pointer::PointerHitter;
 
 use crate::{
     measures::Position,
@@ -51,8 +53,6 @@ trait PositionElementExt: PositionedElement + Sized {
     }
 }
 impl<T: PositionedElement> PositionElementExt for T {}
-
-pub struct PositionChanged;
 
 pub trait OrderElement: Element {
     fn get_order(&self) -> isize;

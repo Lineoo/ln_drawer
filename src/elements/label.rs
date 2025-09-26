@@ -1,7 +1,6 @@
 use crate::{
     elements::{
-        Element, OrderElement, OrderElementExt, PositionChanged, PositionElementExt,
-        PositionedElement, intersect::Intersection,
+        tools::pointer::{PointerHitExt, PointerHittable}, Element, OrderElement, OrderElementExt, PositionElementExt, PositionedElement
     },
     interface::{Interface, Text},
     measures::{Position, Rectangle},
@@ -14,24 +13,9 @@ pub struct Label {
 }
 impl Element for Label {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let intersect = world.insert(Intersection {
-            host: handle,
-            rect: Rectangle::from_array(self.inner.get_rect()),
-            z_order: self.get_order(),
-        });
-        world.entry(intersect).unwrap().depend(handle);
-        (world.entry(handle).unwrap()).observe::<PositionChanged>(move |_event, world| {
-            let position = world
-                .fetch::<dyn PositionedElement>(handle)
-                .unwrap()
-                .get_position();
-            let mut intersect = world.fetch_mut::<Intersection>(intersect).unwrap();
-
-            intersect.rect.origin = position;
-        });
-
         self.register_position(handle, world);
         self.register_order(handle, world);
+        self.register_hittable(handle, world);
     }
 }
 impl PositionedElement for Label {
@@ -50,6 +34,15 @@ impl OrderElement for Label {
 
     fn set_order(&mut self, order: isize) {
         self.inner.set_z_order(order);
+    }
+}
+impl PointerHittable for Label {
+    fn get_hitting_rect(&self) -> Rectangle {
+        Rectangle::from_array(self.inner.get_rect())
+    }
+
+    fn get_hitting_order(&self) -> isize {
+        self.inner.get_z_order()
     }
 }
 impl Label {
