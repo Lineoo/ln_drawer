@@ -9,9 +9,10 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image, Intersect, Menu, PointerHitter, StrokeLayer, TextManager},
+    elements::{Image, Intersect, Menu, StrokeLayer, TextManager},
     interface::Interface,
     measures::Position,
+    tools::pointer::PointerHitter,
     world::World,
 };
 

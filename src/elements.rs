@@ -1,22 +1,20 @@
 mod button;
 mod image;
-mod intersect;
-mod text;
+pub mod intersect;
 mod menu;
 mod palette;
 mod stroke;
-mod tools;
+mod text;
 
 use std::any::Any;
 
 pub use button::ButtonRaw;
 pub use image::Image;
 pub use intersect::Intersect;
-pub use text::{Text, TextManager};
 pub use menu::Menu;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;
-pub use tools::pointer::PointerHitter;
+pub use text::{Text, TextManager};
 
 use crate::{
     measures::Position,

@@ -419,3 +419,15 @@ impl Element for Baz {
     }
 }
 ```
+
+# Element 清理
+既然 interface 也是 Element，是不是应该把 interface 也放进 elements 里面？
+
+啊当然不是。其实如果 interface 也放在里面的话，我甚至觉得整个程序放在 elements 里也没问题（
+
+所以我们会慢慢地把 elements 里面的东西，相反的，挪*出来*。
+
+- interface: 所有跟 wgpu 有关的代码
+- text: 所有跟 cosmic-text 有关
+- tools: 有关用户输入处理
+- widgets: 预设的用户组件

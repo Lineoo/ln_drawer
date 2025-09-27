@@ -1,11 +1,9 @@
 use crate::{
-    elements::{
-        Element, OrderElement, OrderElementExt, PositionElementExt, PositionedElement,
-        tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    },
+    elements::{Element, OrderElement, OrderElementExt, PositionElementExt, PositionedElement},
     interface::{Interface, Square},
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
+    tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
     world::{ElementHandle, WorldCell},
 };
 

@@ -3,11 +3,11 @@ use crate::{
         ButtonRaw, Element, Image, OrderElement, Palette, PositionElementExt, PositionedElement,
         Text,
         text::{TextEdit, TextManager},
-        tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
     },
     interface::{Interface, Square},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
+    tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
     world::{ElementHandle, ElementInserted, WorldCell},
 };
 

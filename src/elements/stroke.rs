@@ -1,10 +1,11 @@
 use hashbrown::HashMap;
 
 use crate::{
-    elements::{Element, Palette, tools::pointer::PointerHit},
+    elements::{Element, Palette},
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
+    tools::pointer::PointerHit,
     world::{ElementHandle, WorldCell},
 };
 

@@ -4,13 +4,11 @@ use cosmic_text::*;
 use parking_lot::Mutex;
 
 use crate::{
-    elements::{
-        Element, OrderElement,
-        tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    },
+    elements::{Element, OrderElement},
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
+    tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
     world::{ElementHandle, WorldCell},
 };
 

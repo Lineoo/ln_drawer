@@ -406,6 +406,7 @@ impl Painter {
 
 /// A more efficient way to write data into painter's Buffer
 /// TODO Smaller ranged writing
+/// FIXME PainterWriter still broken
 pub struct PainterWriter<'painter> {
     painter: &'painter mut Painter,
 }
