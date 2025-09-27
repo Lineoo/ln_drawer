@@ -111,8 +111,12 @@ impl Palette {
 
     pub fn set_knob_position(&mut self, position: Position) {
         let rect = self.painter.get_rect();
-        self.knob
-            .set_position(position.clamp(rect) - Delta::splat(1));
+        self.knob.set_position(
+            position.clamp(Rectangle {
+                origin: rect.origin,
+                extend: rect.extend - Delta::splat(1),
+            }) - Delta::splat(1),
+        );
     }
 
     pub fn pick_color(&self) -> [u8; 4] {
