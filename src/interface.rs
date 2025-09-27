@@ -19,6 +19,7 @@ use crate::{
         wireframe::WireframeBuffer,
     },
     lnwin::Viewport,
+    measures::Rectangle,
 };
 
 /// Main render part
@@ -181,7 +182,7 @@ impl Interface {
     }
 
     #[must_use = "The wireframe will be destroyed when being drop."]
-    pub fn create_wireframe(&mut self, rect: [i32; 4], color: [f32; 4]) -> Wireframe {
+    pub fn create_wireframe(&mut self, rect: Rectangle, color: [f32; 4]) -> Wireframe {
         let wireframe = (self.wireframe).create(
             rect,
             color,
@@ -199,7 +200,7 @@ impl Interface {
     }
 
     #[must_use = "The wireframe will be destroyed when being drop."]
-    pub fn create_square(&mut self, rect: [i32; 4], color: [f32; 4]) -> Square {
+    pub fn create_square(&mut self, rect: Rectangle, color: [f32; 4]) -> Square {
         let square = (self.square).create(
             rect,
             color,
@@ -217,10 +218,8 @@ impl Interface {
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
-    pub fn create_painter(&mut self, rect: [i32; 4]) -> Painter {
-        let width = (rect[0] - rect[2]).unsigned_abs();
-        let height = (rect[1] - rect[3]).unsigned_abs();
-        let empty = vec![0; (width * height * 4) as usize];
+    pub fn create_painter(&mut self, rect: Rectangle) -> Painter {
+        let empty = vec![0; (rect.width() * rect.height() * 4) as usize];
         let painter = self.painter.create(
             rect,
             empty,
@@ -238,7 +237,7 @@ impl Interface {
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
-    pub fn create_painter_with(&mut self, rect: [i32; 4], data: Vec<u8>) -> Painter {
+    pub fn create_painter_with(&mut self, rect: Rectangle, data: Vec<u8>) -> Painter {
         let painter = self.painter.create(
             rect,
             data,

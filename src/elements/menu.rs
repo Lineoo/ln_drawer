@@ -32,12 +32,12 @@ impl Element for Menu {
         let obs = world.observe::<PointerEvent>(move |event, world| {
             if let &PointerEvent::Moved(point) = event {
                 let mut this = world.fetch_mut::<Menu>(handle).unwrap();
-                let frame = Rectangle::from_array(this.frame.get_rect());
+                let frame = this.frame.get_rect();
 
                 let delta1 = point - frame.origin;
                 let delta2 = frame.right_up() - point;
-                if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
-                    let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
+                if delta1.w > PAD_H && delta1.h > PAD_H && delta2.w > PAD_H && delta2.h > PAD_H {
+                    let index = ((delta1.h - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
                     let rect = this.entries[index].frame.get_rect();
                     this.select_frame.set_rect(rect);
                     this.select_frame.set_visible(true);
@@ -46,7 +46,7 @@ impl Element for Menu {
                 }
             } else if let &PointerEvent::Pressed(point) = event {
                 let this = world.fetch::<Menu>(handle).unwrap();
-                let frame = Rectangle::from_array(this.frame.get_rect());
+                let frame = this.frame.get_rect();
                 if !frame.contains(point) {
                     world.remove(handle);
                 }
@@ -57,13 +57,13 @@ impl Element for Menu {
 
         (world.entry(handle).unwrap()).observe::<PointerHit>(move |event, world| {
             let this = world.fetch::<Menu>(handle).unwrap();
-            let frame = Rectangle::from_array(this.frame.get_rect());
+            let frame = this.frame.get_rect();
 
             if let &PointerHit(PointerEvent::Pressed(point)) = event {
                 let delta1 = point - frame.origin;
                 let delta2 = frame.right_up() - point;
-                if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
-                    let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
+                if delta1.w > PAD_H && delta1.h > PAD_H && delta2.w > PAD_H && delta2.h > PAD_H {
+                    let index = ((delta1.h - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
                     (this.entries[index].action)(world);
                     world.remove(handle);
                 }
@@ -84,16 +84,16 @@ impl Element for Menu {
 }
 impl PositionedElement for Menu {
     fn get_position(&self) -> Position {
-        Position::from_array(self.frame.get_position())
+        self.frame.get_position()
     }
 
     fn set_position(&mut self, position: Position) {
-        self.frame.set_position(position.into_array());
+        self.frame.set_position(position);
     }
 }
 impl PointerHittable for Menu {
     fn get_hitting_rect(&self) -> Rectangle {
-        Rectangle::from_array(self.frame.get_rect())
+        self.frame.get_rect()
     }
 
     fn get_hitting_order(&self) -> isize {
@@ -113,10 +113,10 @@ impl Menu {
                 PAD + (ENTRY_HEIGHT + PAD) * ENTRY_NUM as i32,
             ),
         };
-        let frame = interface.create_square(rect.into_array(), [0.1, 0.1, 0.1, 1.0]);
+        let frame = interface.create_square(rect, [0.1, 0.1, 0.1, 1.0]);
         frame.set_z_order(90);
 
-        let select_frame = interface.create_square(rect.into_array(), [0.1, 0.1, 0.9, 0.2]);
+        let select_frame = interface.create_square(rect, [0.1, 0.1, 0.9, 0.2]);
         select_frame.set_z_order(120);
         select_frame.set_visible(false);
 
@@ -126,7 +126,7 @@ impl Menu {
                 origin: position + Delta::new(PAD, PAD),
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
-            let frame = interface.create_square(rect.into_array(), [0.2, 0.2, 0.2, 1.0]);
+            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
             frame.set_z_order(100);
             let mut _text = Text::new(rect, "Label".into(), text_manager, interface);
             _text.set_order(110);
@@ -148,7 +148,7 @@ impl Menu {
                 origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT)),
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
-            let frame = interface.create_square(rect.into_array(), [0.2, 0.2, 0.2, 1.0]);
+            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
             frame.set_z_order(100);
             let mut _text = Text::new(rect, "Palette".into(), text_manager, interface);
             _text.set_order(110);
@@ -166,7 +166,7 @@ impl Menu {
                 origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT) * 2),
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
-            let frame = interface.create_square(rect.into_array(), [0.2, 0.2, 0.2, 1.0]);
+            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
             frame.set_z_order(100);
             let mut _text = Text::new(rect, "Button".into(), text_manager, interface);
             _text.set_order(110);
@@ -189,7 +189,7 @@ impl Menu {
                 origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT) * 3),
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
-            let frame = interface.create_square(rect.into_array(), [0.2, 0.2, 0.2, 1.0]);
+            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
             frame.set_z_order(100);
             let mut _text = Text::new(rect, "LnDrawer Logo".into(), text_manager, interface);
             _text.set_order(110);
@@ -211,7 +211,7 @@ impl Menu {
                 origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT) * 4),
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
-            let frame = interface.create_square(rect.into_array(), [0.2, 0.2, 0.2, 1.0]);
+            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
             frame.set_z_order(100);
             let mut _text = Text::new(rect, "Text Edit".into(), text_manager, interface);
             _text.set_order(110);

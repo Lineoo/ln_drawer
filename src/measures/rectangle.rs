@@ -69,12 +69,12 @@ impl Rectangle {
 
     #[inline]
     pub fn width(self) -> u32 {
-        self.extend.x as u32
+        self.extend.w as u32
     }
 
     #[inline]
     pub fn height(self) -> u32 {
-        self.extend.x as u32
+        self.extend.w as u32
     }
 
     #[inline]
@@ -89,17 +89,27 @@ impl Rectangle {
 
     #[inline]
     pub fn right(self) -> i32 {
-        self.origin.x + self.extend.x
+        self.origin.x + self.extend.w
     }
 
     #[inline]
     pub fn up(self) -> i32 {
-        self.origin.y + self.extend.y
+        self.origin.y + self.extend.h
+    }
+
+    #[inline]
+    pub fn left_down(self) -> Position {
+        self.origin
     }
 
     #[inline]
     pub fn left_up(self) -> Position {
-        self.origin + Delta::new(0, self.extend.y)
+        self.origin + Delta::new(0, self.extend.h)
+    }
+
+    #[inline]
+    pub fn right_down(self) -> Position {
+        self.origin + Delta::new(self.extend.w, 0)
     }
 
     #[inline]
@@ -110,6 +120,13 @@ impl Rectangle {
     pub fn contains(self, position: Position) -> bool {
         (self.left() <= position.x && position.x < self.right())
             && (self.down() <= position.y && position.y < self.up())
+    }
+
+    pub fn with_origin(self, orig: Position) -> Rectangle {
+        Rectangle {
+            origin: orig,
+            extend: self.extend,
+        }
     }
 
     pub fn into_array(self) -> [i32; 4] {
@@ -123,8 +140,8 @@ impl Rectangle {
                 y: array[1],
             },
             extend: Delta {
-                x: array[2] - array[0],
-                y: array[3] - array[1],
+                w: array[2] - array[0],
+                h: array[3] - array[1],
             },
         }
     }

@@ -73,7 +73,7 @@ impl Text {
         );
 
         Text {
-            inner: interface.create_painter_with(rect.into_array(), data),
+            inner: interface.create_painter_with(rect, data),
             text,
             buffer,
             font_system: manager.font_system.clone(),
@@ -89,14 +89,18 @@ impl Text {
         self.buffer
             .set_text(&mut font_system, text, &Attrs::new(), Shaping::Advanced);
 
-        let mut writer = self.inner.open_writer();
         self.buffer.draw(
             &mut font_system,
             &mut swash_cache,
             Color::rgba(color[0], color[1], color[2], color[3]),
-            |x, y, _, _, color| {
+            |x, y, w, h, color| {
                 let rgba = color.as_rgba();
-                writer.set_pixel(x, y, rgba);
+                for x in x..(x + w as i32) {
+                    for y in y..(y + h as i32) {
+                        let point = self.inner.get_rect().left_up() + Delta::new(x, -y - 1);
+                        self.inner.set_pixel(point, rgba);
+                    }
+                }
             },
         );
     }
@@ -128,8 +132,8 @@ impl Element for TextEdit {
                 let mut this = world.fetch_mut_raw::<TextEdit>(handle).unwrap();
                 let this = &mut *this;
 
-                let point = position - Rectangle::from_array(this.inner.get_rect()).left_up();
-                let point = Position::new(point.x, -point.y);
+                let point = position - this.inner.get_rect().left_up();
+                let point = Position::new(point.w, -point.h);
 
                 let mut font_system = this.font_system.lock();
                 this.editor.action(
@@ -148,8 +152,8 @@ impl Element for TextEdit {
                 let mut this = world.fetch_mut_raw::<TextEdit>(handle).unwrap();
                 let this = &mut *this;
 
-                let point = position - Rectangle::from_array(this.inner.get_rect()).left_up();
-                let point = Position::new(point.x, -point.y);
+                let point = position - this.inner.get_rect().left_up();
+                let point = Position::new(point.w, -point.h);
 
                 let mut font_system = this.font_system.lock();
                 this.editor.action(
@@ -179,7 +183,7 @@ impl OrderElement for TextEdit {
 }
 impl PointerHittable for TextEdit {
     fn get_hitting_rect(&self) -> Rectangle {
-        Rectangle::from_array(self.inner.get_rect())
+        self.inner.get_rect()
     }
 
     fn get_hitting_order(&self) -> isize {
@@ -222,7 +226,7 @@ impl TextEdit {
         );
 
         TextEdit {
-            inner: interface.create_painter_with(rect.into_array(), data),
+            inner: interface.create_painter_with(rect, data),
             text,
             editor: Editor::new(buffer),
             font_system: manager.font_system.clone(),
@@ -234,7 +238,6 @@ impl TextEdit {
         let mut font_system = self.font_system.lock();
         let mut swash_cache = self.swash_cache.lock();
 
-        // let mut writer = self.inner.open_writer();
         self.editor.draw(
             &mut font_system,
             &mut swash_cache,
@@ -246,9 +249,8 @@ impl TextEdit {
                 let rgba = color.as_rgba();
                 for x in x..(x + w as i32) {
                     for y in y..(y + h as i32) {
-                        let point = Rectangle::from_array(self.inner.get_rect()).left_up()
-                            + Delta::new(x, -y - 1);
-                        self.inner.set_pixel(point.x, point.y, rgba);
+                        let point = self.inner.get_rect().left_up() + Delta::new(x, -y - 1);
+                        self.inner.set_pixel(point, rgba);
                     }
                 }
             },

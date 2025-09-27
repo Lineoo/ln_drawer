@@ -4,6 +4,7 @@ use crate::{
     elements::{Element, Palette, tools::pointer::PointerHit},
     interface::{Interface, Painter},
     lnwin::PointerEvent,
+    measures::{Delta, Position, Rectangle},
     world::{ElementHandle, WorldCell},
 };
 
@@ -22,32 +23,30 @@ impl Element for StrokeLayer {
                 let color = (world.single::<Palette>())
                     .map(|palette| palette.pick_color())
                     .unwrap_or([0xff; 4]);
-                stroke.write_pixel(position.into_array(), color, world);
+                stroke.write_pixel(position, color, world);
             }
             _ => (),
         });
     }
 }
 impl StrokeLayer {
-    pub fn write_pixel(&mut self, point: [i32; 2], color: [u8; 4], world: &WorldCell) {
+    pub fn write_pixel(&mut self, point: Position, color: [u8; 4], world: &WorldCell) {
         let mut interface = world.single_mut::<Interface>().unwrap();
         let chunk_key = [
-            point[0].div_euclid(CHUNK_SIZE),
-            point[1].div_euclid(CHUNK_SIZE),
+            point.x.div_euclid(CHUNK_SIZE),
+            point.y.div_euclid(CHUNK_SIZE),
         ];
-        let chunk_orig = [chunk_key[0] * CHUNK_SIZE, chunk_key[1] * CHUNK_SIZE];
+        let chunk_orig = Position::new(chunk_key[0] * CHUNK_SIZE, chunk_key[1] * CHUNK_SIZE);
 
         let chunk = self.chunks.entry(chunk_key).or_insert_with(|| {
-            let painter = interface.create_painter([
-                chunk_orig[0],
-                chunk_orig[1],
-                chunk_orig[0] + CHUNK_SIZE,
-                chunk_orig[1] + CHUNK_SIZE,
-            ]);
+            let painter = interface.create_painter(Rectangle {
+                origin: chunk_orig,
+                extend: Delta::new(CHUNK_SIZE, CHUNK_SIZE),
+            });
             StrokeChunk { painter }
         });
 
-        chunk.painter.set_pixel(point[0], point[1], color);
+        chunk.painter.set_pixel(point, color);
     }
 }
 

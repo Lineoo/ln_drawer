@@ -5,6 +5,7 @@ use wgpu::*;
 
 use crate::interface::ComponentCommand;
 use crate::interface::viewport::InterfaceViewport;
+use crate::measures::{Position, Rectangle};
 
 pub struct PainterPipeline {
     pipeline: RenderPipeline,
@@ -131,7 +132,7 @@ impl PainterPipeline {
     #[must_use = "The painter will be destroyed when being drop."]
     pub fn create(
         &mut self,
-        rect: [i32; 4],
+        rect: Rectangle,
         data: Vec<u8>,
         comp_idx: usize,
         comp_tx: Sender<(usize, ComponentCommand)>,
@@ -142,19 +143,19 @@ impl PainterPipeline {
             label: Some("painter_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
                 Vertex {
-                    pos: [rect[0], rect[1]],
+                    pos: rect.left_down().into_array(),
                     uv: [0.0, 1.0],
                 },
                 Vertex {
-                    pos: [rect[0], rect[3]],
+                    pos: rect.left_up().into_array(),
                     uv: [0.0, 0.0],
                 },
                 Vertex {
-                    pos: [rect[2], rect[3]],
+                    pos: rect.right_up().into_array(),
                     uv: [1.0, 0.0],
                 },
                 Vertex {
-                    pos: [rect[2], rect[1]],
+                    pos: rect.right_down().into_array(),
                     uv: [1.0, 1.0],
                 },
             ]),
@@ -169,8 +170,8 @@ impl PainterPipeline {
 
         // Texture Buffer
 
-        let width = (rect[0] - rect[2]).unsigned_abs();
-        let height = (rect[1] - rect[3]).unsigned_abs();
+        let width = rect.width();
+        let height = rect.height();
 
         let bind_texture = device.create_texture(&TextureDescriptor {
             label: Some("painter_texture"),
@@ -257,9 +258,9 @@ impl PainterPipeline {
 }
 
 pub struct Painter {
-    rect: [i32; 4],
-    pub data: Vec<u8>,
+    rect: Rectangle,
     z_order: isize,
+    data: Vec<u8>,
 
     comp_idx: usize,
     comp_tx: Sender<(usize, ComponentCommand)>,
@@ -280,12 +281,12 @@ impl Painter {
         PainterWriter { painter: self }
     }
 
-    pub fn get_pixel(&self, x: i32, y: i32) -> [u8; 4] {
-        let width = self.width();
-        let height = self.height();
+    pub fn get_pixel(&self, position: Position) -> [u8; 4] {
+        let width = self.rect.width();
+        let height = self.rect.height();
 
-        let x_offset = x - self.rect[0];
-        let y_offset = y - self.rect[1];
+        let x_offset = position.x - self.rect.origin.x;
+        let y_offset = position.y - self.rect.origin.y;
 
         let x_clamped = (x_offset).rem_euclid(width as i32) as u32;
         let y_clamped = (height as i32 - 1 - y_offset).rem_euclid(height as i32) as u32;
@@ -301,12 +302,12 @@ impl Painter {
         ]
     }
 
-    pub fn set_pixel(&mut self, x: i32, y: i32, color: [u8; 4]) {
-        let width = self.width();
-        let height = self.height();
+    pub fn set_pixel(&mut self, position: Position, color: [u8; 4]) {
+        let width = self.rect.width();
+        let height = self.rect.height();
 
-        let x_offset = x - self.rect[0];
-        let y_offset = y - self.rect[1];
+        let x_offset = position.x - self.rect.origin.x;
+        let y_offset = position.y - self.rect.origin.y;
 
         let x_clamped = (x_offset).rem_euclid(width as i32) as u32;
         let y_clamped = (height as i32 - 1 - y_offset).rem_euclid(height as i32) as u32;
@@ -344,48 +345,45 @@ impl Painter {
         );
     }
 
-    pub fn get_rect(&self) -> [i32; 4] {
+    pub fn get_rect(&self) -> Rectangle {
         self.rect
     }
 
-    fn set_rect(&mut self, rect: [i32; 4]) {
+    fn set_rect(&mut self, rect: Rectangle) {
         self.rect = rect;
         self.queue.write_buffer(
             &self.buffer.vertices,
             0,
             bytemuck::bytes_of(&[
                 Vertex {
-                    pos: [rect[0], rect[1]],
+                    pos: rect.left_down().into_array(),
                     uv: [0.0, 1.0],
                 },
                 Vertex {
-                    pos: [rect[0], rect[3]],
+                    pos: rect.left_up().into_array(),
                     uv: [0.0, 0.0],
                 },
                 Vertex {
-                    pos: [rect[2], rect[3]],
+                    pos: rect.right_up().into_array(),
                     uv: [1.0, 0.0],
                 },
                 Vertex {
-                    pos: [rect[2], rect[1]],
+                    pos: rect.right_down().into_array(),
                     uv: [1.0, 1.0],
                 },
             ]),
         );
     }
 
-    pub fn get_position(&self) -> [i32; 2] {
-        [self.rect[0], self.rect[1]]
+    pub fn get_position(&self) -> Position {
+        self.rect.origin
     }
 
-    pub fn set_position(&mut self, position: [i32; 2]) {
-        let (width, height) = (self.width(), self.height());
-        self.set_rect([
-            position[0],
-            position[1],
-            position[0] + width as i32,
-            position[1] + height as i32,
-        ]);
+    pub fn set_position(&mut self, position: Position) {
+        self.set_rect(Rectangle {
+            origin: position,
+            extend: self.rect.extend,
+        });
     }
 
     pub fn get_z_order(&self) -> isize {
@@ -404,14 +402,6 @@ impl Painter {
     pub(super) fn clone_buffer(&self) -> PainterBuffer {
         self.buffer.clone()
     }
-
-    fn width(&self) -> u32 {
-        (self.rect[0] - self.rect[2]).unsigned_abs()
-    }
-
-    fn height(&self) -> u32 {
-        (self.rect[1] - self.rect[3]).unsigned_abs()
-    }
 }
 
 /// A more efficient way to write data into painter's Buffer
@@ -425,16 +415,16 @@ impl Drop for PainterWriter<'_> {
     }
 }
 impl PainterWriter<'_> {
-    pub fn get_pixel(&self, x: i32, y: i32) -> [u8; 4] {
-        self.painter.get_pixel(x, y)
+    pub fn get_pixel(&self, position: Position) -> [u8; 4] {
+        self.painter.get_pixel(position)
     }
 
-    pub fn set_pixel(&mut self, x: i32, y: i32, color: [u8; 4]) {
-        let width = self.painter.width();
-        let height = self.painter.height();
+    pub fn set_pixel(&mut self, position: Position, color: [u8; 4]) {
+        let width = self.painter.rect.width();
+        let height = self.painter.rect.height();
 
-        let x_offset = x - self.painter.rect[0];
-        let y_offset = y - self.painter.rect[1];
+        let x_offset = position.x - self.painter.rect.origin.x;
+        let y_offset = position.y - self.painter.rect.origin.y;
 
         let x_clamped = (x_offset).rem_euclid(width as i32) as u32;
         let y_clamped = (height as i32 - 1 - y_offset).rem_euclid(height as i32) as u32;

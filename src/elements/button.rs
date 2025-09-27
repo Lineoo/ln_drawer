@@ -1,6 +1,7 @@
 use crate::{
     elements::{
-        tools::pointer::{PointerHit, PointerHitExt, PointerHittable}, Element, OrderElement, OrderElementExt, PositionElementExt, PositionedElement
+        Element, OrderElement, OrderElementExt, PositionElementExt, PositionedElement,
+        tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
     },
     interface::{Interface, Square},
     lnwin::PointerEvent,
@@ -35,7 +36,7 @@ impl Element for ButtonRaw {
         // });
 
         let mut interface = world.single_mut::<Interface>().unwrap();
-        let square = interface.create_square(self.rect.into_array(), [1.0, 1.0, 1.0, 0.6]);
+        let square = interface.create_square(self.rect, [1.0, 1.0, 1.0, 0.6]);
         square.set_z_order(self.order);
         square.set_visible(false);
         self.square = Some(square);
@@ -53,7 +54,7 @@ impl PositionedElement for ButtonRaw {
     fn set_position(&mut self, position: Position) {
         self.rect.origin = position;
         if let Some(square) = &mut self.square {
-            square.set_rect(self.rect.into_array());
+            square.set_rect(self.rect);
         }
     }
 }
@@ -73,7 +74,7 @@ impl PointerHittable for ButtonRaw {
     fn get_hitting_rect(&self) -> Rectangle {
         self.rect
     }
-    
+
     fn get_hitting_order(&self) -> isize {
         self.order
     }

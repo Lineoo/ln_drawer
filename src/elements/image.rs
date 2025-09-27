@@ -6,7 +6,7 @@ use crate::{
         intersect::Collider,
     },
     interface::{Interface, Painter},
-    measures::{Position, Rectangle},
+    measures::{Delta, Position, Rectangle},
     world::{ElementHandle, ElementUpdate, WorldCell},
 };
 
@@ -16,7 +16,7 @@ pub struct Image {
 impl Element for Image {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
         let intersect = world.insert(Collider {
-            rect: Rectangle::from_array(self.painter.get_rect()),
+            rect: self.painter.get_rect(),
             z_order: 0,
         });
         world.entry(intersect).unwrap().depend(handle);
@@ -36,11 +36,11 @@ impl Element for Image {
 }
 impl PositionedElement for Image {
     fn get_position(&self) -> Position {
-        Position::from_array(self.painter.get_position())
+        self.painter.get_position()
     }
 
     fn set_position(&mut self, position: Position) {
-        self.painter.set_position(position.into_array());
+        self.painter.set_position(position);
     }
 }
 impl OrderElement for Image {
@@ -58,7 +58,10 @@ impl Image {
         let image = reader.decode()?;
 
         let painter = interface.create_painter_with(
-            [0, 0, image.width() as i32, image.height() as i32],
+            Rectangle {
+                origin: Position::new(0, 0),
+                extend: Delta::new(image.width() as i32, image.height() as i32),
+            },
             Vec::from(image.as_bytes()),
         );
 
@@ -69,7 +72,10 @@ impl Image {
         let image = image::load_from_memory(bytes)?;
 
         let painter = interface.create_painter_with(
-            [0, 0, image.width() as i32, image.height() as i32],
+            Rectangle {
+                origin: Position::new(0, 0),
+                extend: Delta::new(image.width() as i32, image.height() as i32),
+            },
             Vec::from(image.as_bytes()),
         );
 

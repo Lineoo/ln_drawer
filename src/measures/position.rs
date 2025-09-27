@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-use crate::measures::delta::Delta;
+use crate::measures::{Rectangle, delta::Delta};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
@@ -24,38 +24,38 @@ impl ops::Add<Delta> for Position {
     type Output = Position;
     fn add(self, rhs: Delta) -> Self::Output {
         Position {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
+            x: self.x + rhs.w,
+            y: self.y + rhs.h,
         }
     }
 }
 impl ops::AddAssign<Delta> for Position {
     fn add_assign(&mut self, rhs: Delta) {
-        self.x += rhs.x;
-        self.y += rhs.y;
+        self.x += rhs.w;
+        self.y += rhs.h;
     }
 }
 impl ops::Sub<Delta> for Position {
     type Output = Position;
     fn sub(self, rhs: Delta) -> Self::Output {
         Position {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
+            x: self.x - rhs.w,
+            y: self.y - rhs.h,
         }
     }
 }
 impl ops::SubAssign<Delta> for Position {
     fn sub_assign(&mut self, rhs: Delta) {
-        self.x -= rhs.x;
-        self.y -= rhs.y;
+        self.x -= rhs.w;
+        self.y -= rhs.h;
     }
 }
 impl ops::Sub for Position {
     type Output = Delta;
     fn sub(self, rhs: Self) -> Self::Output {
         Delta {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
+            w: self.x - rhs.x,
+            h: self.y - rhs.y,
         }
     }
 }
@@ -73,5 +73,21 @@ impl Position {
             x: array[0],
             y: array[1],
         }
+    }
+
+    pub fn clamp(self, rect: Rectangle) -> Position {
+        Position::new(
+            self.x.clamp(rect.origin.x, rect.origin.x + rect.extend.w),
+            self.y.clamp(rect.origin.y, rect.origin.y + rect.extend.h),
+        )
+    }
+
+    pub fn wrap(self, rect: Rectangle) -> Position {
+        let delta = self - rect.origin;
+
+        let w = (delta.w).rem_euclid(rect.width() as i32);
+        let h = (delta.h).rem_euclid(rect.height() as i32);
+
+        rect.origin + Delta::new(w, h)
     }
 }

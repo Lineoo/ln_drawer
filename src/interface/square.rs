@@ -5,6 +5,7 @@ use wgpu::*;
 
 use crate::interface::ComponentCommand;
 use crate::interface::viewport::InterfaceViewport;
+use crate::measures::{Position, Rectangle};
 
 pub struct SquarePipeline {
     pipeline: RenderPipeline,
@@ -115,7 +116,7 @@ impl SquarePipeline {
     #[must_use = "The square will be destroyed when being drop."]
     pub fn create(
         &mut self,
-        rect: [i32; 4],
+        rect: Rectangle,
         color: [f32; 4],
         comp_idx: usize,
         comp_tx: Sender<(usize, ComponentCommand)>,
@@ -125,10 +126,10 @@ impl SquarePipeline {
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("square_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
-                [rect[0], rect[1]],
-                [rect[0], rect[3]],
-                [rect[2], rect[3]],
-                [rect[2], rect[1]],
+                rect.left_down().into_array(),
+                rect.left_up().into_array(),
+                rect.right_up().into_array(),
+                rect.right_down().into_array(),
             ]),
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
@@ -194,8 +195,7 @@ impl SquarePipeline {
 }
 
 pub struct Square {
-    /// rect: [left, down, right, up]
-    rect: [i32; 4],
+    rect: Rectangle,
 
     comp_idx: usize,
     comp_tx: Sender<(usize, ComponentCommand)>,
@@ -211,36 +211,30 @@ impl Drop for Square {
     }
 }
 impl Square {
-    pub fn get_rect(&self) -> [i32; 4] {
+    pub fn get_rect(&self) -> Rectangle {
         self.rect
     }
 
-    pub fn set_rect(&mut self, rect: [i32; 4]) {
+    pub fn set_rect(&mut self, rect: Rectangle) {
         self.rect = rect;
         self.queue.write_buffer(
             &self.buffer.vertices,
             0,
             bytemuck::bytes_of(&[
-                [rect[0], rect[1]],
-                [rect[0], rect[3]],
-                [rect[2], rect[3]],
-                [rect[2], rect[1]],
+                rect.left_down().into_array(),
+                rect.left_up().into_array(),
+                rect.right_up().into_array(),
+                rect.right_down().into_array(),
             ]),
         );
     }
 
-    pub fn get_position(&self) -> [i32; 2] {
-        [self.rect[0], self.rect[1]]
+    pub fn get_position(&self) -> Position {
+        self.rect.origin
     }
 
-    pub fn set_position(&mut self, position: [i32; 2]) {
-        let (width, height) = (self.width(), self.height());
-        self.set_rect([
-            position[0],
-            position[1],
-            position[0] + width as i32,
-            position[1] + height as i32,
-        ]);
+    pub fn set_position(&mut self, position: Position) {
+        self.set_rect(self.rect.with_origin(position));
     }
 
     pub fn set_color(&mut self, color: [f32; 4]) {
@@ -264,14 +258,6 @@ impl Square {
 
     pub(super) fn clone_buffer(&self) -> SquareBuffer {
         self.buffer.clone()
-    }
-    
-    fn width(&self) -> u32 {
-        (self.rect[0] - self.rect[2]).unsigned_abs()
-    }
-
-    fn height(&self) -> u32 {
-        (self.rect[1] - self.rect[3]).unsigned_abs()
     }
 }
 

@@ -5,6 +5,7 @@ use wgpu::*;
 
 use crate::interface::ComponentCommand;
 use crate::interface::viewport::InterfaceViewport;
+use crate::measures::Rectangle;
 
 pub struct WireframePipeline {
     pipeline: RenderPipeline,
@@ -115,7 +116,7 @@ impl WireframePipeline {
     #[must_use = "The wireframe will be destroyed when being drop."]
     pub fn create(
         &mut self,
-        rect: [i32; 4],
+        rect: Rectangle,
         color: [f32; 4],
         comp_idx: usize,
         comp_tx: Sender<(usize, ComponentCommand)>,
@@ -125,10 +126,10 @@ impl WireframePipeline {
         let vertices = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("wireframe_vertex_buffer"),
             contents: bytemuck::bytes_of(&[
-                [rect[0], rect[1]],
-                [rect[0], rect[3]],
-                [rect[2], rect[3]],
-                [rect[2], rect[1]],
+                rect.left_down().into_array(),
+                rect.left_up().into_array(),
+                rect.right_up().into_array(),
+                rect.right_down().into_array(),
             ]),
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
@@ -194,8 +195,7 @@ impl WireframePipeline {
 }
 
 pub struct Wireframe {
-    /// rect: [left, down, right, up]
-    rect: [i32; 4],
+    rect: Rectangle,
 
     comp_idx: usize,
     comp_tx: Sender<(usize, ComponentCommand)>,
@@ -211,16 +211,16 @@ impl Drop for Wireframe {
     }
 }
 impl Wireframe {
-    pub fn set_rect(&mut self, rect: [i32; 4]) {
+    pub fn set_rect(&mut self, rect: Rectangle) {
         self.rect = rect;
         self.queue.write_buffer(
             &self.buffer.vertices,
             0,
             bytemuck::bytes_of(&[
-                [rect[0], rect[1]],
-                [rect[0], rect[3]],
-                [rect[2], rect[3]],
-                [rect[2], rect[1]],
+                rect.left_down().into_array(),
+                rect.left_up().into_array(),
+                rect.right_up().into_array(),
+                rect.right_down().into_array(),
             ]),
         );
     }

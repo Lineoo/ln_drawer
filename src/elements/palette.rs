@@ -7,7 +7,7 @@ use crate::{
     },
     interface::{Interface, Painter},
     lnwin::PointerEvent,
-    measures::{Position, Rectangle},
+    measures::{Delta, Position, Rectangle},
     world::{ElementHandle, WorldCell},
 };
 
@@ -36,7 +36,7 @@ impl Element for Palette {
 }
 impl PositionedElement for Palette {
     fn get_position(&self) -> Position {
-        Position::from_array(self.painter.get_position())
+        self.painter.get_position()
     }
 
     fn set_position(&mut self, position: Position) {
@@ -46,14 +46,13 @@ impl PositionedElement for Palette {
         let knob_origin = self.get_knob_position();
         let knob_position = knob_origin + delta;
 
-        self.painter.set_position(position.into_array());
-        self.knob
-            .set_position([knob_position.x - 1, knob_position.y - 1]);
+        self.painter.set_position(position);
+        self.knob.set_position(knob_position - Delta::splat(1));
     }
 }
 impl PointerHittable for Palette {
     fn get_hitting_rect(&self) -> Rectangle {
-        Rectangle::from_array(self.painter.get_rect())
+        self.painter.get_rect()
     }
 
     fn get_hitting_order(&self) -> isize {
@@ -76,17 +75,18 @@ impl Palette {
             }
         }
         let painter = interface.create_painter_with(
-            [position.x, position.y, position.x + 128, position.y + 128],
+            Rectangle {
+                origin: position,
+                extend: Delta::splat(128),
+            },
             data,
         );
 
         // Picker Knob //
-        let rect = [
-            position.x - 1,
-            position.y - 1,
-            position.x + 2,
-            position.y + 2,
-        ];
+        let rect = Rectangle::from_points(
+            Position::new(position.x - 1, position.y - 1),
+            Position::new(position.x + 2, position.y + 2),
+        );
 
         let mut data = vec![0u8; 3 * 3 * 4];
         for x in 0..3 {
@@ -108,15 +108,13 @@ impl Palette {
 
     pub fn get_knob_position(&self) -> Position {
         let raw_pos = self.knob.get_position();
-        Position::from_array([raw_pos[0] + 1, raw_pos[1] + 1])
+        raw_pos + Delta::splat(1)
     }
 
     pub fn set_knob_position(&mut self, position: Position) {
         let rect = self.painter.get_rect();
-        let x = position.x.clamp(rect[0], rect[2] - 1);
-        let y = position.y.clamp(rect[1], rect[3] - 1);
-
-        self.knob.set_position([x - 1, y - 1]);
+        self.knob
+            .set_position(position.clamp(rect) - Delta::splat(1));
     }
 
     pub fn pick_color(&self) -> [u8; 4] {
