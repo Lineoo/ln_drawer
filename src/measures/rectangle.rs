@@ -98,6 +98,11 @@ impl Rectangle {
     }
 
     #[inline]
+    pub fn left_up(self) -> Position {
+        self.origin + Delta::new(0, self.extend.y)
+    }
+
+    #[inline]
     pub fn right_up(self) -> Position {
         self.origin + self.extend
     }

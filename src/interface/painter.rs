@@ -258,7 +258,7 @@ impl PainterPipeline {
 
 pub struct Painter {
     rect: [i32; 4],
-    data: Vec<u8>,
+    pub data: Vec<u8>,
     z_order: isize,
 
     comp_idx: usize,

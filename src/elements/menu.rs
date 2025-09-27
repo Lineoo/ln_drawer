@@ -2,7 +2,7 @@ use crate::{
     elements::{
         ButtonRaw, Element, Image, OrderElement, Palette, PositionElementExt, PositionedElement,
         Text,
-        text::TextManager,
+        text::{TextEdit, TextManager},
         tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
     },
     interface::{Interface, Square},
@@ -13,7 +13,7 @@ use crate::{
 
 const PAD: i32 = 10;
 const PAD_H: i32 = PAD / 2;
-const ENTRY_NUM: usize = 4;
+const ENTRY_NUM: usize = 5;
 const ENTRY_WIDTH: i32 = 220;
 const ENTRY_HEIGHT: i32 = 30;
 
@@ -203,6 +203,28 @@ impl Menu {
                     )
                     .unwrap();
                     world.insert(image);
+                }),
+            });
+        }
+        {
+            let rect = Rectangle {
+                origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT) * 4),
+                extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
+            };
+            let frame = interface.create_square(rect.into_array(), [0.2, 0.2, 0.2, 1.0]);
+            frame.set_z_order(100);
+            let mut _text = Text::new(rect, "Text Edit".into(), text_manager, interface);
+            _text.set_order(110);
+            entries.push(MenuEntry {
+                frame,
+                _text,
+                action: Box::new(move |world| {
+                    world.insert(TextEdit::new(
+                        rect,
+                        "Enter text here".into(),
+                        &mut world.single_mut().unwrap(),
+                        &mut world.single_mut().unwrap(),
+                    ));
                 }),
             });
         }

@@ -4,9 +4,14 @@ use cosmic_text::*;
 use parking_lot::Mutex;
 
 use crate::{
-    elements::{Element, OrderElement},
+    elements::{
+        Element, OrderElement,
+        tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
+    },
     interface::{Interface, Painter},
-    measures::Rectangle,
+    lnwin::PointerEvent,
+    measures::{Delta, Position, Rectangle},
+    world::{ElementHandle, WorldCell},
 };
 
 pub struct TextManager {
@@ -104,5 +109,149 @@ impl OrderElement for Text {
 
     fn set_order(&mut self, order: isize) {
         self.inner.set_z_order(order);
+    }
+}
+
+pub struct TextEdit {
+    inner: Painter,
+    text: String,
+    editor: Editor<'static>,
+    font_system: Arc<Mutex<FontSystem>>,
+    swash_cache: Arc<Mutex<SwashCache>>,
+}
+impl Element for TextEdit {
+    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
+        self.register_hittable(handle, world);
+
+        (world.entry(handle).unwrap()).observe::<PointerHit>(move |event, world| match event.0 {
+            PointerEvent::Pressed(position) => {
+                let mut this = world.fetch_mut_raw::<TextEdit>(handle).unwrap();
+                let this = &mut *this;
+
+                let point = position - Rectangle::from_array(this.inner.get_rect()).left_up();
+                let point = Position::new(point.x, -point.y);
+
+                let mut font_system = this.font_system.lock();
+                this.editor.action(
+                    &mut font_system,
+                    Action::Click {
+                        x: point.x,
+                        y: point.y,
+                    },
+                );
+
+                drop(font_system);
+
+                this.redraw();
+            }
+            PointerEvent::Moved(position) => {
+                let mut this = world.fetch_mut_raw::<TextEdit>(handle).unwrap();
+                let this = &mut *this;
+
+                let point = position - Rectangle::from_array(this.inner.get_rect()).left_up();
+                let point = Position::new(point.x, -point.y);
+
+                let mut font_system = this.font_system.lock();
+                this.editor.action(
+                    &mut font_system,
+                    Action::Drag {
+                        x: point.x,
+                        y: point.y,
+                    },
+                );
+
+                drop(font_system);
+
+                this.redraw();
+            }
+            PointerEvent::Released(_) => (),
+        });
+    }
+}
+impl OrderElement for TextEdit {
+    fn get_order(&self) -> isize {
+        self.inner.get_z_order()
+    }
+
+    fn set_order(&mut self, order: isize) {
+        self.inner.set_z_order(order);
+    }
+}
+impl PointerHittable for TextEdit {
+    fn get_hitting_rect(&self) -> Rectangle {
+        Rectangle::from_array(self.inner.get_rect())
+    }
+
+    fn get_hitting_order(&self) -> isize {
+        self.inner.get_z_order()
+    }
+}
+impl TextEdit {
+    pub fn new(
+        rect: Rectangle,
+        text: String,
+        manager: &mut TextManager,
+        interface: &mut Interface,
+    ) -> TextEdit {
+        let mut font_system = manager.font_system.lock();
+        let mut swash_cache = manager.swash_cache.lock();
+
+        let metrics = Metrics::new(24.0, 20.0);
+
+        let mut buffer = Buffer::new(&mut font_system, metrics);
+        let mut buffer_borrow = buffer.borrow_with(&mut font_system);
+
+        let attrs = Attrs::new();
+        buffer_borrow.set_size(Some(rect.width() as f32), Some(rect.height() as f32));
+        buffer_borrow.set_text(&text, &attrs, Shaping::Advanced);
+        buffer_borrow.shape_until_scroll(true);
+
+        let mut data = vec![0; (rect.width() * rect.height() * 4) as usize];
+
+        buffer_borrow.draw(
+            &mut swash_cache,
+            Color::rgb(0xFF, 0xFF, 0xFF),
+            |x, y, _, _, color| {
+                let start = ((x + y * rect.height() as i32) * 4) as usize;
+                let rgba = color.as_rgba();
+                data[start] = rgba[0];
+                data[start + 1] = rgba[1];
+                data[start + 2] = rgba[2];
+                data[start + 3] = rgba[3];
+            },
+        );
+
+        TextEdit {
+            inner: interface.create_painter_with(rect.into_array(), data),
+            text,
+            editor: Editor::new(buffer),
+            font_system: manager.font_system.clone(),
+            swash_cache: manager.swash_cache.clone(),
+        }
+    }
+
+    fn redraw(&mut self) {
+        let mut font_system = self.font_system.lock();
+        let mut swash_cache = self.swash_cache.lock();
+
+        // let mut writer = self.inner.open_writer();
+        self.editor.draw(
+            &mut font_system,
+            &mut swash_cache,
+            Color::rgba(255, 255, 255, 255),
+            Color::rgba(255, 255, 255, 127),
+            Color::rgba(127, 127, 255, 127),
+            Color::rgba(255, 255, 255, 255),
+            |x, y, w, h, color| {
+                let rgba = color.as_rgba();
+                for x in x..(x + w as i32) {
+                    for y in y..(y + h as i32) {
+                        let point = Rectangle::from_array(self.inner.get_rect()).left_up()
+                            + Delta::new(x, -y - 1);
+                        self.inner.set_pixel(point.x, point.y, rgba);
+                    }
+                }
+            },
+        );
     }
 }
