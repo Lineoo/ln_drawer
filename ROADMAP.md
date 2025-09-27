@@ -431,3 +431,76 @@ impl Element for Baz {
 - text: 所有跟 cosmic-text 有关
 - tools: 有关用户输入处理
 - widgets: 预设的用户组件
+
+# 有关完全所有权下的世界更改
+有时候我们只能获得元素的 `&mut self` 字段而无法获得 `World` 的权限。这种时候如果我们想要改变世界内容（添加 Observer 等）怎么办？
+
+`mpsc` 是一个很简单、直观的解决方案：
+```rust
+pub fn new(queue: &mut WorldQueue) -> Foo {
+    Foo { tx: queue.sender() }
+}
+```
+
+但是怎么让世界能够读取这个队列是一个很重要的事情。
+
+# 依赖更改
+目前依赖是实现了的（通过 `depend` 方法），但是问题是——太丑了！entry 模式绝对还可以添加一点东西。
+
+不好看：
+```rust
+let parent = world.insert(Parent);
+let child = world.insert(Child);
+world.entry(child).unwrap().depend(parent);
+```
+
+好看：
+```rust
+let parent = world.entry_with(Parent);
+parent.insert(Child); // Implicit dependence
+```
+
+对于 observer 也适用：
+```rust
+let parent = world.entry_with(Parent);
+parent.observe(move |ElementUpdate, world| {
+    // Observer 会被挂载到 parent 下而非 Element#0 下
+    // 其实就是正常的 entry 操作
+    parent.update();
+});
+parent.entry(other).unwrap().observe(move |ElementUpdate, world| {
+    // Observer 会被挂载到 other 下，但是会在 parent 被删除时同步删除
+    parent.sync_with(other);
+});
+
+// 这种写法也是有用的，但是我看着是真的很别扭
+// 正常来说应该是像 parent.entry(ElementHandle(0)).unwrap().observe(..)
+// 但是这个操作显而易见的危险，所以我也不知道怎么办
+parent.observe_root::<WindowEvent>(move |event, world| {
+    // Observer 会被挂载到 Element#0 下但依赖于 parent
+    // 然后我觉得 World 的那个方法也应该改成对应的 observe_root 然后没有 observe
+    // trigger 改成 trigger_root
+    match event {}
+});
+```
+
+最后可以返回 handle:
+```rust
+let parent = world.entry_with(Parent);
+parent.insert(Child);
+let parent: ElementHandle = parent.finish();
+```
+
+还可以链式调用（注意依赖只有单层）：
+```rust
+let grandparent = world.entry_with(GrandParent);
+let parent = grandparent.entry_with(Parent);
+
+let boy = parent.entry_with(Boy);
+boy.insert(Toys);
+boy.finish();
+
+let girl = parent.entry_with(Girl);
+girl.insert(Toys);
+girl.finish();
+```

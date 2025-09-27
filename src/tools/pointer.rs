@@ -4,6 +4,7 @@ use crate::{
     elements::{Element, Intersect, intersect::Collider},
     lnwin::PointerEvent,
     measures::Rectangle,
+    tools::focus::{Focus, Focusable},
     world::{ElementHandle, ElementInserted, ElementRemoved, ElementUpdate, WorldCell},
 };
 
@@ -31,6 +32,15 @@ impl Element for PointerHitter {
 
             if let PointerEvent::Pressed(_) = event {
                 pressed = true;
+                if let Some(mut focus) = world.single_mut::<Focus>() {
+                    if let Some(pointer_on) = pointer_on
+                        && world.contains_type::<dyn Focusable>(pointer_on)
+                    {
+                        focus.set(Some(pointer_on), world);
+                    } else {
+                        focus.set(None, world);
+                    }
+                }
             }
 
             if pressed {
