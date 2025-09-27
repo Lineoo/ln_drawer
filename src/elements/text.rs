@@ -61,7 +61,7 @@ impl Text {
             &mut swash_cache,
             Color::rgb(0xFF, 0xFF, 0xFF),
             |x, y, _, _, color| {
-                let start = ((x + y * rect.height() as i32) * 4) as usize;
+                let start = ((x + y * rect.width() as i32) * 4) as usize;
                 let rgba = color.as_rgba();
                 data[start] = rgba[0];
                 data[start + 1] = rgba[1];
@@ -214,7 +214,7 @@ impl TextEdit {
             &mut swash_cache,
             Color::rgb(0xFF, 0xFF, 0xFF),
             |x, y, _, _, color| {
-                let start = ((x + y * rect.height() as i32) * 4) as usize;
+                let start = ((x + y * rect.width() as i32) * 4) as usize;
                 let rgba = color.as_rgba();
                 data[start] = rgba[0];
                 data[start + 1] = rgba[1];

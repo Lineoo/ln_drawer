@@ -74,7 +74,7 @@ impl Rectangle {
 
     #[inline]
     pub fn height(self) -> u32 {
-        self.extend.x as u32
+        self.extend.y as u32
     }
 
     #[inline]
