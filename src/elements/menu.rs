@@ -2,6 +2,7 @@ use crate::{
     elements::{
         ButtonRaw, Element, Image, OrderElement, Palette, PositionElementExt, PositionedElement,
         Text,
+        player::Player,
         text::{TextEdit, TextManager},
     },
     interface::{Interface, Square},
@@ -13,7 +14,7 @@ use crate::{
 
 const PAD: i32 = 10;
 const PAD_H: i32 = PAD / 2;
-const ENTRY_NUM: usize = 5;
+const ENTRY_NUM: usize = 6;
 const ENTRY_WIDTH: i32 = 220;
 const ENTRY_HEIGHT: i32 = 30;
 
@@ -36,8 +37,8 @@ impl Element for Menu {
 
                 let delta1 = point - frame.origin;
                 let delta2 = frame.right_up() - point;
-                if delta1.w > PAD_H && delta1.h > PAD_H && delta2.w > PAD_H && delta2.h > PAD_H {
-                    let index = ((delta1.h - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
+                if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
+                    let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
                     let rect = this.entries[index].frame.get_rect();
                     this.select_frame.set_rect(rect);
                     this.select_frame.set_visible(true);
@@ -62,8 +63,8 @@ impl Element for Menu {
             if let &PointerHit(PointerEvent::Pressed(point)) = event {
                 let delta1 = point - frame.origin;
                 let delta2 = frame.right_up() - point;
-                if delta1.w > PAD_H && delta1.h > PAD_H && delta2.w > PAD_H && delta2.h > PAD_H {
-                    let index = ((delta1.h - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
+                if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
+                    let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
                     (this.entries[index].action)(world);
                     world.remove(handle);
                 }
@@ -225,6 +226,23 @@ impl Menu {
                         &mut world.single_mut().unwrap(),
                         &mut world.single_mut().unwrap(),
                     ));
+                }),
+            });
+        }
+        {
+            let rect = Rectangle {
+                origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT) * 5),
+                extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
+            };
+            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
+            frame.set_z_order(100);
+            let mut _text = Text::new(rect, "Player".into(), text_manager, interface);
+            _text.set_order(110);
+            entries.push(MenuEntry {
+                frame,
+                _text,
+                action: Box::new(move |world| {
+                    world.insert(Player::new(&mut world.single_mut().unwrap()));
                 }),
             });
         }

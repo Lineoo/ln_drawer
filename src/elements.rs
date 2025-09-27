@@ -5,6 +5,7 @@ mod menu;
 mod palette;
 mod stroke;
 mod text;
+mod player;
 
 use std::any::Any;
 

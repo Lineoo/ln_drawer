@@ -69,12 +69,12 @@ impl Rectangle {
 
     #[inline]
     pub fn width(self) -> u32 {
-        self.extend.w as u32
+        self.extend.x as u32
     }
 
     #[inline]
     pub fn height(self) -> u32 {
-        self.extend.w as u32
+        self.extend.x as u32
     }
 
     #[inline]
@@ -89,12 +89,12 @@ impl Rectangle {
 
     #[inline]
     pub fn right(self) -> i32 {
-        self.origin.x + self.extend.w
+        self.origin.x + self.extend.x
     }
 
     #[inline]
     pub fn up(self) -> i32 {
-        self.origin.y + self.extend.h
+        self.origin.y + self.extend.y
     }
 
     #[inline]
@@ -104,12 +104,12 @@ impl Rectangle {
 
     #[inline]
     pub fn left_up(self) -> Position {
-        self.origin + Delta::new(0, self.extend.h)
+        self.origin + Delta::new(0, self.extend.y)
     }
 
     #[inline]
     pub fn right_down(self) -> Position {
-        self.origin + Delta::new(self.extend.w, 0)
+        self.origin + Delta::new(self.extend.x, 0)
     }
 
     #[inline]
@@ -140,8 +140,8 @@ impl Rectangle {
                 y: array[1],
             },
             extend: Delta {
-                w: array[2] - array[0],
-                h: array[3] - array[1],
+                x: array[2] - array[0],
+                y: array[3] - array[1],
             },
         }
     }

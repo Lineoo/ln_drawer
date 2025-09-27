@@ -12,7 +12,7 @@ use crate::{
     elements::{Image, Intersect, Menu, StrokeLayer, TextManager},
     interface::Interface,
     measures::Position,
-    tools::pointer::PointerHitter,
+    tools::{focus::Focus, pointer::PointerHitter},
     world::World,
 };
 
@@ -79,6 +79,7 @@ impl Lnwindow {
 
         world.insert(Intersect::default());
         world.insert(TextManager::default());
+        world.insert(Focus::default());
         let stroke = world.insert(StrokeLayer::default());
         let mut selection = PointerHitter::default();
         selection.set_fallback(stroke);

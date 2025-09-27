@@ -5,6 +5,7 @@ use crate::{
     world::{ElementHandle, WorldCell},
 };
 
+#[derive(Default)]
 pub struct Focus {
     on: Option<ElementHandle>,
 }

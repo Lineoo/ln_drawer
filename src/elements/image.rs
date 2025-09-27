@@ -7,6 +7,7 @@ use crate::{
     },
     interface::{Interface, Painter},
     measures::{Delta, Position, Rectangle},
+    tools::pointer::PointerHittable,
     world::{ElementHandle, ElementUpdate, WorldCell},
 };
 
@@ -50,6 +51,15 @@ impl OrderElement for Image {
 
     fn set_order(&mut self, order: isize) {
         self.painter.set_z_order(order);
+    }
+}
+impl PointerHittable for Image {
+    fn get_hitting_rect(&self) -> Rectangle {
+        self.painter.get_rect()
+    }
+
+    fn get_hitting_order(&self) -> isize {
+        self.painter.get_z_order()
     }
 }
 impl Image {

@@ -131,7 +131,7 @@ impl Element for TextEdit {
                 let this = &mut *this;
 
                 let point = position - this.inner.get_rect().left_up();
-                let point = Position::new(point.w, -point.h);
+                let point = Position::new(point.x, -point.y);
 
                 let mut font_system = this.font_system.lock();
                 this.editor.action(
@@ -151,7 +151,7 @@ impl Element for TextEdit {
                 let this = &mut *this;
 
                 let point = position - this.inner.get_rect().left_up();
-                let point = Position::new(point.w, -point.h);
+                let point = Position::new(point.x, -point.y);
 
                 let mut font_system = this.font_system.lock();
                 this.editor.action(
