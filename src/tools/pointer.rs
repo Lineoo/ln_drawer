@@ -34,7 +34,8 @@ impl Element for PointerHitter {
                 pressed = true;
                 if let Some(mut focus) = world.single_mut::<Focus>() {
                     if let Some(pointer_on) = pointer_on
-                        && world.contains_type::<dyn Focusable>(pointer_on)
+                        && let Some(focusable) = world.fetch::<dyn Focusable>(pointer_on)
+                        && focusable.is_focusable()
                     {
                         focus.set(Some(pointer_on), world);
                     } else {
