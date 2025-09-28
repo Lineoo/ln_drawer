@@ -1,5 +1,7 @@
 use std::sync::mpsc::Sender;
 
+use palette::blend::Compose;
+use palette::LinSrgba;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
@@ -242,8 +244,10 @@ impl PainterPipeline {
 
         Painter {
             rect,
-            data,
             z_order: 0,
+            width,
+            height,
+            data,
             comp_idx,
             comp_tx,
             buffer: painter_buffer.clone(),
@@ -260,6 +264,10 @@ impl PainterPipeline {
 pub struct Painter {
     rect: Rectangle,
     z_order: isize,
+
+    // Texture
+    width: u32,
+    height: u32,
     data: Vec<u8>,
 
     comp_idx: usize,
@@ -439,23 +447,61 @@ impl PainterWriter<'_> {
         self.painter.data[start + 3] = color[3];
     }
 
+    pub fn draw(&mut self, x: i32, y: i32, color: [u8; 4]) {
+        let x = x.rem_euclid(self.painter.width as i32) as u32;
+        let y = y.rem_euclid(self.painter.height as i32) as u32;
+
+        let start = ((x + y * self.painter.width) * 4) as usize;
+        let data = &mut self.painter.data;
+
+        let prev = LinSrgba::new(data[start], data[start + 1], data[start + 2], data[start + 3]);
+        let curr = LinSrgba::new(color[0], color[1], color[2], color[3]);
+
+        let prev: LinSrgba<f32> = prev.into_format();
+        let curr: LinSrgba<f32> = curr.into_format();
+
+        let next: LinSrgba<u8> = curr.over(prev).into_format();
+
+        data[start] = next.red;
+        data[start + 1] = next.green;
+        data[start + 2] = next.blue;
+        data[start + 3] = next.alpha;
+    }
+
+    pub fn clear(&mut self, color: [u8; 4]) {
+        let width = self.painter.width;
+        let height = self.painter.height;
+
+        for x in 0..width {
+            for y in 0..height {
+                let start = ((x + y * width) * 4) as usize;
+
+                self.painter.data[start] = color[0];
+                self.painter.data[start + 1] = color[1];
+                self.painter.data[start + 2] = color[2];
+                self.painter.data[start + 3] = color[3];
+            }
+        }
+    }
+
     pub fn close(&mut self) {
+        let rect = self.painter.get_rect();
         self.painter.queue.write_texture(
             TexelCopyTextureInfo {
                 texture: &self.painter.buffer.bind_texture,
                 mip_level: 0,
-                origin: Origin3d { x: 0, y: 0, z: 0 },
+                origin: Origin3d::ZERO,
                 aspect: TextureAspect::All,
             },
             &self.painter.data,
             TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(4),
-                rows_per_image: Some(1),
+                bytes_per_row: Some(rect.width() * 4),
+                rows_per_image: Some(rect.height()),
             },
             Extent3d {
-                width: 1,
-                height: 1,
+                width: rect.width(),
+                height: rect.height(),
                 depth_or_array_layers: 1,
             },
         );

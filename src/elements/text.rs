@@ -87,6 +87,7 @@ impl Text {
         self.buffer
             .set_text(&mut font_system, text, &Attrs::new(), Shaping::Advanced);
 
+        let mut writer = self.inner.open_writer();
         self.buffer.draw(
             &mut font_system,
             &mut swash_cache,
@@ -95,8 +96,7 @@ impl Text {
                 let rgba = color.as_rgba();
                 for x in x..(x + w as i32) {
                     for y in y..(y + h as i32) {
-                        let point = self.inner.get_rect().left_up() + Delta::new(x, -y - 1);
-                        self.inner.set_pixel(point, rgba);
+                        writer.draw(x, y, rgba);
                     }
                 }
             },
@@ -236,6 +236,8 @@ impl TextEdit {
         let mut font_system = self.font_system.lock();
         let mut swash_cache = self.swash_cache.lock();
 
+        let mut writer = self.inner.open_writer();
+        writer.clear([0; 4]);
         self.editor.draw(
             &mut font_system,
             &mut swash_cache,
@@ -247,8 +249,7 @@ impl TextEdit {
                 let rgba = color.as_rgba();
                 for x in x..(x + w as i32) {
                     for y in y..(y + h as i32) {
-                        let point = self.inner.get_rect().left_up() + Delta::new(x, -y - 1);
-                        self.inner.set_pixel(point, rgba);
+                        writer.draw(x, y, rgba);
                     }
                 }
             },
