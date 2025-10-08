@@ -7,7 +7,7 @@ use crate::{
     interface::{Interface, Painter},
     measures::{Delta, Position, Rectangle},
     tools::pointer::PointerHittable,
-    world::{Element, ElementHandle, ElementUpdate, WorldCell},
+    world::{Element, ElementHandle, Updated, WorldCell},
 };
 
 pub struct Image {
@@ -20,7 +20,7 @@ impl Element for Image {
             z_order: 0,
         });
         world.entry(intersect).unwrap().depend(handle);
-        (world.entry(handle).unwrap()).observe::<ElementUpdate>(move |_event, world| {
+        (world.entry(handle).unwrap()).observe::<Updated>(move |_event, world| {
             let position = world
                 .fetch::<dyn PositionedElement>(handle)
                 .unwrap()

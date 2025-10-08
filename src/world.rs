@@ -144,7 +144,8 @@ impl World {
         let type_id = (**self.elements.get(&handle)?).type_id();
 
         // ElementRemoved
-        self.entry(handle).unwrap().trigger(&ElementRemoved);
+        self.entry(handle).unwrap().trigger(&Destroy);
+        self.trigger(&ElementRemoved(handle));
 
         // remove related services
         for services_typed in &mut self.single_mut::<Services>().unwrap().0 {
@@ -766,7 +767,7 @@ impl WorldEntry<'_> {
             return;
         }
         let mut other = self.world.entry(other).unwrap();
-        other.observe(move |ElementRemoved, world| {
+        other.observe(move |Destroy, world| {
             world.remove(handle);
         });
     }
@@ -853,7 +854,7 @@ impl WorldCellEntry<'_> {
             return;
         }
         let mut other = self.world.entry(other).unwrap();
-        other.observe(move |ElementRemoved, world| {
+        other.observe(move |Destroy, world| {
             world.remove(handle);
         });
     }
@@ -960,8 +961,10 @@ impl dyn ServicesPart {
 // Builtin Events
 
 pub struct ElementInserted(pub ElementHandle);
-pub struct ElementUpdate;
-pub struct ElementRemoved;
+pub struct ElementRemoved(pub ElementHandle);
+
+pub struct Updated;
+pub struct Destroy;
 
 #[cfg(test)]
 mod test {

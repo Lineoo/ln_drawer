@@ -11,7 +11,7 @@ use crate::{
         focus::{FocusInput, FocusOn, Focusable, FocusableExt},
         pointer::{PointerHitExt, PointerHittable},
     },
-    world::{Element, ElementHandle, ElementUpdate, WorldCell},
+    world::{Element, ElementHandle, Updated, WorldCell},
 };
 
 pub struct Player {
@@ -39,7 +39,7 @@ impl Element for Player {
             let mut this = world.fetch_mut_raw::<Player>(handle).unwrap();
             let position = this.image.get_position();
             this.image.set_position(position + delta);
-            world.entry(handle).unwrap().trigger(ElementUpdate);
+            world.entry(handle).unwrap().trigger(Updated);
         });
 
         self.register_hittable(handle, world);

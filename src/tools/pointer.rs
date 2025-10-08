@@ -5,7 +5,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::Rectangle,
     tools::focus::{Focus, Focusable},
-    world::{Element, ElementHandle, ElementInserted, ElementRemoved, ElementUpdate, WorldCell},
+    world::{Element, ElementHandle, ElementInserted, Destroy, Updated, WorldCell},
 };
 
 #[derive(Default)]
@@ -67,14 +67,14 @@ impl Element for PointerHitter {
                 let mut hitter = world.single_mut::<PointerHitter>().unwrap();
                 hitter.hosts.insert(collider, handle);
 
-                (world.entry(handle).unwrap()).observe(move |ElementUpdate, world| {
+                (world.entry(handle).unwrap()).observe(move |Updated, world| {
                     let hittable = world.fetch::<dyn PointerHittable>(handle).unwrap();
                     let mut collider = world.fetch_mut::<Collider>(collider).unwrap();
                     collider.rect = hittable.get_hitting_rect();
                     collider.z_order = hittable.get_hitting_order();
                 });
 
-                (world.entry(handle).unwrap()).observe(move |ElementRemoved, world| {
+                (world.entry(handle).unwrap()).observe(move |Destroy, world| {
                     let mut selection = world.single_mut::<PointerHitter>().unwrap();
                     selection.hosts.remove(&collider);
                     world.remove(collider);
