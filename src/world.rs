@@ -7,7 +7,22 @@ use std::{
 use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 
-use crate::elements::Element;
+/// A shared form of objects in the [`World`].
+#[expect(unused_variables)]
+pub trait Element: Any {
+    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {}
+}
+impl dyn Element {
+    pub fn is<T: Any>(&self) -> bool {
+        (self as &dyn Any).is::<T>()
+    }
+    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
+        (self as &dyn Any).downcast_ref()
+    }
+    pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
+        (self as &mut dyn Any).downcast_mut()
+    }
+}
 
 /// Represent an element in the [`World`]. It's an handle so manual validation is needed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,6 +38,28 @@ pub struct World {
     elements: HashMap<ElementHandle, Box<dyn Element>>,
     singletons: HashMap<TypeId, Singleton>,
 }
+
+// Center of multiple accesses in world, which also prevents constructional changes
+pub struct WorldCell<'world> {
+    world: &'world mut World,
+    occupied: RefCell<HashMap<ElementHandle, isize>>,
+    cell_idx: RefCell<ElementHandle>,
+    inserted: RefCell<HashSet<ElementHandle>>,
+    removed: RefCell<HashSet<ElementHandle>>,
+}
+
+/// A full mutable world reference with specific element selected.
+pub struct WorldEntry<'world> {
+    world: &'world mut World,
+    handle: ElementHandle,
+}
+
+/// A world cell reference with specific element selected. No borrowing effect.
+pub struct WorldCellEntry<'world> {
+    world: &'world WorldCell<'world>,
+    handle: ElementHandle,
+}
+
 impl Default for World {
     fn default() -> Self {
         let mut elements = HashMap::<_, Box<dyn Element>>::new();
@@ -50,6 +87,21 @@ impl Default for World {
         }
     }
 }
+
+impl Drop for WorldCell<'_> {
+    fn drop(&mut self) {
+        self.world.curr_idx = *self.cell_idx.get_mut();
+
+        let queue = self.world.single_mut::<Queue>().unwrap();
+        let mut buf = Vec::new();
+        buf.append(&mut queue.0);
+
+        for cmd in buf {
+            cmd(self.world);
+        }
+    }
+}
+
 impl World {
     pub fn insert<T: Element + 'static>(&mut self, element: T) -> ElementHandle {
         let type_id = element.type_id();
@@ -274,126 +326,6 @@ impl World {
     /// Will only trigger the observers mounted on the world. See [`World::observer`] for more.
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         self.entry(ElementHandle(0)).unwrap().trigger(event);
-    }
-}
-
-/// A full mutable world reference with specific element selected.
-pub struct WorldEntry<'world> {
-    world: &'world mut World,
-    handle: ElementHandle,
-}
-impl WorldEntry<'_> {
-    pub fn observe<E: 'static>(
-        &mut self,
-        mut action: impl FnMut(&E, &WorldCell) + 'static,
-    ) -> ElementHandle {
-        let handle = (self.world).insert(Observer(Box::new(move |event, world| {
-            let event = event.downcast_ref::<E>().unwrap();
-            action(event, world);
-        })));
-        let observers = self.world.single_mut::<Observers>().unwrap();
-        let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
-        let observers_typed_element = observers_typed.entry(self.handle).or_default();
-        observers_typed_element.push(handle);
-        handle
-    }
-
-    pub fn trigger<E: 'static>(&mut self, event: &E) {
-        let cell = self.world.cell();
-        let observers = cell.single::<Observers>().unwrap();
-        if let Some(observers_typed) = observers.0.get(&TypeId::of::<E>())
-            && let Some(observers_typed_element) = observers_typed.get(&self.handle)
-        {
-            for observer in observers_typed_element {
-                if let Some(mut observer) = cell.fetch_mut_raw::<Observer>(*observer) {
-                    (observer.0)(event, &cell);
-                }
-            }
-        }
-    }
-
-    pub fn register<U: ?Sized + 'static>(
-        &mut self,
-        service: impl Fn(&dyn Element) -> &U + 'static,
-    ) {
-        let cell = self.world.cell();
-        let mut services = cell.single_mut::<Services>().unwrap();
-        let services_typed = (services.0)
-            .entry(TypeId::of::<ServicesTyped<U>>())
-            .or_insert_with(|| Box::new(ServicesTyped::<U>(HashMap::new())))
-            .downcast_mut::<ServicesTyped<U>>()
-            .unwrap();
-
-        let popback = services_typed.0.insert(self.handle, Box::new(service));
-        if popback.is_some() {
-            log::error!(
-                "duplicated service of type \"{}\" is registered on {:?}",
-                std::any::type_name::<U>(),
-                self.handle
-            );
-        }
-    }
-
-    pub fn register_mut<U: ?Sized + 'static>(
-        &mut self,
-        service: impl Fn(&mut dyn Element) -> &mut U + 'static,
-    ) {
-        let cell = self.world.cell();
-        let mut services = cell.single_mut::<Services>().unwrap();
-        let services_typed = (services.0)
-            .entry(TypeId::of::<ServicesTypedMut<U>>())
-            .or_insert_with(|| Box::new(ServicesTypedMut::<U>(HashMap::new())))
-            .downcast_mut::<ServicesTypedMut<U>>()
-            .unwrap();
-
-        let popback = services_typed.0.insert(self.handle, Box::new(service));
-        if popback.is_some() {
-            log::error!(
-                "duplicated service of type \"{}\" is registered on {:?}",
-                std::any::type_name::<U>(),
-                self.handle
-            );
-        }
-    }
-
-    /// Declare a dependency relationship. When the `other` Element is removed, this element
-    /// will be removed as well. Useful for keeping handle valid.
-    pub fn depend(&mut self, other: ElementHandle) {
-        let handle = self.handle;
-        if !self.world.contains(other) {
-            log::error!("{handle:?} try to depend on {other:?}, which does not exist");
-            return;
-        }
-        let mut other = self.world.entry(other).unwrap();
-        other.observe(move |ElementRemoved, world| {
-            world.remove(handle);
-        });
-    }
-
-    pub fn destroy(self) {
-        self.world.remove(self.handle);
-    }
-}
-
-// Center of multiple accesses in world, which also prevents constructional changes
-pub struct WorldCell<'world> {
-    world: &'world mut World,
-    occupied: RefCell<HashMap<ElementHandle, isize>>,
-    cell_idx: RefCell<ElementHandle>,
-    inserted: RefCell<HashSet<ElementHandle>>,
-    removed: RefCell<HashSet<ElementHandle>>,
-}
-impl Drop for WorldCell<'_> {
-    fn drop(&mut self) {
-        self.world.curr_idx = *self.cell_idx.get_mut();
-
-        let queue = self.world.single_mut::<Queue>().unwrap();
-        let mut buf = Vec::new();
-        buf.append(&mut queue.0);
-
-        for cmd in buf {
-            cmd(self.world);
-        }
     }
 }
 impl WorldCell<'_> {
@@ -751,59 +683,97 @@ impl WorldCell<'_> {
         self.entry(ElementHandle(0)).unwrap().trigger(event);
     }
 }
+impl WorldEntry<'_> {
+    pub fn observe<E: 'static>(
+        &mut self,
+        mut action: impl FnMut(&E, &WorldCell) + 'static,
+    ) -> ElementHandle {
+        let handle = (self.world).insert(Observer(Box::new(move |event, world| {
+            let event = event.downcast_ref::<E>().unwrap();
+            action(event, world);
+        })));
+        let observers = self.world.single_mut::<Observers>().unwrap();
+        let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
+        let observers_typed_element = observers_typed.entry(self.handle).or_default();
+        observers_typed_element.push(handle);
+        handle
+    }
 
-/// A world's immutable element reference.
-pub struct Ref<'world, T: ?Sized> {
-    ptr: *const T,
-    world: &'world WorldCell<'world>,
-    handle: ElementHandle,
-}
-impl<T: ?Sized> Deref for Ref<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        // SAFETY: guaranteed by World's cell_occupied
-        unsafe { self.ptr.as_ref().unwrap() }
+    pub fn trigger<E: 'static>(&mut self, event: &E) {
+        let cell = self.world.cell();
+        let observers = cell.single::<Observers>().unwrap();
+        if let Some(observers_typed) = observers.0.get(&TypeId::of::<E>())
+            && let Some(observers_typed_element) = observers_typed.get(&self.handle)
+        {
+            for observer in observers_typed_element {
+                if let Some(mut observer) = cell.fetch_mut_raw::<Observer>(*observer) {
+                    (observer.0)(event, &cell);
+                }
+            }
+        }
     }
-}
-impl<T: ?Sized> Drop for Ref<'_, T> {
-    fn drop(&mut self) {
-        let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied.get_mut(&self.handle).unwrap();
-        *cnt -= 1;
-    }
-}
 
-/// A world's limitedly mutable element reference.
-pub struct RefMut<'world, T: ?Sized> {
-    ptr: *mut T,
-    world: &'world WorldCell<'world>,
-    handle: ElementHandle,
-}
-impl<T: ?Sized> Deref for RefMut<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        // SAFETY: guaranteed by World's cell_occupied
-        unsafe { self.ptr.as_ref().unwrap() }
-    }
-}
-impl<T: ?Sized> DerefMut for RefMut<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        // SAFETY: guaranteed by World's cell_occupied
-        unsafe { self.ptr.as_mut().unwrap() }
-    }
-}
-impl<T: ?Sized> Drop for RefMut<'_, T> {
-    fn drop(&mut self) {
-        let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied.get_mut(&self.handle).unwrap();
-        *cnt += 1;
-    }
-}
+    pub fn register<U: ?Sized + 'static>(
+        &mut self,
+        service: impl Fn(&dyn Element) -> &U + 'static,
+    ) {
+        let cell = self.world.cell();
+        let mut services = cell.single_mut::<Services>().unwrap();
+        let services_typed = (services.0)
+            .entry(TypeId::of::<ServicesTyped<U>>())
+            .or_insert_with(|| Box::new(ServicesTyped::<U>(HashMap::new())))
+            .downcast_mut::<ServicesTyped<U>>()
+            .unwrap();
 
-/// A world cell reference with specific element selected. No borrowing effect.
-pub struct WorldCellEntry<'world> {
-    world: &'world WorldCell<'world>,
-    handle: ElementHandle,
+        let popback = services_typed.0.insert(self.handle, Box::new(service));
+        if popback.is_some() {
+            log::error!(
+                "duplicated service of type \"{}\" is registered on {:?}",
+                std::any::type_name::<U>(),
+                self.handle
+            );
+        }
+    }
+
+    pub fn register_mut<U: ?Sized + 'static>(
+        &mut self,
+        service: impl Fn(&mut dyn Element) -> &mut U + 'static,
+    ) {
+        let cell = self.world.cell();
+        let mut services = cell.single_mut::<Services>().unwrap();
+        let services_typed = (services.0)
+            .entry(TypeId::of::<ServicesTypedMut<U>>())
+            .or_insert_with(|| Box::new(ServicesTypedMut::<U>(HashMap::new())))
+            .downcast_mut::<ServicesTypedMut<U>>()
+            .unwrap();
+
+        let popback = services_typed.0.insert(self.handle, Box::new(service));
+        if popback.is_some() {
+            log::error!(
+                "duplicated service of type \"{}\" is registered on {:?}",
+                std::any::type_name::<U>(),
+                self.handle
+            );
+        }
+    }
+
+    /// Declare a dependency relationship. When the `other` Element is removed, this element
+    /// will be removed as well. Useful for keeping handle valid.
+    pub fn depend(&mut self, other: ElementHandle) {
+        let handle = self.handle;
+        if !self.world.contains(other) {
+            log::error!("{handle:?} try to depend on {other:?}, which does not exist");
+            return;
+        }
+        let mut other = self.world.entry(other).unwrap();
+        other.observe(move |ElementRemoved, world| {
+            world.remove(handle);
+        });
+    }
+
+    pub fn destroy(self) {
+        self.world.remove(self.handle);
+    }
 }
 impl WorldCellEntry<'_> {
     /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
@@ -893,6 +863,55 @@ impl WorldCellEntry<'_> {
     }
 }
 
+/// A world's immutable element reference.
+pub struct Ref<'world, T: ?Sized> {
+    ptr: *const T,
+    world: &'world WorldCell<'world>,
+    handle: ElementHandle,
+}
+
+/// A world's limitedly mutable element reference.
+pub struct RefMut<'world, T: ?Sized> {
+    ptr: *mut T,
+    world: &'world WorldCell<'world>,
+    handle: ElementHandle,
+}
+
+impl<T: ?Sized> Deref for Ref<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: guaranteed by World's cell_occupied
+        unsafe { self.ptr.as_ref().unwrap() }
+    }
+}
+impl<T: ?Sized> Deref for RefMut<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: guaranteed by World's cell_occupied
+        unsafe { self.ptr.as_ref().unwrap() }
+    }
+}
+impl<T: ?Sized> DerefMut for RefMut<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: guaranteed by World's cell_occupied
+        unsafe { self.ptr.as_mut().unwrap() }
+    }
+}
+impl<T: ?Sized> Drop for Ref<'_, T> {
+    fn drop(&mut self) {
+        let mut occupied = self.world.occupied.borrow_mut();
+        let cnt = occupied.get_mut(&self.handle).unwrap();
+        *cnt -= 1;
+    }
+}
+impl<T: ?Sized> Drop for RefMut<'_, T> {
+    fn drop(&mut self) {
+        let mut occupied = self.world.occupied.borrow_mut();
+        let cnt = occupied.get_mut(&self.handle).unwrap();
+        *cnt += 1;
+    }
+}
+
 // Internal Element #0
 #[derive(Default)]
 struct Observers(HashMap<TypeId, HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>>);
@@ -930,13 +949,15 @@ impl<U: ?Sized + 'static> ServicesPart for ServicesTypedMut<U> {
     }
 }
 impl dyn ServicesPart {
-    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
+    fn downcast_ref<T: Any>(&self) -> Option<&T> {
         (self as &dyn Any).downcast_ref()
     }
-    pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
+    fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
         (self as &mut dyn Any).downcast_mut()
     }
 }
+
+// Builtin Events
 
 pub struct ElementInserted(pub ElementHandle);
 pub struct ElementUpdate;
@@ -945,9 +966,9 @@ pub struct ElementRemoved;
 #[cfg(test)]
 mod test {
     use crate::{
-        elements::{Element, PositionedElement},
+        elements::PositionedElement,
         measures::Position,
-        world::{ElementHandle, World, WorldCell},
+        world::{Element, ElementHandle, World, WorldCell},
     };
 
     struct TestElement {

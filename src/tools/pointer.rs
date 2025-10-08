@@ -1,11 +1,11 @@
 use hashbrown::HashMap;
 
 use crate::{
-    elements::{Element, Intersect, intersect::Collider},
+    elements::{Intersect, intersect::Collider},
     lnwin::PointerEvent,
     measures::Rectangle,
     tools::focus::{Focus, Focusable},
-    world::{ElementHandle, ElementInserted, ElementRemoved, ElementUpdate, WorldCell},
+    world::{Element, ElementHandle, ElementInserted, ElementRemoved, ElementUpdate, WorldCell},
 };
 
 #[derive(Default)]

@@ -4,12 +4,12 @@ use cosmic_text::*;
 use parking_lot::Mutex;
 
 use crate::{
-    elements::{Element, OrderElement},
+    elements::OrderElement,
     interface::{Interface, Painter},
     lnwin::PointerEvent,
-    measures::{Delta, Position, Rectangle},
+    measures::{Position, Rectangle},
     tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    world::{ElementHandle, WorldCell},
+    world::{Element, ElementHandle, WorldCell},
 };
 
 pub struct TextManager {

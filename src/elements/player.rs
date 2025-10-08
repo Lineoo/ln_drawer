@@ -4,14 +4,14 @@ use winit::{
 };
 
 use crate::{
-    elements::{Element, Image, PositionedElement},
+    elements::{Image, PositionedElement},
     interface::Interface,
     measures::{Delta, Rectangle},
     tools::{
         focus::{FocusInput, FocusOn, Focusable, FocusableExt},
         pointer::{PointerHitExt, PointerHittable},
     },
-    world::{ElementHandle, ElementUpdate, WorldCell},
+    world::{Element, ElementHandle, ElementUpdate, WorldCell},
 };
 
 pub struct Player {

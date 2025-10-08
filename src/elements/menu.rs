@@ -1,7 +1,6 @@
 use crate::{
     elements::{
-        ButtonRaw, Element, Image, OrderElement, Palette, PositionElementExt, PositionedElement,
-        Text,
+        ButtonRaw, Image, OrderElement, Palette, PositionElementExt, PositionedElement, Text,
         player::Player,
         text::{TextEdit, TextManager},
     },
@@ -9,7 +8,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
     tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    world::{ElementHandle, ElementInserted, WorldCell},
+    world::{Element, ElementHandle, ElementInserted, WorldCell},
 };
 
 const PAD: i32 = 10;

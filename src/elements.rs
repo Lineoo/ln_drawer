@@ -7,8 +7,6 @@ mod player;
 mod stroke;
 mod text;
 
-use std::any::Any;
-
 pub use button::ButtonRaw;
 pub use image::Image;
 pub use intersect::Intersect;
@@ -19,28 +17,8 @@ pub use text::{Text, TextManager};
 
 use crate::{
     measures::Position,
-    world::{ElementHandle, WorldCell},
+    world::{Element, ElementHandle, WorldCell},
 };
-
-#[expect(unused_variables)]
-pub trait Element: Any {
-    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell)
-    where
-        Self: Sized,
-    {
-    }
-}
-impl dyn Element {
-    pub fn is<T: Any>(&self) -> bool {
-        (self as &dyn Any).is::<T>()
-    }
-    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
-        (self as &dyn Any).downcast_ref()
-    }
-    pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
-        (self as &mut dyn Any).downcast_mut()
-    }
-}
 
 pub trait PositionedElement: Element {
     fn get_position(&self) -> Position;

@@ -1,12 +1,12 @@
 use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
-    elements::{Element, PositionElementExt, PositionedElement},
+    elements::{PositionElementExt, PositionedElement},
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
     tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    world::{ElementHandle, WorldCell},
+    world::{Element, ElementHandle, WorldCell},
 };
 
 const WIDTH: u32 = 128;

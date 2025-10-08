@@ -1,10 +1,10 @@
 use crate::{
-    elements::{Element, OrderElement, OrderElementExt, PositionElementExt, PositionedElement},
+    elements::{OrderElement, OrderElementExt, PositionElementExt, PositionedElement},
     interface::{Interface, Square},
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
     tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    world::{ElementHandle, WorldCell},
+    world::{Element, ElementHandle, WorldCell},
 };
 
 /// Only contains raw button interaction logic. See [`Button`] if a complete button

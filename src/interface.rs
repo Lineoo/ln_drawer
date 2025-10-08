@@ -13,13 +13,13 @@ pub use square::Square;
 pub use wireframe::Wireframe;
 
 use crate::{
-    elements::Element,
     interface::{
         painter::PainterBuffer, square::SquareBuffer, viewport::InterfaceViewport,
         wireframe::WireframeBuffer,
     },
     lnwin::Viewport,
     measures::Rectangle,
+    world::Element,
 };
 
 /// Main render part

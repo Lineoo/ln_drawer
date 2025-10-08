@@ -2,13 +2,12 @@ use std::{error::Error, path::Path};
 
 use crate::{
     elements::{
-        Element, OrderElement, OrderElementExt, PositionElementExt, PositionedElement,
-        intersect::Collider,
+        OrderElement, OrderElementExt, PositionElementExt, PositionedElement, intersect::Collider,
     },
     interface::{Interface, Painter},
     measures::{Delta, Position, Rectangle},
     tools::pointer::PointerHittable,
-    world::{ElementHandle, ElementUpdate, WorldCell},
+    world::{Element, ElementHandle, ElementUpdate, WorldCell},
 };
 
 pub struct Image {

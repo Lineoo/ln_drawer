@@ -1,7 +1,6 @@
 use crate::{
-    elements::Element,
     measures::{Position, Rectangle},
-    world::{ElementHandle, WorldCell},
+    world::{Element, ElementHandle, WorldCell},
 };
 
 #[derive(Default)]

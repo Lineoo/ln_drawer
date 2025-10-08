@@ -1,12 +1,12 @@
 use hashbrown::HashMap;
 
 use crate::{
-    elements::{Element, Palette},
+    elements::Palette,
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
     tools::pointer::PointerHit,
-    world::{ElementHandle, WorldCell},
+    world::{Element, ElementHandle, WorldCell},
 };
 
 const CHUNK_SIZE: i32 = 512;

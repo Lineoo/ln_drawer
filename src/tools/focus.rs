@@ -1,9 +1,6 @@
 use winit::event::{KeyEvent, WindowEvent};
 
-use crate::{
-    elements::Element,
-    world::{ElementHandle, WorldCell},
-};
+use crate::world::{Element, ElementHandle, WorldCell};
 
 #[derive(Default)]
 pub struct Focus {
