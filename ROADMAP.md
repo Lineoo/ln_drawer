@@ -605,9 +605,7 @@ world.entry(handle).observe(..).unwrap();
 ```
 - 这个会很大地破坏现有的 entry 格式
 
-# 这个 Update 是来干嘛的？
-烦躁。太丑了啊！
-
+# 高级数据更改 
 我希望我改完 Position 之后不用我提醒，反正你知道我改了，更新就完事了。
 
 你只要：
@@ -617,12 +615,12 @@ this.register::<Position>(|this| &this.rect.position);
 
 他只要：
 ```rust
-this.observe::<FetchedMut<Position>>();
+this.observe::<Modified<Position>>();
 ```
 
 我只要：
 ```rust
-let position = this.fetch::<Position>(handle);
+let position = this.modify::<Position>(handle);
 position += Delta::new(10, 10);
 ```
 
