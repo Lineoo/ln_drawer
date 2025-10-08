@@ -77,7 +77,7 @@ impl World {
 
         // when_inserted
         let cell = self.cell();
-        let mut element = cell.fetch_mut_dyn(handle).unwrap();
+        let mut element = cell.fetch_mut_raw::<T>(handle).unwrap();
         element.when_inserted(handle, &cell);
         drop(element);
         drop(cell);
@@ -93,13 +93,6 @@ impl World {
 
         // ElementRemoved
         self.entry(handle).unwrap().trigger(&ElementRemoved);
-
-        // when_removed
-        let cell = self.cell();
-        let mut element = cell.fetch_mut_dyn(handle).unwrap();
-        element.when_removed(handle, &cell);
-        drop(element);
-        drop(cell);
 
         // remove related services
         for services_typed in &mut self.single_mut::<Services>().unwrap().0 {
@@ -442,7 +435,7 @@ impl WorldCell<'_> {
 
             // when_inserted
             let cell = world.cell();
-            let mut element = cell.fetch_mut_dyn(estimate_handle).unwrap();
+            let mut element = cell.fetch_mut_raw::<T>(estimate_handle).unwrap();
             element.when_inserted(estimate_handle, &cell);
             drop(element);
             drop(cell);

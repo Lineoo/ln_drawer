@@ -3,9 +3,9 @@ mod image;
 pub mod intersect;
 mod menu;
 mod palette;
+mod player;
 mod stroke;
 mod text;
-mod player;
 
 use std::any::Any;
 
@@ -24,8 +24,11 @@ use crate::{
 
 #[expect(unused_variables)]
 pub trait Element: Any {
-    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {}
-    fn when_removed(&mut self, handle: ElementHandle, world: &WorldCell) {}
+    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell)
+    where
+        Self: Sized,
+    {
+    }
 }
 impl dyn Element {
     pub fn is<T: Any>(&self) -> bool {

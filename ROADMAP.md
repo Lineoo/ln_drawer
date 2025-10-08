@@ -444,7 +444,7 @@ pub fn new(queue: &mut WorldQueue) -> Foo {
 
 但是怎么让世界能够读取这个队列是一个很重要的事情。
 
-# 依赖更改
+# （废）依赖更改
 目前依赖是实现了的（通过 `depend` 方法），但是问题是——太丑了！entry 模式绝对还可以添加一点东西。
 
 不好看：
@@ -504,3 +504,126 @@ let girl = parent.entry_with(Girl);
 girl.insert(Toys);
 girl.finish();
 ```
+
+# 依赖更改 II
+上面的写法其实问题很大：
+- A 的 entry 下允许再次调用 entry 索引 B，B 显然并不依赖于 A，但生成的 observer 又依赖于 A
+- 其实那个 observer 写法是歧义的，根本不可能实现
+- 对 entry 有很大的破坏性更改
+
+除了 `entry_with` 的写法完全可以保留，其他的都有以上的问题。
+
+```rust
+let parent: Group<'_, World> = world.entry_with(Parent).group(); // 隐式添加一个对 ElementInsert 的 Observer
+parent.insert(Child); // 使用 Deref
+// drop 的时候移除 Observer
+```
+
+```rust
+let parent = world.insert(Parent);
+let parent: Group<'_, World> = world.entry(parent).group();
+parent.insert(Child);
+```
+
+```rust
+let span: Span<'_, World> = world.span(move |new_element: WorldEntry| new_element.depend(parent));
+```
+
+# 数据持久化
+extension: ln-save
+
+Windows: %AppData%/Roaming/LnDrawer/world.ln-save
+Linux: $XDG_DATA_HOME/LnDrawer/world.ln-save
+
+# 输入输出与数据格式
+怎么说，我很喜欢 MC 模组的各种输入输出（
+
+我们把一个交互界面分为 6 种
+- 主动（输入）
+- 主动（输出）
+- 被动（输入）
+- 被动（输出）
+- 被动（双工）
+- 禁用
+
+输入输出的东西也是元素 Element。
+
+接口 port
+
+# 高级 Service 逻辑与附生元素
+想要让 String 成为一个 Element 的想法是非常自然的不是吗？我可以简单地添加一个 String 到世界里，然后就可以显示它，非常直观而简单。
+
+```rust
+world.observe(|&ElementInserted(handle), world| {
+    let text = world.fetch::<Text>(handle); // 在别人看来就是一个文本组件
+});
+world.insert(String::from("Hello, world!"));
+```
+
+这个逻辑一直是可以实现的：
+```rust
+impl Element for String {
+    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
+        let mut this = world.entry(handle).unwrap();
+        let text = world.single_mut::<Interface>().unwrap().create_text(/* .. */);
+        this.register::<Text>(move |this| {
+            text.
+        });
+    }
+}
+```
+所以有什么改的必要吗？？？
+
+register 可以为 Option ？有时候是有时候不是？我觉得挺好的。
+
+有一个我想：
+```rust
+this.observe::<FetchedMut<Text>>();
+```
+这个会在 fetch 完毕后触发。这需要用到智能指针……
+
+# wgpu 集成深度
+目前对于 wgpu 我们采用了最小集成，即整个世界只有 Interface 这么一个元素进行交互。我觉得挺好。
+
+# World for Element
+世界是一个 Element 显然也是合理的吧？！子世界嘛！
+
+# 不要再 `let mut this = world.entry(handle).unwrap();` 了！
+首先 Element 现在更应该直接归到 world 模块里。然后改叫 `WorldElement` 才合理。因为 Element 的所有都是为了 World 而生的！
+
+直接给 entry
+```rust
+fn when_inserted(this: &WorldCellEntry, world: &WorldCell) {}
+```
+
+需要在 entry 模式下访问 handle，以及调用 fetch
+- 这个一直是可以实现的但是我不喜欢……
+
+entry 完全的命令格式，直接：
+```rust
+world.entry(handle).observe(..).unwrap();
+```
+- 这个会很大地破坏现有的 entry 格式
+
+# 这个 Update 是来干嘛的？
+烦躁。太丑了啊！
+
+我希望我改完 Position 之后不用我提醒，反正你知道我改了，更新就完事了。
+
+你只要：
+```rust
+this.register::<Position>(|this| &this.rect.position);
+```
+
+他只要：
+```rust
+this.observe::<FetchedMut<Position>>();
+```
+
+我只要：
+```rust
+let position = this.fetch::<Position>(handle);
+position += Delta::new(10, 10);
+```
+
+就都能获得更新。
