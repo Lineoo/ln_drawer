@@ -1,7 +1,6 @@
 use std::{
     any::{Any, TypeId},
     cell::RefCell,
-    marker::PhantomData,
     ops::{Deref, DerefMut},
 };
 
@@ -247,27 +246,6 @@ impl World {
         self.elements
             .get_mut(&handle)
             .map(|element| element.as_mut())
-    }
-
-    pub fn modify<T: ?Sized + 'static>(
-        &mut self,
-        handle: ElementHandle,
-    ) -> Option<ModifyGuard<'_, T>> {
-        let services = self.single::<Services>().unwrap() as *const Services;
-        let element = self.elements.get_mut(&handle)?.as_mut();
-        let element_ptr = element as *mut dyn Element;
-
-        let services = unsafe { services.as_ref().unwrap() };
-        let services_typed = services.0.get(&TypeId::of::<Modifiers<T>>())?;
-        let services_typed = services_typed.downcast_ref::<Modifiers<T>>().unwrap();
-        let service = services_typed.0.get(&handle)?;
-
-        Some(ModifyGuard {
-            ptr: service(unsafe { element_ptr.as_mut().unwrap() }),
-            world: self,
-            handle,
-            modified: false,
-        })
     }
 
     pub fn foreach<T: ?Sized + 'static>(&self, mut action: impl FnMut(&T)) {
@@ -606,43 +584,6 @@ impl WorldCell<'_> {
         })
     }
 
-    pub fn modify<T: ?Sized + 'static>(
-        &mut self,
-        handle: ElementHandle,
-    ) -> Option<ModifyCellGuard<'_, T>> {
-        if self.removed.borrow().contains(&handle) {
-            return None;
-        }
-
-        let mut occupied = self.occupied.borrow_mut();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt != 0 {
-            panic!("{handle:?} is borrowed");
-        }
-
-        *cnt -= 1;
-        let element = self.world.elements.get(&handle)?.as_ref();
-
-        // SAFETY: The services set is immutable during cell span
-        let services = self.world.single::<Services>().unwrap();
-        let services_typed = services.0.get(&TypeId::of::<ServicesTypedMut<T>>())?;
-        let services_typed = services_typed
-            .downcast_ref::<ServicesTypedMut<T>>()
-            .unwrap();
-        let service = services_typed.0.get(&handle)?;
-        let element = element as *const dyn Element as *mut dyn Element;
-        let element = unsafe { element.as_mut().unwrap() };
-        let ptr = service(element) as *mut T;
-
-        Some(ModifyCellGuard {
-            ptr,
-            world: self,
-            handle,
-            modified: false,
-        })
-    }
-
     pub fn foreach<T: ?Sized + 'static>(&self, mut action: impl FnMut(&T, ElementHandle)) {
         let services = self.world.single::<Services>().unwrap();
         if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<T>>()) {
@@ -923,61 +864,6 @@ impl WorldCellEntry<'_> {
     }
 }
 
-pub struct ModifyGuard<'world, T: ?Sized + 'static> {
-    ptr: *mut T,
-    world: &'world mut World,
-    handle: ElementHandle,
-    modified: bool,
-}
-pub struct ModifyCellGuard<'world, T: ?Sized + 'static> {
-    ptr: *mut T,
-    world: &'world WorldCell<'world>,
-    handle: ElementHandle,
-    modified: bool,
-}
-
-impl<T: ?Sized> Deref for ModifyGuard<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        unsafe { self.ptr.as_ref().unwrap() }
-    }
-}
-impl<T: ?Sized> DerefMut for ModifyGuard<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.modified = true;
-        unsafe { self.ptr.as_mut().unwrap() }
-    }
-}
-impl<T: ?Sized> Deref for ModifyCellGuard<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        unsafe { self.ptr.as_ref().unwrap() }
-    }
-}
-impl<T: ?Sized> DerefMut for ModifyCellGuard<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.modified = true;
-        unsafe { self.ptr.as_mut().unwrap() }
-    }
-}
-impl<T: ?Sized> Drop for ModifyGuard<'_, T> {
-    fn drop(&mut self) {
-        if self.modified {
-            (self.world.entry(self.handle).unwrap()).trigger(&Modified(PhantomData::<T>));
-        }
-    }
-}
-impl<T: ?Sized> Drop for ModifyCellGuard<'_, T> {
-    fn drop(&mut self) {
-        if self.modified {
-            (self.world.entry(self.handle).unwrap()).trigger(&Modified(PhantomData::<T>));
-        }
-        let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied.get_mut(&self.handle).unwrap();
-        *cnt += 1;
-    }
-}
-
 /// A world's immutable element reference.
 pub struct Ref<'world, T: ?Sized> {
     ptr: *const T,
@@ -1072,14 +958,6 @@ impl dyn ServicesPart {
     }
 }
 
-struct Modifiers<U: ?Sized>(HashMap<ElementHandle, Modifier<U>>);
-type Modifier<U> = Box<dyn Fn(&mut dyn Element) -> &mut U>;
-impl<U: ?Sized + 'static> ServicesPart for Modifiers<U> {
-    fn remove(&mut self, handle: &ElementHandle) {
-        self.0.remove(handle);
-    }
-}
-
 // Builtin Events
 
 pub struct ElementInserted(pub ElementHandle);
@@ -1087,7 +965,6 @@ pub struct ElementRemoved(pub ElementHandle);
 
 pub struct Updated;
 pub struct Destroy;
-pub struct Modified<U: ?Sized>(PhantomData<U>);
 
 #[cfg(test)]
 mod test {
