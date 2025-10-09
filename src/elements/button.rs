@@ -1,10 +1,10 @@
 use crate::{
-    elements::{OrderElement, OrderElementExt, PositionElementExt, PositionedElement},
+    elements::{OrderElement, OrderElementExt},
     interface::{Interface, Square},
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
     tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    world::{Element, ElementHandle, WorldCell},
+    world::{Element, ElementHandle, Modifier, WorldCell},
 };
 
 /// Only contains raw button interaction logic. See [`Button`] if a complete button
@@ -33,27 +33,19 @@ impl Element for ButtonRaw {
         //     this.square.as_mut().unwrap().set_visible(false);
         // });
 
+        this.observe::<Modifier<Position>>(move |modifier, world| {
+            let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
+            this.rect.origin = modifier.invoke(this.rect.origin);
+        });
+
         let mut interface = world.single_mut::<Interface>().unwrap();
         let square = interface.create_square(self.rect, [1.0, 1.0, 1.0, 0.6]);
         square.set_z_order(self.order);
         square.set_visible(false);
         self.square = Some(square);
 
-        self.register_position(handle, world);
         self.register_order(handle, world);
         self.register_hittable(handle, world);
-    }
-}
-impl PositionedElement for ButtonRaw {
-    fn get_position(&self) -> Position {
-        self.rect.origin
-    }
-
-    fn set_position(&mut self, position: Position) {
-        self.rect.origin = position;
-        if let Some(square) = &mut self.square {
-            square.set_rect(self.rect);
-        }
     }
 }
 impl OrderElement for ButtonRaw {

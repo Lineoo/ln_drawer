@@ -1,12 +1,11 @@
 use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
-    elements::{PositionElementExt, PositionedElement},
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
     tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    world::{Element, ElementHandle, WorldCell},
+    world::{Element, ElementHandle, Modifier, WorldCell},
 };
 
 const WIDTH: u32 = 128;
@@ -28,24 +27,20 @@ impl Element for Palette {
             _ => (),
         });
 
-        self.register_position(handle, world);
+        this.observe::<Modifier<Position>>(move |modifier, world| {
+            let mut this = world.fetch_mut::<Palette>(handle).unwrap();
+            let origin = this.painter.get_position();
+            let position = modifier.invoke(origin);
+            let delta = position - origin;
+
+            let knob_origin = this.get_knob_position();
+            let knob_position = knob_origin + delta;
+
+            this.painter.set_position(position);
+            this.knob.set_position(knob_position - Delta::splat(1));
+        });
+
         self.register_hittable(handle, world);
-    }
-}
-impl PositionedElement for Palette {
-    fn get_position(&self) -> Position {
-        self.painter.get_position()
-    }
-
-    fn set_position(&mut self, position: Position) {
-        let origin = self.get_position();
-        let delta = position - origin;
-
-        let knob_origin = self.get_knob_position();
-        let knob_position = knob_origin + delta;
-
-        self.painter.set_position(position);
-        self.knob.set_position(knob_position - Delta::splat(1));
     }
 }
 impl PointerHittable for Palette {
@@ -120,7 +115,7 @@ impl Palette {
     }
 
     pub fn pick_color(&self) -> [u8; 4] {
-        let base_position = self.get_position();
+        let base_position = self.painter.get_position();
         let knob_position = self.get_knob_position();
 
         let x = knob_position.x - base_position.x;

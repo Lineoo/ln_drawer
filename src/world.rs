@@ -958,22 +958,38 @@ impl dyn ServicesPart {
     }
 }
 
+pub struct Modifier<T> {
+    function: Box<dyn Fn(T) -> T>,
+}
+impl<T> Modifier<T> {
+    pub fn new(f: impl Fn(T) -> T + 'static) -> Modifier<T> {
+        Modifier {
+            function: Box::new(f),
+        }
+    }
+
+    pub fn invoke(&self, value: T) -> T {
+        (self.function)(value)
+    }
+}
+
 // Builtin Events
 
 pub struct ElementInserted(pub ElementHandle);
 pub struct ElementRemoved(pub ElementHandle);
-
-pub struct Updated;
 pub struct Destroy;
 
 #[cfg(test)]
 mod test {
     use crate::{
-        elements::PositionedElement,
         measures::Position,
         world::{Element, ElementHandle, World, WorldCell},
     };
 
+    trait PositionedElement: Element {
+        fn get_position(&self) -> Position;
+        fn set_position(&mut self, position: Position);
+    }
     struct TestElement {
         position: Position,
     }

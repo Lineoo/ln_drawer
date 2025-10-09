@@ -1,13 +1,11 @@
 use std::{error::Error, path::Path};
 
 use crate::{
-    elements::{
-        OrderElement, OrderElementExt, PositionElementExt, PositionedElement, intersect::Collider,
-    },
+    elements::{OrderElement, OrderElementExt, intersect::Collider},
     interface::{Interface, Painter},
     measures::{Delta, Position, Rectangle},
     tools::pointer::PointerHittable,
-    world::{Element, ElementHandle, Updated, WorldCell},
+    world::{Element, ElementHandle, Modifier, WorldCell},
 };
 
 pub struct Image {
@@ -15,32 +13,22 @@ pub struct Image {
 }
 impl Element for Image {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
+        let mut this = world.entry(handle).unwrap();
         let intersect = world.insert(Collider {
             rect: self.painter.get_rect(),
             z_order: 0,
         });
+        // Collider service instead
         world.entry(intersect).unwrap().depend(handle);
-        (world.entry(handle).unwrap()).observe::<Updated>(move |_event, world| {
-            let position = world
-                .fetch::<dyn PositionedElement>(handle)
-                .unwrap()
-                .get_position();
+        this.observe::<Modifier<Position>>(move |modifier, world| {
+            let mut this = world.fetch_mut::<Image>(handle).unwrap();
+            let dest = modifier.invoke(this.painter.get_position());
+            this.painter.set_position(dest);
             let mut intersect = world.fetch_mut::<Collider>(intersect).unwrap();
-
-            intersect.rect.origin = position;
+            intersect.rect.origin = dest;
         });
 
-        self.register_position(handle, world);
         self.register_order(handle, world);
-    }
-}
-impl PositionedElement for Image {
-    fn get_position(&self) -> Position {
-        self.painter.get_position()
-    }
-
-    fn set_position(&mut self, position: Position) {
-        self.painter.set_position(position);
     }
 }
 impl OrderElement for Image {
@@ -89,5 +77,13 @@ impl Image {
         );
 
         Ok(Image { painter })
+    }
+
+    pub fn get_position(&self) -> Position {
+        self.painter.get_position()
+    }
+
+    pub fn set_position(&mut self, position: Position) {
+        self.painter.set_position(position);
     }
 }

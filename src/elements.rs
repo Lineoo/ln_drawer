@@ -15,24 +15,7 @@ pub use palette::Palette;
 pub use stroke::StrokeLayer;
 pub use text::{Text, TextManager};
 
-use crate::{
-    measures::Position,
-    world::{Element, ElementHandle, WorldCell},
-};
-
-pub trait PositionedElement: Element {
-    fn get_position(&self) -> Position;
-    fn set_position(&mut self, position: Position);
-}
-
-trait PositionElementExt: PositionedElement + Sized {
-    fn register_position(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry(handle).unwrap();
-        this.register::<dyn PositionedElement>(|this| this.downcast_ref::<Self>().unwrap());
-        this.register_mut::<dyn PositionedElement>(|this| this.downcast_mut::<Self>().unwrap());
-    }
-}
-impl<T: PositionedElement> PositionElementExt for T {}
+use crate::world::{Element, ElementHandle, WorldCell};
 
 pub trait OrderElement: Element {
     fn get_order(&self) -> isize;

@@ -1,11 +1,11 @@
 use hashbrown::HashMap;
 
 use crate::{
-    elements::{Intersect, intersect::Collider},
+    elements::{intersect::Collider, Intersect},
     lnwin::PointerEvent,
-    measures::Rectangle,
+    measures::{Position, Rectangle},
     tools::focus::{Focus, Focusable},
-    world::{Element, ElementHandle, ElementInserted, Destroy, Updated, WorldCell},
+    world::{Destroy, Element, ElementHandle, ElementInserted, Modifier, WorldCell},
 };
 
 #[derive(Default)]
@@ -67,7 +67,7 @@ impl Element for PointerHitter {
                 let mut hitter = world.single_mut::<PointerHitter>().unwrap();
                 hitter.hosts.insert(collider, handle);
 
-                (world.entry(handle).unwrap()).observe(move |Updated, world| {
+                (world.entry(handle).unwrap()).observe::<Modifier<Position>>(move |_, world| {
                     let hittable = world.fetch::<dyn PointerHittable>(handle).unwrap();
                     let mut collider = world.fetch_mut::<Collider>(collider).unwrap();
                     collider.rect = hittable.get_hitting_rect();

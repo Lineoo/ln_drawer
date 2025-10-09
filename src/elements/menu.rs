@@ -1,6 +1,6 @@
 use crate::{
     elements::{
-        ButtonRaw, Image, OrderElement, Palette, PositionElementExt, PositionedElement, Text,
+        ButtonRaw, Image, OrderElement, Palette, Text,
         player::Player,
         text::{TextEdit, TextManager},
     },
@@ -78,17 +78,7 @@ impl Element for Menu {
 
         world.entry(obs).unwrap().depend(handle);
 
-        self.register_position(handle, world);
         self.register_hittable(handle, world);
-    }
-}
-impl PositionedElement for Menu {
-    fn get_position(&self) -> Position {
-        self.frame.get_position()
-    }
-
-    fn set_position(&mut self, position: Position) {
-        self.frame.set_position(position);
     }
 }
 impl PointerHittable for Menu {

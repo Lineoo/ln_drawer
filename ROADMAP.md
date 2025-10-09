@@ -529,6 +529,10 @@ parent.insert(Child);
 let span: Span<'_, World> = world.span(move |new_element: WorldEntry| new_element.depend(parent));
 ```
 
+同时，依赖应该不再依靠 Observer 实现，因为 Observer 本身需要依赖，故极易造成递归死循环。我们全部换成独立的实现，这样也可以使 Observer 更加自由。
+
+有关 Observer 自删除后的清理，我们应让 Observer 保存自己的侦测数据以便索引。
+
 # 数据持久化
 extension: ln-save
 
@@ -625,3 +629,37 @@ position += Delta::new(10, 10);
 ```
 
 就都能获得更新。
+
+# Service 的 getter 和 setter
+
+使用事件系统进行更改
+```rust
+this.trigger(Modifier::new(|item: Position| item + 1));
+this.trigger(Modifier::new(|_| Position::new(1, 2)));
+```
+
+内源读取
+```rust
+this.observe::<Modifier<Position>>(move |modifier, world| {
+    let this = world.fetch_mut(handle).unwrap();
+    this.origin = modifier.invoke(this.origin + Delta::splat(1)) - Delta::splat(1);
+})
+```
+
+# 更直观地写
+```rust
+world.observe(|event, world: &WorldCell| {
+    // ... //
+})
+element.observe(|event, element: WorldCellEntry| {
+    // ... Why not? ... //
+})
+```
+
+深思熟虑。
+```rust
+fn when_inserted(&mut self, entry: WorldCellEntry) {
+    let handle: ElementHandle = entry.handle();
+    let world: &WorldCell = entry.world();
+}
+```
