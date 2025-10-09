@@ -9,7 +9,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
     tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    world::{Element, ElementHandle, WorldCell},
+    world::{Element, WorldCellEntry},
 };
 
 pub struct TextManager {
@@ -122,12 +122,12 @@ pub struct TextEdit {
     swash_cache: Arc<Mutex<SwashCache>>,
 }
 impl Element for TextEdit {
-    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        self.register_hittable(handle, world);
+    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        self.register_hittable(entry.handle(), entry.world());
 
-        (world.entry(handle).unwrap()).observe::<PointerHit>(move |event, world| match event.0 {
+        entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Pressed(position) => {
-                let mut this = world.fetch_mut_raw::<TextEdit>(handle).unwrap();
+                let mut this = entry.fetch_mut_raw::<TextEdit>(entry.handle()).unwrap();
                 let this = &mut *this;
 
                 let point = position - this.inner.get_rect().left_up();
@@ -147,7 +147,7 @@ impl Element for TextEdit {
                 this.redraw();
             }
             PointerEvent::Moved(position) => {
-                let mut this = world.fetch_mut_raw::<TextEdit>(handle).unwrap();
+                let mut this = entry.fetch_mut_raw::<TextEdit>(entry.handle()).unwrap();
                 let this = &mut *this;
 
                 let point = position - this.inner.get_rect().left_up();

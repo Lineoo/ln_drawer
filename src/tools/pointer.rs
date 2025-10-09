@@ -5,7 +5,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
     tools::focus::{Focus, Focusable},
-    world::{Destroy, Element, ElementHandle, ElementInserted, Modifier, WorldCell},
+    world::{Destroy, Element, ElementHandle, ElementInserted, Modifier, WorldCell, WorldCellEntry},
 };
 
 #[derive(Default)]
@@ -14,10 +14,10 @@ pub struct PointerHitter {
     hosts: HashMap<ElementHandle, ElementHandle>,
 }
 impl Element for PointerHitter {
-    fn when_inserted(&mut self, _handle: ElementHandle, world: &WorldCell) {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
         let mut pressed = false;
         let mut pointer_on = None;
-        world.observe::<PointerEvent>(move |&event, world| {
+        entry.world().observe::<PointerEvent>(move |&event, world| {
             let intersect = world.single::<Intersect>().unwrap();
             let selection = world.single::<PointerHitter>().unwrap();
 
@@ -57,7 +57,7 @@ impl Element for PointerHitter {
             }
         });
 
-        world.observe(|&ElementInserted(handle), world| {
+        entry.world().observe(|&ElementInserted(handle), world| {
             if let Some(hittable) = world.fetch::<dyn PointerHittable>(handle) {
                 let collider = world.insert(Collider {
                     rect: hittable.get_hitting_rect(),
@@ -67,17 +67,17 @@ impl Element for PointerHitter {
                 let mut hitter = world.single_mut::<PointerHitter>().unwrap();
                 hitter.hosts.insert(collider, handle);
 
-                (world.entry(handle).unwrap()).observe::<Modifier<Position>>(move |_, world| {
-                    let hittable = world.fetch::<dyn PointerHittable>(handle).unwrap();
-                    let mut collider = world.fetch_mut::<Collider>(collider).unwrap();
+                (world.entry(handle).unwrap()).observe::<Modifier<Position>>(move |_, entry| {
+                    let hittable = entry.fetch::<dyn PointerHittable>(handle).unwrap();
+                    let mut collider = entry.fetch_mut::<Collider>(collider).unwrap();
                     collider.rect = hittable.get_hitting_rect();
                     collider.z_order = hittable.get_hitting_order();
                 });
 
-                (world.entry(handle).unwrap()).observe(move |Destroy, world| {
-                    let mut selection = world.single_mut::<PointerHitter>().unwrap();
+                (world.entry(handle).unwrap()).observe(move |Destroy, entry| {
+                    let mut selection = entry.single_mut::<PointerHitter>().unwrap();
                     selection.hosts.remove(&collider);
-                    world.remove(collider);
+                    entry.remove(collider);
                 });
             }
         });

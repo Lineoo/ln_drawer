@@ -4,26 +4,25 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image},
+    elements::Image,
     interface::Interface,
     measures::{Delta, Rectangle},
     tools::{
         focus::{FocusInput, FocusOn, Focusable, FocusableExt},
         pointer::{PointerHitExt, PointerHittable},
     },
-    world::{Element, ElementHandle, WorldCell},
+    world::{Element, WorldCellEntry},
 };
 
 pub struct Player {
     image: Image,
 }
 impl Element for Player {
-    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry(handle).unwrap();
-        this.observe(move |FocusOn, _world| {
+    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        entry.observe(move |FocusOn, _entry| {
             println!("player is here!");
         });
-        this.observe(move |FocusInput(event), world| {
+        entry.observe(move |FocusInput(event), entry| {
             if event.state != ElementState::Pressed {
                 return;
             }
@@ -36,14 +35,14 @@ impl Element for Player {
                 _ => Delta::splat(0),
             };
 
-            let mut this = world.fetch_mut_raw::<Player>(handle).unwrap();
+            let mut this = entry.fetch_mut_raw::<Player>(entry.handle()).unwrap();
             
             let position = this.image.get_position();
             this.image.set_position(position + delta);
         });
 
-        self.register_hittable(handle, world);
-        self.register_focus(handle, world);
+        self.register_hittable(entry.handle(), entry.world());
+        self.register_focus(entry.handle(), entry.world());
     }
 }
 impl PointerHittable for Player {

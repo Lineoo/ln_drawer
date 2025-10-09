@@ -4,7 +4,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
     tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    world::{Element, ElementHandle, Modifier, WorldCell},
+    world::{Element, Modifier, WorldCell, WorldCellEntry},
 };
 
 /// Only contains raw button interaction logic. See [`Button`] if a complete button
@@ -16,14 +16,14 @@ pub struct ButtonRaw {
     square: Option<Square>,
 }
 impl Element for ButtonRaw {
-    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry(handle).unwrap();
-        this.observe::<PointerHit>(move |event, world| {
+    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        entry.observe::<PointerHit>(move |event, entry| {
             if let PointerHit(PointerEvent::Pressed(_)) = event {
-                let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
-                (this.action)(world);
+                let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();
+                (this.action)(entry.world());
             }
         });
+
         // this.observe::<PointerEnter>(move |_event, world| {
         //     let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
         //     this.square.as_mut().unwrap().set_visible(true);
@@ -33,19 +33,19 @@ impl Element for ButtonRaw {
         //     this.square.as_mut().unwrap().set_visible(false);
         // });
 
-        this.observe::<Modifier<Position>>(move |modifier, world| {
-            let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
+        entry.observe::<Modifier<Position>>(move |modifier, entry| {
+            let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();
             this.rect.origin = modifier.invoke(this.rect.origin);
         });
 
-        let mut interface = world.single_mut::<Interface>().unwrap();
+        let mut interface = entry.single_mut::<Interface>().unwrap();
         let square = interface.create_square(self.rect, [1.0, 1.0, 1.0, 0.6]);
         square.set_z_order(self.order);
         square.set_visible(false);
         self.square = Some(square);
 
-        self.register_order(handle, world);
-        self.register_hittable(handle, world);
+        self.register_order(entry.handle(), entry.world());
+        self.register_hittable(entry.handle(), entry.world());
     }
 }
 impl OrderElement for ButtonRaw {

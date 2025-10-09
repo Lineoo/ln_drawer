@@ -564,50 +564,24 @@ world.observe(|&ElementInserted(handle), world| {
 world.insert(String::from("Hello, world!"));
 ```
 
-这个逻辑一直是可以实现的：
+可以实现的：
 ```rust
 impl Element for String {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
         let mut this = world.entry(handle).unwrap();
         let text = world.single_mut::<Interface>().unwrap().create_text(/* .. */);
         this.register::<Text>(move |this| {
-            text.
+            // ..
         });
     }
 }
 ```
-所以有什么改的必要吗？？？
-
-register 可以为 Option ？有时候是有时候不是？我觉得挺好的。
-
-有一个我想：
-```rust
-this.observe::<FetchedMut<Text>>();
-```
-这个会在 fetch 完毕后触发。这需要用到智能指针……
 
 # wgpu 集成深度
 目前对于 wgpu 我们采用了最小集成，即整个世界只有 Interface 这么一个元素进行交互。我觉得挺好。
 
 # World for Element
 世界是一个 Element 显然也是合理的吧？！子世界嘛！
-
-# 不要再 `let mut this = world.entry(handle).unwrap();` 了！
-首先 Element 现在更应该直接归到 world 模块里。然后改叫 `WorldElement` 才合理。因为 Element 的所有都是为了 World 而生的！
-
-直接给 entry
-```rust
-fn when_inserted(this: &WorldCellEntry, world: &WorldCell) {}
-```
-
-需要在 entry 模式下访问 handle，以及调用 fetch
-- 这个一直是可以实现的但是我不喜欢……
-
-entry 完全的命令格式，直接：
-```rust
-world.entry(handle).observe(..).unwrap();
-```
-- 这个会很大地破坏现有的 entry 格式
 
 # 高级数据更改 
 我希望我改完 Position 之后不用我提醒，反正你知道我改了，更新就完事了。

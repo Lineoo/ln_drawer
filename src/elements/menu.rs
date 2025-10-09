@@ -8,7 +8,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
     tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    world::{Element, ElementHandle, ElementInserted, WorldCell},
+    world::{Element, ElementInserted, WorldCell, WorldCellEntry},
 };
 
 const PAD: i32 = 10;
@@ -28,8 +28,9 @@ pub struct Menu {
     entries: Vec<MenuEntry>,
 }
 impl Element for Menu {
-    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let obs = world.observe::<PointerEvent>(move |event, world| {
+    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        let handle = entry.handle();
+        let obs = entry.world().observe::<PointerEvent>(move |event, world| {
             if let &PointerEvent::Moved(point) = event {
                 let mut this = world.fetch_mut::<Menu>(handle).unwrap();
                 let frame = this.frame.get_rect();
@@ -53,10 +54,10 @@ impl Element for Menu {
             }
         });
 
-        world.entry(obs).unwrap().depend(handle);
+        entry.entry(obs).unwrap().depend(handle);
 
-        (world.entry(handle).unwrap()).observe::<PointerHit>(move |event, world| {
-            let this = world.fetch::<Menu>(handle).unwrap();
+        entry.observe::<PointerHit>(move |event, entry| {
+            let this = entry.fetch::<Menu>(handle).unwrap();
             let frame = this.frame.get_rect();
 
             if let &PointerHit(PointerEvent::Pressed(point)) = event {
@@ -64,21 +65,23 @@ impl Element for Menu {
                 let delta2 = frame.right_up() - point;
                 if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
                     let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
-                    (this.entries[index].action)(world);
-                    world.remove(handle);
+                    (this.entries[index].action)(entry.world());
+                    entry.remove(handle);
                 }
             }
         });
 
-        let obs = world.observe::<ElementInserted>(move |event, world| {
-            if world.contains_type::<Menu>(event.0) && event.0 != handle {
-                world.remove(handle);
-            }
-        });
+        let obs = entry
+            .world()
+            .observe::<ElementInserted>(move |event, world| {
+                if world.contains_type::<Menu>(event.0) && event.0 != handle {
+                    world.remove(handle);
+                }
+            });
 
-        world.entry(obs).unwrap().depend(handle);
+        entry.entry(obs).unwrap().depend(handle);
 
-        self.register_hittable(handle, world);
+        self.register_hittable(handle, entry.world());
     }
 }
 impl PointerHittable for Menu {

@@ -6,7 +6,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
     tools::pointer::PointerHit,
-    world::{Element, ElementHandle, WorldCell},
+    world::{Element, WorldCell, WorldCellEntry},
 };
 
 const CHUNK_SIZE: i32 = 512;
@@ -16,15 +16,14 @@ pub struct StrokeLayer {
     chunks: HashMap<[i32; 2], StrokeChunk>,
 }
 impl Element for StrokeLayer {
-    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry(handle).unwrap();
-        this.observe::<PointerHit>(move |event, world| match event.0 {
+    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(position) | PointerEvent::Pressed(position) => {
-                let mut stroke = world.fetch_mut::<StrokeLayer>(handle).unwrap();
-                let color = (world.single::<Palette>())
+                let mut stroke = entry.fetch_mut::<StrokeLayer>(entry.handle()).unwrap();
+                let color = (entry.single::<Palette>())
                     .map(|palette| palette.pick_color())
                     .unwrap_or([0xff; 4]);
-                stroke.write_pixel(position, color, world);
+                stroke.write_pixel(position, color, entry.world());
             }
             _ => (),
         });

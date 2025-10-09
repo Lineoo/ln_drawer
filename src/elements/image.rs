@@ -5,30 +5,29 @@ use crate::{
     interface::{Interface, Painter},
     measures::{Delta, Position, Rectangle},
     tools::pointer::PointerHittable,
-    world::{Element, ElementHandle, Modifier, WorldCell},
+    world::{Element, Modifier, WorldCellEntry},
 };
 
 pub struct Image {
     painter: Painter,
 }
 impl Element for Image {
-    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry(handle).unwrap();
-        let intersect = world.insert(Collider {
+    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        let intersect = entry.insert(Collider {
             rect: self.painter.get_rect(),
             z_order: 0,
         });
         // Collider service instead
-        world.entry(intersect).unwrap().depend(handle);
-        this.observe::<Modifier<Position>>(move |modifier, world| {
-            let mut this = world.fetch_mut::<Image>(handle).unwrap();
+        entry.entry(intersect).unwrap().depend(entry.handle());
+        entry.observe::<Modifier<Position>>(move |modifier, entry| {
+            let mut this = entry.fetch_mut::<Image>(entry.handle()).unwrap();
             let dest = modifier.invoke(this.painter.get_position());
             this.painter.set_position(dest);
-            let mut intersect = world.fetch_mut::<Collider>(intersect).unwrap();
+            let mut intersect = entry.fetch_mut::<Collider>(intersect).unwrap();
             intersect.rect.origin = dest;
         });
 
-        self.register_order(handle, world);
+        self.register_order(entry.handle(), entry.world());
     }
 }
 impl OrderElement for Image {

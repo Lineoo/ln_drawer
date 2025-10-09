@@ -5,7 +5,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
     tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
-    world::{Element, ElementHandle, Modifier, WorldCell},
+    world::{Element, Modifier, WorldCellEntry},
 };
 
 const WIDTH: u32 = 128;
@@ -16,19 +16,17 @@ pub struct Palette {
     knob: Painter,
 }
 impl Element for Palette {
-    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry(handle).unwrap();
-
-        this.observe::<PointerHit>(move |event, world| match event.0 {
+    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
-                let mut this = world.fetch_mut::<Palette>(handle).unwrap();
+                let mut this = entry.fetch_mut::<Palette>(entry.handle()).unwrap();
                 this.set_knob_position(point);
             }
             _ => (),
         });
 
-        this.observe::<Modifier<Position>>(move |modifier, world| {
-            let mut this = world.fetch_mut::<Palette>(handle).unwrap();
+        entry.observe::<Modifier<Position>>(move |modifier, entry| {
+            let mut this = entry.fetch_mut::<Palette>(entry.handle()).unwrap();
             let origin = this.painter.get_position();
             let position = modifier.invoke(origin);
             let delta = position - origin;
@@ -40,7 +38,7 @@ impl Element for Palette {
             this.knob.set_position(knob_position - Delta::splat(1));
         });
 
-        self.register_hittable(handle, world);
+        self.register_hittable(entry.handle(), entry.world());
     }
 }
 impl PointerHittable for Palette {

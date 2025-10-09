@@ -1,14 +1,14 @@
 use winit::event::{KeyEvent, WindowEvent};
 
-use crate::world::{Element, ElementHandle, WorldCell};
+use crate::world::{Element, ElementHandle, WorldCell, WorldCellEntry};
 
 #[derive(Default)]
 pub struct Focus {
     on: Option<ElementHandle>,
 }
 impl Element for Focus {
-    fn when_inserted(&mut self, _handle: ElementHandle, world: &WorldCell) {
-        world.observe::<WindowEvent>(|event, world| {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
+        entry.world().observe::<WindowEvent>(|event, world| {
             if let WindowEvent::KeyboardInput { event, .. } = event
                 && let Some(focus) = world.single::<Focus>()
                 && let Some(focus_on) = focus.get()

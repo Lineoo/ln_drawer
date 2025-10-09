@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 /// A shared form of objects in the [`World`].
 #[expect(unused_variables)]
 pub trait Element: Any {
-    fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {}
+    fn when_inserted(&mut self, entry: WorldCellEntry) {}
 }
 impl dyn Element {
     pub fn is<T: Any>(&self) -> bool {
@@ -130,7 +130,7 @@ impl World {
         // when_inserted
         let cell = self.cell();
         let mut element = cell.fetch_mut_raw::<T>(handle).unwrap();
-        element.when_inserted(handle, &cell);
+        element.when_inserted(cell.entry(handle).unwrap());
         drop(element);
         drop(cell);
 
@@ -319,9 +319,11 @@ impl World {
     /// directly on world, which is useful when you don't have a specific element to attach the event.
     pub fn observe<E: 'static>(
         &mut self,
-        action: impl FnMut(&E, &WorldCell) + 'static,
+        mut action: impl FnMut(&E, &WorldCell) + 'static,
     ) -> ElementHandle {
-        self.entry(ElementHandle(0)).unwrap().observe(action)
+        (self.entry(ElementHandle(0)).unwrap()).observe(move |event, entry| {
+            action(event, entry.world);
+        })
     }
 
     /// Will only trigger the observers mounted on the world. See [`World::observer`] for more.
@@ -369,7 +371,7 @@ impl WorldCell<'_> {
             // when_inserted
             let cell = world.cell();
             let mut element = cell.fetch_mut_raw::<T>(estimate_handle).unwrap();
-            element.when_inserted(estimate_handle, &cell);
+            element.when_inserted(cell.entry(estimate_handle).unwrap());
             drop(element);
             drop(cell);
 
@@ -650,7 +652,7 @@ impl WorldCell<'_> {
         }
     }
 
-    pub fn world(&mut self) -> &mut World {
+    pub fn uncell(&mut self) -> &mut World {
         self.world
     }
 
@@ -671,9 +673,11 @@ impl WorldCell<'_> {
     /// This will be delayed until the cell is closed.
     pub fn observe<E: 'static>(
         &self,
-        action: impl FnMut(&E, &WorldCell) + 'static,
+        mut action: impl FnMut(&E, &WorldCell) + 'static,
     ) -> ElementHandle {
-        self.entry(ElementHandle(0)).unwrap().observe(action)
+        (self.entry(ElementHandle(0)).unwrap()).observe(move |event, entry| {
+            action(event, entry.world);
+        })
     }
 
     /// Will only trigger the observers mounted on the world. See [`WorldCell::observer`] for more.
@@ -687,11 +691,13 @@ impl WorldCell<'_> {
 impl WorldEntry<'_> {
     pub fn observe<E: 'static>(
         &mut self,
-        mut action: impl FnMut(&E, &WorldCell) + 'static,
+        mut action: impl FnMut(&E, WorldCellEntry) + 'static,
     ) -> ElementHandle {
-        let handle = (self.world).insert(Observer(Box::new(move |event, world| {
+        let this = self.handle;
+        let handle = self.world.insert(Observer(Box::new(move |event, world| {
             let event = event.downcast_ref::<E>().unwrap();
-            action(event, world);
+            let entry = world.entry(this).unwrap();
+            action(event, entry);
         })));
         let observers = self.world.single_mut::<Observers>().unwrap();
         let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
@@ -758,6 +764,8 @@ impl WorldEntry<'_> {
         }
     }
 
+    // FIXME dependence will be a separated system
+
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
     pub fn depend(&mut self, other: ElementHandle) {
@@ -767,13 +775,21 @@ impl WorldEntry<'_> {
             return;
         }
         let mut other = self.world.entry(other).unwrap();
-        other.observe(move |Destroy, world| {
-            world.remove(handle);
+        other.observe(move |Destroy, entry| {
+            entry.world.remove(entry.handle);
         });
     }
 
     pub fn destroy(self) {
         self.world.remove(self.handle);
+    }
+
+    pub fn handle(&self) -> ElementHandle {
+        self.handle
+    }
+
+    pub fn world(&mut self) -> &mut World {
+        self.world
     }
 }
 impl WorldCellEntry<'_> {
@@ -781,16 +797,17 @@ impl WorldCellEntry<'_> {
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(
         &mut self,
-        mut action: impl FnMut(&E, &WorldCell) + 'static,
+        mut action: impl FnMut(&E, WorldCellEntry) + 'static,
     ) -> ElementHandle {
+        let handle = self.handle;
         let estimate_handle = self.world.insert(Observer(Box::new(move |event, world| {
             let event = event.downcast_ref::<E>().unwrap();
-            action(event, world);
+            let entry = world.entry(handle).unwrap();
+            action(event, entry);
         })));
 
         // observer will be registered in queue to prevent that some event triggered
         // before the insertion above hasn't even done yet
-        let handle = self.handle;
         let mut queue = self.world.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let observers = world.single_mut::<Observers>().unwrap();
@@ -854,13 +871,39 @@ impl WorldCellEntry<'_> {
             return;
         }
         let mut other = self.world.entry(other).unwrap();
-        other.observe(move |Destroy, world| {
-            world.remove(handle);
+        other.observe(move |Destroy, entry| {
+            entry.world.remove(entry.handle);
         });
     }
 
     pub fn destroy(self) {
         self.world.remove(self.handle);
+    }
+
+    pub fn handle(&self) -> ElementHandle {
+        self.handle
+    }
+
+    pub fn world(&self) -> &WorldCell<'_> {
+        self.world
+    }
+}
+
+impl Deref for WorldEntry<'_> {
+    type Target = World;
+    fn deref(&self) -> &Self::Target {
+        self.world
+    }
+}
+impl DerefMut for WorldEntry<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.world
+    }
+}
+impl<'world> Deref for WorldCellEntry<'world> {
+    type Target = WorldCell<'world>;
+    fn deref(&self) -> &Self::Target {
+        self.world
     }
 }
 
@@ -983,12 +1026,11 @@ pub struct Destroy;
 mod test {
     use crate::{
         measures::Position,
-        world::{Element, ElementHandle, World, WorldCell},
+        world::{Element, World, WorldCellEntry},
     };
 
     trait PositionedElement: Element {
         fn get_position(&self) -> Position;
-        fn set_position(&mut self, position: Position);
     }
     struct TestElement {
         position: Position,
@@ -997,20 +1039,15 @@ mod test {
         fn get_position(&self) -> Position {
             self.position
         }
-        fn set_position(&mut self, position: Position) {
-            self.position = position;
-        }
     }
     impl Element for TestElement {
-        fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
-            (world.entry(handle).unwrap())
-                .register(|this| &this.downcast_ref::<TestElement>().unwrap().position);
-            (world.entry(handle).unwrap())
-                .register_mut(|this| &mut this.downcast_mut::<TestElement>().unwrap().position);
-            (world.entry(handle).unwrap()).register::<dyn PositionedElement>(|this| {
+        fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+            entry.register(|this| &this.downcast_ref::<TestElement>().unwrap().position);
+            entry.register_mut(|this| &mut this.downcast_mut::<TestElement>().unwrap().position);
+            entry.register::<dyn PositionedElement>(|this| {
                 this.downcast_ref::<TestElement>().unwrap()
             });
-            (world.entry(handle).unwrap()).register_mut::<dyn PositionedElement>(|this| {
+            entry.register_mut::<dyn PositionedElement>(|this| {
                 this.downcast_mut::<TestElement>().unwrap()
             });
         }
