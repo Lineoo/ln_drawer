@@ -80,14 +80,25 @@ impl Default for World {
             Singleton::Unique(ElementHandle(2)),
         );
 
+        elements.insert(ElementHandle(3), Box::new(Dependencies::default()));
+        singletons.insert(
+            TypeId::of::<Dependencies>(),
+            Singleton::Unique(ElementHandle(3)),
+        );
+
         World {
-            curr_idx: ElementHandle(3),
+            curr_idx: ElementHandle(4),
             elements,
             singletons,
         }
     }
 }
 
+impl Drop for World {
+    fn drop(&mut self) {
+        self.trigger(&Destroy);
+    }
+}
 impl Drop for WorldCell<'_> {
     fn drop(&mut self) {
         self.world.curr_idx = *self.cell_idx.get_mut();
@@ -143,7 +154,15 @@ impl World {
     pub fn remove(&mut self, handle: ElementHandle) -> Option<Box<dyn Element>> {
         let type_id = (**self.elements.get(&handle)?).type_id();
 
-        // ElementRemoved
+        // remove children first
+        let depend = self.single::<Dependencies>().unwrap();
+        if let Some(children) = depend.cache.get(&handle) {
+            for child in children.clone() {
+                self.remove(child);
+            }
+        }
+
+        // trigger events
         self.entry(handle).unwrap().trigger(&Destroy);
         self.trigger(&ElementRemoved(handle));
 
@@ -165,20 +184,21 @@ impl World {
             Singleton::Multiple => {}
         }
 
-        // clean invalid observers
-        // FIXME notice that this will leave invalid registry in observers map if the element itself is an observer.
-        let mut attached_observers = Vec::with_capacity(8);
-        for observers_typed in self.single_mut::<Observers>().unwrap().0.values_mut() {
-            if let Some(observers_typed_element) = observers_typed.remove(&handle) {
-                for observer in observers_typed_element {
-                    attached_observers.push(observer);
+        // clean dependence to parent
+        let depend = self.single_mut::<Dependencies>().unwrap();
+        if let Some(parents) = depend.real.remove(&handle) {
+            for parent in parents {
+                let parent_children = depend.cache.get_mut(&parent).unwrap();
+                for i in 0..parent_children.len() {
+                    if parent_children[i] == handle {
+                        parent_children.swap_remove(i);
+                        break;
+                    }
                 }
             }
         }
-        for observer in attached_observers {
-            self.remove(observer);
-        }
 
+        // TODO RemovalCapture(Box<dyn Element>)
         self.elements.remove(&handle)
     }
 
@@ -382,23 +402,66 @@ impl WorldCell<'_> {
     }
 
     /// Cell-mode removal cannot access the element immediately so we can't return the value of removed element.
-    pub fn remove(&self, handle: ElementHandle) -> bool {
+    pub fn remove(&self, handle: ElementHandle) -> usize {
         if !self.contains(handle) {
-            return false;
+            return 0;
         }
 
-        let mut removed = self.removed.borrow_mut();
-        removed.insert(handle);
+        let type_id = (**self.world.elements.get(&handle).unwrap()).type_id();
 
-        drop(removed);
+        let mut cnt = 0;
+
+        // remove children first
+        let depend = self.single::<Dependencies>().unwrap();
+        if let Some(children) = depend.cache.get(&handle) {
+            for child in children.clone() {
+                cnt += self.remove(child);
+            }
+        }
 
         let mut queue = self.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
-            let popback = world.remove(handle);
-            debug_assert!(popback.is_some());
+            // trigger events
+            world.entry(handle).unwrap().trigger(&Destroy);
+            world.trigger(&ElementRemoved(handle));
+
+            // remove related services
+            for services_typed in &mut world.single_mut::<Services>().unwrap().0 {
+                services_typed.1.remove(&handle);
+            }
+
+            // singleton cache
+            let singleton = world.singletons.get_mut(&type_id).unwrap();
+            match singleton {
+                Singleton::Unique(_) => {
+                    world.singletons.remove(&type_id);
+                }
+                // We don't actually consider the situation that multiple elements being remove until
+                // one is left. In such case, even though there technically is only *one* element, which
+                // should be singleton, but mostly it won't be used as a singleton, and use loops to cache
+                // it is basically a waste. So we won't implement it.
+                Singleton::Multiple => {}
+            }
+
+            // clean dependence to parent
+            let depend = world.single_mut::<Dependencies>().unwrap();
+            if let Some(parents) = depend.real.remove(&handle) {
+                for parent in parents {
+                    let parent_children = depend.cache.get_mut(&parent).unwrap();
+                    for i in 0..parent_children.len() {
+                        if parent_children[i] == handle {
+                            parent_children.swap_remove(i);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // TODO RemovalCapture(Box<dyn Element>)
+            world.elements.remove(&handle);
         }));
 
-        true
+        cnt
     }
 
     /// Check whether target element can be borrowed immutably
@@ -699,10 +762,14 @@ impl WorldEntry<'_> {
             let entry = world.entry(this).unwrap();
             action(event, entry);
         })));
+
         let observers = self.world.single_mut::<Observers>().unwrap();
         let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
         let observers_typed_element = observers_typed.entry(self.handle).or_default();
         observers_typed_element.push(handle);
+
+        self.entry(handle).unwrap().depend(this);
+
         handle
     }
 
@@ -764,20 +831,18 @@ impl WorldEntry<'_> {
         }
     }
 
-    // FIXME dependence will be a separated system
-
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
-    pub fn depend(&mut self, other: ElementHandle) {
-        let handle = self.handle;
-        if !self.world.contains(other) {
-            log::error!("{handle:?} try to depend on {other:?}, which does not exist");
+    pub fn depend(&mut self, parent: ElementHandle) {
+        let child = self.handle;
+        if !self.world.contains(parent) {
+            log::error!("{child:?} try to depend on {parent:?}, which does not exist");
             return;
         }
-        let mut other = self.world.entry(other).unwrap();
-        other.observe(move |Destroy, entry| {
-            entry.world.remove(entry.handle);
-        });
+
+        let depend = self.world.single_mut::<Dependencies>().unwrap();
+        depend.real.entry(child).or_default().push(parent);
+        depend.cache.entry(parent).or_default().push(child);
     }
 
     pub fn destroy(self) {
@@ -799,10 +864,10 @@ impl WorldCellEntry<'_> {
         &mut self,
         mut action: impl FnMut(&E, WorldCellEntry) + 'static,
     ) -> ElementHandle {
-        let handle = self.handle;
+        let this = self.handle;
         let estimate_handle = self.world.insert(Observer(Box::new(move |event, world| {
             let event = event.downcast_ref::<E>().unwrap();
-            let entry = world.entry(handle).unwrap();
+            let entry = world.entry(this).unwrap();
             action(event, entry);
         })));
 
@@ -812,9 +877,11 @@ impl WorldCellEntry<'_> {
         queue.0.push(Box::new(move |world| {
             let observers = world.single_mut::<Observers>().unwrap();
             let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
-            let observers_typed_element = observers_typed.entry(handle).or_default();
+            let observers_typed_element = observers_typed.entry(this).or_default();
             observers_typed_element.push(estimate_handle);
         }));
+
+        self.entry(estimate_handle).unwrap().depend(this);
 
         estimate_handle
     }
@@ -861,19 +928,16 @@ impl WorldCellEntry<'_> {
 
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
-    ///
-    /// This will be delayed until the cell is closed. It still works even if the `other` is
-    /// inserted in this cell-scope.
-    pub fn depend(&mut self, other: ElementHandle) {
-        let handle = self.handle;
-        if !(self.world.contains(other) || self.world.inserted.borrow().contains(&other)) {
-            log::error!("{handle:?} try to depend on {other:?}, which does not exist");
+    pub fn depend(&mut self, parent: ElementHandle) {
+        let child = self.handle;
+        if !(self.world.contains(parent) || self.world.inserted.borrow().contains(&parent)) {
+            log::error!("{child:?} try to depend on {parent:?}, which does not exist");
             return;
         }
-        let mut other = self.world.entry(other).unwrap();
-        other.observe(move |Destroy, entry| {
-            entry.world.remove(entry.handle);
-        });
+
+        let mut depend = self.world.single_mut::<Dependencies>().unwrap();
+        depend.real.entry(child).or_default().push(parent);
+        depend.cache.entry(parent).or_default().push(child);
     }
 
     pub fn destroy(self) {
@@ -1000,6 +1064,14 @@ impl dyn ServicesPart {
         (self as &mut dyn Any).downcast_mut()
     }
 }
+
+// Internal Element #3
+#[derive(Default)]
+struct Dependencies {
+    real: HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>,
+    cache: HashMap<ElementHandle, SmallVec<[ElementHandle; 4]>>,
+}
+impl Element for Dependencies {}
 
 pub struct Modifier<T> {
     function: Box<dyn Fn(T) -> T>,
