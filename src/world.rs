@@ -1,5 +1,5 @@
 use std::{
-    any::{Any, TypeId},
+    any::{Any, TypeId, type_name},
     cell::RefCell,
     ops::{Deref, DerefMut},
 };
@@ -148,6 +148,7 @@ impl World {
         // ElementInserted
         self.trigger(&ElementInserted(handle));
 
+        log::trace!("insert {}: {:?}", type_name::<T>(), handle);
         handle
     }
 
@@ -199,6 +200,7 @@ impl World {
         }
 
         // TODO RemovalCapture(Box<dyn Element>)
+        log::trace!("remove {:?}", handle);
         self.elements.remove(&handle)
     }
 
@@ -398,6 +400,8 @@ impl WorldCell<'_> {
             // ElementInserted
             world.trigger(&ElementInserted(estimate_handle));
         }));
+
+        log::trace!("insert {}: {:?}", type_name::<T>(), estimate_handle);
         estimate_handle
     }
 
@@ -461,6 +465,7 @@ impl WorldCell<'_> {
             world.elements.remove(&handle);
         }));
 
+        log::trace!("remove {:?}", handle);
         cnt
     }
 

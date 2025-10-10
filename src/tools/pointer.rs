@@ -1,11 +1,13 @@
 use hashbrown::HashMap;
 
 use crate::{
-    elements::{intersect::Collider, Intersect},
+    elements::{Intersect, intersect::Collider},
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
     tools::focus::{Focus, Focusable},
-    world::{Destroy, Element, ElementHandle, ElementInserted, Modifier, WorldCell, WorldCellEntry},
+    world::{
+        Destroy, Element, ElementHandle, ElementInserted, Modifier, WorldCell, WorldCellEntry,
+    },
 };
 
 #[derive(Default)]
@@ -63,6 +65,8 @@ impl Element for PointerHitter {
                     rect: hittable.get_hitting_rect(),
                     z_order: hittable.get_hitting_order(),
                 });
+
+                world.entry(collider).unwrap().depend(handle);
 
                 let mut hitter = world.single_mut::<PointerHitter>().unwrap();
                 hitter.hosts.insert(collider, handle);
