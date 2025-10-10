@@ -7,7 +7,7 @@ use winit::keyboard::{Key, NamedKey};
 use crate::{
     elements::OrderElement,
     interface::{Interface, Painter},
-    lnwin::PointerEvent,
+    lnwin::{LnwinModifiers, PointerEvent},
     measures::{Position, Rectangle},
     tools::{
         focus::{Focus, FocusInput},
@@ -152,27 +152,104 @@ impl Element for TextEdit {
             let mut font_system = this.font_system.lock();
             let mut editor = this.editor.borrow_with(&mut font_system);
 
+            let modifiers = entry.single::<LnwinModifiers>().unwrap();
+            let ctrl_down = modifiers.0.state().control_key();
+            let shift_down = modifiers.0.state().shift_key();
+
+            if shift_down && let Selection::None = editor.selection() {
+                let cursor = editor.cursor();
+                editor.set_selection(Selection::Normal(cursor));
+            }
+
             match &event.logical_key {
-                Key::Named(NamedKey::ArrowLeft) => editor.action(Action::Motion(Motion::Left)),
-                Key::Named(NamedKey::ArrowRight) => editor.action(Action::Motion(Motion::Right)),
-                Key::Named(NamedKey::ArrowUp) => editor.action(Action::Motion(Motion::Up)),
-                Key::Named(NamedKey::ArrowDown) => editor.action(Action::Motion(Motion::Down)),
+                Key::Named(NamedKey::ArrowLeft) if ctrl_down => {
+                    if !shift_down {
+                        editor.set_selection(Selection::None);
+                    }
+                    editor.action(Action::Motion(Motion::LeftWord))
+                }
+                Key::Named(NamedKey::ArrowRight) if ctrl_down => {
+                    if !shift_down {
+                        editor.set_selection(Selection::None);
+                    }
+                    editor.action(Action::Motion(Motion::RightWord))
+                }
+                Key::Named(NamedKey::ArrowLeft) => {
+                    if !shift_down {
+                        editor.set_selection(Selection::None);
+                    }
+                    editor.action(Action::Motion(Motion::Left));
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    if !shift_down {
+                        editor.set_selection(Selection::None);
+                    }
+                    editor.action(Action::Motion(Motion::Right));
+                }
+                Key::Named(NamedKey::ArrowUp) => {
+                    if !shift_down {
+                        editor.set_selection(Selection::None);
+                    }
+                    editor.action(Action::Motion(Motion::Up));
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    if !shift_down {
+                        editor.set_selection(Selection::None);
+                    }
+                    editor.action(Action::Motion(Motion::Down));
+                }
                 Key::Named(NamedKey::Home) => editor.action(Action::Motion(Motion::Home)),
                 Key::Named(NamedKey::End) => editor.action(Action::Motion(Motion::End)),
                 Key::Named(NamedKey::PageUp) => editor.action(Action::Motion(Motion::PageUp)),
                 Key::Named(NamedKey::PageDown) => editor.action(Action::Motion(Motion::PageDown)),
                 Key::Named(NamedKey::Escape) => editor.action(Action::Escape),
-                Key::Named(NamedKey::Enter) => editor.action(Action::Enter),
-                Key::Named(NamedKey::Backspace) => editor.action(Action::Backspace),
-                Key::Named(NamedKey::Delete) => editor.action(Action::Delete),
+                Key::Named(NamedKey::Enter) => {
+                    editor.delete_selection();
+                    editor.action(Action::Enter);
+                }
+                Key::Named(NamedKey::Backspace) if ctrl_down => {
+                    if !editor.delete_selection() {
+                        let cursor = editor.cursor();
+                        editor.set_selection(Selection::Normal(cursor));
+                        editor.action(Action::Motion(Motion::PreviousWord));
+                        editor.delete_selection();
+                        editor.set_selection(Selection::None);
+                    }
+                }
+                Key::Named(NamedKey::Delete) if ctrl_down => {
+                    if !editor.delete_selection() {
+                        let cursor = editor.cursor();
+                        editor.set_selection(Selection::Normal(cursor));
+                        editor.action(Action::Motion(Motion::NextWord));
+                        editor.delete_selection();
+                        editor.set_selection(Selection::None);
+                    }
+                    let cursor = editor.cursor();
+                    editor.set_selection(Selection::Normal(cursor));
+                    editor.action(Action::Motion(Motion::NextWord));
+                    editor.delete_selection();
+                    editor.set_selection(Selection::None);
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    if !editor.delete_selection() {
+                        editor.action(Action::Backspace);
+                    }
+                }
+                Key::Named(NamedKey::Delete) => {
+                    if !editor.delete_selection() {
+                        editor.action(Action::Delete);
+                    }
+                }
                 Key::Named(key) => {
                     if let Some(text) = key.to_text() {
+                        editor.delete_selection();
                         for c in text.chars() {
                             editor.action(Action::Insert(c));
                         }
                     }
                 }
                 Key::Character(text) => {
+                    editor.delete_selection();
                     for c in text.chars() {
                         editor.action(Action::Insert(c));
                     }

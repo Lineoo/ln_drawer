@@ -9,10 +9,10 @@ pub struct Focus {
 impl Element for Focus {
     fn when_inserted(&mut self, entry: WorldCellEntry) {
         entry.world().observe::<WindowEvent>(|event, world| {
-            if let WindowEvent::KeyboardInput { event, .. } = event
-                && let Some(focus) = world.single::<Focus>()
+            if let Some(focus) = world.single::<Focus>()
                 && let Some(focus_on) = focus.get()
                 && let Some(mut focus_on) = world.entry(focus_on)
+                && let WindowEvent::KeyboardInput { event, .. } = event
             {
                 focus_on.trigger(FocusInput(event.clone()));
             }

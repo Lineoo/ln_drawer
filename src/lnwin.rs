@@ -3,7 +3,7 @@ use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
-    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{ElementState, Modifiers, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::ActiveEventLoop,
     window::{Window, WindowId},
 };
@@ -14,7 +14,7 @@ use crate::{
     measures::Position,
     text::TextManager,
     tools::{focus::Focus, pointer::Pointer},
-    world::World,
+    world::{Element, World},
 };
 
 #[derive(Default)]
@@ -79,6 +79,7 @@ impl Lnwindow {
         world.insert(interface);
 
         world.insert(TextManager::default());
+        world.insert(LnwinModifiers::default());
         world.insert(Focus::default());
         let stroke = world.insert(StrokeLayer::default());
         let mut selection = Pointer::default();
@@ -149,6 +150,10 @@ impl Lnwindow {
                     &mut world.single_mut().unwrap(),
                 ));
                 self.window.request_redraw();
+            }
+
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.world.single_mut::<LnwinModifiers>().unwrap().0 = modifiers;
             }
 
             WindowEvent::KeyboardInput { .. } => {
@@ -257,3 +262,7 @@ pub enum PointerEvent {
     Pressed(Position),
     Released(Position),
 }
+
+#[derive(Default)]
+pub struct LnwinModifiers(pub Modifiers);
+impl Element for LnwinModifiers {}
