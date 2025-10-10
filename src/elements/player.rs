@@ -6,10 +6,11 @@ use winit::{
 use crate::{
     elements::{Image, OrderElement},
     interface::Interface,
+    lnwin::PointerEvent,
     measures::Delta,
     tools::{
-        focus::{FocusInput, FocusOn, Focusable, FocusableExt},
-        pointer::PointerCollider,
+        focus::{Focus, FocusInput, FocusOn},
+        pointer::{PointerCollider, PointerHit},
     },
     world::{Element, WorldCellEntry},
 };
@@ -20,7 +21,12 @@ pub struct Player {
 }
 impl Element for Player {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
-        // TODO focus
+        entry.observe(move |PointerHit(pointer), entry| {
+            if let PointerEvent::Pressed(_) = pointer {
+                let mut focus = entry.single_mut::<Focus>().unwrap();
+                focus.set(Some(entry.handle()), &entry);
+            }
+        });
         entry.observe(move |FocusOn, _entry| {
             println!("player is here!");
         });
@@ -44,10 +50,8 @@ impl Element for Player {
         });
 
         entry.register::<PointerCollider>(|this| &this.downcast_ref::<Player>().unwrap().collider);
-        self.register_focus(entry.handle(), entry.world());
     }
 }
-impl Focusable for Player {}
 impl Player {
     pub fn new(interface: &mut Interface) -> Player {
         let image = Image::from_bytes(include_bytes!("../../res/player.png"), interface).unwrap();

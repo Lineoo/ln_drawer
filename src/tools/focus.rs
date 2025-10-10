@@ -42,20 +42,3 @@ pub struct FocusOn;
 pub struct FocusOff;
 
 pub struct FocusInput(pub KeyEvent);
-
-pub trait Focusable: Element {
-    fn is_focusable(&self) -> bool {
-        true
-    }
-}
-
-pub trait FocusableExt: Focusable + Sized {
-    fn register_focus(&mut self, handle: ElementHandle, world: &WorldCell);
-}
-impl<T: Focusable> FocusableExt for T {
-    fn register_focus(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry(handle).unwrap();
-        this.register::<dyn Focusable>(|this| this.downcast_ref::<Self>().unwrap());
-        this.register_mut::<dyn Focusable>(|this| this.downcast_mut::<Self>().unwrap());
-    }
-}

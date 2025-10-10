@@ -205,7 +205,7 @@ impl Menu {
                 _text,
                 action: Box::new(move |world| {
                     world.insert(TextEdit::new(
-                        rect,
+                        Rectangle { origin: Position::new(0, 0), extend: Delta::splat(300) },
                         "Enter text here".into(),
                         &mut world.single_mut().unwrap(),
                         &mut world.single_mut().unwrap(),

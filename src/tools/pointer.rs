@@ -44,17 +44,6 @@ impl Element for Pointer {
 
             if let PointerEvent::Pressed(_) = event {
                 pressed = true;
-                // FIXME This should be maintained by the element itself
-                // if let Some(mut focus) = world.single_mut::<Focus>() {
-                //     if let Some(pointer_on) = pointer_on
-                //         && let Some(focusable) = world.fetch::<dyn Focusable>(pointer_on)
-                //         && focusable.is_focusable()
-                //     {
-                //         focus.set(Some(pointer_on), world);
-                //     } else {
-                //         focus.set(None, world);
-                //     }
-                // }
             }
 
             if pressed {

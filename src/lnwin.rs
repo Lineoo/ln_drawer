@@ -9,7 +9,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image,  Menu, StrokeLayer, TextManager},
+    elements::{Image, Menu, StrokeLayer, TextManager},
     interface::Interface,
     measures::Position,
     tools::{focus::Focus, pointer::Pointer},
@@ -147,6 +147,10 @@ impl Lnwindow {
                     &mut world.single_mut().unwrap(),
                     &mut world.single_mut().unwrap(),
                 ));
+                self.window.request_redraw();
+            }
+
+            WindowEvent::KeyboardInput { .. } => {
                 self.window.request_redraw();
             }
 

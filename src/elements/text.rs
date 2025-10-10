@@ -2,13 +2,20 @@ use std::sync::Arc;
 
 use cosmic_text::*;
 use parking_lot::Mutex;
+use winit::{
+    event::ElementState,
+    keyboard::{Key, KeyCode, NamedKey, PhysicalKey},
+};
 
 use crate::{
     elements::OrderElement,
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
-    tools::pointer::{PointerCollider, PointerHit},
+    tools::{
+        focus::{Focus, FocusInput},
+        pointer::{PointerCollider, PointerHit},
+    },
     world::{Element, WorldCellEntry},
 };
 
@@ -143,6 +150,9 @@ impl Element for TextEdit {
 
                 drop(font_system);
 
+                let mut focus = entry.single_mut::<Focus>().unwrap();
+                focus.set(Some(entry.handle()), &entry);
+
                 this.redraw();
             }
             PointerEvent::Moved(position) => {
@@ -168,7 +178,51 @@ impl Element for TextEdit {
             PointerEvent::Released(_) => (),
         });
 
-        entry.register::<PointerCollider>(|this| &this.downcast_ref::<TextEdit>().unwrap().collider);
+        entry.observe(move |FocusInput(event), entry| {
+            if !event.state.is_pressed() {
+                return;
+            }
+
+            let mut this = entry.fetch_mut_raw::<TextEdit>(entry.handle()).unwrap();
+            let this = &mut *this;
+            let mut font_system = this.font_system.lock();
+            let mut editor = this.editor.borrow_with(&mut font_system);
+
+            match &event.logical_key {
+                Key::Named(NamedKey::ArrowLeft) => editor.action(Action::Motion(Motion::Left)),
+                Key::Named(NamedKey::ArrowRight) => editor.action(Action::Motion(Motion::Right)),
+                Key::Named(NamedKey::ArrowUp) => editor.action(Action::Motion(Motion::Up)),
+                Key::Named(NamedKey::ArrowDown) => editor.action(Action::Motion(Motion::Down)),
+                Key::Named(NamedKey::Home) => editor.action(Action::Motion(Motion::Home)),
+                Key::Named(NamedKey::End) => editor.action(Action::Motion(Motion::End)),
+                Key::Named(NamedKey::PageUp) => editor.action(Action::Motion(Motion::PageUp)),
+                Key::Named(NamedKey::PageDown) => editor.action(Action::Motion(Motion::PageDown)),
+                Key::Named(NamedKey::Escape) => editor.action(Action::Escape),
+                Key::Named(NamedKey::Enter) => editor.action(Action::Enter),
+                Key::Named(NamedKey::Backspace) => editor.action(Action::Backspace),
+                Key::Named(NamedKey::Delete) => editor.action(Action::Delete),
+                Key::Named(key) => {
+                    if let Some(text) = key.to_text() {
+                        for c in text.chars() {
+                            editor.action(Action::Insert(c));
+                        }
+                    }
+                }
+                Key::Character(text) => {
+                    for c in text.chars() {
+                        editor.action(Action::Insert(c));
+                    }
+                }
+                _ => {}
+            }
+
+            drop(font_system);
+
+            this.redraw();
+        });
+
+        entry
+            .register::<PointerCollider>(|this| &this.downcast_ref::<TextEdit>().unwrap().collider);
     }
 }
 impl OrderElement for TextEdit {
@@ -195,7 +249,7 @@ impl TextEdit {
         let mut buffer = Buffer::new(&mut font_system, metrics);
         let mut buffer_borrow = buffer.borrow_with(&mut font_system);
 
-        let attrs = Attrs::new();
+        let attrs = Attrs::new().family(Family::Monospace);
         buffer_borrow.set_size(Some(rect.width() as f32), Some(rect.height() as f32));
         buffer_borrow.set_text(&text, &attrs, Shaping::Advanced);
         buffer_borrow.shape_until_scroll(true);
@@ -236,6 +290,7 @@ impl TextEdit {
 
         let mut writer = self.inner.open_writer();
         writer.clear([0; 4]);
+        self.editor.shape_as_needed(&mut font_system, true);
         self.editor.draw(
             &mut font_system,
             &mut swash_cache,
