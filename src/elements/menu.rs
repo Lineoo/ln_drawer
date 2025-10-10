@@ -1,7 +1,6 @@
 use crate::{
     elements::{
         ButtonRaw, Image, OrderElement, Palette, Text,
-        player::Player,
         text::{TextEdit, TextManager},
     },
     interface::{Interface, Square},
@@ -13,7 +12,7 @@ use crate::{
 
 const PAD: i32 = 10;
 const PAD_H: i32 = PAD / 2;
-const ENTRY_NUM: usize = 6;
+const ENTRY_NUM: usize = 5;
 const ENTRY_WIDTH: i32 = 220;
 const ENTRY_HEIGHT: i32 = 30;
 
@@ -210,23 +209,6 @@ impl Menu {
                         &mut world.single_mut().unwrap(),
                         &mut world.single_mut().unwrap(),
                     ));
-                }),
-            });
-        }
-        {
-            let rect = Rectangle {
-                origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT) * 5),
-                extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
-            };
-            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
-            frame.set_z_order(100);
-            let mut _text = Text::new(rect, "Player".into(), text_manager, interface);
-            _text.set_order(110);
-            entries.push(MenuEntry {
-                frame,
-                _text,
-                action: Box::new(move |world| {
-                    world.insert(Player::new(&mut world.single_mut().unwrap()));
                 }),
             });
         }

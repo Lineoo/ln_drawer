@@ -2,7 +2,6 @@ mod button;
 mod image;
 mod menu;
 mod palette;
-mod player;
 mod stroke;
 mod text;
 
