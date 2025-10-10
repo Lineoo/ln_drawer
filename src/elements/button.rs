@@ -3,7 +3,7 @@ use crate::{
     interface::{Interface, Square},
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
-    tools::pointer::{PointerEnter, PointerHit, PointerLeave},
+    tools::pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave},
     world::{Element, Modifier, WorldCell, WorldCellEntry},
 };
 
@@ -12,8 +12,9 @@ use crate::{
 pub struct ButtonRaw {
     rect: Rectangle,
     order: isize,
+    square: Square,
+    collider: PointerCollider,
     action: Box<dyn FnMut(&WorldCell)>,
-    square: Option<Square>,
 }
 impl Element for ButtonRaw {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
@@ -25,12 +26,12 @@ impl Element for ButtonRaw {
         });
 
         entry.observe::<PointerEnter>(move |_event, entry| {
-            let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();
-            this.square.as_mut().unwrap().set_visible(true);
+            let this = entry.fetch::<ButtonRaw>(entry.handle()).unwrap();
+            this.square.set_visible(true);
         });
         entry.observe::<PointerLeave>(move |_event, entry| {
-            let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();
-            this.square.as_mut().unwrap().set_visible(false);
+            let this = entry.fetch::<ButtonRaw>(entry.handle()).unwrap();
+            this.square.set_visible(false);
         });
 
         entry.observe::<Modifier<Position>>(move |modifier, entry| {
@@ -38,15 +39,11 @@ impl Element for ButtonRaw {
             this.rect.origin = modifier.invoke(this.rect.origin);
         });
 
-        let mut interface = entry.single_mut::<Interface>().unwrap();
-        let square = interface.create_square(self.rect, [1.0, 1.0, 1.0, 0.6]);
-        square.set_z_order(self.order);
-        square.set_visible(false);
-        self.square = Some(square);
-
         self.register_order(entry.handle(), entry.world());
 
-        // TODO entry.register::<PointerCollider>(|this| this.downcast_ref::<>());
+        entry.register::<PointerCollider>(|this| {
+            &this.downcast_ref::<ButtonRaw>().unwrap().collider
+        });
     }
 }
 impl OrderElement for ButtonRaw {
@@ -56,18 +53,27 @@ impl OrderElement for ButtonRaw {
 
     fn set_order(&mut self, order: isize) {
         self.order = order;
-        if let Some(square) = &mut self.square {
-            square.set_z_order(order);
-        }
+        self.square.set_z_order(order);
     }
 }
 impl ButtonRaw {
-    pub fn new(rect: Rectangle, action: impl FnMut(&WorldCell) + 'static) -> ButtonRaw {
+    pub fn new(
+        rect: Rectangle,
+        action: impl FnMut(&WorldCell) + 'static,
+        interface: &mut Interface,
+    ) -> ButtonRaw {
+        let square = interface.create_square(rect, [1.0, 1.0, 1.0, 0.6]);
+        square.set_visible(false);
+        let collider = PointerCollider {
+            rect: square.get_rect(),
+            z_order: 0,
+        };
         ButtonRaw {
             rect,
             order: 0,
+            square,
+            collider,
             action: Box::new(action),
-            square: None,
         }
     }
 }

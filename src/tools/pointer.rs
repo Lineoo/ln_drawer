@@ -30,15 +30,15 @@ impl Element for Pointer {
             | PointerEvent::Released(point)) = event;
 
             if !pressed {
-                // let pointer_onto = pointer.intersect(world, point);
-                // if pointer_on != pointer_onto {
-                //     if let Some(pointer_on) = pointer_on {
-                //         world.entry(pointer_on).unwrap().trigger(PointerLeave);
-                //     }
-                //     if let Some(pointer_onto) = pointer_onto {
-                //         world.entry(pointer_onto).unwrap().trigger(PointerEnter);
-                //     }
-                // }
+                let pointer_onto = pointer.intersect(world, point);
+                if pointer_on != pointer_onto {
+                    if let Some(mut pointer_on) = pointer_on.and_then(|e| world.entry(e)) {
+                        pointer_on.trigger(PointerLeave);
+                    }
+                    if let Some(mut pointer_onto) = pointer_onto.and_then(|e| world.entry(e)) {
+                        pointer_onto.trigger(PointerEnter);
+                    }
+                }
                 pointer_on = pointer.intersect(world, point);
             }
 

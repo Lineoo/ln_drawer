@@ -164,6 +164,7 @@ impl Menu {
                             extend: Delta::new(100, 100),
                         },
                         |_| println!("Button hit!"),
+                        &mut world.single_mut().unwrap(),
                     ));
                 }),
             });
@@ -204,7 +205,10 @@ impl Menu {
                 _text,
                 action: Box::new(move |world| {
                     world.insert(TextEdit::new(
-                        Rectangle { origin: Position::new(0, 0), extend: Delta::splat(300) },
+                        Rectangle {
+                            origin: Position::new(0, 0),
+                            extend: Delta::splat(300),
+                        },
                         "Enter text here".into(),
                         &mut world.single_mut().unwrap(),
                         &mut world.single_mut().unwrap(),
