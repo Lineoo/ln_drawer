@@ -5,7 +5,7 @@ use wgpu::*;
 
 use crate::interface::ComponentCommand;
 use crate::interface::viewport::InterfaceViewport;
-use crate::measures::Rectangle;
+use crate::measures::{Rectangle, ZOrder};
 
 pub struct WireframePipeline {
     pipeline: RenderPipeline,
@@ -238,8 +238,8 @@ impl Wireframe {
         }
     }
 
-    pub fn set_z_order(&self, ord: isize) {
-        if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(ord))) {
+    pub fn set_z_order(&self, ord: ZOrder) {
+        if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(ord.idx))) {
             log::warn!("Set Visibility: {e}");
         }
     }

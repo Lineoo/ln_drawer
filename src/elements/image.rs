@@ -1,7 +1,6 @@
 use std::{error::Error, path::Path};
 
 use crate::{
-    elements::{OrderElement, OrderElementExt},
     interface::{Interface, Painter},
     measures::{Delta, Position, Rectangle},
     world::{Element, Modifier, WorldCellEntry},
@@ -17,17 +16,6 @@ impl Element for Image {
             let dest = modifier.invoke(this.painter.get_position());
             this.painter.set_position(dest);
         });
-
-        self.register_order(entry.handle(), entry.world());
-    }
-}
-impl OrderElement for Image {
-    fn get_order(&self) -> isize {
-        self.painter.get_z_order()
-    }
-
-    fn set_order(&mut self, order: isize) {
-        self.painter.set_z_order(order);
     }
 }
 impl Image {

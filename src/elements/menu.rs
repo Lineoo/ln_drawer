@@ -1,8 +1,8 @@
 use crate::{
-    elements::{ButtonRaw, Image, OrderElement, Palette},
+    elements::{ButtonRaw, Image, Palette},
     interface::{Interface, Square},
     lnwin::PointerEvent,
-    measures::{Delta, Position, Rectangle},
+    measures::{Delta, Position, Rectangle, ZOrder},
     text::{Text, TextEdit, TextManager},
     tools::pointer::{PointerCollider, PointerHit},
     world::{Element, ElementInserted, WorldCell, WorldCellEntry},
@@ -96,10 +96,10 @@ impl Menu {
             ),
         };
         let frame = interface.create_square(rect, [0.1, 0.1, 0.1, 1.0]);
-        frame.set_z_order(90);
+        frame.set_z_order(ZOrder::new(90));
 
         let select_frame = interface.create_square(rect, [0.1, 0.1, 0.9, 0.2]);
-        select_frame.set_z_order(120);
+        select_frame.set_z_order(ZOrder::new(120));
         select_frame.set_visible(false);
 
         let mut entries = Vec::new();
@@ -109,9 +109,9 @@ impl Menu {
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
             let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
-            frame.set_z_order(100);
+            frame.set_z_order(ZOrder::new(100));
             let mut _text = Text::new(rect, "Label".into(), text_manager, interface);
-            _text.set_order(110);
+            _text.set_order(ZOrder::new(110));
             entries.push(MenuEntry {
                 frame,
                 _text,
@@ -131,9 +131,9 @@ impl Menu {
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
             let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
-            frame.set_z_order(100);
+            frame.set_z_order(ZOrder::new(100));
             let mut _text = Text::new(rect, "Palette".into(), text_manager, interface);
-            _text.set_order(110);
+            _text.set_order(ZOrder::new(110));
             entries.push(MenuEntry {
                 frame,
                 _text,
@@ -149,9 +149,9 @@ impl Menu {
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
             let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
-            frame.set_z_order(100);
+            frame.set_z_order(ZOrder::new(100));
             let mut _text = Text::new(rect, "Button".into(), text_manager, interface);
-            _text.set_order(110);
+            _text.set_order(ZOrder::new(110));
             entries.push(MenuEntry {
                 frame,
                 _text,
@@ -173,9 +173,9 @@ impl Menu {
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
             let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
-            frame.set_z_order(100);
+            frame.set_z_order(ZOrder::new(100));
             let mut _text = Text::new(rect, "LnDrawer Logo".into(), text_manager, interface);
-            _text.set_order(110);
+            _text.set_order(ZOrder::new(110));
             entries.push(MenuEntry {
                 frame,
                 _text,
@@ -195,9 +195,9 @@ impl Menu {
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
             let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
-            frame.set_z_order(100);
+            frame.set_z_order(ZOrder::new(100));
             let mut _text = Text::new(rect, "Text Edit".into(), text_manager, interface);
-            _text.set_order(110);
+            _text.set_order(ZOrder::new(110));
             entries.push(MenuEntry {
                 frame,
                 _text,
@@ -217,7 +217,7 @@ impl Menu {
 
         let collider = PointerCollider {
             rect: frame.get_rect(),
-            z_order: 100,
+            z_order: ZOrder::new(100),
         };
 
         Menu {

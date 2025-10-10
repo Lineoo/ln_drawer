@@ -5,10 +5,9 @@ use parking_lot::Mutex;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{
-    elements::OrderElement,
     interface::{Interface, Painter},
     lnwin::{LnwinModifiers, PointerEvent},
-    measures::{Position, Rectangle},
+    measures::{Position, Rectangle, ZOrder},
     tools::{
         focus::{Focus, FocusInput},
         pointer::{PointerCollider, PointerHit},
@@ -74,17 +73,16 @@ impl Text {
             inner: interface.create_painter_with(rect, data),
         }
     }
-}
-impl Element for Text {}
-impl OrderElement for Text {
-    fn get_order(&self) -> isize {
+
+    pub fn get_order(&self) -> ZOrder {
         self.inner.get_z_order()
     }
 
-    fn set_order(&mut self, order: isize) {
+    pub fn set_order(&mut self, order: ZOrder) {
         self.inner.set_z_order(order);
     }
 }
+impl Element for Text {}
 
 pub struct TextEdit {
     inner: Painter,
@@ -264,15 +262,6 @@ impl Element for TextEdit {
 
         entry
             .register::<PointerCollider>(|this| &this.downcast_ref::<TextEdit>().unwrap().collider);
-    }
-}
-impl OrderElement for TextEdit {
-    fn get_order(&self) -> isize {
-        self.inner.get_z_order()
-    }
-
-    fn set_order(&mut self, order: isize) {
-        self.inner.set_z_order(order);
     }
 }
 impl TextEdit {

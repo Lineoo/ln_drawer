@@ -9,19 +9,3 @@ pub use image::Image;
 pub use menu::Menu;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;
-
-use crate::world::{Element, ElementHandle, WorldCell};
-
-pub trait OrderElement: Element {
-    fn get_order(&self) -> isize;
-    fn set_order(&mut self, order: isize);
-}
-
-trait OrderElementExt: OrderElement + Sized {
-    fn register_order(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry(handle).unwrap();
-        this.register::<dyn OrderElement>(|this| this.downcast_ref::<Self>().unwrap());
-        this.register_mut::<dyn OrderElement>(|this| this.downcast_mut::<Self>().unwrap());
-    }
-}
-impl<T: OrderElement> OrderElementExt for T {}

@@ -5,7 +5,7 @@ use wgpu::*;
 
 use crate::interface::ComponentCommand;
 use crate::interface::viewport::InterfaceViewport;
-use crate::measures::{Position, Rectangle};
+use crate::measures::{Position, Rectangle, ZOrder};
 
 pub struct SquarePipeline {
     pipeline: RenderPipeline,
@@ -250,8 +250,8 @@ impl Square {
         }
     }
 
-    pub fn set_z_order(&self, ord: isize) {
-        if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(ord))) {
+    pub fn set_z_order(&self, ord: ZOrder) {
+        if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(ord.idx))) {
             log::warn!("Set Visibility: {e}");
         }
     }

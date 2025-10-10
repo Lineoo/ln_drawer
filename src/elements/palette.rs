@@ -3,7 +3,7 @@ use palette::{FromColor, Hsl, rgb::Rgb};
 use crate::{
     interface::{Interface, Painter},
     lnwin::PointerEvent,
-    measures::{Delta, Position, Rectangle},
+    measures::{Delta, Position, Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerHit},
     world::{Element, Modifier, WorldCellEntry},
 };
@@ -84,13 +84,13 @@ impl Palette {
             }
         }
         let mut knob = interface.create_painter_with(rect, data);
-        knob.set_z_order(1);
+        knob.set_z_order(ZOrder::new(1));
 
         let collider = PointerCollider {
             rect: painter.get_rect(),
             z_order: painter.get_z_order(),
         };
-        
+
         Palette {
             painter,
             knob,

@@ -1,12 +1,12 @@
 use crate::{
     lnwin::PointerEvent,
-    measures::{Position, Rectangle},
+    measures::{Position, Rectangle, ZOrder},
     world::{Element, ElementHandle, WorldCell, WorldCellEntry},
 };
 
 pub struct PointerCollider {
     pub rect: Rectangle,
-    pub z_order: isize,
+    pub z_order: ZOrder,
 }
 
 pub struct PointerEnter;
@@ -63,7 +63,7 @@ impl Element for Pointer {
 impl Pointer {
     pub fn intersect(&self, world: &WorldCell, point: Position) -> Option<ElementHandle> {
         let mut top_result = None;
-        let mut max_order = isize::MIN;
+        let mut max_order = ZOrder::new(isize::MIN);
         world.foreach::<PointerCollider>(|intersection, handle| {
             if (intersection.z_order > max_order) && intersection.rect.contains(point) {
                 max_order = intersection.z_order;

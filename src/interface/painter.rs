@@ -7,7 +7,7 @@ use wgpu::*;
 
 use crate::interface::ComponentCommand;
 use crate::interface::viewport::InterfaceViewport;
-use crate::measures::{Position, Rectangle};
+use crate::measures::{Position, Rectangle, ZOrder};
 
 pub struct PainterPipeline {
     pipeline: RenderPipeline,
@@ -394,12 +394,12 @@ impl Painter {
         });
     }
 
-    pub fn get_z_order(&self) -> isize {
-        self.z_order
+    pub fn get_z_order(&self) -> ZOrder {
+        ZOrder::new(self.z_order)
     }
 
-    pub fn set_z_order(&mut self, ord: isize) {
-        self.z_order = ord;
+    pub fn set_z_order(&mut self, ord: ZOrder) {
+        self.z_order = ord.idx;
         if let Err(e) =
             (self.comp_tx).send((self.comp_idx, ComponentCommand::SetZOrder(self.z_order)))
         {

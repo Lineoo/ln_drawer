@@ -1,8 +1,7 @@
 use crate::{
-    elements::{OrderElement, OrderElementExt},
     interface::{Interface, Square},
     lnwin::PointerEvent,
-    measures::{Position, Rectangle},
+    measures::{Position, Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave},
     world::{Element, Modifier, WorldCell, WorldCellEntry},
 };
@@ -11,7 +10,6 @@ use crate::{
 /// including text and image is needed.
 pub struct ButtonRaw {
     rect: Rectangle,
-    order: isize,
     square: Square,
     collider: PointerCollider,
     action: Box<dyn FnMut(&WorldCell)>,
@@ -39,21 +37,9 @@ impl Element for ButtonRaw {
             this.rect.origin = modifier.invoke(this.rect.origin);
         });
 
-        self.register_order(entry.handle(), entry.world());
-
         entry.register::<PointerCollider>(|this| {
             &this.downcast_ref::<ButtonRaw>().unwrap().collider
         });
-    }
-}
-impl OrderElement for ButtonRaw {
-    fn get_order(&self) -> isize {
-        self.order
-    }
-
-    fn set_order(&mut self, order: isize) {
-        self.order = order;
-        self.square.set_z_order(order);
     }
 }
 impl ButtonRaw {
@@ -66,11 +52,10 @@ impl ButtonRaw {
         square.set_visible(false);
         let collider = PointerCollider {
             rect: square.get_rect(),
-            z_order: 0,
+            z_order: ZOrder::default(),
         };
         ButtonRaw {
             rect,
-            order: 0,
             square,
             collider,
             action: Box::new(action),
