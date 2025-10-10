@@ -9,10 +9,10 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image, Intersect, Menu, StrokeLayer, TextManager},
+    elements::{Image,  Menu, StrokeLayer, TextManager},
     interface::Interface,
     measures::Position,
-    tools::{focus::Focus, pointer::PointerHitter},
+    tools::{focus::Focus, pointer::Pointer},
     world::World,
 };
 
@@ -77,11 +77,10 @@ impl Lnwindow {
         let mut world = World::default();
         world.insert(interface);
 
-        world.insert(Intersect::default());
         world.insert(TextManager::default());
         world.insert(Focus::default());
         let stroke = world.insert(StrokeLayer::default());
-        let mut selection = PointerHitter::default();
+        let mut selection = Pointer::default();
         selection.set_fallback(stroke);
         world.insert(selection);
 

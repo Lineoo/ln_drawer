@@ -3,7 +3,7 @@ use crate::{
     interface::{Interface, Square},
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
-    tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
+    tools::pointer::{PointerEnter, PointerHit, PointerLeave},
     world::{Element, Modifier, WorldCell, WorldCellEntry},
 };
 
@@ -24,14 +24,14 @@ impl Element for ButtonRaw {
             }
         });
 
-        // this.observe::<PointerEnter>(move |_event, world| {
-        //     let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
-        //     this.square.as_mut().unwrap().set_visible(true);
-        // });
-        // this.observe::<PointerLeave>(move |_event, world| {
-        //     let mut this = world.fetch_mut::<ButtonRaw>(handle).unwrap();
-        //     this.square.as_mut().unwrap().set_visible(false);
-        // });
+        entry.observe::<PointerEnter>(move |_event, entry| {
+            let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();
+            this.square.as_mut().unwrap().set_visible(true);
+        });
+        entry.observe::<PointerLeave>(move |_event, entry| {
+            let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();
+            this.square.as_mut().unwrap().set_visible(false);
+        });
 
         entry.observe::<Modifier<Position>>(move |modifier, entry| {
             let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();
@@ -45,7 +45,8 @@ impl Element for ButtonRaw {
         self.square = Some(square);
 
         self.register_order(entry.handle(), entry.world());
-        self.register_hittable(entry.handle(), entry.world());
+
+        // TODO entry.register::<PointerCollider>(|this| this.downcast_ref::<>());
     }
 }
 impl OrderElement for ButtonRaw {
@@ -58,15 +59,6 @@ impl OrderElement for ButtonRaw {
         if let Some(square) = &mut self.square {
             square.set_z_order(order);
         }
-    }
-}
-impl PointerHittable for ButtonRaw {
-    fn get_hitting_rect(&self) -> Rectangle {
-        self.rect
-    }
-
-    fn get_hitting_order(&self) -> isize {
-        self.order
     }
 }
 impl ButtonRaw {

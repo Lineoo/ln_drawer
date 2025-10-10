@@ -1,55 +1,66 @@
-use hashbrown::HashMap;
-
 use crate::{
-    elements::{Intersect, intersect::Collider},
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
-    tools::focus::{Focus, Focusable},
-    world::{
-        Destroy, Element, ElementHandle, ElementInserted, Modifier, WorldCell, WorldCellEntry,
-    },
+    world::{Element, ElementHandle, WorldCell, WorldCellEntry},
 };
 
-#[derive(Default)]
-pub struct PointerHitter {
-    fallback: Option<ElementHandle>,
-    hosts: HashMap<ElementHandle, ElementHandle>,
+pub struct PointerCollider {
+    pub rect: Rectangle,
+    pub z_order: isize,
 }
-impl Element for PointerHitter {
+
+pub struct PointerEnter;
+pub struct PointerLeave;
+
+pub struct PointerHit(pub PointerEvent);
+
+#[derive(Default)]
+pub struct Pointer {
+    fallback: Option<ElementHandle>,
+}
+impl Element for Pointer {
     fn when_inserted(&mut self, entry: WorldCellEntry) {
         let mut pressed = false;
         let mut pointer_on = None;
         entry.world().observe::<PointerEvent>(move |&event, world| {
-            let intersect = world.single::<Intersect>().unwrap();
-            let selection = world.single::<PointerHitter>().unwrap();
+            let pointer = world.single::<Pointer>().unwrap();
 
             let (PointerEvent::Moved(point)
             | PointerEvent::Pressed(point)
             | PointerEvent::Released(point)) = event;
 
             if !pressed {
-                let collider = intersect.intersect(world, point);
-                pointer_on = collider.and_then(|c| selection.hosts.get(&c).cloned());
+                // let pointer_onto = pointer.intersect(world, point);
+                // if pointer_on != pointer_onto {
+                //     if let Some(pointer_on) = pointer_on {
+                //         world.entry(pointer_on).unwrap().trigger(PointerLeave);
+                //     }
+                //     if let Some(pointer_onto) = pointer_onto {
+                //         world.entry(pointer_onto).unwrap().trigger(PointerEnter);
+                //     }
+                // }
+                pointer_on = pointer.intersect(world, point);
             }
 
             if let PointerEvent::Pressed(_) = event {
                 pressed = true;
-                if let Some(mut focus) = world.single_mut::<Focus>() {
-                    if let Some(pointer_on) = pointer_on
-                        && let Some(focusable) = world.fetch::<dyn Focusable>(pointer_on)
-                        && focusable.is_focusable()
-                    {
-                        focus.set(Some(pointer_on), world);
-                    } else {
-                        focus.set(None, world);
-                    }
-                }
+                // FIXME This should be maintained by the element itself
+                // if let Some(mut focus) = world.single_mut::<Focus>() {
+                //     if let Some(pointer_on) = pointer_on
+                //         && let Some(focusable) = world.fetch::<dyn Focusable>(pointer_on)
+                //         && focusable.is_focusable()
+                //     {
+                //         focus.set(Some(pointer_on), world);
+                //     } else {
+                //         focus.set(None, world);
+                //     }
+                // }
             }
 
             if pressed {
                 if let Some(mut pointer_on) = pointer_on.and_then(|w| world.entry(w)) {
                     pointer_on.trigger(PointerHit(event));
-                } else if let Some(mut fallback) = selection.fallback.and_then(|w| world.entry(w)) {
+                } else if let Some(mut fallback) = pointer.fallback.and_then(|w| world.entry(w)) {
                     fallback.trigger(PointerHit(event));
                 }
             }
@@ -58,54 +69,26 @@ impl Element for PointerHitter {
                 pressed = false;
             }
         });
-
-        entry.world().observe(|&ElementInserted(handle), world| {
-            if let Some(hittable) = world.fetch::<dyn PointerHittable>(handle) {
-                let collider = world.insert(Collider {
-                    rect: hittable.get_hitting_rect(),
-                    z_order: hittable.get_hitting_order(),
-                });
-
-                world.entry(collider).unwrap().depend(handle);
-
-                let mut hitter = world.single_mut::<PointerHitter>().unwrap();
-                hitter.hosts.insert(collider, handle);
-
-                (world.entry(handle).unwrap()).observe::<Modifier<Position>>(move |_, entry| {
-                    let hittable = entry.fetch::<dyn PointerHittable>(handle).unwrap();
-                    let mut collider = entry.fetch_mut::<Collider>(collider).unwrap();
-                    collider.rect = hittable.get_hitting_rect();
-                    collider.z_order = hittable.get_hitting_order();
-                });
-
-                (world.entry(handle).unwrap()).observe(move |Destroy, entry| {
-                    let mut selection = entry.single_mut::<PointerHitter>().unwrap();
-                    selection.hosts.remove(&collider);
-                    entry.remove(collider);
-                });
+    }
+}
+impl Pointer {
+    pub fn intersect(&self, world: &WorldCell, point: Position) -> Option<ElementHandle> {
+        let mut top_result = None;
+        let mut max_order = isize::MIN;
+        world.foreach::<PointerCollider>(|intersection, handle| {
+            if (intersection.z_order > max_order) && intersection.rect.contains(point) {
+                max_order = intersection.z_order;
+                top_result = Some(handle);
             }
         });
+        top_result
     }
-}
-impl PointerHitter {
+
+    pub fn get_fallback(&self) -> Option<ElementHandle> {
+        self.fallback
+    }
+
     pub fn set_fallback(&mut self, element: ElementHandle) {
         self.fallback = Some(element);
-    }
-}
-
-pub struct PointerHit(pub PointerEvent);
-pub trait PointerHittable: Element {
-    fn get_hitting_rect(&self) -> Rectangle;
-    fn get_hitting_order(&self) -> isize;
-}
-
-pub trait PointerHitExt: PointerHittable + Sized {
-    fn register_hittable(&mut self, handle: ElementHandle, world: &WorldCell);
-}
-impl<T: PointerHittable> PointerHitExt for T {
-    fn register_hittable(&mut self, handle: ElementHandle, world: &WorldCell) {
-        let mut this = world.entry(handle).unwrap();
-        this.register::<dyn PointerHittable>(|this| this.downcast_ref::<Self>().unwrap());
-        this.register_mut::<dyn PointerHittable>(|this| this.downcast_mut::<Self>().unwrap());
     }
 }

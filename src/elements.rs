@@ -1,6 +1,5 @@
 mod button;
 mod image;
-pub mod intersect;
 mod menu;
 mod palette;
 mod player;
@@ -9,7 +8,6 @@ mod text;
 
 pub use button::ButtonRaw;
 pub use image::Image;
-pub use intersect::Intersect;
 pub use menu::Menu;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;

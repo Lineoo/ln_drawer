@@ -7,7 +7,7 @@ use crate::{
     interface::{Interface, Square},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
-    tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
+    tools::pointer::{PointerCollider, PointerHit},
     world::{Element, ElementInserted, WorldCell, WorldCellEntry},
 };
 
@@ -26,6 +26,7 @@ pub struct Menu {
     frame: Square,
     select_frame: Square,
     entries: Vec<MenuEntry>,
+    collider: PointerCollider,
 }
 impl Element for Menu {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
@@ -81,16 +82,7 @@ impl Element for Menu {
 
         entry.entry(obs).unwrap().depend(handle);
 
-        self.register_hittable(handle, entry.world());
-    }
-}
-impl PointerHittable for Menu {
-    fn get_hitting_rect(&self) -> Rectangle {
-        self.frame.get_rect()
-    }
-
-    fn get_hitting_order(&self) -> isize {
-        100
+        entry.register::<PointerCollider>(|this| &this.downcast_ref::<Menu>().unwrap().collider);
     }
 }
 impl Menu {
@@ -239,10 +231,16 @@ impl Menu {
             });
         }
 
+        let collider = PointerCollider {
+            rect: frame.get_rect(),
+            z_order: 100,
+        };
+
         Menu {
             frame,
             select_frame,
             entries,
+            collider,
         }
     }
 }

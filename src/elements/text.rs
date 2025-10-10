@@ -8,7 +8,7 @@ use crate::{
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
-    tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
+    tools::pointer::{PointerCollider, PointerHit},
     world::{Element, WorldCellEntry},
 };
 
@@ -118,13 +118,12 @@ pub struct TextEdit {
     inner: Painter,
     text: String,
     editor: Editor<'static>,
+    collider: PointerCollider,
     font_system: Arc<Mutex<FontSystem>>,
     swash_cache: Arc<Mutex<SwashCache>>,
 }
 impl Element for TextEdit {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
-        self.register_hittable(entry.handle(), entry.world());
-
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Pressed(position) => {
                 let mut this = entry.fetch_mut_raw::<TextEdit>(entry.handle()).unwrap();
@@ -168,6 +167,8 @@ impl Element for TextEdit {
             }
             PointerEvent::Released(_) => (),
         });
+
+        entry.register::<PointerCollider>(|this| &this.downcast_ref::<TextEdit>().unwrap().collider);
     }
 }
 impl OrderElement for TextEdit {
@@ -177,15 +178,6 @@ impl OrderElement for TextEdit {
 
     fn set_order(&mut self, order: isize) {
         self.inner.set_z_order(order);
-    }
-}
-impl PointerHittable for TextEdit {
-    fn get_hitting_rect(&self) -> Rectangle {
-        self.inner.get_rect()
-    }
-
-    fn get_hitting_order(&self) -> isize {
-        self.inner.get_z_order()
     }
 }
 impl TextEdit {
@@ -223,10 +215,16 @@ impl TextEdit {
             },
         );
 
+        let inner = interface.create_painter_with(rect, data);
+        let collider = PointerCollider {
+            rect: inner.get_rect(),
+            z_order: inner.get_z_order(),
+        };
         TextEdit {
-            inner: interface.create_painter_with(rect, data),
+            inner,
             text,
             editor: Editor::new(buffer),
+            collider,
             font_system: manager.font_system.clone(),
             swash_cache: manager.swash_cache.clone(),
         }

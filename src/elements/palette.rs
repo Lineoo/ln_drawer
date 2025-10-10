@@ -4,7 +4,7 @@ use crate::{
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
-    tools::pointer::{PointerHit, PointerHitExt, PointerHittable},
+    tools::pointer::{PointerCollider, PointerHit},
     world::{Element, Modifier, WorldCellEntry},
 };
 
@@ -14,6 +14,7 @@ const HEIGHT: u32 = 128;
 pub struct Palette {
     painter: Painter,
     knob: Painter,
+    collider: PointerCollider,
 }
 impl Element for Palette {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
@@ -38,16 +39,7 @@ impl Element for Palette {
             this.knob.set_position(knob_position - Delta::splat(1));
         });
 
-        self.register_hittable(entry.handle(), entry.world());
-    }
-}
-impl PointerHittable for Palette {
-    fn get_hitting_rect(&self) -> Rectangle {
-        self.painter.get_rect()
-    }
-
-    fn get_hitting_order(&self) -> isize {
-        self.painter.get_z_order()
+        entry.register::<PointerCollider>(|this| &this.downcast_ref::<Palette>().unwrap().collider);
     }
 }
 impl Palette {
@@ -94,7 +86,16 @@ impl Palette {
         let mut knob = interface.create_painter_with(rect, data);
         knob.set_z_order(1);
 
-        Palette { painter, knob }
+        let collider = PointerCollider {
+            rect: painter.get_rect(),
+            z_order: painter.get_z_order(),
+        };
+        
+        Palette {
+            painter,
+            knob,
+            collider,
+        }
     }
 
     pub fn get_knob_position(&self) -> Position {

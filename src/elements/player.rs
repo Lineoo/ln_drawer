@@ -4,21 +4,23 @@ use winit::{
 };
 
 use crate::{
-    elements::Image,
+    elements::{Image, OrderElement},
     interface::Interface,
-    measures::{Delta, Rectangle},
+    measures::Delta,
     tools::{
         focus::{FocusInput, FocusOn, Focusable, FocusableExt},
-        pointer::{PointerHitExt, PointerHittable},
+        pointer::PointerCollider,
     },
     world::{Element, WorldCellEntry},
 };
 
 pub struct Player {
     image: Image,
+    collider: PointerCollider,
 }
 impl Element for Player {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        // TODO focus
         entry.observe(move |FocusOn, _entry| {
             println!("player is here!");
         });
@@ -36,29 +38,23 @@ impl Element for Player {
             };
 
             let mut this = entry.fetch_mut_raw::<Player>(entry.handle()).unwrap();
-            
+
             let position = this.image.get_position();
             this.image.set_position(position + delta);
         });
 
-        self.register_hittable(entry.handle(), entry.world());
+        entry.register::<PointerCollider>(|this| &this.downcast_ref::<Player>().unwrap().collider);
         self.register_focus(entry.handle(), entry.world());
-    }
-}
-impl PointerHittable for Player {
-    fn get_hitting_rect(&self) -> Rectangle {
-        self.image.get_hitting_rect()
-    }
-
-    fn get_hitting_order(&self) -> isize {
-        self.image.get_hitting_order()
     }
 }
 impl Focusable for Player {}
 impl Player {
     pub fn new(interface: &mut Interface) -> Player {
-        Player {
-            image: Image::from_bytes(include_bytes!("../../res/player.png"), interface).unwrap(),
-        }
+        let image = Image::from_bytes(include_bytes!("../../res/player.png"), interface).unwrap();
+        let collider = PointerCollider {
+            rect: image.get_rect(),
+            z_order: image.get_order(),
+        };
+        Player { image, collider }
     }
 }
