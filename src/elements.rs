@@ -3,14 +3,12 @@ mod image;
 mod menu;
 mod palette;
 mod stroke;
-mod text;
 
 pub use button::ButtonRaw;
 pub use image::Image;
 pub use menu::Menu;
 pub use palette::Palette;
 pub use stroke::StrokeLayer;
-pub use text::{Text, TextManager};
 
 use crate::world::{Element, ElementHandle, WorldCell};
 

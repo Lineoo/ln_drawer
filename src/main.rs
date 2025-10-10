@@ -6,6 +6,7 @@ pub mod lnwin;
 pub mod measures;
 mod tools;
 pub mod world;
+mod text;
 
 use winit::{
     error::EventLoopError,

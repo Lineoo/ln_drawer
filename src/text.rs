@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use cosmic_text::*;
 use parking_lot::Mutex;
-use winit::{
-    event::ElementState,
-    keyboard::{Key, KeyCode, NamedKey, PhysicalKey},
-};
+use winit::keyboard::{Key, NamedKey};
 
 use crate::{
     elements::OrderElement,
@@ -37,10 +34,6 @@ impl Element for TextManager {}
 
 pub struct Text {
     inner: Painter,
-    text: String,
-    buffer: Buffer,
-    font_system: Arc<Mutex<FontSystem>>,
-    swash_cache: Arc<Mutex<SwashCache>>,
 }
 impl Text {
     pub fn new(
@@ -79,35 +72,7 @@ impl Text {
 
         Text {
             inner: interface.create_painter_with(rect, data),
-            text,
-            buffer,
-            font_system: manager.font_system.clone(),
-            swash_cache: manager.swash_cache.clone(),
         }
-    }
-
-    pub fn set_text(&mut self, text: &str, color: [u8; 4]) {
-        let mut font_system = self.font_system.lock();
-        let mut swash_cache = self.swash_cache.lock();
-
-        text.clone_into(&mut self.text);
-        self.buffer
-            .set_text(&mut font_system, text, &Attrs::new(), Shaping::Advanced);
-
-        let mut writer = self.inner.open_writer();
-        self.buffer.draw(
-            &mut font_system,
-            &mut swash_cache,
-            Color::rgba(color[0], color[1], color[2], color[3]),
-            |x, y, w, h, color| {
-                let rgba = color.as_rgba();
-                for x in x..(x + w as i32) {
-                    for y in y..(y + h as i32) {
-                        writer.draw(x, y, rgba);
-                    }
-                }
-            },
-        );
     }
 }
 impl Element for Text {}
@@ -123,7 +88,6 @@ impl OrderElement for Text {
 
 pub struct TextEdit {
     inner: Painter,
-    text: String,
     editor: Editor<'static>,
     collider: PointerCollider,
     font_system: Arc<Mutex<FontSystem>>,
@@ -276,7 +240,6 @@ impl TextEdit {
         };
         TextEdit {
             inner,
-            text,
             editor: Editor::new(buffer),
             collider,
             font_system: manager.font_system.clone(),

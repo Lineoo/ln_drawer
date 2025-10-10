@@ -1,11 +1,9 @@
 use crate::{
-    elements::{
-        ButtonRaw, Image, OrderElement, Palette, Text,
-        text::{TextEdit, TextManager},
-    },
+    elements::{ButtonRaw, Image, OrderElement, Palette},
     interface::{Interface, Square},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle},
+    text::{Text, TextEdit, TextManager},
     tools::pointer::{PointerCollider, PointerHit},
     world::{Element, ElementInserted, WorldCell, WorldCellEntry},
 };
