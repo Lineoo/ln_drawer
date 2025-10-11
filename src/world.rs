@@ -1,6 +1,7 @@
 use std::{
     any::{Any, TypeId, type_name},
     cell::RefCell,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
 };
 
@@ -62,34 +63,10 @@ pub struct WorldCellEntry<'world> {
 
 impl Default for World {
     fn default() -> Self {
-        let mut elements = HashMap::<_, Box<dyn Element>>::new();
-        let mut singletons = HashMap::new();
-
-        elements.insert(ElementHandle(0), Box::new(Observers::default()));
-        singletons.insert(
-            TypeId::of::<Observers>(),
-            Singleton::Unique(ElementHandle(0)),
-        );
-
-        elements.insert(ElementHandle(1), Box::new(Queue::default()));
-        singletons.insert(TypeId::of::<Queue>(), Singleton::Unique(ElementHandle(1)));
-
-        elements.insert(ElementHandle(2), Box::new(Services::default()));
-        singletons.insert(
-            TypeId::of::<Services>(),
-            Singleton::Unique(ElementHandle(2)),
-        );
-
-        elements.insert(ElementHandle(3), Box::new(Dependencies::default()));
-        singletons.insert(
-            TypeId::of::<Dependencies>(),
-            Singleton::Unique(ElementHandle(3)),
-        );
-
         World {
-            curr_idx: ElementHandle(4),
-            elements,
-            singletons,
+            curr_idx: ElementHandle(0),
+            elements: HashMap::new(),
+            singletons: HashMap::new(),
         }
     }
 }
@@ -167,11 +144,6 @@ impl World {
         self.entry(handle).unwrap().trigger(&Destroy);
         self.trigger(&ElementRemoved(handle));
 
-        // remove related services
-        for services_typed in &mut self.single_mut::<Services>().unwrap().0 {
-            services_typed.1.remove(&handle);
-        }
-
         // singleton cache
         let singleton = self.singletons.get_mut(&type_id).unwrap();
         match singleton {
@@ -184,6 +156,8 @@ impl World {
             // it is basically a waste. So we won't implement it.
             Singleton::Multiple => {}
         }
+
+        // TODO remove related services
 
         // clean dependence to parent
         let depend = self.single_mut::<Dependencies>().unwrap();
@@ -1116,8 +1090,40 @@ impl<T: 'static> Modify<T> {
     }
 }
 
-pub struct ModifiedProperty<T>(pub T);
+// Internal Elements //
 
+// observer & trigger
+#[derive(Default)]
+struct Observers<E>(
+    HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>,
+    PhantomData<E>,
+);
+#[expect(clippy::type_complexity)]
+struct Observer(Box<dyn FnMut(&dyn Any, &WorldCell)>);
+impl<E: 'static> Element for Observers<E> {}
+impl Element for Observer {}
+
+// cell queue
+#[derive(Default)]
+#[expect(clippy::type_complexity)]
+struct Queue(Vec<Box<dyn FnOnce(&mut World)>>);
+impl Element for Queue {}
+
+// TODO depend
+#[derive(Default)]
+struct Dependencies {
+    // real: <child, parent>
+    real: HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>,
+    // cache: <parent, child>
+    cache: HashMap<ElementHandle, SmallVec<[ElementHandle; 4]>>,
+}
+struct Dependence {
+    depend_on: SmallVec<[ElementHandle; 1]>,
+    depend_by: SmallVec<[ElementHandle; 4]>,
+}
+impl Element for Dependencies {}
+
+// property & modify
 struct PropertyServices<T>(HashMap<ElementHandle, PropertyService<T>>);
 struct PropertyService<T> {
     getter: fn(&dyn Element) -> T,
@@ -1125,63 +1131,11 @@ struct PropertyService<T> {
 }
 impl<T: 'static> Element for PropertyServices<T> {}
 
-// Internal Element #0
-#[derive(Default)]
-struct Observers(HashMap<TypeId, HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>>);
-#[expect(clippy::type_complexity)]
-struct Observer(Box<dyn FnMut(&dyn Any, &WorldCell)>);
-impl Element for Observers {}
-impl Element for Observer {}
-
-// Internal Element #1
-#[derive(Default)]
-#[expect(clippy::type_complexity)]
-struct Queue(Vec<Box<dyn FnOnce(&mut World)>>);
-impl Element for Queue {}
-
-// Internal Element #2
-#[derive(Default)]
-struct Services(HashMap<TypeId, Box<dyn ServicesPart>>);
-struct ServicesTyped<U: ?Sized>(HashMap<ElementHandle, Service<U>>);
-struct ServicesTypedMut<U: ?Sized>(HashMap<ElementHandle, ServiceMut<U>>);
-type Service<U> = Box<dyn Fn(&dyn Element) -> &U>;
-type ServiceMut<U> = Box<dyn Fn(&mut dyn Element) -> &mut U>;
-impl Element for Services {}
-
-trait ServicesPart: Any {
-    fn remove(&mut self, handle: &ElementHandle);
-}
-impl<U: ?Sized + 'static> ServicesPart for ServicesTyped<U> {
-    fn remove(&mut self, handle: &ElementHandle) {
-        self.0.remove(handle);
-    }
-}
-impl<U: ?Sized + 'static> ServicesPart for ServicesTypedMut<U> {
-    fn remove(&mut self, handle: &ElementHandle) {
-        self.0.remove(handle);
-    }
-}
-impl dyn ServicesPart {
-    fn downcast_ref<T: Any>(&self) -> Option<&T> {
-        (self as &dyn Any).downcast_ref()
-    }
-    fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
-        (self as &mut dyn Any).downcast_mut()
-    }
-}
-
-// Internal Element #3
-#[derive(Default)]
-struct Dependencies {
-    real: HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>,
-    cache: HashMap<ElementHandle, SmallVec<[ElementHandle; 4]>>,
-}
-impl Element for Dependencies {}
-
-// Builtin Events
+// Builtin Events //
 
 pub struct ElementInserted(pub ElementHandle);
 pub struct ElementRemoved(pub ElementHandle);
+pub struct ModifiedProperty<T>(pub T);
 pub struct Destroy;
 
 #[cfg(test)]
