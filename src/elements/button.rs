@@ -1,9 +1,9 @@
 use crate::{
     interface::{Interface, Square},
     lnwin::PointerEvent,
-    measures::{Position, Rectangle, ZOrder},
+    measures::{Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave},
-    world::{Element, Modifier, WorldCell, WorldCellEntry},
+    world::{Element, WorldCell, WorldCellEntry},
 };
 
 /// Only contains raw button interaction logic. See [`Button`] if a complete button
@@ -30,11 +30,6 @@ impl Element for ButtonRaw {
         entry.observe::<PointerLeave>(move |_event, entry| {
             let this = entry.fetch::<ButtonRaw>(entry.handle()).unwrap();
             this.square.set_visible(false);
-        });
-
-        entry.observe::<Modifier<Position>>(move |modifier, entry| {
-            let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();
-            this.rect.origin = modifier.invoke(this.rect.origin);
         });
 
         entry.register::<PointerCollider>(|this| {

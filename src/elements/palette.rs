@@ -5,7 +5,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerHit},
-    world::{Element, Modifier, WorldCellEntry},
+    world::{Element, WorldCellEntry},
 };
 
 const WIDTH: u32 = 128;
@@ -24,19 +24,6 @@ impl Element for Palette {
                 this.set_knob_position(point);
             }
             _ => (),
-        });
-
-        entry.observe::<Modifier<Position>>(move |modifier, entry| {
-            let mut this = entry.fetch_mut::<Palette>(entry.handle()).unwrap();
-            let origin = this.painter.get_position();
-            let position = modifier.invoke(origin);
-            let delta = position - origin;
-
-            let knob_origin = this.get_knob_position();
-            let knob_position = knob_origin + delta;
-
-            this.painter.set_position(position);
-            this.knob.set_position(knob_position - Delta::splat(1));
         });
 
         entry.register::<PointerCollider>(|this| &this.downcast_ref::<Palette>().unwrap().collider);

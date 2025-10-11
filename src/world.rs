@@ -1096,21 +1096,6 @@ struct Dependencies {
 }
 impl Element for Dependencies {}
 
-pub struct Modifier<T> {
-    function: Box<dyn Fn(T) -> T>,
-}
-impl<T> Modifier<T> {
-    pub fn new(f: impl Fn(T) -> T + 'static) -> Modifier<T> {
-        Modifier {
-            function: Box::new(f),
-        }
-    }
-
-    pub fn invoke(&self, value: T) -> T {
-        (self.function)(value)
-    }
-}
-
 // Builtin Events
 
 pub struct ElementInserted(pub ElementHandle);

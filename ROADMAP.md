@@ -353,3 +353,12 @@ fn when_inserted(&mut self, entry: WorldCellEntry) {
     let world: &WorldCell = entry.world();
 }
 ```
+
+# v0.2 的内容
+- crate 架构 - lib 独立
+- lnwin 的窗口实现为 Element 
+    - 同时把 world 的 observe 删掉
+- Observers 和 Services 作为 Element 泛型单例而不是使用 TypeId Map
+    - 不再 Internal Element
+- InsertWorld
+- 类型化 entry
