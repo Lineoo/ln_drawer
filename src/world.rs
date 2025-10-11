@@ -527,7 +527,7 @@ impl WorldEntry<'_> {
     pub fn modify<T: 'static>(&mut self) -> Option<Modify<T>> {
         let service = self.world.single_mut::<PropertyServices<T>>()?;
         let getter = service.0.get(&self.handle)?.getter;
-        let element = self.world.fetch_dyn(self.handle)?;
+        let element = self.world.elements.get(&self.handle)?.as_ref();
 
         Some(Modify {
             target: self.handle,
@@ -756,7 +756,7 @@ impl<T: 'static> Modify<T> {
         let service = world.single_mut::<PropertyServices<T>>().unwrap();
         let getter = service.0.get(&self.target).unwrap().getter;
         let setter = service.0.get(&self.target).unwrap().setter;
-        let element = world.fetch_mut_dyn(self.target).unwrap();
+        let element = world.elements.get_mut(&self.target).unwrap().as_mut();
 
         setter(element, self.value);
 
