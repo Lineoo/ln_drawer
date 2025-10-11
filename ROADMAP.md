@@ -113,6 +113,8 @@ interface 现在在 lnwin 的逻辑（需要分离）：
 
 但同时用户的代码我们也必须允许以保留灵活性，也就是保留一个任意修改世界的 `queue` 方法。此时如果用户删除了元素后仍访问对应句柄，那就是不规范使用 Handle 导致的，跟我们 cell 就没有关系了（预期的 panic）。
 
+在实现了 queue 自定义外部用户操作 之后，推荐大家使用 `&mut World` 而非 `&WorldCell`，因为无论哪个都可以实现了。
+
 # 循环数位和相对的尺度
 我们实现了无限画布——好吧其实不是无限的，毕竟受到 32 位整数限制。但是我们希望即使真的哪个神经病到达了地图边缘我们仍然能够愉快的处理这种现象，我的答案是——循环。
 
@@ -168,6 +170,9 @@ that.trigger(ElementUpdate);
 - trait: `Fetchable`, `Fetchable::Output`
 - `StrongHandle<T = dyn Element>` -> `T` or panic!
 - `Handle<T = dyn Element>` -> `Option<T>`
+
+因为我们没有使用 Rc 所以 StrongHandle 其实是没办法保证的 :/
+我们能做的就是保证一个类型。
 
 2. `Event<E>` 类型
 对 observer 的 event 使用 Deref 进行一点封装，并实现：
@@ -362,3 +367,4 @@ fn when_inserted(&mut self, entry: WorldCellEntry) {
     - 不再 Internal Element
 - InsertWorld
 - 类型化 entry
+- single 使用 service 完成

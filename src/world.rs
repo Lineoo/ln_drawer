@@ -221,7 +221,9 @@ impl World {
     pub fn contains_type_mut<T: ?Sized + 'static>(&self, handle: ElementHandle) -> bool {
         let services = self.single::<Services>().unwrap();
         if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTypedMut<T>>()) {
-            let services_typed = services_typed.downcast_ref::<ServicesTypedMut<T>>().unwrap();
+            let services_typed = services_typed
+                .downcast_ref::<ServicesTypedMut<T>>()
+                .unwrap();
             services_typed.0.contains_key(&handle)
         } else {
             false
@@ -854,6 +856,48 @@ impl WorldEntry<'_> {
         }
     }
 
+    pub fn modify<T: 'static>(&mut self) -> Option<Modify<T>> {
+        let service = self.world.single_mut::<PropertyServices<T>>()?;
+        let getter = service.0.get(&self.handle)?.getter;
+        let element = self.world.fetch_dyn(self.handle)?;
+
+        Some(Modify {
+            target: self.handle,
+            value: getter(element),
+        })
+    }
+
+    pub fn property<T: 'static>(
+        &mut self,
+        getter: fn(&dyn Element) -> T,
+        setter: fn(&mut dyn Element, T),
+    ) {
+        match self.world.single_mut::<PropertyServices<T>>() {
+            Some(service) => {
+                let ret = (service.0).insert(self.handle, PropertyService { getter, setter });
+
+                if ret.is_some() {
+                    log::error!(
+                        "duplicated property {} registered on {:?}!",
+                        type_name::<T>(),
+                        self.handle
+                    );
+                }
+            }
+            None => {
+                let mut service = PropertyServices::<T>(HashMap::new());
+
+                (service.0).insert(self.handle, PropertyService { getter, setter });
+                self.world.insert(service);
+
+                log::trace!(
+                    "property service of type {} is registered",
+                    type_name::<T>()
+                );
+            }
+        }
+    }
+
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
     pub fn depend(&mut self, parent: ElementHandle) {
@@ -1042,6 +1086,44 @@ impl<T: ?Sized> Drop for RefMut<'_, T> {
         *cnt += 1;
     }
 }
+
+pub struct Modify<T> {
+    target: ElementHandle,
+    value: T,
+}
+impl<T> Deref for Modify<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+impl<T> DerefMut for Modify<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
+    }
+}
+impl<T: 'static> Modify<T> {
+    pub fn flush(self, world: &mut World) {
+        let service = world.single_mut::<PropertyServices<T>>().unwrap();
+        let getter = service.0.get(&self.target).unwrap().getter;
+        let setter = service.0.get(&self.target).unwrap().setter;
+        let element = world.fetch_mut_dyn(self.target).unwrap();
+
+        setter(element, self.value);
+
+        let value = getter(element);
+        world.trigger(&ModifiedProperty(value));
+    }
+}
+
+pub struct ModifiedProperty<T>(pub T);
+
+struct PropertyServices<T>(HashMap<ElementHandle, PropertyService<T>>);
+struct PropertyService<T> {
+    getter: fn(&dyn Element) -> T,
+    setter: fn(&mut dyn Element, T),
+}
+impl<T: 'static> Element for PropertyServices<T> {}
 
 // Internal Element #0
 #[derive(Default)]
