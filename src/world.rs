@@ -113,9 +113,10 @@ impl World {
         let type_id = (**self.elements.get(&handle)?).type_id();
 
         // remove children first
-        let depend = self.single::<Dependencies>().unwrap();
-        if let Some(children) = depend.cache.get(&handle) {
-            for child in children.clone() {
+        if let Some(dependencies) = self.single::<Dependencies>()
+            && let Some(this) = dependencies.0.get(&handle)
+        {
+            for child in this.depend_by.clone() {
                 self.remove(child);
             }
         }
@@ -129,17 +130,22 @@ impl World {
         cache.remove(&handle);
 
         // clean dependence to parent
-        let depend = self.single_mut::<Dependencies>().unwrap();
-        if let Some(parents) = depend.real.remove(&handle) {
-            for parent in parents {
-                let parent_children = depend.cache.get_mut(&parent).unwrap();
-                for i in 0..parent_children.len() {
-                    if parent_children[i] == handle {
-                        parent_children.swap_remove(i);
-                        break;
+        if let Some(dependencies) = self.single_mut::<Dependencies>()
+            && let Some(this) = dependencies.0.get(&handle)
+        {
+            for parent in this.depend_on.clone() {
+                if let Some(parent) = dependencies.0.get_mut(&parent) {
+                    // search for itself and swap remove
+                    for i in 0..parent.depend_by.len() {
+                        if parent.depend_by[i] == handle {
+                            parent.depend_by.swap_remove(i);
+                            break;
+                        }
                     }
                 }
             }
+
+            dependencies.0.remove(&handle);
         }
 
         // TODO RemovalCapture(Box<dyn Element>)
@@ -322,12 +328,13 @@ impl WorldCell<'_> {
 
         let type_id = (**self.world.elements.get(&handle).unwrap()).type_id();
 
-        let mut cnt = 0;
+        let mut cnt = 1;
 
         // remove children first
-        let depend = self.single::<Dependencies>().unwrap();
-        if let Some(children) = depend.cache.get(&handle) {
-            for child in children.clone() {
+        if let Some(dependencies) = self.single::<Dependencies>()
+            && let Some(this) = dependencies.0.get(&handle)
+        {
+            for child in this.depend_by.clone() {
                 cnt += self.remove(child);
             }
         }
@@ -343,17 +350,22 @@ impl WorldCell<'_> {
             cache.remove(&handle);
 
             // clean dependence to parent
-            let depend = world.single_mut::<Dependencies>().unwrap();
-            if let Some(parents) = depend.real.remove(&handle) {
-                for parent in parents {
-                    let parent_children = depend.cache.get_mut(&parent).unwrap();
-                    for i in 0..parent_children.len() {
-                        if parent_children[i] == handle {
-                            parent_children.swap_remove(i);
-                            break;
+            if let Some(dependencies) = world.single_mut::<Dependencies>()
+                && let Some(this) = dependencies.0.get(&handle)
+            {
+                for parent in this.depend_on.clone() {
+                    if let Some(parent) = dependencies.0.get_mut(&parent) {
+                        // search for itself and swap remove
+                        for i in 0..parent.depend_by.len() {
+                            if parent.depend_by[i] == handle {
+                                parent.depend_by.swap_remove(i);
+                                break;
+                            }
                         }
                     }
                 }
+
+                dependencies.0.remove(&handle);
             }
 
             // TODO RemovalCapture(Box<dyn Element>)
@@ -687,16 +699,29 @@ impl WorldEntry<'_> {
 
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
-    pub fn depend(&mut self, parent: ElementHandle) {
-        let child = self.handle;
-        if !self.world.contains(parent) {
-            log::error!("{child:?} try to depend on {parent:?}, which does not exist");
+    pub fn depend(&mut self, depend_on: ElementHandle) {
+        let depend_by = self.handle;
+        if !self.world.contains(depend_on) {
+            log::error!("{depend_by:?} try to depend on {depend_on:?}, which does not exist");
             return;
         }
 
-        let depend = self.world.single_mut::<Dependencies>().unwrap();
-        depend.real.entry(child).or_default().push(parent);
-        depend.cache.entry(parent).or_default().push(child);
+        match self.world.single_mut::<Dependencies>() {
+            Some(dependencies) => {
+                let depend = dependencies.0.entry(depend_on).or_default();
+                depend.depend_by.push(depend_by);
+                let depend = dependencies.0.entry(depend_by).or_default();
+                depend.depend_on.push(depend_on);
+            }
+            None => {
+                let mut dependencies = Dependencies::default();
+                let depend = dependencies.0.entry(depend_on).or_default();
+                depend.depend_by.push(depend_by);
+                let depend = dependencies.0.entry(depend_by).or_default();
+                depend.depend_on.push(depend_on);
+                self.world.insert(dependencies);
+            }
+        }
     }
 
     pub fn destroy(self) {
@@ -783,16 +808,13 @@ impl WorldCellEntry<'_> {
 
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
-    pub fn depend(&mut self, parent: ElementHandle) {
-        let child = self.handle;
-        if !(self.world.contains(parent) || self.world.inserted.borrow().contains(&parent)) {
-            log::error!("{child:?} try to depend on {parent:?}, which does not exist");
-            return;
-        }
-
-        let mut depend = self.world.single_mut::<Dependencies>().unwrap();
-        depend.real.entry(child).or_default().push(parent);
-        depend.cache.entry(parent).or_default().push(child);
+    pub fn depend(&mut self, depend_on: ElementHandle) {
+        let handle = self.handle;
+        let mut queue = self.world.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry(handle).unwrap();
+            this.depend(depend_on);
+        }));
     }
 
     pub fn destroy(self) {
@@ -935,14 +957,10 @@ impl Element for Observer {}
 struct Queue(Vec<Box<dyn FnOnce(&mut World)>>);
 impl Element for Queue {}
 
-// TODO depend
+// depend
 #[derive(Default)]
-struct Dependencies {
-    // real: <child, parent>
-    real: HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>,
-    // cache: <parent, child>
-    cache: HashMap<ElementHandle, SmallVec<[ElementHandle; 4]>>,
-}
+struct Dependencies(HashMap<ElementHandle, Dependence>);
+#[derive(Default)]
 struct Dependence {
     depend_on: SmallVec<[ElementHandle; 1]>,
     depend_by: SmallVec<[ElementHandle; 4]>,
