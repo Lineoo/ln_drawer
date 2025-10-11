@@ -231,7 +231,7 @@ impl World {
             handle,
         })
     }
-    
+
     // TODO remove this when lnwin refactor is done
 
     /// Notice that it's *NOT* observing events world-wide! It's only observe events triggered also
@@ -494,23 +494,29 @@ impl WorldEntry<'_> {
             action(event, entry);
         })));
 
-        let observers = self.world.single_mut::<Observers>().unwrap();
-        let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
-        let observers_typed_element = observers_typed.entry(self.handle).or_default();
-        observers_typed_element.push(handle);
+        match self.world.single_mut::<Observers<E>>() {
+            Some(observers) => {
+                let observers = observers.0.entry(self.handle).or_default();
+                observers.push(handle);
+            }
+            None => {
+                let mut observers = Observers::<E>(HashMap::new(), PhantomData);
+                let observers = observers.0.entry(self.handle).or_default();
+                observers.push(handle);
+            }
+        }
 
-        self.entry(handle).unwrap().depend(this);
+        self.world.entry(handle).unwrap().depend(self.handle);
 
         handle
     }
 
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         let cell = self.world.cell();
-        let observers = cell.single::<Observers>().unwrap();
-        if let Some(observers_typed) = observers.0.get(&TypeId::of::<E>())
-            && let Some(observers_typed_element) = observers_typed.get(&self.handle)
+        if let Some(observers) = cell.single::<Observers<E>>()
+            && let Some(observers) = observers.0.get(&self.handle)
         {
-            for observer in observers_typed_element {
+            for observer in observers {
                 if let Some(mut observer) = cell.fetch_mut_raw::<Observer>(*observer) {
                     (observer.0)(event, &cell);
                 }
@@ -604,13 +610,20 @@ impl WorldCellEntry<'_> {
         // before the insertion above hasn't even done yet
         let mut queue = self.world.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
-            let observers = world.single_mut::<Observers>().unwrap();
-            let observers_typed = (observers.0).entry(TypeId::of::<E>()).or_default();
-            let observers_typed_element = observers_typed.entry(this).or_default();
-            observers_typed_element.push(estimate_handle);
-        }));
+            match world.single_mut::<Observers<E>>() {
+                Some(observers) => {
+                    let observers = observers.0.entry(this).or_default();
+                    observers.push(estimate_handle);
+                }
+                None => {
+                    let mut observers = Observers::<E>(HashMap::new(), PhantomData);
+                    let observers = observers.0.entry(this).or_default();
+                    observers.push(estimate_handle);
+                }
+            }
 
-        self.entry(estimate_handle).unwrap().depend(this);
+            world.entry(estimate_handle).unwrap().depend(this);
+        }));
 
         estimate_handle
     }
