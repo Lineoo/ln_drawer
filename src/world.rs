@@ -240,6 +240,10 @@ impl World {
     }
 
     pub fn cell(&mut self) -> WorldCell<'_> {
+        if self.single::<Queue>().is_none() {
+            self.insert(Queue::default());
+        }
+
         let cell_idx = self.curr_idx;
         WorldCell {
             world: self,
