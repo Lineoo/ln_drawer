@@ -260,8 +260,7 @@ impl Element for TextEdit {
             this.redraw();
         });
 
-        entry
-            .register::<PointerCollider>(|this| &this.downcast_ref::<TextEdit>().unwrap().collider);
+        entry.getter::<PointerCollider>(|this| this.downcast_ref::<TextEdit>().unwrap().collider);
     }
 }
 impl TextEdit {

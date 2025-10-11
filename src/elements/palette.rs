@@ -26,7 +26,7 @@ impl Element for Palette {
             _ => (),
         });
 
-        entry.register::<PointerCollider>(|this| &this.downcast_ref::<Palette>().unwrap().collider);
+        entry.getter::<PointerCollider>(|this| this.downcast_ref::<Palette>().unwrap().collider);
     }
 }
 impl Palette {

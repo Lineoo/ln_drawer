@@ -32,9 +32,7 @@ impl Element for ButtonRaw {
             this.square.set_visible(false);
         });
 
-        entry.register::<PointerCollider>(|this| {
-            &this.downcast_ref::<ButtonRaw>().unwrap().collider
-        });
+        entry.getter::<PointerCollider>(|this| this.downcast_ref::<ButtonRaw>().unwrap().collider);
     }
 }
 impl ButtonRaw {

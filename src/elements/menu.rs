@@ -79,7 +79,7 @@ impl Element for Menu {
 
         entry.entry(obs).unwrap().depend(handle);
 
-        entry.register::<PointerCollider>(|this| &this.downcast_ref::<Menu>().unwrap().collider);
+        entry.getter::<PointerCollider>(|this| this.downcast_ref::<Menu>().unwrap().collider);
     }
 }
 impl Menu {

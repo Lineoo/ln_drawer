@@ -4,6 +4,7 @@ use crate::{
     world::{Element, ElementHandle, WorldCell, WorldCellEntry},
 };
 
+#[derive(Clone, Copy)]
 pub struct PointerCollider {
     pub rect: Rectangle,
     pub z_order: ZOrder,
