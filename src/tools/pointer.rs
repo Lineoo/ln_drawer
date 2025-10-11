@@ -61,6 +61,7 @@ impl Element for Pointer {
     }
 }
 impl Pointer {
+    // TODO Optimize
     pub fn intersect(&self, world: &WorldCell, point: Position) -> Option<ElementHandle> {
         let mut top_result = None;
         let mut max_order = ZOrder::new(isize::MIN);

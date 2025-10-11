@@ -1,9 +1,9 @@
 #![windows_subsystem = "windows"]
 
-pub mod elements;
-pub mod interface;
-pub mod lnwin;
-pub mod measures;
+mod elements;
+mod interface;
+mod lnwin;
+mod measures;
 mod tools;
 pub mod world;
 mod text;

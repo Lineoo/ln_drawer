@@ -218,6 +218,16 @@ impl World {
         }
     }
 
+    pub fn contains_type_mut<T: ?Sized + 'static>(&self, handle: ElementHandle) -> bool {
+        let services = self.single::<Services>().unwrap();
+        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTypedMut<T>>()) {
+            let services_typed = services_typed.downcast_ref::<ServicesTypedMut<T>>().unwrap();
+            services_typed.0.contains_key(&handle)
+        } else {
+            false
+        }
+    }
+
     pub fn contains_raw<T: Element>(&self, handle: ElementHandle) -> bool {
         self.elements
             .get(&handle)
@@ -495,6 +505,14 @@ impl WorldCell<'_> {
             return false;
         }
         self.world.contains_type::<T>(handle)
+    }
+
+    /// Insertion happened within the cell scope will not be included
+    pub fn contains_type_mut<T: ?Sized + 'static>(&self, handle: ElementHandle) -> bool {
+        if self.removed.borrow().contains(&handle) {
+            return false;
+        }
+        self.world.contains_type_mut::<T>(handle)
     }
 
     /// Insertion happened within the cell scope will not be included
