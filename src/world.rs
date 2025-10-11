@@ -66,11 +66,6 @@ impl Default for World {
     }
 }
 
-impl Drop for World {
-    fn drop(&mut self) {
-        self.trigger(&Destroy);
-    }
-}
 impl Drop for WorldCell<'_> {
     fn drop(&mut self) {
         self.world.curr_idx = *self.cell_idx.get_mut();
@@ -610,23 +605,25 @@ impl WorldCell<'_> {
 impl WorldEntry<'_> {
     pub fn observe<E: 'static>(
         &mut self,
-        mut action: impl FnMut(&E, WorldCellEntry) + 'static,
+        action: impl FnMut(&E, WorldCellEntry) + 'static,
     ) -> ElementHandle {
         let this = self.handle;
-        let handle = self.world.insert(Observer(Box::new(move |event, world| {
-            let event = event.downcast_ref::<E>().unwrap();
-            let entry = world.entry(this).unwrap();
-            action(event, entry);
-        })));
+        let handle = self.world.insert(Observer {
+            action: Box::new(action),
+            target: this,
+        });
 
         match self.world.single_mut::<Observers<E>>() {
             Some(observers) => {
-                let observers = observers.0.entry(self.handle).or_default();
+                let observers = observers.observers.entry(self.handle).or_default();
                 observers.push(handle);
             }
             None => {
-                let mut observers = Observers::<E>(HashMap::new(), PhantomData);
-                let observers = observers.0.entry(self.handle).or_default();
+                let mut observers = Observers::<E> {
+                    observers: HashMap::new(),
+                    _marker: PhantomData,
+                };
+                let observers = observers.observers.entry(self.handle).or_default();
                 observers.push(handle);
             }
         }
@@ -637,13 +634,14 @@ impl WorldEntry<'_> {
     }
 
     pub fn trigger<E: 'static>(&mut self, event: &E) {
-        let cell = self.world.cell();
-        if let Some(observers) = cell.single::<Observers<E>>()
-            && let Some(observers) = observers.0.get(&self.handle)
+        let world = self.world.cell();
+        if let Some(observers) = world.single::<Observers<E>>()
+            && let Some(observers) = observers.observers.get(&self.handle)
         {
             for observer in observers {
-                if let Some(mut observer) = cell.fetch_mut::<Observer>(*observer) {
-                    (observer.0)(event, &cell);
+                if let Some(mut observer) = world.fetch_mut::<Observer<E>>(*observer) {
+                    let observer = &mut *observer;
+                    (observer.action)(event, world.entry(observer.target).unwrap());
                 }
             }
         }
@@ -741,14 +739,13 @@ impl WorldCellEntry<'_> {
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(
         &mut self,
-        mut action: impl FnMut(&E, WorldCellEntry) + 'static,
+        action: impl FnMut(&E, WorldCellEntry) + 'static,
     ) -> ElementHandle {
         let this = self.handle;
-        let estimate_handle = self.world.insert(Observer(Box::new(move |event, world| {
-            let event = event.downcast_ref::<E>().unwrap();
-            let entry = world.entry(this).unwrap();
-            action(event, entry);
-        })));
+        let estimate_handle = self.world.insert(Observer {
+            action: Box::new(action),
+            target: this,
+        });
 
         // observer will be registered in queue to prevent that some event triggered
         // before the insertion above hasn't even done yet
@@ -756,17 +753,18 @@ impl WorldCellEntry<'_> {
         queue.0.push(Box::new(move |world| {
             match world.single_mut::<Observers<E>>() {
                 Some(observers) => {
-                    let observers = observers.0.entry(this).or_default();
+                    let observers = observers.observers.entry(this).or_default();
                     observers.push(estimate_handle);
                 }
                 None => {
-                    let mut observers = Observers::<E>(HashMap::new(), PhantomData);
-                    let observers = observers.0.entry(this).or_default();
+                    let mut observers = Observers::<E> {
+                        observers: HashMap::new(),
+                        _marker: PhantomData,
+                    };
+                    let observers = observers.observers.entry(this).or_default();
                     observers.push(estimate_handle);
                 }
             }
-
-            world.entry(estimate_handle).unwrap().depend(this);
         }));
 
         estimate_handle
@@ -942,14 +940,17 @@ impl<T: 'static> Modify<T> {
 // observer & trigger
 // FIXME observer cleanup
 #[derive(Default)]
-struct Observers<E>(
-    HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>,
-    PhantomData<E>,
-);
+struct Observers<E> {
+    observers: HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>,
+    _marker: PhantomData<E>,
+}
 #[expect(clippy::type_complexity)]
-struct Observer(Box<dyn FnMut(&dyn Any, &WorldCell)>);
+struct Observer<E> {
+    action: Box<dyn FnMut(&E, WorldCellEntry)>,
+    target: ElementHandle,
+}
 impl<E: 'static> Element for Observers<E> {}
-impl Element for Observer {}
+impl<E: 'static> Element for Observer<E> {}
 
 // cell queue
 #[derive(Default)]
