@@ -208,6 +208,22 @@ impl World {
         Some(())
     }
 
+    pub fn get_foreach<T: 'static>(&self, mut action: impl FnMut(T)) {
+        if let Some(property) = self.single::<PropertyGetter<T>>() {
+            for (&handle, &getter) in &property.0 {
+                action(getter(self.elements.get(&handle).unwrap().as_ref()));
+            }
+        }
+    }
+
+    pub fn set_foreach<T: 'static>(&mut self, mut action: impl FnMut() -> T) {
+        if let Some(property) = self.single::<PropertySetter<T>>() {
+            for (handle, setter) in property.0.clone() {
+                setter(self.elements.get_mut(&handle).unwrap().as_mut(), action());
+            }
+        }
+    }
+
     pub fn modify<T: 'static>(&self, handle: ElementHandle) -> Option<Modify<T>> {
         let getter = *self.single::<PropertyGetter<T>>()?.0.get(&handle)?;
         let element = self.elements.get(&handle)?.as_ref();
@@ -481,6 +497,39 @@ impl WorldCell<'_> {
         self.trigger(ModifiedProperty(getter(element)));
 
         Some(())
+    }
+
+    pub fn get_foreach<T: 'static>(&self, mut action: impl FnMut(ElementHandle, T)) {
+        if let Some(property) = self.single::<PropertyGetter<T>>() {
+            let mut occupied = self.occupied.borrow_mut();
+            for (&handle, &getter) in &property.0 {
+                let cnt = occupied.entry(handle).or_default();
+                if *cnt < 0 {
+                    log::error!("{handle:?} is mutably borrowed during foreach");
+                    continue;
+                }
+
+                let element = self.world.elements.get(&handle).unwrap().as_ref();
+                action(handle, getter(element));
+            }
+        }
+    }
+
+    pub fn set_foreach<T: 'static>(&mut self, mut action: impl FnMut(ElementHandle) -> T) {
+        if let Some(property) = self.single::<PropertySetter<T>>() {
+            let mut occupied = self.occupied.borrow_mut();
+            for (handle, setter) in property.0.clone() {
+                let cnt = occupied.entry(handle).or_default();
+                if *cnt != 0 {
+                    log::error!("{handle:?} is borrowed during foreach");
+                    continue;
+                }
+
+                let element_ptr = self.world.elements.get(&handle).unwrap().as_ref()
+                    as *const dyn Element as *mut dyn Element;
+                setter(unsafe { element_ptr.as_mut().unwrap() }, action(handle));
+            }
+        }
     }
 
     pub fn modify<T: 'static>(&self, handle: ElementHandle) -> Option<Modify<T>> {

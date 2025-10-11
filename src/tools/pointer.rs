@@ -66,7 +66,7 @@ impl Pointer {
     pub fn intersect(&self, world: &WorldCell, point: Position) -> Option<ElementHandle> {
         let mut top_result = None;
         let mut max_order = ZOrder::new(isize::MIN);
-        world.foreach::<PointerCollider>(|intersection, handle| {
+        world.get_foreach::<PointerCollider>(|handle, intersection| {
             if (intersection.z_order > max_order) && intersection.rect.contains(point) {
                 max_order = intersection.z_order;
                 top_result = Some(handle);
