@@ -110,7 +110,7 @@ impl World {
 
         // when_inserted
         let cell = self.cell();
-        let mut element = cell.fetch_mut_raw::<T>(handle).unwrap();
+        let mut element = cell.fetch_mut::<T>(handle).unwrap();
         element.when_inserted(cell.entry(handle).unwrap());
         drop(element);
         drop(cell);
@@ -180,13 +180,13 @@ impl World {
             .is_some_and(|element| element.is::<T>())
     }
 
-    pub fn fetch_raw<T: Element>(&self, handle: ElementHandle) -> Option<&T> {
+    pub fn fetch<T: Element>(&self, handle: ElementHandle) -> Option<&T> {
         self.elements
             .get(&handle)
             .and_then(|element| element.downcast_ref())
     }
 
-    pub fn fetch_mut_raw<T: Element>(&mut self, handle: ElementHandle) -> Option<&mut T> {
+    pub fn fetch_mut<T: Element>(&mut self, handle: ElementHandle) -> Option<&mut T> {
         self.elements
             .get_mut(&handle)
             .and_then(|element| element.downcast_mut())
@@ -282,7 +282,7 @@ impl WorldCell<'_> {
 
             // when_inserted
             let cell = world.cell();
-            let mut element = cell.fetch_mut_raw::<T>(estimate_handle).unwrap();
+            let mut element = cell.fetch_mut::<T>(estimate_handle).unwrap();
             element.when_inserted(cell.entry(estimate_handle).unwrap());
             drop(element);
             drop(cell);
@@ -375,14 +375,14 @@ impl WorldCell<'_> {
     }
 
     /// Insertion happened within the cell scope will not be included
-    pub fn contains_raw<T: Element>(&self, handle: ElementHandle) -> bool {
+    pub fn contains_type<T: Element>(&self, handle: ElementHandle) -> bool {
         if self.removed.borrow().contains(&handle) {
             return false;
         }
         self.world.contains_raw::<T>(handle)
     }
 
-    pub fn fetch_raw<T: Element>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
+    pub fn fetch<T: Element>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
         if self.removed.borrow().contains(&handle) {
             return None;
         }
@@ -404,7 +404,7 @@ impl WorldCell<'_> {
         })
     }
 
-    pub fn fetch_mut_raw<T: Element>(&self, handle: ElementHandle) -> Option<RefMut<'_, T>> {
+    pub fn fetch_mut<T: Element>(&self, handle: ElementHandle) -> Option<RefMut<'_, T>> {
         if self.removed.borrow().contains(&handle) {
             return None;
         }
@@ -429,7 +429,7 @@ impl WorldCell<'_> {
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<Ref<'_, T>> {
         if let Some(Singleton::Unique(handle)) = self.world.singletons.get(&TypeId::of::<T>()) {
-            self.fetch_raw(*handle)
+            self.fetch(*handle)
         } else {
             None
         }
@@ -438,7 +438,7 @@ impl WorldCell<'_> {
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
         if let Some(Singleton::Unique(handle)) = self.world.singletons.get(&TypeId::of::<T>()) {
-            self.fetch_mut_raw(*handle)
+            self.fetch_mut(*handle)
         } else {
             None
         }
@@ -517,7 +517,7 @@ impl WorldEntry<'_> {
             && let Some(observers) = observers.0.get(&self.handle)
         {
             for observer in observers {
-                if let Some(mut observer) = cell.fetch_mut_raw::<Observer>(*observer) {
+                if let Some(mut observer) = cell.fetch_mut::<Observer>(*observer) {
                     (observer.0)(event, &cell);
                 }
             }

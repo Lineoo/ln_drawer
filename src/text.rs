@@ -95,7 +95,7 @@ impl Element for TextEdit {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Pressed(position) => {
-                let mut this = entry.fetch_mut_raw::<TextEdit>(entry.handle()).unwrap();
+                let mut this = entry.fetch_mut::<TextEdit>(entry.handle()).unwrap();
                 let this = &mut *this;
 
                 let point = position - this.inner.get_rect().left_up();
@@ -118,7 +118,7 @@ impl Element for TextEdit {
                 this.redraw();
             }
             PointerEvent::Moved(position) => {
-                let mut this = entry.fetch_mut_raw::<TextEdit>(entry.handle()).unwrap();
+                let mut this = entry.fetch_mut::<TextEdit>(entry.handle()).unwrap();
                 let this = &mut *this;
 
                 let point = position - this.inner.get_rect().left_up();
@@ -145,7 +145,7 @@ impl Element for TextEdit {
                 return;
             }
 
-            let mut this = entry.fetch_mut_raw::<TextEdit>(entry.handle()).unwrap();
+            let mut this = entry.fetch_mut::<TextEdit>(entry.handle()).unwrap();
             let this = &mut *this;
             let mut font_system = this.font_system.lock();
             let mut editor = this.editor.borrow_with(&mut font_system);
