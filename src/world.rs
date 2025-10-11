@@ -98,13 +98,6 @@ impl World {
         self.curr_idx.0 += 1;
         let handle = ElementHandle(self.curr_idx.0 - 1);
 
-        // this-type service register
-        let mut entry = self.entry(handle).unwrap();
-        entry.register::<T>(|this| this.downcast_ref::<T>().unwrap());
-        entry.register_mut::<T>(|this| this.downcast_mut::<T>().unwrap());
-        entry.register::<dyn Element>(|this| this.downcast_ref::<T>().unwrap());
-        entry.register_mut::<dyn Element>(|this| this.downcast_mut::<T>().unwrap());
-
         // singleton cache
         self.singletons
             .entry(type_id)
@@ -181,43 +174,10 @@ impl World {
     pub fn contains(&self, handle: ElementHandle) -> bool {
         self.elements.contains_key(&handle)
     }
-
-    pub fn contains_type<T: ?Sized + 'static>(&self, handle: ElementHandle) -> bool {
-        let services = self.single::<Services>().unwrap();
-        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<T>>()) {
-            let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
-            services_typed.0.contains_key(&handle)
-        } else {
-            false
-        }
-    }
-
-    pub fn contains_type_mut<T: ?Sized + 'static>(&self, handle: ElementHandle) -> bool {
-        let services = self.single::<Services>().unwrap();
-        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTypedMut<T>>()) {
-            let services_typed = services_typed
-                .downcast_ref::<ServicesTypedMut<T>>()
-                .unwrap();
-            services_typed.0.contains_key(&handle)
-        } else {
-            false
-        }
-    }
-
     pub fn contains_raw<T: Element>(&self, handle: ElementHandle) -> bool {
         self.elements
             .get(&handle)
             .is_some_and(|element| element.is::<T>())
-    }
-
-    pub fn fetch<T: ?Sized + 'static>(&self, handle: ElementHandle) -> Option<&T> {
-        let element = self.elements.get(&handle)?.as_ref();
-
-        let services = self.single::<Services>().unwrap();
-        let services_typed = services.0.get(&TypeId::of::<ServicesTyped<T>>())?;
-        let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
-        let service = services_typed.0.get(&handle)?;
-        Some(service(element))
     }
 
     pub fn fetch_raw<T: Element>(&self, handle: ElementHandle) -> Option<&T> {
@@ -226,62 +186,11 @@ impl World {
             .and_then(|element| element.downcast_ref())
     }
 
-    pub fn fetch_dyn(&self, handle: ElementHandle) -> Option<&dyn Element> {
-        self.elements.get(&handle).map(|element| element.as_ref())
-    }
-
-    pub fn fetch_mut<T: ?Sized + 'static>(&mut self, handle: ElementHandle) -> Option<&mut T> {
-        let services = self.single::<Services>().unwrap() as *const Services;
-        let element = self.elements.get_mut(&handle)?.as_mut();
-        let element_ptr = element as *mut dyn Element;
-
-        let services = unsafe { services.as_ref().unwrap() };
-        let services_typed = services.0.get(&TypeId::of::<ServicesTypedMut<T>>())?;
-        let services_typed = services_typed
-            .downcast_ref::<ServicesTypedMut<T>>()
-            .unwrap();
-        let service = services_typed.0.get(&handle)?;
-        Some(service(unsafe { element_ptr.as_mut().unwrap() }))
-    }
-
     pub fn fetch_mut_raw<T: Element>(&mut self, handle: ElementHandle) -> Option<&mut T> {
         self.elements
             .get_mut(&handle)
             .and_then(|element| element.downcast_mut())
     }
-
-    pub fn fetch_mut_dyn(&mut self, handle: ElementHandle) -> Option<&mut dyn Element> {
-        self.elements
-            .get_mut(&handle)
-            .map(|element| element.as_mut())
-    }
-
-    pub fn foreach<T: ?Sized + 'static>(&self, mut action: impl FnMut(&T)) {
-        let services = self.single::<Services>().unwrap();
-        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<T>>()) {
-            let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
-            services_typed.0.iter().for_each(|(handle, converter)| {
-                let service = converter(self.elements.get(handle).unwrap().as_ref());
-                action(service);
-            });
-        }
-    }
-
-    pub fn foreach_mut<T: ?Sized + 'static>(&mut self, mut action: impl FnMut(&mut T)) {
-        let services = self.single::<Services>().unwrap() as *const Services;
-        let services = unsafe { services.as_ref().unwrap() };
-        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTypedMut<T>>()) {
-            let services_typed = services_typed
-                .downcast_ref::<ServicesTypedMut<T>>()
-                .unwrap();
-            services_typed.0.iter().for_each(|(handle, converter)| {
-                let service = converter(self.elements.get_mut(handle).unwrap().as_mut());
-                action(service);
-            });
-        }
-    }
-
-    // Singleton
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<&T> {
@@ -322,6 +231,8 @@ impl World {
             handle,
         })
     }
+    
+    // TODO remove this when lnwin refactor is done
 
     /// Notice that it's *NOT* observing events world-wide! It's only observe events triggered also
     /// directly on world, which is useful when you don't have a specific element to attach the event.
@@ -357,13 +268,6 @@ impl WorldCell<'_> {
             let type_id = element.type_id();
 
             world.elements.insert(estimate_handle, Box::new(element));
-
-            // this-type service register
-            let mut entry = world.entry(estimate_handle).unwrap();
-            entry.register::<T>(|this| this.downcast_ref::<T>().unwrap());
-            entry.register_mut::<T>(|this| this.downcast_mut::<T>().unwrap());
-            entry.register::<dyn Element>(|this| this.downcast_ref::<T>().unwrap());
-            entry.register_mut::<dyn Element>(|this| this.downcast_mut::<T>().unwrap());
 
             // singleton cache
             world
@@ -414,11 +318,6 @@ impl WorldCell<'_> {
             // trigger events
             world.entry(handle).unwrap().trigger(&Destroy);
             world.trigger(&ElementRemoved(handle));
-
-            // remove related services
-            for services_typed in &mut world.single_mut::<Services>().unwrap().0 {
-                services_typed.1.remove(&handle);
-            }
 
             // singleton cache
             let singleton = world.singletons.get_mut(&type_id).unwrap();
@@ -476,55 +375,11 @@ impl WorldCell<'_> {
     }
 
     /// Insertion happened within the cell scope will not be included
-    pub fn contains_type<T: ?Sized + 'static>(&self, handle: ElementHandle) -> bool {
-        if self.removed.borrow().contains(&handle) {
-            return false;
-        }
-        self.world.contains_type::<T>(handle)
-    }
-
-    /// Insertion happened within the cell scope will not be included
-    pub fn contains_type_mut<T: ?Sized + 'static>(&self, handle: ElementHandle) -> bool {
-        if self.removed.borrow().contains(&handle) {
-            return false;
-        }
-        self.world.contains_type_mut::<T>(handle)
-    }
-
-    /// Insertion happened within the cell scope will not be included
     pub fn contains_raw<T: Element>(&self, handle: ElementHandle) -> bool {
         if self.removed.borrow().contains(&handle) {
             return false;
         }
         self.world.contains_raw::<T>(handle)
-    }
-
-    pub fn fetch<T: ?Sized + 'static>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
-        if self.removed.borrow().contains(&handle) {
-            return None;
-        }
-
-        let mut occupied = self.occupied.borrow_mut();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt < 0 {
-            panic!("{handle:?} is mutably borrowed");
-        }
-
-        *cnt += 1;
-        let element = self.world.elements.get(&handle)?.as_ref();
-
-        let services = self.world.single::<Services>().unwrap();
-        let services_typed = services.0.get(&TypeId::of::<ServicesTyped<T>>())?;
-        let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
-        let service = services_typed.0.get(&handle)?;
-        let ptr = service(element) as *const T;
-
-        Some(Ref {
-            ptr,
-            world: self,
-            handle,
-        })
     }
 
     pub fn fetch_raw<T: Element>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
@@ -544,61 +399,6 @@ impl WorldCell<'_> {
 
         Some(Ref {
             ptr: element as *const T,
-            world: self,
-            handle,
-        })
-    }
-
-    pub fn fetch_dyn(&self, handle: ElementHandle) -> Option<Ref<'_, dyn Element>> {
-        if self.removed.borrow().contains(&handle) {
-            return None;
-        }
-
-        let mut occupied = self.occupied.borrow_mut();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt < 0 {
-            panic!("{handle:?} is mutably borrowed");
-        }
-
-        *cnt += 1;
-        let element = self.world.elements.get(&handle)?.as_ref();
-
-        Some(Ref {
-            ptr: element as *const dyn Element,
-            world: self,
-            handle,
-        })
-    }
-
-    pub fn fetch_mut<T: ?Sized + 'static>(&self, handle: ElementHandle) -> Option<RefMut<'_, T>> {
-        if self.removed.borrow().contains(&handle) {
-            return None;
-        }
-
-        let mut occupied = self.occupied.borrow_mut();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt != 0 {
-            panic!("{handle:?} is borrowed");
-        }
-
-        *cnt -= 1;
-        let element = self.world.elements.get(&handle)?.as_ref();
-
-        // SAFETY: The services set is immutable during cell span
-        let services = self.world.single::<Services>().unwrap();
-        let services_typed = services.0.get(&TypeId::of::<ServicesTypedMut<T>>())?;
-        let services_typed = services_typed
-            .downcast_ref::<ServicesTypedMut<T>>()
-            .unwrap();
-        let service = services_typed.0.get(&handle)?;
-        let element = element as *const dyn Element as *mut dyn Element;
-        let element = unsafe { element.as_mut().unwrap() };
-        let ptr = service(element) as *mut T;
-
-        Some(RefMut {
-            ptr,
             world: self,
             handle,
         })
@@ -625,76 +425,6 @@ impl WorldCell<'_> {
             handle,
         })
     }
-
-    pub fn fetch_mut_dyn(&self, handle: ElementHandle) -> Option<RefMut<'_, dyn Element>> {
-        if self.removed.borrow().contains(&handle) {
-            return None;
-        }
-
-        let mut occupied = self.occupied.borrow_mut();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt != 0 {
-            panic!("{handle:?} is borrowed");
-        }
-
-        *cnt -= 1;
-        let element = self.world.elements.get(&handle)?.as_ref();
-
-        Some(RefMut {
-            ptr: element as *const dyn Element as *mut dyn Element,
-            world: self,
-            handle,
-        })
-    }
-
-    pub fn foreach<T: ?Sized + 'static>(&self, mut action: impl FnMut(&T, ElementHandle)) {
-        let services = self.world.single::<Services>().unwrap();
-        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTyped<T>>()) {
-            let services_typed = services_typed.downcast_ref::<ServicesTyped<T>>().unwrap();
-            services_typed.0.iter().for_each(|(handle, converter)| {
-                if self.removed.borrow().contains(handle) {
-                    return;
-                }
-
-                let occupied = self.occupied.borrow();
-                if occupied.get(handle).is_some_and(|cnt| *cnt < 0) {
-                    log::warn!("{handle:?} is mutably borrowed during `foreach`, skipped");
-                    return;
-                }
-
-                let service = converter(self.world.elements.get(handle).unwrap().as_ref());
-                action(service, *handle);
-            });
-        }
-    }
-
-    pub fn foreach_mut<T: ?Sized + 'static>(&self, mut action: impl FnMut(&mut T, ElementHandle)) {
-        let services = self.world.single::<Services>().unwrap();
-        if let Some(services_typed) = services.0.get(&TypeId::of::<ServicesTypedMut<T>>()) {
-            let services_typed = services_typed
-                .downcast_ref::<ServicesTypedMut<T>>()
-                .unwrap();
-            services_typed.0.iter().for_each(|(handle, converter)| {
-                if self.removed.borrow().contains(handle) {
-                    return;
-                }
-
-                let occupied = self.occupied.borrow();
-                if occupied.get(handle).is_some_and(|cnt| *cnt != 0) {
-                    log::warn!("{handle:?} is borrowed during `foreach_mut`, skipped");
-                    return;
-                }
-
-                let element = self.world.elements.get(handle).unwrap().as_ref();
-                let element = element as *const dyn Element as *mut dyn Element;
-                let service = converter(unsafe { element.as_mut().unwrap() });
-                action(service, *handle);
-            });
-        }
-    }
-
-    // Singleton
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<Ref<'_, T>> {
@@ -728,6 +458,8 @@ impl WorldCell<'_> {
             handle,
         })
     }
+
+    // TODO remove this when lnwin refactor is done
 
     /// Notice that it's *NOT* observing events world-wide! It's only observe events triggered also
     /// directly on world, which is useful when you don't have a specific element to attach the event.
@@ -783,50 +515,6 @@ impl WorldEntry<'_> {
                     (observer.0)(event, &cell);
                 }
             }
-        }
-    }
-
-    pub fn register<U: ?Sized + 'static>(
-        &mut self,
-        service: impl Fn(&dyn Element) -> &U + 'static,
-    ) {
-        let cell = self.world.cell();
-        let mut services = cell.single_mut::<Services>().unwrap();
-        let services_typed = (services.0)
-            .entry(TypeId::of::<ServicesTyped<U>>())
-            .or_insert_with(|| Box::new(ServicesTyped::<U>(HashMap::new())))
-            .downcast_mut::<ServicesTyped<U>>()
-            .unwrap();
-
-        let popback = services_typed.0.insert(self.handle, Box::new(service));
-        if popback.is_some() {
-            log::error!(
-                "duplicated service of type \"{}\" is registered on {:?}",
-                std::any::type_name::<U>(),
-                self.handle
-            );
-        }
-    }
-
-    pub fn register_mut<U: ?Sized + 'static>(
-        &mut self,
-        service: impl Fn(&mut dyn Element) -> &mut U + 'static,
-    ) {
-        let cell = self.world.cell();
-        let mut services = cell.single_mut::<Services>().unwrap();
-        let services_typed = (services.0)
-            .entry(TypeId::of::<ServicesTypedMut<U>>())
-            .or_insert_with(|| Box::new(ServicesTypedMut::<U>(HashMap::new())))
-            .downcast_mut::<ServicesTypedMut<U>>()
-            .unwrap();
-
-        let popback = services_typed.0.insert(self.handle, Box::new(service));
-        if popback.is_some() {
-            log::error!(
-                "duplicated service of type \"{}\" is registered on {:?}",
-                std::any::type_name::<U>(),
-                self.handle
-            );
         }
     }
 
@@ -938,32 +626,6 @@ impl WorldCellEntry<'_> {
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
             this.trigger(&event);
-        }));
-    }
-
-    /// This will be delayed until the cell is closed.
-    pub fn register<U: ?Sized + 'static>(
-        &mut self,
-        service: impl Fn(&dyn Element) -> &U + 'static,
-    ) {
-        let handle = self.handle;
-        let mut queue = self.world.single_mut::<Queue>().unwrap();
-        queue.0.push(Box::new(move |world| {
-            let mut this = world.entry(handle).unwrap();
-            this.register(service);
-        }));
-    }
-
-    /// This will be delayed until the cell is closed.
-    pub fn register_mut<U: ?Sized + 'static>(
-        &mut self,
-        service: impl Fn(&mut dyn Element) -> &mut U + 'static,
-    ) {
-        let handle = self.handle;
-        let mut queue = self.world.single_mut::<Queue>().unwrap();
-        queue.0.push(Box::new(move |world| {
-            let mut this = world.entry(handle).unwrap();
-            this.register_mut(service);
         }));
     }
 
@@ -1137,67 +799,3 @@ pub struct ElementInserted(pub ElementHandle);
 pub struct ElementRemoved(pub ElementHandle);
 pub struct ModifiedProperty<T>(pub T);
 pub struct Destroy;
-
-#[cfg(test)]
-mod test {
-    use crate::{
-        measures::Position,
-        world::{Element, World, WorldCellEntry},
-    };
-
-    trait PositionedElement: Element {
-        fn get_position(&self) -> Position;
-    }
-    struct TestElement {
-        position: Position,
-    }
-    impl PositionedElement for TestElement {
-        fn get_position(&self) -> Position {
-            self.position
-        }
-    }
-    impl Element for TestElement {
-        fn when_inserted(&mut self, mut entry: WorldCellEntry) {
-            entry.register(|this| &this.downcast_ref::<TestElement>().unwrap().position);
-            entry.register_mut(|this| &mut this.downcast_mut::<TestElement>().unwrap().position);
-            entry.register::<dyn PositionedElement>(|this| {
-                this.downcast_ref::<TestElement>().unwrap()
-            });
-            entry.register_mut::<dyn PositionedElement>(|this| {
-                this.downcast_mut::<TestElement>().unwrap()
-            });
-        }
-    }
-
-    #[test]
-    fn service() {
-        let mut world = World::default();
-        let handle = world.insert(TestElement {
-            position: Position::new(42, 123),
-        });
-        let position = world.fetch_mut::<Position>(handle).unwrap();
-        assert_eq!(position, &Position::new(42, 123));
-        position.x = 321;
-        let position = world.fetch::<Position>(handle).unwrap();
-        assert_eq!(position, &Position::new(42, 321));
-    }
-
-    #[test]
-    fn unregistered_service() {
-        let mut world = World::default();
-        let handle = world.insert(TestElement {
-            position: Position::new(42, 123),
-        });
-        assert_eq!(world.fetch::<i32>(handle), None);
-    }
-
-    #[test]
-    fn dynamic_service() {
-        let mut world = World::default();
-        let handle = world.insert(TestElement {
-            position: Position::new(42, 123),
-        });
-        let position = world.fetch::<dyn PositionedElement>(handle).unwrap();
-        assert_eq!(position.get_position(), Position::new(42, 123));
-    }
-}
