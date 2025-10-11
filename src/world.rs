@@ -85,6 +85,7 @@ impl World {
         self.elements.insert(self.curr_idx, Box::new(element));
         self.curr_idx.0 += 1;
         let handle = ElementHandle(self.curr_idx.0 - 1);
+        log::trace!("insert {}: {:?}", type_name::<T>(), handle);
 
         // update cache
         let cache = self.cache.entry(TypeId::of::<T>()).or_default();
@@ -100,12 +101,12 @@ impl World {
         // ElementInserted
         self.trigger(&ElementInserted(handle));
 
-        log::trace!("insert {}: {:?}", type_name::<T>(), handle);
         handle
     }
 
     pub fn remove(&mut self, handle: ElementHandle) -> Option<Box<dyn Element>> {
         let type_id = (**self.elements.get(&handle)?).type_id();
+        log::trace!("remove {:?}", handle);
 
         // remove children first
         if let Some(dependencies) = self.single_fetch::<Dependencies>()
@@ -144,7 +145,6 @@ impl World {
         }
 
         // TODO RemovalCapture(Box<dyn Element>)
-        log::trace!("remove {:?}", handle);
         self.elements.remove(&handle)
     }
 
@@ -301,6 +301,7 @@ impl WorldCell<'_> {
         let mut cell_idx = self.cell_idx.borrow_mut();
         cell_idx.0 += 1;
         let estimate_handle = ElementHandle(cell_idx.0 - 1);
+        log::trace!("insert {}: {:?}", type_name::<T>(), estimate_handle);
 
         let mut inserted = self.inserted.borrow_mut();
         inserted.insert(estimate_handle);
@@ -324,7 +325,6 @@ impl WorldCell<'_> {
             world.trigger(&ElementInserted(estimate_handle));
         }));
 
-        log::trace!("insert {}: {:?}", type_name::<T>(), estimate_handle);
         estimate_handle
     }
 
@@ -335,6 +335,7 @@ impl WorldCell<'_> {
         }
 
         let type_id = (**self.world.elements.get(&handle).unwrap()).type_id();
+        log::trace!("remove {:?}", handle);
 
         let mut cnt = 1;
 
@@ -380,7 +381,6 @@ impl WorldCell<'_> {
             world.elements.remove(&handle);
         }));
 
-        log::trace!("remove {:?}", handle);
         cnt
     }
 
