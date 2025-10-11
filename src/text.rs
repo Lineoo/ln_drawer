@@ -112,7 +112,7 @@ impl Element for TextEdit {
 
                 drop(font_system);
 
-                let mut focus = entry.single_mut::<Focus>().unwrap();
+                let mut focus = entry.single_fetch_mut::<Focus>().unwrap();
                 focus.set(Some(entry.handle()), &entry);
 
                 this.redraw();
@@ -150,7 +150,7 @@ impl Element for TextEdit {
             let mut font_system = this.font_system.lock();
             let mut editor = this.editor.borrow_with(&mut font_system);
 
-            let modifiers = entry.single::<LnwinModifiers>().unwrap();
+            let modifiers = entry.single_fetch::<LnwinModifiers>().unwrap();
             let ctrl_down = modifiers.0.state().control_key();
             let shift_down = modifiers.0.state().shift_key();
 

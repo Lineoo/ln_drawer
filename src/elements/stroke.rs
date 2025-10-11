@@ -20,7 +20,7 @@ impl Element for StrokeLayer {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(position) | PointerEvent::Pressed(position) => {
                 let mut stroke = entry.fetch_mut::<StrokeLayer>(entry.handle()).unwrap();
-                let color = (entry.single::<Palette>())
+                let color = (entry.single_fetch::<Palette>())
                     .map(|palette| palette.pick_color())
                     .unwrap_or([0xff; 4]);
                 stroke.write_pixel(position, color, entry.world());
@@ -31,7 +31,7 @@ impl Element for StrokeLayer {
 }
 impl StrokeLayer {
     pub fn write_pixel(&mut self, point: Position, color: [u8; 4], world: &WorldCell) {
-        let mut interface = world.single_mut::<Interface>().unwrap();
+        let mut interface = world.single_fetch_mut::<Interface>().unwrap();
         let chunk_key = [
             point.x.div_euclid(CHUNK_SIZE),
             point.y.div_euclid(CHUNK_SIZE),

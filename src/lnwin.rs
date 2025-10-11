@@ -146,14 +146,14 @@ impl Lnwindow {
                 let world = self.world.cell();
                 world.insert(Menu::new(
                     point,
-                    &mut world.single_mut().unwrap(),
-                    &mut world.single_mut().unwrap(),
+                    &mut world.single_fetch_mut().unwrap(),
+                    &mut world.single_fetch_mut().unwrap(),
                 ));
                 self.window.request_redraw();
             }
 
             WindowEvent::ModifiersChanged(modifiers) => {
-                self.world.single_mut::<LnwinModifiers>().unwrap().0 = modifiers;
+                self.world.single_fetch_mut::<LnwinModifiers>().unwrap().0 = modifiers;
             }
 
             WindowEvent::KeyboardInput { .. } => {
@@ -192,7 +192,7 @@ impl Lnwindow {
 
             // Misc //
             WindowEvent::DroppedFile(path) => {
-                match Image::new(path, self.world.single_mut().unwrap()) {
+                match Image::new(path, self.world.single_fetch_mut().unwrap()) {
                     Ok(image) => {
                         self.world.insert(image);
                     }
@@ -204,7 +204,7 @@ impl Lnwindow {
 
             // Render //
             WindowEvent::RedrawRequested => {
-                let interface = self.world.single_mut::<Interface>().unwrap();
+                let interface = self.world.single_fetch_mut::<Interface>().unwrap();
                 interface.resize(&self.viewport);
                 interface.restructure();
                 interface.redraw();

@@ -24,7 +24,7 @@ impl Element for Pointer {
         let mut pressed = false;
         let mut pointer_on = None;
         entry.world().observe::<PointerEvent>(move |&event, world| {
-            let pointer = world.single::<Pointer>().unwrap();
+            let pointer = world.single_fetch::<Pointer>().unwrap();
 
             let (PointerEvent::Moved(point)
             | PointerEvent::Pressed(point)

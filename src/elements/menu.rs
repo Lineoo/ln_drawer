@@ -119,8 +119,8 @@ impl Menu {
                     world.insert(Text::new(
                         rect,
                         "New Label".into(),
-                        &mut world.single_mut().unwrap(),
-                        &mut world.single_mut().unwrap(),
+                        &mut world.single_fetch_mut().unwrap(),
+                        &mut world.single_fetch_mut().unwrap(),
                     ));
                 }),
             });
@@ -138,7 +138,7 @@ impl Menu {
                 frame,
                 _text,
                 action: Box::new(move |world| {
-                    let palette = Palette::new(rect.origin, &mut world.single_mut().unwrap());
+                    let palette = Palette::new(rect.origin, &mut world.single_fetch_mut().unwrap());
                     world.insert(palette);
                 }),
             });
@@ -162,7 +162,7 @@ impl Menu {
                             extend: Delta::new(100, 100),
                         },
                         |_| println!("Button hit!"),
-                        &mut world.single_mut().unwrap(),
+                        &mut world.single_fetch_mut().unwrap(),
                     ));
                 }),
             });
@@ -182,7 +182,7 @@ impl Menu {
                 action: Box::new(move |world| {
                     let image = Image::from_bytes(
                         include_bytes!("../../res/icon.png"),
-                        &mut world.single_mut().unwrap(),
+                        &mut world.single_fetch_mut().unwrap(),
                     )
                     .unwrap();
                     world.insert(image);
@@ -208,8 +208,8 @@ impl Menu {
                             extend: Delta::splat(300),
                         },
                         "Enter text here".into(),
-                        &mut world.single_mut().unwrap(),
-                        &mut world.single_mut().unwrap(),
+                        &mut world.single_fetch_mut().unwrap(),
+                        &mut world.single_fetch_mut().unwrap(),
                     ));
                 }),
             });
