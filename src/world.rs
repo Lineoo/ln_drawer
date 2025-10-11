@@ -170,26 +170,6 @@ impl World {
     }
 
     /// Return `Some` if there is ONLY one element of target type.
-    pub fn single_fetch<T: Element>(&self) -> Option<&T> {
-        let mut iter = self.cache.get(&TypeId::of::<T>())?.iter();
-        let ret = iter.next()?;
-        if iter.next().is_some() {
-            return None;
-        }
-        self.fetch(*ret)
-    }
-
-    /// Return `Some` if there is ONLY one element of target type.
-    pub fn single_fetch_mut<T: Element>(&mut self) -> Option<&mut T> {
-        let mut iter = self.cache.get(&TypeId::of::<T>())?.iter();
-        let ret = iter.next()?;
-        if iter.next().is_some() {
-            return None;
-        }
-        self.fetch_mut(*ret)
-    }
-
-    /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<ElementHandle> {
         let mut iter = self.cache.get(&TypeId::of::<T>())?.iter();
         let ret = iter.next()?;
@@ -197,6 +177,21 @@ impl World {
             return None;
         }
         Some(*ret)
+    }
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single_fetch<T: Element>(&self) -> Option<&T> {
+        self.fetch(self.single::<T>()?)
+    }
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single_fetch_mut<T: Element>(&mut self) -> Option<&mut T> {
+        self.fetch_mut(self.single::<T>()?)
+    }
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single_entry<T: Element>(&mut self) -> Option<WorldEntry<'_>> {
+        self.entry(self.single::<T>()?)
     }
 
     pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
@@ -462,26 +457,6 @@ impl WorldCell<'_> {
     }
 
     /// Return `Some` if there is ONLY one element of target type.
-    pub fn single_fetch<T: Element>(&self) -> Option<Ref<'_, T>> {
-        let mut iter = self.world.cache.get(&TypeId::of::<T>())?.iter();
-        let ret = iter.next()?;
-        if iter.next().is_some() {
-            return None;
-        }
-        self.fetch(*ret)
-    }
-
-    /// Return `Some` if there is ONLY one element of target type.
-    pub fn single_fetch_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
-        let mut iter = self.world.cache.get(&TypeId::of::<T>())?.iter();
-        let ret = iter.next()?;
-        if iter.next().is_some() {
-            return None;
-        }
-        self.fetch_mut(*ret)
-    }
-
-    /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<ElementHandle> {
         let mut iter = self.world.cache.get(&TypeId::of::<T>())?.iter();
         let ret = iter.next()?;
@@ -489,6 +464,21 @@ impl WorldCell<'_> {
             return None;
         }
         Some(*ret)
+    }
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single_fetch<T: Element>(&self) -> Option<Ref<'_, T>> {
+        self.fetch(self.single::<T>()?)
+    }
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single_fetch_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
+        self.fetch_mut(self.single::<T>()?)
+    }
+
+    /// Return `Some` if there is ONLY one element of target type.
+    pub fn single_entry<T: Element>(&self) -> Option<WorldCellEntry<'_>> {
+        self.entry(self.single::<T>()?)
     }
 
     pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
