@@ -174,7 +174,7 @@ impl World {
     pub fn contains(&self, handle: ElementHandle) -> bool {
         self.elements.contains_key(&handle)
     }
-    pub fn contains_raw<T: Element>(&self, handle: ElementHandle) -> bool {
+    pub fn contains_type<T: Element>(&self, handle: ElementHandle) -> bool {
         self.elements
             .get(&handle)
             .is_some_and(|element| element.is::<T>())
@@ -208,6 +208,40 @@ impl World {
         } else {
             None
         }
+    }
+
+    pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
+        let getter = *self.single::<PropertyGetter<T>>()?.0.get(&handle)?;
+        let element = self.elements.get(&handle)?.as_ref();
+        Some(getter(element))
+    }
+
+    pub fn set<T: 'static>(&mut self, handle: ElementHandle, value: T) -> Option<()> {
+        let setter = *self.single::<PropertySetter<T>>()?.0.get(&handle)?;
+        let element = self.elements.get_mut(&handle)?.as_mut();
+
+        setter(element, value);
+
+        let getter = *self.single::<PropertyGetter<T>>()?.0.get(&handle)?;
+        let element = self.elements.get(&handle).unwrap().as_ref();
+
+        self.trigger(&ModifiedProperty(getter(element)));
+
+        Some(())
+    }
+
+    pub fn modify<T: 'static>(&self, handle: ElementHandle) -> Option<Modify<T>> {
+        let getter = *self.single::<PropertyGetter<T>>()?.0.get(&handle)?;
+        let element = self.elements.get(&handle)?.as_ref();
+
+        if !self.single::<PropertySetter<T>>()?.0.contains_key(&handle) {
+            return None;
+        }
+
+        Some(Modify {
+            target: handle,
+            value: getter(element),
+        })
     }
 
     pub fn cell(&mut self) -> WorldCell<'_> {
@@ -379,7 +413,7 @@ impl WorldCell<'_> {
         if self.removed.borrow().contains(&handle) {
             return false;
         }
-        self.world.contains_raw::<T>(handle)
+        self.world.contains_type::<T>(handle)
     }
 
     pub fn fetch<T: Element>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
@@ -442,6 +476,74 @@ impl WorldCell<'_> {
         } else {
             None
         }
+    }
+
+    pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
+        if self.removed.borrow().contains(&handle) {
+            return None;
+        }
+
+        let mut occupied = self.occupied.borrow_mut();
+
+        let cnt = occupied.entry(handle).or_default();
+        if *cnt < 0 {
+            panic!("{handle:?} is mutably borrowed");
+        }
+
+        let getter = *self.single::<PropertyGetter<T>>()?.0.get(&handle)?;
+        let element = self.world.elements.get(&handle)?.as_ref();
+        Some(getter(element))
+    }
+
+    pub fn set<T: 'static>(&self, handle: ElementHandle, value: T) -> Option<()> {
+        if self.removed.borrow().contains(&handle) {
+            return None;
+        }
+
+        let mut occupied = self.occupied.borrow_mut();
+
+        let cnt = occupied.entry(handle).or_default();
+        if *cnt != 0 {
+            panic!("{handle:?} is borrowed");
+        }
+
+        let setter = *self.single::<PropertySetter<T>>()?.0.get(&handle)?;
+        let element = self.world.elements.get(&handle)?.as_ref();
+
+        let element_ptr = element as *const dyn Element as *mut dyn Element;
+        setter(unsafe { element_ptr.as_mut().unwrap() }, value);
+
+        let getter = *self.single::<PropertyGetter<T>>()?.0.get(&handle)?;
+        let element = self.world.elements.get(&handle).unwrap().as_ref();
+
+        self.trigger(ModifiedProperty(getter(element)));
+
+        Some(())
+    }
+
+    pub fn modify<T: 'static>(&self, handle: ElementHandle) -> Option<Modify<T>> {
+        if self.removed.borrow().contains(&handle) {
+            return None;
+        }
+
+        let mut occupied = self.occupied.borrow_mut();
+
+        let cnt = occupied.entry(handle).or_default();
+        if *cnt < 0 {
+            panic!("{handle:?} is mutably borrowed");
+        }
+
+        let getter = *self.single::<PropertyGetter<T>>()?.0.get(&handle)?;
+        let element = self.world.elements.get(&handle)?.as_ref();
+
+        if !self.single::<PropertySetter<T>>()?.0.contains_key(&handle) {
+            return None;
+        }
+
+        Some(Modify {
+            target: handle,
+            value: getter(element),
+        })
     }
 
     pub fn uncell(&mut self) -> &mut World {
@@ -524,44 +626,50 @@ impl WorldEntry<'_> {
         }
     }
 
-    pub fn modify<T: 'static>(&mut self) -> Option<Modify<T>> {
-        let service = self.world.single_mut::<PropertyServices<T>>()?;
-        let getter = service.0.get(&self.handle)?.getter;
-        let element = self.world.elements.get(&self.handle)?.as_ref();
-
-        Some(Modify {
-            target: self.handle,
-            value: getter(element),
-        })
-    }
-
-    pub fn property<T: 'static>(
-        &mut self,
-        getter: fn(&dyn Element) -> T,
-        setter: fn(&mut dyn Element, T),
-    ) {
-        match self.world.single_mut::<PropertyServices<T>>() {
+    pub fn getter<T: 'static>(&mut self, getter: fn(&dyn Element) -> T) {
+        match self.world.single_mut::<PropertyGetter<T>>() {
             Some(service) => {
-                let ret = (service.0).insert(self.handle, PropertyService { getter, setter });
+                let ret = service.0.insert(self.handle, getter);
 
                 if ret.is_some() {
                     log::error!(
-                        "duplicated property {} registered on {:?}!",
+                        "duplicated property getter of {} registered on {:?}!",
                         type_name::<T>(),
                         self.handle
                     );
                 }
             }
             None => {
-                let mut service = PropertyServices::<T>(HashMap::new());
+                let mut service = PropertyGetter::<T>(HashMap::new());
 
-                (service.0).insert(self.handle, PropertyService { getter, setter });
+                service.0.insert(self.handle, getter);
                 self.world.insert(service);
 
-                log::trace!(
-                    "property service of type {} is registered",
-                    type_name::<T>()
-                );
+                log::trace!("property getter of {} is registered", type_name::<T>());
+            }
+        }
+    }
+
+    pub fn setter<T: 'static>(&mut self, setter: fn(&mut dyn Element, T)) {
+        match self.world.single_mut::<PropertySetter<T>>() {
+            Some(service) => {
+                let ret = service.0.insert(self.handle, setter);
+
+                if ret.is_some() {
+                    log::error!(
+                        "duplicated property setter of {} registered on {:?}!",
+                        type_name::<T>(),
+                        self.handle
+                    );
+                }
+            }
+            None => {
+                let mut service = PropertySetter::<T>(HashMap::new());
+
+                service.0.insert(self.handle, setter);
+                self.world.insert(service);
+
+                log::trace!("property setter of {} is registered", type_name::<T>());
             }
         }
     }
@@ -639,6 +747,26 @@ impl WorldCellEntry<'_> {
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
             this.trigger(&event);
+        }));
+    }
+
+    /// This will be delayed until the cell is closed.
+    pub fn getter<T: 'static>(&mut self, getter: fn(&dyn Element) -> T) {
+        let handle = self.handle;
+        let mut queue = self.world.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry(handle).unwrap();
+            this.getter(getter);
+        }));
+    }
+
+    /// This will be delayed until the cell is closed.
+    pub fn setter<T: 'static>(&mut self, setter: fn(&mut dyn Element, T)) {
+        let handle = self.handle;
+        let mut queue = self.world.single_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry(handle).unwrap();
+            this.setter(setter);
         }));
     }
 
@@ -736,6 +864,7 @@ impl<T: ?Sized> Drop for RefMut<'_, T> {
     }
 }
 
+/// `Modify` is a helper for property that have both getter and setter
 pub struct Modify<T> {
     target: ElementHandle,
     value: T,
@@ -752,16 +881,26 @@ impl<T> DerefMut for Modify<T> {
     }
 }
 impl<T: 'static> Modify<T> {
+    pub fn reset(&mut self, world: &World) {
+        let property = world.single::<PropertyGetter<T>>().unwrap();
+        let getter = *property.0.get(&self.target).unwrap();
+        let element = world.elements.get(&self.target).unwrap().as_ref();
+
+        self.value = getter(element);
+    }
+
     pub fn flush(self, world: &mut World) {
-        let service = world.single_mut::<PropertyServices<T>>().unwrap();
-        let getter = service.0.get(&self.target).unwrap().getter;
-        let setter = service.0.get(&self.target).unwrap().setter;
+        let property = world.single::<PropertySetter<T>>().unwrap();
+        let setter = *property.0.get(&self.target).unwrap();
         let element = world.elements.get_mut(&self.target).unwrap().as_mut();
 
         setter(element, self.value);
 
-        let value = getter(element);
-        world.trigger(&ModifiedProperty(value));
+        let property = world.single::<PropertyGetter<T>>().unwrap();
+        let getter = *property.0.get(&self.target).unwrap();
+        let element = world.elements.get(&self.target).unwrap().as_ref();
+
+        world.trigger(&ModifiedProperty(getter(element)));
     }
 }
 
@@ -799,12 +938,10 @@ struct Dependence {
 impl Element for Dependencies {}
 
 // property & modify
-struct PropertyServices<T>(HashMap<ElementHandle, PropertyService<T>>);
-struct PropertyService<T> {
-    getter: fn(&dyn Element) -> T,
-    setter: fn(&mut dyn Element, T),
-}
-impl<T: 'static> Element for PropertyServices<T> {}
+struct PropertyGetter<T>(HashMap<ElementHandle, fn(&dyn Element) -> T>);
+struct PropertySetter<T>(HashMap<ElementHandle, fn(&mut dyn Element, T)>);
+impl<T: 'static> Element for PropertyGetter<T> {}
+impl<T: 'static> Element for PropertySetter<T> {}
 
 // Builtin Events //
 
