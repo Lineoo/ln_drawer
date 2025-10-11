@@ -1,4 +1,5 @@
 #![windows_subsystem = "windows"]
+#![allow(dead_code)]
 
 mod elements;
 mod interface;
