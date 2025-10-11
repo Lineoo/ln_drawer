@@ -29,15 +29,10 @@ impl dyn Element {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ElementHandle(usize);
 
-enum Singleton {
-    Unique(ElementHandle),
-    Multiple,
-}
-
 pub struct World {
     curr_idx: ElementHandle,
     elements: HashMap<ElementHandle, Box<dyn Element>>,
-    singletons: HashMap<TypeId, Singleton>,
+    cache: HashMap<TypeId, HashSet<ElementHandle>>,
 }
 
 // Center of multiple accesses in world, which also prevents constructional changes
@@ -66,7 +61,7 @@ impl Default for World {
         World {
             curr_idx: ElementHandle(0),
             elements: HashMap::new(),
-            singletons: HashMap::new(),
+            cache: HashMap::new(),
         }
     }
 }
@@ -92,21 +87,13 @@ impl Drop for WorldCell<'_> {
 
 impl World {
     pub fn insert<T: Element + 'static>(&mut self, element: T) -> ElementHandle {
-        let type_id = element.type_id();
-
         self.elements.insert(self.curr_idx, Box::new(element));
         self.curr_idx.0 += 1;
         let handle = ElementHandle(self.curr_idx.0 - 1);
 
-        // singleton cache
-        self.singletons
-            .entry(type_id)
-            .and_modify(|status| {
-                if let Singleton::Unique(_) = status {
-                    *status = Singleton::Multiple;
-                }
-            })
-            .or_insert(Singleton::Unique(handle));
+        // update cache
+        let cache = self.cache.entry(TypeId::of::<T>()).or_default();
+        cache.insert(handle);
 
         // when_inserted
         let cell = self.cell();
@@ -137,20 +124,9 @@ impl World {
         self.entry(handle).unwrap().trigger(&Destroy);
         self.trigger(&ElementRemoved(handle));
 
-        // singleton cache
-        let singleton = self.singletons.get_mut(&type_id).unwrap();
-        match singleton {
-            Singleton::Unique(_) => {
-                self.singletons.remove(&type_id);
-            }
-            // We don't actually consider the situation that multiple elements being remove until
-            // one is left. In such case, even though there technically is only *one* element, which
-            // should be singleton, but mostly it won't be used as a singleton, and use loops to cache
-            // it is basically a waste. So we won't implement it.
-            Singleton::Multiple => {}
-        }
-
-        // TODO remove related services
+        // update cache
+        let cache = self.cache.entry(type_id).or_default();
+        cache.remove(&handle);
 
         // clean dependence to parent
         let depend = self.single_mut::<Dependencies>().unwrap();
@@ -194,20 +170,22 @@ impl World {
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<&T> {
-        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
-            self.elements.get(handle)?.downcast_ref()
-        } else {
-            None
+        let mut iter = self.cache.get(&TypeId::of::<T>())?.iter();
+        let ret = iter.next()?;
+        if iter.next().is_some() {
+            return None;
         }
+        self.fetch(*ret)
     }
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single_mut<T: Element>(&mut self) -> Option<&mut T> {
-        if let Some(Singleton::Unique(handle)) = self.singletons.get(&TypeId::of::<T>()) {
-            self.elements.get_mut(handle)?.downcast_mut()
-        } else {
-            None
+        let mut iter = self.cache.get(&TypeId::of::<T>())?.iter();
+        let ret = iter.next()?;
+        if iter.next().is_some() {
+            return None;
         }
+        self.fetch_mut(*ret)
     }
 
     pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
@@ -299,20 +277,11 @@ impl WorldCell<'_> {
 
         let mut queue = self.single_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
-            let type_id = element.type_id();
-
             world.elements.insert(estimate_handle, Box::new(element));
 
-            // singleton cache
-            world
-                .singletons
-                .entry(type_id)
-                .and_modify(|status| {
-                    if let Singleton::Unique(_) = status {
-                        *status = Singleton::Multiple;
-                    }
-                })
-                .or_insert(Singleton::Unique(estimate_handle));
+            // update cache
+            let cache = world.cache.entry(TypeId::of::<T>()).or_default();
+            cache.insert(estimate_handle);
 
             // when_inserted
             let cell = world.cell();
@@ -353,18 +322,9 @@ impl WorldCell<'_> {
             world.entry(handle).unwrap().trigger(&Destroy);
             world.trigger(&ElementRemoved(handle));
 
-            // singleton cache
-            let singleton = world.singletons.get_mut(&type_id).unwrap();
-            match singleton {
-                Singleton::Unique(_) => {
-                    world.singletons.remove(&type_id);
-                }
-                // We don't actually consider the situation that multiple elements being remove until
-                // one is left. In such case, even though there technically is only *one* element, which
-                // should be singleton, but mostly it won't be used as a singleton, and use loops to cache
-                // it is basically a waste. So we won't implement it.
-                Singleton::Multiple => {}
-            }
+            // update cache
+            let cache = world.cache.entry(type_id).or_default();
+            cache.remove(&handle);
 
             // clean dependence to parent
             let depend = world.single_mut::<Dependencies>().unwrap();
@@ -462,20 +422,22 @@ impl WorldCell<'_> {
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<Ref<'_, T>> {
-        if let Some(Singleton::Unique(handle)) = self.world.singletons.get(&TypeId::of::<T>()) {
-            self.fetch(*handle)
-        } else {
-            None
+        let mut iter = self.world.cache.get(&TypeId::of::<T>())?.iter();
+        let ret = iter.next()?;
+        if iter.next().is_some() {
+            return None;
         }
+        self.fetch(*ret)
     }
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
-        if let Some(Singleton::Unique(handle)) = self.world.singletons.get(&TypeId::of::<T>()) {
-            self.fetch_mut(*handle)
-        } else {
-            None
+        let mut iter = self.world.cache.get(&TypeId::of::<T>())?.iter();
+        let ret = iter.next()?;
+        if iter.next().is_some() {
+            return None;
         }
+        self.fetch_mut(*ret)
     }
 
     pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
@@ -907,6 +869,7 @@ impl<T: 'static> Modify<T> {
 // Internal Elements //
 
 // observer & trigger
+// FIXME observer cleanup
 #[derive(Default)]
 struct Observers<E>(
     HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>,
@@ -938,6 +901,7 @@ struct Dependence {
 impl Element for Dependencies {}
 
 // property & modify
+// FIXME property cleanup
 struct PropertyGetter<T>(HashMap<ElementHandle, fn(&dyn Element) -> T>);
 struct PropertySetter<T>(HashMap<ElementHandle, fn(&mut dyn Element, T)>);
 impl<T: 'static> Element for PropertyGetter<T> {}
