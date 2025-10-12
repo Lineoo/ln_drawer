@@ -212,7 +212,7 @@ impl World {
         let element = self.elements.get(&handle).unwrap().as_ref();
 
         let value = getter(element);
-        self.entry(handle)?.trigger(&ModifiedProperty(value));
+        self.entry(handle)?.trigger(&PropertyChanged(value));
 
         Some(())
     }
@@ -235,24 +235,6 @@ impl World {
                 }
             }
         }
-    }
-
-    pub fn modify<T: 'static>(&self, handle: ElementHandle) -> Option<Modify<T>> {
-        let getter = *self.single_fetch::<PropertyGetter<T>>()?.0.get(&handle)?;
-        let element = self.elements.get(&handle)?.as_ref();
-
-        if !self
-            .single_fetch::<PropertySetter<T>>()?
-            .0
-            .contains_key(&handle)
-        {
-            return None;
-        }
-
-        Some(Modify {
-            target: handle,
-            value: getter(element),
-        })
     }
 
     pub fn cell(&mut self) -> WorldCell<'_> {
@@ -519,7 +501,7 @@ impl WorldCell<'_> {
         drop(occupied);
 
         self.entry(handle)?
-            .trigger(ModifiedProperty(getter(element)));
+            .trigger(PropertyChanged(getter(element)));
 
         Some(())
     }
@@ -559,31 +541,6 @@ impl WorldCell<'_> {
                 }
             }
         }
-    }
-
-    pub fn modify<T: 'static>(&self, handle: ElementHandle) -> Option<Modify<T>> {
-        if self.removed.borrow().contains(&handle) {
-            return None;
-        }
-
-        let mut occupied = self.occupied.borrow_mut();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt < 0 {
-            panic!("{handle:?} is mutably borrowed");
-        }
-
-        let getter = *(self.world.single_fetch::<PropertyGetter<T>>()?.0).get(&handle)?;
-        let element = self.world.elements.get(&handle)?.as_ref();
-
-        if !(self.world.single_fetch::<PropertySetter<T>>()?.0).contains_key(&handle) {
-            return None;
-        }
-
-        Some(Modify {
-            target: handle,
-            value: getter(element),
-        })
     }
 
     pub fn uncell(&mut self) -> &mut World {
@@ -896,49 +853,6 @@ impl<T: ?Sized> Drop for RefMut<'_, T> {
     }
 }
 
-/// `Modify` is a helper for property that have both getter and setter
-pub struct Modify<T> {
-    target: ElementHandle,
-    value: T,
-}
-impl<T> Deref for Modify<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-impl<T> DerefMut for Modify<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
-    }
-}
-impl<T: 'static> Modify<T> {
-    pub fn reset(&mut self, world: &World) {
-        let property = world.single_fetch::<PropertyGetter<T>>().unwrap();
-        let getter = *property.0.get(&self.target).unwrap();
-        let element = world.elements.get(&self.target).unwrap().as_ref();
-
-        self.value = getter(element);
-    }
-
-    pub fn flush(self, world: &mut World) -> Option<()> {
-        let property = world.single_fetch::<PropertySetter<T>>()?;
-        let setter = *property.0.get(&self.target)?;
-        let element = world.elements.get_mut(&self.target)?.as_mut();
-
-        setter(element, self.value);
-
-        let property = world.single_fetch::<PropertyGetter<T>>()?;
-        let getter = *property.0.get(&self.target)?;
-        let element = world.elements.get(&self.target)?.as_ref();
-
-        let value = getter(element);
-        world.entry(self.target)?.trigger(&ModifiedProperty(value));
-
-        Some(())
-    }
-}
-
 // Internal Elements //
 
 // observer & trigger
@@ -972,7 +886,7 @@ struct Dependence {
 }
 impl Element for Dependencies {}
 
-// property & modify
+// property
 // FIXME property cleanup
 struct PropertyGetter<T>(HashMap<ElementHandle, fn(&dyn Element) -> T>);
 struct PropertySetter<T>(HashMap<ElementHandle, fn(&mut dyn Element, T)>);
@@ -981,5 +895,5 @@ impl<T: 'static> Element for PropertySetter<T> {}
 
 // Builtin Events //
 
-pub struct ModifiedProperty<T>(pub T);
+pub struct PropertyChanged<T>(pub T);
 pub struct Destroy;
