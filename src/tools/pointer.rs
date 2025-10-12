@@ -1,6 +1,12 @@
+use winit::{
+    event::{ElementState, WindowEvent},
+    keyboard::{KeyCode, PhysicalKey},
+};
+
 use crate::{
     lnwin::{Lnwindow, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
+    tools::transform::TransformTool,
     world::{Element, ElementHandle, WorldCell, WorldCellEntry},
 };
 
@@ -18,6 +24,7 @@ pub struct PointerHit(pub PointerEvent);
 #[derive(Default)]
 pub struct Pointer {
     fallback: Option<ElementHandle>,
+    active: Option<ElementHandle>,
 }
 impl Element for Pointer {
     fn when_inserted(&mut self, entry: WorldCellEntry) {
@@ -51,7 +58,9 @@ impl Element for Pointer {
                 }
 
                 if pressed {
-                    if let Some(mut pointer_on) = pointer_on.and_then(|w| world.entry(w)) {
+                    if let Some(mut active) = pointer.active.and_then(|w| world.entry(w)) {
+                        active.trigger(PointerHit(event));
+                    } else if let Some(mut pointer_on) = pointer_on.and_then(|w| world.entry(w)) {
                         pointer_on.trigger(PointerHit(event));
                     } else if let Some(mut fallback) = pointer.fallback.and_then(|w| world.entry(w))
                     {
@@ -61,6 +70,26 @@ impl Element for Pointer {
 
                 if let PointerEvent::Released(_) = event {
                     pressed = false;
+                }
+            });
+
+        entry
+            .single_entry::<Lnwindow>()
+            .unwrap()
+            .observe::<WindowEvent>(|event, entry| {
+                if let WindowEvent::KeyboardInput { event, .. } = event
+                    && !event.repeat
+                    && event.physical_key == PhysicalKey::Code(KeyCode::KeyS)
+                {
+                    let mut pointer = entry.single_fetch_mut::<Pointer>().unwrap();
+                    if event.state == ElementState::Pressed {
+                        let transform = entry
+                            .single::<TransformTool>()
+                            .unwrap_or_else(|| entry.insert(TransformTool::default()));
+                        pointer.active = Some(transform);
+                    } else {
+                        pointer.active = None;
+                    }
                 }
             });
     }

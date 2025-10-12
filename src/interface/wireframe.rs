@@ -211,6 +211,10 @@ impl Drop for Wireframe {
     }
 }
 impl Wireframe {
+    pub fn get_rect(&self) -> Rectangle {
+        self.rect
+    }
+    
     pub fn set_rect(&mut self, rect: Rectangle) {
         self.rect = rect;
         self.queue.write_buffer(

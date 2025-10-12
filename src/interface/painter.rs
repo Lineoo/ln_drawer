@@ -357,7 +357,7 @@ impl Painter {
         self.rect
     }
 
-    fn set_rect(&mut self, rect: Rectangle) {
+    pub fn set_rect(&mut self, rect: Rectangle) {
         self.rect = rect;
         self.queue.write_buffer(
             &self.buffer.vertices,

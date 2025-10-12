@@ -82,17 +82,54 @@ impl Text {
         self.inner.set_z_order(order);
     }
 }
-impl Element for Text {}
+impl Element for Text {
+    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        entry.getter::<PointerCollider>(|this| {
+            let this = this.downcast_ref::<Text>().unwrap();
+            PointerCollider {
+                rect: this.inner.get_rect(),
+                z_order: this.inner.get_z_order(),
+            }
+        });
+
+        entry.getter::<Rectangle>(|this| {
+            let this = this.downcast_ref::<Text>().unwrap();
+            this.inner.get_rect()
+        });
+
+        entry.setter::<Rectangle>(|this, rect| {
+            let this = this.downcast_mut::<Text>().unwrap();
+            this.inner.set_rect(rect);
+        });
+    }
+}
 
 pub struct TextEdit {
     inner: Painter,
     editor: Editor<'static>,
-    collider: PointerCollider,
     font_system: Arc<Mutex<FontSystem>>,
     swash_cache: Arc<Mutex<SwashCache>>,
 }
 impl Element for TextEdit {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        entry.getter::<PointerCollider>(|this| {
+            let this = this.downcast_ref::<TextEdit>().unwrap();
+            PointerCollider {
+                rect: this.inner.get_rect(),
+                z_order: this.inner.get_z_order(),
+            }
+        });
+
+        entry.getter::<Rectangle>(|this| {
+            let this = this.downcast_ref::<TextEdit>().unwrap();
+            this.inner.get_rect()
+        });
+
+        entry.setter::<Rectangle>(|this, rect| {
+            let this = this.downcast_mut::<TextEdit>().unwrap();
+            this.inner.set_rect(rect);
+        });
+
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Pressed(position) => {
                 let mut this = entry.fetch_mut::<TextEdit>(entry.handle()).unwrap();
@@ -259,8 +296,6 @@ impl Element for TextEdit {
 
             this.redraw();
         });
-
-        entry.getter::<PointerCollider>(|this| this.downcast_ref::<TextEdit>().unwrap().collider);
     }
 }
 impl TextEdit {
@@ -299,14 +334,10 @@ impl TextEdit {
         );
 
         let inner = interface.create_painter_with(rect, data);
-        let collider = PointerCollider {
-            rect: inner.get_rect(),
-            z_order: inner.get_z_order(),
-        };
+
         TextEdit {
             inner,
             editor: Editor::new(buffer),
-            collider,
             font_system: manager.font_system.clone(),
             swash_cache: manager.swash_cache.clone(),
         }

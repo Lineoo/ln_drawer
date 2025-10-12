@@ -478,7 +478,11 @@ impl WorldCell<'_> {
             panic!("{handle:?} is mutably borrowed");
         }
 
-        let getter = *self.single_fetch::<PropertyGetter<T>>()?.0.get(&handle)?;
+        let getter = *self
+            .world
+            .single_fetch::<PropertyGetter<T>>()?
+            .0
+            .get(&handle)?;
         let element = self.world.elements.get(&handle)?.as_ref();
         Some(getter(element))
     }
@@ -495,14 +499,24 @@ impl WorldCell<'_> {
             panic!("{handle:?} is borrowed");
         }
 
-        let setter = *self.single_fetch::<PropertySetter<T>>()?.0.get(&handle)?;
+        let setter = *self
+            .world
+            .single_fetch::<PropertySetter<T>>()?
+            .0
+            .get(&handle)?;
         let element = self.world.elements.get(&handle)?.as_ref();
 
         let element_ptr = element as *const dyn Element as *mut dyn Element;
         setter(unsafe { element_ptr.as_mut().unwrap() }, value);
 
-        let getter = *self.single_fetch::<PropertyGetter<T>>()?.0.get(&handle)?;
+        let getter = *self
+            .world
+            .single_fetch::<PropertyGetter<T>>()?
+            .0
+            .get(&handle)?;
         let element = self.world.elements.get(&handle).unwrap().as_ref();
+
+        drop(occupied);
 
         self.entry(handle)?
             .trigger(ModifiedProperty(getter(element)));
@@ -511,7 +525,7 @@ impl WorldCell<'_> {
     }
 
     pub fn get_foreach<T: 'static>(&self, mut action: impl FnMut(ElementHandle, T)) {
-        if let Some(property) = self.single_fetch::<PropertyGetter<T>>() {
+        if let Some(property) = self.world.single_fetch::<PropertyGetter<T>>() {
             let mut occupied = self.occupied.borrow_mut();
             for (&handle, &getter) in &property.0 {
                 let cnt = occupied.entry(handle).or_default();
@@ -528,7 +542,7 @@ impl WorldCell<'_> {
     }
 
     pub fn set_foreach<T: 'static>(&mut self, mut action: impl FnMut(ElementHandle) -> T) {
-        if let Some(property) = self.single_fetch::<PropertySetter<T>>() {
+        if let Some(property) = self.world.single_fetch::<PropertySetter<T>>() {
             let mut occupied = self.occupied.borrow_mut();
             for (handle, setter) in property.0.clone() {
                 let cnt = occupied.entry(handle).or_default();
@@ -540,6 +554,8 @@ impl WorldCell<'_> {
                 if let Some(element) = self.world.elements.get(&handle) {
                     let element_ptr = element.as_ref() as *const dyn Element as *mut dyn Element;
                     setter(unsafe { element_ptr.as_mut().unwrap() }, action(handle));
+
+                    // FIXME event is not triggered
                 }
             }
         }
@@ -557,14 +573,10 @@ impl WorldCell<'_> {
             panic!("{handle:?} is mutably borrowed");
         }
 
-        let getter = *self.single_fetch::<PropertyGetter<T>>()?.0.get(&handle)?;
+        let getter = *(self.world.single_fetch::<PropertyGetter<T>>()?.0).get(&handle)?;
         let element = self.world.elements.get(&handle)?.as_ref();
 
-        if !self
-            .single_fetch::<PropertySetter<T>>()?
-            .0
-            .contains_key(&handle)
-        {
+        if !(self.world.single_fetch::<PropertySetter<T>>()?.0).contains_key(&handle) {
             return None;
         }
 

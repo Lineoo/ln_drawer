@@ -14,7 +14,6 @@ const HEIGHT: u32 = 128;
 pub struct Palette {
     painter: Painter,
     knob: Painter,
-    collider: PointerCollider,
 }
 impl Element for Palette {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
@@ -26,7 +25,34 @@ impl Element for Palette {
             _ => (),
         });
 
-        entry.getter::<PointerCollider>(|this| this.downcast_ref::<Palette>().unwrap().collider);
+        entry.getter::<PointerCollider>(|this| {
+            let this = this.downcast_ref::<Palette>().unwrap();
+            PointerCollider {
+                rect: this.painter.get_rect(),
+                z_order: this.painter.get_z_order(),
+            }
+        });
+
+        entry.getter::<Rectangle>(|this| {
+            let this = this.downcast_ref::<Palette>().unwrap();
+            this.painter.get_rect()
+        });
+
+        entry.setter::<Rectangle>(|this, rect| {
+            let this = this.downcast_mut::<Palette>().unwrap();
+
+            let orig_rect = this.painter.get_rect();
+            let knob_orig = this.get_knob_position();
+
+            let rx = (knob_orig.x - orig_rect.origin.x) as f32 / orig_rect.extend.x as f32;
+            let ry = (knob_orig.y - orig_rect.origin.y) as f32 / orig_rect.extend.y as f32;
+
+            let fx = rect.origin.x + (rect.extend.x as f32 * rx).floor() as i32;
+            let fy = rect.origin.y + (rect.extend.y as f32 * ry).floor() as i32;
+            
+            this.painter.set_rect(rect);
+            this.set_knob_position(Position::new(fx, fy));
+        });
     }
 }
 impl Palette {
@@ -73,16 +99,7 @@ impl Palette {
         let mut knob = interface.create_painter_with(rect, data);
         knob.set_z_order(ZOrder::new(1));
 
-        let collider = PointerCollider {
-            rect: painter.get_rect(),
-            z_order: painter.get_z_order(),
-        };
-
-        Palette {
-            painter,
-            knob,
-            collider,
-        }
+        Palette { painter, knob }
     }
 
     pub fn get_knob_position(&self) -> Position {
