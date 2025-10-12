@@ -14,18 +14,18 @@ use crate::{
     measures::Position,
     text::TextManager,
     tools::{focus::Focus, pointer::Pointer},
-    world::{Element, World},
+    world::{Element, World, WorldCellEntry},
 };
 
 #[derive(Default)]
 pub struct Lnwin {
-    window: Option<Lnwindow>,
+    world: World,
 }
 impl ApplicationHandler for Lnwin {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_none() {
-            let lnwindow = pollster::block_on(Lnwindow::new(event_loop));
-            self.window = Some(lnwindow);
+        if self.world.single::<Lnwindow>().is_none() {
+            let lnwindow = pollster::block_on(Lnwindow::new(event_loop, &mut self.world));
+            self.world.insert(lnwindow);
         }
     }
 
@@ -35,23 +35,22 @@ impl ApplicationHandler for Lnwin {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
-        if event == WindowEvent::CloseRequested {
-            self.window = None;
-            event_loop.exit();
-            return;
-        }
-
-        if let Some(window) = &mut self.window {
-            window.window_event(event);
+        match self.world.single_entry::<Lnwindow>() {
+            Some(mut window) => window.trigger(&event),
+            None => {
+                if let Some(interface) = self.world.single_entry::<Interface>() {
+                    interface.destroy();
+                }
+                event_loop.exit();
+            }
         }
     }
 }
 
 /// The main window.
-struct Lnwindow {
+pub struct Lnwindow {
     window: Arc<Window>,
     viewport: Viewport,
-    world: World,
 
     // Screen-space
     cursor: [f64; 2],
@@ -59,8 +58,25 @@ struct Lnwindow {
     camera_cursor_start: [f64; 2],
     camera_origin: Option<[i32; 2]>,
 }
+impl Element for Lnwindow {
+    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        entry.observe::<WindowEvent>(|event, entry| {
+            let mut lnwindow = entry.fetch_mut::<Lnwindow>(entry.handle()).unwrap();
+            let entry = entry.entry(entry.handle()).unwrap();
+            lnwindow.window_event(event, entry);
+        });
+
+        entry.insert(TextManager::default());
+        entry.insert(LnwinModifiers::default());
+        entry.insert(Focus::default());
+        let stroke = entry.insert(StrokeLayer::default());
+        let mut selection = Pointer::default();
+        selection.set_fallback(stroke);
+        entry.insert(selection);
+    }
+}
 impl Lnwindow {
-    pub async fn new(event_loop: &ActiveEventLoop) -> Lnwindow {
+    async fn new(event_loop: &ActiveEventLoop, world: &mut World) -> Lnwindow {
         let win_attr = Window::default_attributes();
 
         let window = event_loop.create_window(win_attr).unwrap();
@@ -75,33 +91,22 @@ impl Lnwindow {
         };
         let interface = Interface::new(window.clone(), &viewport).await;
 
-        let mut world = World::default();
         world.insert(interface);
-
-        world.insert(TextManager::default());
-        world.insert(LnwinModifiers::default());
-        world.insert(Focus::default());
-        let stroke = world.insert(StrokeLayer::default());
-        let mut selection = Pointer::default();
-        selection.set_fallback(stroke);
-        world.insert(selection);
 
         Lnwindow {
             window,
             viewport,
-            world,
             cursor: [0.0, 0.0],
             camera_cursor_start: [0.0, 0.0],
             camera_origin: None,
         }
     }
 
-    pub fn window_event(&mut self, event: WindowEvent) {
-        self.world.trigger(&event);
+    fn window_event(&mut self, event: &WindowEvent, mut entry: WorldCellEntry) {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 // The viewport needs to be updated before the viewport transform
-                self.cursor = self.viewport.cursor_to_screen(position);
+                self.cursor = self.viewport.cursor_to_screen(*position);
                 if let Some(camera_orig) = &mut self.camera_origin {
                     let dx = self.camera_cursor_start[0] - self.cursor[0];
                     let dy = self.camera_cursor_start[1] - self.cursor[1];
@@ -112,7 +117,7 @@ impl Lnwindow {
                 }
 
                 let point = self.viewport.screen_to_world(self.cursor);
-                self.world.trigger(&PointerEvent::Moved(point));
+                entry.trigger(PointerEvent::Moved(point));
 
                 self.window.request_redraw();
             }
@@ -124,7 +129,7 @@ impl Lnwindow {
                 ..
             } => {
                 let point = self.viewport.screen_to_world(self.cursor);
-                self.world.trigger(&PointerEvent::Pressed(point));
+                entry.trigger(PointerEvent::Pressed(point));
                 self.window.request_redraw();
             }
             WindowEvent::MouseInput {
@@ -133,7 +138,7 @@ impl Lnwindow {
                 ..
             } => {
                 let point = self.viewport.screen_to_world(self.cursor);
-                self.world.trigger(&PointerEvent::Released(point));
+                entry.trigger(PointerEvent::Released(point));
                 self.window.request_redraw();
             }
 
@@ -143,17 +148,19 @@ impl Lnwindow {
                 ..
             } => {
                 let point = self.viewport.screen_to_world(self.cursor);
-                let world = self.world.cell();
-                world.insert(Menu::new(
+                if let Some(menu) = entry.single_entry::<Menu>() {
+                    menu.destroy();
+                }
+                entry.insert(Menu::new(
                     point,
-                    &mut world.single_fetch_mut().unwrap(),
-                    &mut world.single_fetch_mut().unwrap(),
+                    &mut entry.single_fetch_mut().unwrap(),
+                    &mut entry.single_fetch_mut().unwrap(),
                 ));
                 self.window.request_redraw();
             }
 
             WindowEvent::ModifiersChanged(modifiers) => {
-                self.world.single_fetch_mut::<LnwinModifiers>().unwrap().0 = modifiers;
+                entry.single_fetch_mut::<LnwinModifiers>().unwrap().0 = *modifiers;
             }
 
             WindowEvent::KeyboardInput { .. } => {
@@ -192,9 +199,9 @@ impl Lnwindow {
 
             // Misc //
             WindowEvent::DroppedFile(path) => {
-                match Image::new(path, self.world.single_fetch_mut().unwrap()) {
+                match Image::new(path, &mut entry.single_fetch_mut().unwrap()) {
                     Ok(image) => {
-                        self.world.insert(image);
+                        entry.insert(image);
                     }
                     Err(err) => {
                         log::warn!("Drop File: {err}");
@@ -204,7 +211,7 @@ impl Lnwindow {
 
             // Render //
             WindowEvent::RedrawRequested => {
-                let interface = self.world.single_fetch_mut::<Interface>().unwrap();
+                let mut interface = entry.single_fetch_mut::<Interface>().unwrap();
                 interface.resize(&self.viewport);
                 interface.restructure();
                 interface.redraw();
@@ -213,6 +220,10 @@ impl Lnwindow {
                 self.viewport.width = size.width.max(1);
                 self.viewport.height = size.height.max(1);
                 self.window.request_redraw();
+            }
+
+            WindowEvent::CloseRequested => {
+                entry.destroy();
             }
 
             _ => (),

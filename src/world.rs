@@ -66,6 +66,11 @@ impl Default for World {
     }
 }
 
+impl Drop for World {
+    fn drop(&mut self) {
+        // TODO destroy event for everyone
+    }
+}
 impl Drop for WorldCell<'_> {
     fn drop(&mut self) {
         self.world.curr_idx = *self.cell_idx.get_mut();
@@ -98,9 +103,6 @@ impl World {
         drop(element);
         drop(cell);
 
-        // ElementInserted
-        self.trigger(&ElementInserted(handle));
-
         handle
     }
 
@@ -119,7 +121,6 @@ impl World {
 
         // trigger events
         self.entry(handle).unwrap().trigger(&Destroy);
-        self.trigger(&ElementRemoved(handle));
 
         // update cache
         let cache = self.cache.entry(type_id).or_default();
@@ -151,6 +152,7 @@ impl World {
     pub fn contains(&self, handle: ElementHandle) -> bool {
         self.elements.contains_key(&handle)
     }
+
     pub fn contains_type<T: Element>(&self, handle: ElementHandle) -> bool {
         self.elements
             .get(&handle)
@@ -209,7 +211,8 @@ impl World {
         let getter = *self.single_fetch::<PropertyGetter<T>>()?.0.get(&handle)?;
         let element = self.elements.get(&handle).unwrap().as_ref();
 
-        self.trigger(&ModifiedProperty(getter(element)));
+        let value = getter(element);
+        self.entry(handle)?.trigger(&ModifiedProperty(value));
 
         Some(())
     }
@@ -217,7 +220,9 @@ impl World {
     pub fn get_foreach<T: 'static>(&self, mut action: impl FnMut(T)) {
         if let Some(property) = self.single_fetch::<PropertyGetter<T>>() {
             for (&handle, &getter) in &property.0 {
-                action(getter(self.elements.get(&handle).unwrap().as_ref()));
+                if let Some(element) = self.elements.get(&handle) {
+                    action(getter(element.as_ref()));
+                }
             }
         }
     }
@@ -225,7 +230,9 @@ impl World {
     pub fn set_foreach<T: 'static>(&mut self, mut action: impl FnMut() -> T) {
         if let Some(property) = self.single_fetch::<PropertySetter<T>>() {
             for (handle, setter) in property.0.clone() {
-                setter(self.elements.get_mut(&handle).unwrap().as_mut(), action());
+                if let Some(element) = self.elements.get_mut(&handle) {
+                    setter(element.as_mut(), action());
+                }
             }
         }
     }
@@ -273,24 +280,6 @@ impl World {
             handle,
         })
     }
-
-    // TODO remove this when lnwin refactor is done
-
-    /// Notice that it's *NOT* observing events world-wide! It's only observe events triggered also
-    /// directly on world, which is useful when you don't have a specific element to attach the event.
-    pub fn observe<E: 'static>(
-        &mut self,
-        mut action: impl FnMut(&E, &WorldCell) + 'static,
-    ) -> ElementHandle {
-        (self.entry(ElementHandle(0)).unwrap()).observe(move |event, entry| {
-            action(event, entry.world);
-        })
-    }
-
-    /// Will only trigger the observers mounted on the world. See [`World::observer`] for more.
-    pub fn trigger<E: 'static>(&mut self, event: &E) {
-        self.entry(ElementHandle(0)).unwrap().trigger(event);
-    }
 }
 impl WorldCell<'_> {
     /// Cell-mode insertion cannot perform the operation immediately so the inserted element cannot be
@@ -320,9 +309,6 @@ impl WorldCell<'_> {
             element.when_inserted(cell.entry(estimate_handle).unwrap());
             drop(element);
             drop(cell);
-
-            // ElementInserted
-            world.trigger(&ElementInserted(estimate_handle));
         }));
 
         estimate_handle
@@ -352,7 +338,6 @@ impl WorldCell<'_> {
         queue.0.push(Box::new(move |world| {
             // trigger events
             world.entry(handle).unwrap().trigger(&Destroy);
-            world.trigger(&ElementRemoved(handle));
 
             // update cache
             let cache = world.cache.entry(type_id).or_default();
@@ -519,7 +504,8 @@ impl WorldCell<'_> {
         let getter = *self.single_fetch::<PropertyGetter<T>>()?.0.get(&handle)?;
         let element = self.world.elements.get(&handle).unwrap().as_ref();
 
-        self.trigger(ModifiedProperty(getter(element)));
+        self.entry(handle)?
+            .trigger(ModifiedProperty(getter(element)));
 
         Some(())
     }
@@ -534,8 +520,9 @@ impl WorldCell<'_> {
                     continue;
                 }
 
-                let element = self.world.elements.get(&handle).unwrap().as_ref();
-                action(handle, getter(element));
+                if let Some(element) = self.world.elements.get(&handle) {
+                    action(handle, getter(element.as_ref()));
+                }
             }
         }
     }
@@ -550,9 +537,10 @@ impl WorldCell<'_> {
                     continue;
                 }
 
-                let element_ptr = self.world.elements.get(&handle).unwrap().as_ref()
-                    as *const dyn Element as *mut dyn Element;
-                setter(unsafe { element_ptr.as_mut().unwrap() }, action(handle));
+                if let Some(element) = self.world.elements.get(&handle) {
+                    let element_ptr = element.as_ref() as *const dyn Element as *mut dyn Element;
+                    setter(unsafe { element_ptr.as_mut().unwrap() }, action(handle));
+                }
             }
         }
     }
@@ -600,29 +588,6 @@ impl WorldCell<'_> {
             handle,
         })
     }
-
-    // TODO remove this when lnwin refactor is done
-
-    /// Notice that it's *NOT* observing events world-wide! It's only observe events triggered also
-    /// directly on world, which is useful when you don't have a specific element to attach the event.
-    ///
-    /// This will be delayed until the cell is closed.
-    pub fn observe<E: 'static>(
-        &self,
-        mut action: impl FnMut(&E, &WorldCell) + 'static,
-    ) -> ElementHandle {
-        (self.entry(ElementHandle(0)).unwrap()).observe(move |event, entry| {
-            action(event, entry.world);
-        })
-    }
-
-    /// Will only trigger the observers mounted on the world. See [`WorldCell::observer`] for more.
-    ///
-    /// This function has some limit since the event is delayed until cell closed, thus acquiring the ownership
-    /// of the event.
-    pub fn trigger<E: 'static>(&self, event: E) {
-        self.entry(ElementHandle(0)).unwrap().trigger(event);
-    }
 }
 impl WorldEntry<'_> {
     pub fn observe<E: 'static>(
@@ -645,8 +610,9 @@ impl WorldEntry<'_> {
                     observers: HashMap::new(),
                     _marker: PhantomData,
                 };
-                let observers = observers.observers.entry(self.handle).or_default();
-                observers.push(handle);
+                let observer = observers.observers.entry(self.handle).or_default();
+                observer.push(handle);
+                self.insert(observers);
             }
         }
 
@@ -783,8 +749,9 @@ impl WorldCellEntry<'_> {
                         observers: HashMap::new(),
                         _marker: PhantomData,
                     };
-                    let observers = observers.observers.entry(this).or_default();
-                    observers.push(estimate_handle);
+                    let observer = observers.observers.entry(this).or_default();
+                    observer.push(estimate_handle);
+                    world.insert(observers);
                 }
             }
         }));
@@ -942,18 +909,21 @@ impl<T: 'static> Modify<T> {
         self.value = getter(element);
     }
 
-    pub fn flush(self, world: &mut World) {
-        let property = world.single_fetch::<PropertySetter<T>>().unwrap();
-        let setter = *property.0.get(&self.target).unwrap();
-        let element = world.elements.get_mut(&self.target).unwrap().as_mut();
+    pub fn flush(self, world: &mut World) -> Option<()> {
+        let property = world.single_fetch::<PropertySetter<T>>()?;
+        let setter = *property.0.get(&self.target)?;
+        let element = world.elements.get_mut(&self.target)?.as_mut();
 
         setter(element, self.value);
 
-        let property = world.single_fetch::<PropertyGetter<T>>().unwrap();
-        let getter = *property.0.get(&self.target).unwrap();
-        let element = world.elements.get(&self.target).unwrap().as_ref();
+        let property = world.single_fetch::<PropertyGetter<T>>()?;
+        let getter = *property.0.get(&self.target)?;
+        let element = world.elements.get(&self.target)?.as_ref();
 
-        world.trigger(&ModifiedProperty(getter(element)));
+        let value = getter(element);
+        world.entry(self.target)?.trigger(&ModifiedProperty(value));
+
+        Some(())
     }
 }
 
@@ -999,7 +969,5 @@ impl<T: 'static> Element for PropertySetter<T> {}
 
 // Builtin Events //
 
-pub struct ElementInserted(pub ElementHandle);
-pub struct ElementRemoved(pub ElementHandle);
 pub struct ModifiedProperty<T>(pub T);
 pub struct Destroy;

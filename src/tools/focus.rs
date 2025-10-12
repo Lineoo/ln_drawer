@@ -1,6 +1,9 @@
 use winit::event::{KeyEvent, WindowEvent};
 
-use crate::world::{Element, ElementHandle, WorldCell, WorldCellEntry};
+use crate::{
+    lnwin::Lnwindow,
+    world::{Element, ElementHandle, WorldCell, WorldCellEntry},
+};
 
 #[derive(Default)]
 pub struct Focus {
@@ -8,15 +11,18 @@ pub struct Focus {
 }
 impl Element for Focus {
     fn when_inserted(&mut self, entry: WorldCellEntry) {
-        entry.world().observe::<WindowEvent>(|event, world| {
-            if let Some(focus) = world.single_fetch::<Focus>()
-                && let Some(focus_on) = focus.get()
-                && let Some(mut focus_on) = world.entry(focus_on)
-                && let WindowEvent::KeyboardInput { event, .. } = event
-            {
-                focus_on.trigger(FocusInput(event.clone()));
-            }
-        });
+        entry
+            .single_entry::<Lnwindow>()
+            .unwrap()
+            .observe::<WindowEvent>(|event, entry| {
+                if let Some(focus) = entry.single_fetch::<Focus>()
+                    && let Some(focus_on) = focus.get()
+                    && let Some(mut focus_on) = entry.entry(focus_on)
+                    && let WindowEvent::KeyboardInput { event, .. } = event
+                {
+                    focus_on.trigger(FocusInput(event.clone()));
+                }
+            });
     }
 }
 impl Focus {

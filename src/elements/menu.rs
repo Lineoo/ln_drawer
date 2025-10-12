@@ -1,11 +1,11 @@
 use crate::{
     elements::{ButtonRaw, Image, Palette},
     interface::{Interface, Square},
-    lnwin::PointerEvent,
+    lnwin::{Lnwindow, PointerEvent},
     measures::{Delta, Position, Rectangle, ZOrder},
     text::{Text, TextEdit, TextManager},
     tools::pointer::{PointerCollider, PointerHit},
-    world::{Element, ElementInserted, WorldCell, WorldCellEntry},
+    world::{Element, WorldCell, WorldCellEntry},
 };
 
 const PAD: i32 = 10;
@@ -28,29 +28,33 @@ pub struct Menu {
 impl Element for Menu {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
         let handle = entry.handle();
-        let obs = entry.world().observe::<PointerEvent>(move |event, world| {
-            if let &PointerEvent::Moved(point) = event {
-                let mut this = world.fetch_mut::<Menu>(handle).unwrap();
-                let frame = this.frame.get_rect();
+        let obs = entry
+            .single_entry::<Lnwindow>()
+            .unwrap()
+            .observe::<PointerEvent>(move |event, world| {
+                if let &PointerEvent::Moved(point) = event {
+                    let mut this = world.fetch_mut::<Menu>(handle).unwrap();
+                    let frame = this.frame.get_rect();
 
-                let delta1 = point - frame.origin;
-                let delta2 = frame.right_up() - point;
-                if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
-                    let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
-                    let rect = this.entries[index].frame.get_rect();
-                    this.select_frame.set_rect(rect);
-                    this.select_frame.set_visible(true);
-                } else {
-                    this.select_frame.set_visible(false);
+                    let delta1 = point - frame.origin;
+                    let delta2 = frame.right_up() - point;
+                    if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H
+                    {
+                        let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
+                        let rect = this.entries[index].frame.get_rect();
+                        this.select_frame.set_rect(rect);
+                        this.select_frame.set_visible(true);
+                    } else {
+                        this.select_frame.set_visible(false);
+                    }
+                } else if let &PointerEvent::Pressed(point) = event {
+                    let this = world.fetch::<Menu>(handle).unwrap();
+                    let frame = this.frame.get_rect();
+                    if !frame.contains(point) {
+                        world.remove(handle);
+                    }
                 }
-            } else if let &PointerEvent::Pressed(point) = event {
-                let this = world.fetch::<Menu>(handle).unwrap();
-                let frame = this.frame.get_rect();
-                if !frame.contains(point) {
-                    world.remove(handle);
-                }
-            }
-        });
+            });
 
         entry.entry(obs).unwrap().depend(handle);
 
@@ -68,16 +72,6 @@ impl Element for Menu {
                 }
             }
         });
-
-        let obs = entry
-            .world()
-            .observe::<ElementInserted>(move |event, world| {
-                if world.contains_type::<Menu>(event.0) && event.0 != handle {
-                    world.remove(handle);
-                }
-            });
-
-        entry.entry(obs).unwrap().depend(handle);
 
         entry.getter::<PointerCollider>(|this| this.downcast_ref::<Menu>().unwrap().collider);
     }

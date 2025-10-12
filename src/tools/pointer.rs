@@ -1,5 +1,5 @@
 use crate::{
-    lnwin::PointerEvent,
+    lnwin::{Lnwindow, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
     world::{Element, ElementHandle, WorldCell, WorldCellEntry},
 };
@@ -23,42 +23,46 @@ impl Element for Pointer {
     fn when_inserted(&mut self, entry: WorldCellEntry) {
         let mut pressed = false;
         let mut pointer_on = None;
-        entry.world().observe::<PointerEvent>(move |&event, world| {
-            let pointer = world.single_fetch::<Pointer>().unwrap();
+        entry
+            .single_entry::<Lnwindow>()
+            .unwrap()
+            .observe::<PointerEvent>(move |&event, world| {
+                let pointer = world.single_fetch::<Pointer>().unwrap();
 
-            let (PointerEvent::Moved(point)
-            | PointerEvent::Pressed(point)
-            | PointerEvent::Released(point)) = event;
+                let (PointerEvent::Moved(point)
+                | PointerEvent::Pressed(point)
+                | PointerEvent::Released(point)) = event;
 
-            if !pressed {
-                let pointer_onto = pointer.intersect(world, point);
-                if pointer_on != pointer_onto {
-                    if let Some(mut pointer_on) = pointer_on.and_then(|e| world.entry(e)) {
-                        pointer_on.trigger(PointerLeave);
+                if !pressed {
+                    let pointer_onto = pointer.intersect(world.world(), point);
+                    if pointer_on != pointer_onto {
+                        if let Some(mut pointer_on) = pointer_on.and_then(|e| world.entry(e)) {
+                            pointer_on.trigger(PointerLeave);
+                        }
+                        if let Some(mut pointer_onto) = pointer_onto.and_then(|e| world.entry(e)) {
+                            pointer_onto.trigger(PointerEnter);
+                        }
                     }
-                    if let Some(mut pointer_onto) = pointer_onto.and_then(|e| world.entry(e)) {
-                        pointer_onto.trigger(PointerEnter);
+                    pointer_on = pointer.intersect(world.world(), point);
+                }
+
+                if let PointerEvent::Pressed(_) = event {
+                    pressed = true;
+                }
+
+                if pressed {
+                    if let Some(mut pointer_on) = pointer_on.and_then(|w| world.entry(w)) {
+                        pointer_on.trigger(PointerHit(event));
+                    } else if let Some(mut fallback) = pointer.fallback.and_then(|w| world.entry(w))
+                    {
+                        fallback.trigger(PointerHit(event));
                     }
                 }
-                pointer_on = pointer.intersect(world, point);
-            }
 
-            if let PointerEvent::Pressed(_) = event {
-                pressed = true;
-            }
-
-            if pressed {
-                if let Some(mut pointer_on) = pointer_on.and_then(|w| world.entry(w)) {
-                    pointer_on.trigger(PointerHit(event));
-                } else if let Some(mut fallback) = pointer.fallback.and_then(|w| world.entry(w)) {
-                    fallback.trigger(PointerHit(event));
+                if let PointerEvent::Released(_) = event {
+                    pressed = false;
                 }
-            }
-
-            if let PointerEvent::Released(_) = event {
-                pressed = false;
-            }
-        });
+            });
     }
 }
 impl Pointer {
