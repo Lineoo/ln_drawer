@@ -37,13 +37,12 @@ impl ApplicationHandler for Lnwin {
     ) {
         match self.world.single_entry::<Lnwindow>() {
             Some(mut window) => window.trigger(&event),
-            None => {
-                if let Some(interface) = self.world.single_entry::<Interface>() {
-                    interface.destroy();
-                }
-                event_loop.exit();
-            }
+            None => event_loop.exit(),
         }
+    }
+
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        self.world = World::default();
     }
 }
 
