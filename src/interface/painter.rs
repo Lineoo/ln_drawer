@@ -383,17 +383,6 @@ impl Painter {
         );
     }
 
-    pub fn get_position(&self) -> Position {
-        self.rect.origin
-    }
-
-    pub fn set_position(&mut self, position: Position) {
-        self.set_rect(Rectangle {
-            origin: position,
-            extend: self.rect.extend,
-        });
-    }
-
     pub fn get_z_order(&self) -> ZOrder {
         ZOrder::new(self.z_order)
     }

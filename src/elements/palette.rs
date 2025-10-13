@@ -1,7 +1,7 @@
 use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
-    interface::{Interface, Painter},
+    interface::{Interface, Painter, Wireframe},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerHit},
@@ -12,15 +12,18 @@ const WIDTH: u32 = 128;
 const HEIGHT: u32 = 128;
 
 pub struct Palette {
-    painter: Painter,
-    knob: Painter,
+    main: Painter,
+    main_knob: Wireframe,
 }
 impl Element for Palette {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
                 let mut this = entry.fetch_mut::<Palette>(entry.handle()).unwrap();
-                this.set_knob_position(point);
+                this.main_knob.set_rect(Rectangle {
+                    origin: point,
+                    extend: Delta::splat(1),
+                });
             }
             _ => (),
         });
@@ -28,36 +31,33 @@ impl Element for Palette {
         entry.getter::<PointerCollider>(|this| {
             let this = this.downcast_ref::<Palette>().unwrap();
             PointerCollider {
-                rect: this.painter.get_rect(),
-                z_order: this.painter.get_z_order(),
+                rect: this.main.get_rect(),
+                z_order: this.main.get_z_order(),
             }
         });
 
         entry.getter::<Rectangle>(|this| {
             let this = this.downcast_ref::<Palette>().unwrap();
-            this.painter.get_rect()
+            this.main.get_rect()
         });
 
         entry.setter::<Rectangle>(|this, rect| {
             let this = this.downcast_mut::<Palette>().unwrap();
 
-            let orig_rect = this.painter.get_rect();
-            let knob_orig = this.get_knob_position();
+            let orig = this.main.get_rect().origin;
+            let knob_orig = this.main_knob.get_rect().origin;
+            let relative = orig - knob_orig;
 
-            let rx = (knob_orig.x - orig_rect.origin.x) as f32 / orig_rect.extend.x as f32;
-            let ry = (knob_orig.y - orig_rect.origin.y) as f32 / orig_rect.extend.y as f32;
-
-            let fx = rect.origin.x + (rect.extend.x as f32 * rx).floor() as i32;
-            let fy = rect.origin.y + (rect.extend.y as f32 * ry).floor() as i32;
-            
-            this.painter.set_rect(rect);
-            this.set_knob_position(Position::new(fx, fy));
+            this.main.set_rect(rect);
+            this.main_knob.set_rect(Rectangle {
+                origin: rect.origin + relative,
+                extend: Delta::splat(1),
+            });
         });
     }
 }
 impl Palette {
     pub fn new(position: Position, interface: &mut Interface) -> Palette {
-        // Palette //
         let mut data = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
         for x in 0..128 {
             for y in 0..128 {
@@ -70,7 +70,7 @@ impl Palette {
                 data[start + 3] = 255;
             }
         }
-        let painter = interface.create_painter_with(
+        let main = interface.create_painter_with(
             Rectangle {
                 origin: position,
                 extend: Delta::splat(128),
@@ -78,48 +78,21 @@ impl Palette {
             data,
         );
 
-        // Picker Knob //
-        let rect = Rectangle::from_points(
-            Position::new(position.x - 1, position.y - 1),
-            Position::new(position.x + 2, position.y + 2),
+        let main_knob = interface.create_wireframe(
+            Rectangle {
+                origin: position,
+                extend: Delta::splat(1),
+            },
+            [1.0, 1.0, 1.0, 1.0],
         );
+        main_knob.set_z_order(ZOrder::new(1));
 
-        let mut data = vec![0u8; 3 * 3 * 4];
-        for x in 0..3 {
-            for y in 0..3 {
-                if x == 0 || y == 0 || x == 2 || y == 2 {
-                    let start = (x + y * 3) * 4;
-                    data[start] = 0xff;
-                    data[start + 1] = 0xff;
-                    data[start + 2] = 0xff;
-                    data[start + 3] = 0xff;
-                }
-            }
-        }
-        let mut knob = interface.create_painter_with(rect, data);
-        knob.set_z_order(ZOrder::new(1));
-
-        Palette { painter, knob }
-    }
-
-    pub fn get_knob_position(&self) -> Position {
-        let raw_pos = self.knob.get_position();
-        raw_pos + Delta::splat(1)
-    }
-
-    pub fn set_knob_position(&mut self, position: Position) {
-        let rect = self.painter.get_rect();
-        self.knob.set_position(
-            position.clamp(Rectangle {
-                origin: rect.origin,
-                extend: rect.extend - Delta::splat(1),
-            }) - Delta::splat(1),
-        );
+        Palette { main, main_knob }
     }
 
     pub fn pick_color(&self) -> [u8; 4] {
-        let base_position = self.painter.get_position();
-        let knob_position = self.get_knob_position();
+        let base_position = self.main.get_rect().origin;
+        let knob_position = self.main_knob.get_rect().origin;
 
         let x = knob_position.x - base_position.x;
         let y = knob_position.y - base_position.y;

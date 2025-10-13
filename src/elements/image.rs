@@ -40,14 +40,6 @@ impl Image {
         Ok(Image { painter })
     }
 
-    pub fn get_position(&self) -> Position {
-        self.painter.get_position()
-    }
-
-    pub fn set_position(&mut self, position: Position) {
-        self.painter.set_position(position);
-    }
-
     pub fn get_rect(&self) -> Rectangle {
         self.painter.get_rect()
     }
