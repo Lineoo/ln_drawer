@@ -1,7 +1,7 @@
 use std::sync::mpsc::Sender;
 
-use palette::blend::Compose;
 use palette::LinSrgba;
+use palette::blend::Compose;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
@@ -412,37 +412,47 @@ impl Drop for PainterWriter<'_> {
     }
 }
 impl PainterWriter<'_> {
-    pub fn get_pixel(&self, position: Position) -> [u8; 4] {
-        self.painter.get_pixel(position)
+    pub fn read(&self, x: i32, y: i32) -> [u8; 4] {
+        let x = x.rem_euclid(self.painter.width as i32);
+        let y = y.rem_euclid(self.painter.height as i32);
+
+        let start = ((x + y * self.painter.width as i32) * 4) as usize;
+        let data = &self.painter.data;
+
+        [
+            data[start],
+            data[start + 1],
+            data[start + 2],
+            data[start + 3],
+        ]
     }
 
-    pub fn set_pixel(&mut self, position: Position, color: [u8; 4]) {
-        let width = self.painter.rect.width();
-        let height = self.painter.rect.height();
+    pub fn write(&mut self, x: i32, y: i32, color: [u8; 4]) {
+        let x = x.rem_euclid(self.painter.width as i32);
+        let y = y.rem_euclid(self.painter.height as i32);
 
-        let x_offset = position.x - self.painter.rect.origin.x;
-        let y_offset = position.y - self.painter.rect.origin.y;
+        let start = ((x + y * self.painter.width as i32) * 4) as usize;
+        let data = &mut self.painter.data;
 
-        let x_clamped = (x_offset).rem_euclid(width as i32) as u32;
-        let y_clamped = (height as i32 - 1 - y_offset).rem_euclid(height as i32) as u32;
-
-        let start = (x_clamped + y_clamped * width) * 4;
-        let start = start as usize;
-
-        self.painter.data[start] = color[0];
-        self.painter.data[start + 1] = color[1];
-        self.painter.data[start + 2] = color[2];
-        self.painter.data[start + 3] = color[3];
+        data[start] = color[0];
+        data[start + 1] = color[1];
+        data[start + 2] = color[2];
+        data[start + 3] = color[3];
     }
 
     pub fn draw(&mut self, x: i32, y: i32, color: [u8; 4]) {
-        let x = x.rem_euclid(self.painter.width as i32) as u32;
-        let y = y.rem_euclid(self.painter.height as i32) as u32;
+        let x = x.rem_euclid(self.painter.width as i32);
+        let y = y.rem_euclid(self.painter.height as i32);
 
-        let start = ((x + y * self.painter.width) * 4) as usize;
+        let start = ((x + y * self.painter.width as i32) * 4) as usize;
         let data = &mut self.painter.data;
 
-        let prev = LinSrgba::new(data[start], data[start + 1], data[start + 2], data[start + 3]);
+        let prev = LinSrgba::new(
+            data[start],
+            data[start + 1],
+            data[start + 2],
+            data[start + 3],
+        );
         let curr = LinSrgba::new(color[0], color[1], color[2], color[3]);
 
         let prev: LinSrgba<f32> = prev.into_format();
