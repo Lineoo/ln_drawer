@@ -6,7 +6,7 @@ mod interface;
 mod lnwin;
 mod measures;
 mod tools;
-pub mod world;
+mod world;
 mod text;
 
 use winit::{

@@ -73,15 +73,7 @@ impl Drop for World {
 }
 impl Drop for WorldCell<'_> {
     fn drop(&mut self) {
-        self.world.curr_idx = *self.cell_idx.get_mut();
-
-        let queue = self.world.single_fetch_mut::<Queue>().unwrap();
-        let mut buf = Vec::new();
-        buf.append(&mut queue.0);
-
-        for cmd in buf {
-            cmd(self.world);
-        }
+        self.flush();
     }
 }
 
@@ -297,6 +289,8 @@ impl WorldCell<'_> {
     }
 
     /// Cell-mode removal cannot access the element immediately so we can't return the value of removed element.
+    /// Notice that this removal actually ignore the borrow check so you can still preserve the reference if you have
+    /// fetched it before invoking remove.
     pub fn remove(&self, handle: ElementHandle) -> usize {
         if !self.contains(handle) {
             return 0;
@@ -314,6 +308,12 @@ impl WorldCell<'_> {
             for child in this.depend_by.clone() {
                 cnt += self.remove(child);
             }
+        }
+
+        // prevent element from being fetch again
+        {
+            let mut removed = self.removed.borrow_mut();
+            removed.insert(handle);
         }
 
         let mut queue = self.single_fetch_mut::<Queue>().unwrap();
@@ -361,6 +361,18 @@ impl WorldCell<'_> {
     pub fn occupied_mut(&self, handle: ElementHandle) -> bool {
         let occupied = self.occupied.borrow();
         occupied.get(&handle).is_some_and(|cnt| *cnt != 0)
+    }
+
+    pub fn flush(&mut self) {
+        self.world.curr_idx = *self.cell_idx.get_mut();
+
+        let queue = self.world.single_fetch_mut::<Queue>().unwrap();
+        let mut buf = Vec::new();
+        buf.append(&mut queue.0);
+
+        for cmd in buf {
+            cmd(self.world);
+        }
     }
 
     /// Insertion happened within the cell scope will not be included
@@ -897,3 +909,102 @@ impl<T: 'static> Element for PropertySetter<T> {}
 
 pub struct PropertyChanged<T>(pub T);
 pub struct Destroy;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestInserter(usize);
+    impl Element for TestInserter {}
+
+    #[test]
+    fn basic() {
+        let mut world = World::default();
+
+        assert_eq!(world.single::<TestInserter>(), None);
+
+        let tester1 = world.insert(TestInserter(0xFC01));
+
+        assert_eq!(world.single::<TestInserter>(), Some(tester1));
+
+        let tester2 = world.insert(TestInserter(0xFF02));
+
+        assert_eq!(world.single::<TestInserter>(), None);
+        assert_eq!(world.fetch::<TestInserter>(tester1).unwrap().0, 0xFC01);
+
+        let ret = world.remove(tester1).unwrap();
+
+        assert!(ret.is::<TestInserter>());
+        assert_eq!(ret.downcast_ref::<TestInserter>().unwrap().0, 0xFC01);
+        assert_eq!(world.single::<TestInserter>(), Some(tester2));
+        assert_eq!(world.single_fetch::<TestInserter>().unwrap().0, 0xFF02);
+
+        let tester2 = world.fetch_mut::<TestInserter>(tester2).unwrap();
+        tester2.0 = 0xFA09;
+
+        assert_eq!(world.single_fetch::<TestInserter>().unwrap().0, 0xFA09);
+    }
+
+    #[test]
+    fn cell() {
+        let mut world = World::default();
+        let mut world = world.cell();
+
+        let tester1h = world.insert(TestInserter(0xFC01));
+        let tester2h = world.insert(TestInserter(0xFF02));
+        let tester3h = world.insert(TestInserter(0xFB03));
+
+        world.flush();
+
+        let mut tester1 = world.fetch_mut::<TestInserter>(tester1h).unwrap();
+        let mut tester2 = world.fetch_mut::<TestInserter>(tester2h).unwrap();
+        let tester3 = world.fetch::<TestInserter>(tester3h).unwrap();
+
+        tester2.0 = 0xCC02;
+        tester1.0 = tester3.0;
+
+        world.remove(tester3h);
+
+        assert!(!world.contains(tester3h));
+        assert_eq!(world.fetch::<TestInserter>(tester1h).unwrap().0, 0xFB03);
+        assert_eq!(world.fetch::<TestInserter>(tester2h).unwrap().0, 0xCC02);
+    }
+
+    #[test]
+    #[should_panic = "is mutably borrowed"]
+    fn cell_runtime_borrow_panic() {
+        let mut world = World::default();
+        let tester1h = world.insert(TestInserter(0xFC01));
+        let world = world.cell();
+
+        let _inserter1 = world.fetch_mut::<TestInserter>(tester1h).unwrap();
+        let _inserter2 = world.fetch::<TestInserter>(tester1h).unwrap();
+    }
+
+    #[test]
+    fn cell_runtime_borrow_conflict() {
+        let mut world = World::default();
+        let tester1h = world.insert(TestInserter(0xFC01));
+        let world = world.cell();
+
+        {
+            assert!(!world.occupied(tester1h));
+            assert!(!world.occupied_mut(tester1h));
+        }
+
+        {
+            let _inserter1 = world.fetch_mut::<TestInserter>(tester1h).unwrap();
+
+            assert!(world.occupied(tester1h));
+            assert!(world.occupied_mut(tester1h));
+        }
+
+        {
+            let _inserter1 = world.fetch::<TestInserter>(tester1h).unwrap();
+
+            assert!(!world.occupied(tester1h));
+            assert!(world.occupied_mut(tester1h));
+        }
+    }
+}
