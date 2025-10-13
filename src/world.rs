@@ -608,9 +608,11 @@ impl WorldEntry<'_> {
             && let Some(observers) = observers.observers.get(&self.handle)
         {
             for observer in observers {
-                if let Some(mut observer) = world.fetch_mut::<Observer<E>>(*observer) {
+                if let Some(mut observer) = world.fetch_mut::<Observer<E>>(*observer)
+                    && let Some(entry) = world.entry(observer.target)
+                {
                     let observer = &mut *observer;
-                    (observer.action)(event, world.entry(observer.target).unwrap());
+                    (observer.action)(event, entry);
                 }
             }
         }
