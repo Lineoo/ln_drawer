@@ -10,7 +10,6 @@
     - 程序设置等和导入的图像等是同一层级（只是不可删除）
 
 # Milestone
-- InsertWorld 移除
 - handle/entry 类型化
 - interface 重写：更加灵活的渲染管线
 - transform_tool 支持拉伸和仅允许 Position 的元素移动
@@ -19,6 +18,7 @@
 - save 序列化
 - palette panel: 把目前零散的 palette 组件并起来
 - redraw 优化：目前基于鼠标事件的逻辑都是实时重绘，太卡
+- 内存泄漏问题 不可用的 observer 和 property 无法自动清理
 
 # 世界
 出于精度/距离效应的考量，世界的坐标使用整数像素单位存储（PhysicalPosition）。
@@ -279,62 +279,6 @@ modify.flush(world);
 ```rust
 entry.property::<Position>(|this|, setter);
 ```
-
-# 类型化的 entry
-依赖 Service 和 Insert 重构
-
-```rust
-impl InsertWorld: Element {
-    fn before(world: &mut World) {
-
-    }
-
-    fn after(entry: WorldEntry<Self>) {
-
-    }
-}
-```
-
-# 更直观地写
-```rust
-world.observe(|event, world: &WorldCell| {
-    // ... //
-})
-element.observe(|event, element: WorldCellEntry| {
-    // ... Why not? ... //
-})
-```
-
-深思熟虑。
-```rust
-fn when_inserted(&mut self, entry: WorldCellEntry) {
-    let handle: ElementHandle = entry.handle();
-    let world: &WorldCell = entry.world();
-}
-```
-
-# InsertWorld
-```rust
-impl Text {
-    fn new(rect: Rectangle, text_manager: &mut TextManager, interface: &mut Interface) -> Text;
-    fn from_world(rect: Rectangle) -> impl InsertWorld;
-}
-```
-
-```rust
-let text = Text::new(
-    rect,
-    &mut world.single_fetch_mut().unwrap(),
-    &mut world.single_fetch_mut().unwrap(),
-);
-world.insert(text);
-```
-
-```rust
-world.insert(Text::from_world(rect));
-```
-
-其实没有必要。一个作用 Element 在进入后执行并自动删除自己就可以了哪儿来这么多事？
 
 # 有关右键
 我觉得像右键橡皮之类的东西还是很有必要的……把其他菜单像 Blender 一样放进快捷键也是不错的想法。
