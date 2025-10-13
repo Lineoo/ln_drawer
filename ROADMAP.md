@@ -9,62 +9,16 @@
 - 全统一操作逻辑
     - 程序设置等和导入的图像等是同一层级（只是不可删除）
 
-# 具体目标
-- 渲染框架
-    - 页面元素
-        - 图片
-        - 文字
-        - 按钮
-    - 元素编组
-    - 多页面
-    - 渲染偏移与精度修正
-- 交互
-    - 移动
-    - 缩放/拉伸
-    - 文本输入
-    - 右键菜单
-- 全屏覆盖层
-    - 需要能够传递鼠标，键盘事件
-- 功能
-    - 一个文本框，输入 script 可以直接运行 shell
-        - 还可以把 stdout 和 stderr 输出出来（用连线）
-    - 可以调节的笔刷
-        - 流量 粗细 颜色
-
-# 架构
-- 界面基础渲染，与 wgpu 直接交互，使用屏幕空间 `interface`
-    - 通用的按钮，标签等组件
-    - 用于拖曳组件的线框，手柄
-    - 直接纹理渲染与网格渲染
-    - 笔画的细分网格 StrokeSection
-    - 节点之间连接的箭头 Line
-    - 右键菜单
-    - 空间变化
-    - interface 的位置等由自己存储
-- 更加高级的逻辑组件，不涉及 wgpu 与屏幕空间 `elements`
-    - 笔画的渲染图层 `StrokeLayer`
-    - 添加的图像 `Image`
-    - 节点连接 `NodeLink`
-    - 交互按钮 `Button`
-    - 框选，相交检测 / 按钮 `Intersect`
-    - 物理系统
-    - 运行 Shell，动态链接/组件，OS 程序 `Executor`
-    - 添加图像的入口，甚至是截图工具
-    - 用于实现 stroke 的笔画管理器 `StrokeManager`
-    - 文本编辑栏
-- 提供业务逻辑支持 `world`
-    - 与 interface *完全无关*！World 里的东西完全不需要渲染（甚至不需要 winit 和 wgpu）就应该可以使用。
-    - Element 之间的更新业务逻辑
-    - 一个简单的 RefCell 实现多可变访问
-    - 带有一个事件注册系统，提供一个原生的 Observer / Trigger 系统
-- 输入转接，导入，承接 IO 和用户输入，处理各类平台与输入转换为标准交互给 World 使用 `inbox`
-    - 移动平台：触摸，各类传感器，虚拟输入法
-    - PC 平台：笔输入，触摸，鼠标，键盘
-- 窗口管理，与 winit 直接交互 `lnwin`
-    - 全屏覆盖层
-    - 输入处理
-- 主程序 `main`
-    - 事件循环
+# Milestone
+- InsertWorld 移除
+- handle/entry 类型化
+- interface 重写：更加灵活的渲染管线
+- transform_tool 支持拉伸和仅允许 Position 的元素移动
+- menu 标准化
+- pointer 右键修改
+- save 序列化
+- palette panel: 把目前零散的 palette 组件并起来
+- redraw 优化：目前基于鼠标事件的逻辑都是实时重绘，太卡
 
 # 世界
 出于精度/距离效应的考量，世界的坐标使用整数像素单位存储（PhysicalPosition）。
@@ -359,16 +313,6 @@ fn when_inserted(&mut self, entry: WorldCellEntry) {
 }
 ```
 
-# v0.2 的内容
-- crate 架构 - lib 独立
-- lnwin 的窗口实现为 Element 
-    - 同时把 world 的 observe 删掉
-- Observers 和 Services 作为 Element 泛型单例而不是使用 TypeId Map
-    - 不再 Internal Element
-- InsertWorld
-- 类型化 entry
-- single 使用 service 完成
-
 # InsertWorld
 ```rust
 impl Text {
@@ -389,3 +333,12 @@ world.insert(text);
 ```rust
 world.insert(Text::from_world(rect));
 ```
+
+其实没有必要。一个作用 Element 在进入后执行并自动删除自己就可以了哪儿来这么多事？
+
+# 有关右键
+我觉得像右键橡皮之类的东西还是很有必要的……把其他菜单像 Blender 一样放进快捷键也是不错的想法。
+
+让右键和左键同样进入 Pointer 一并处理也是挺好的。这样 Element 就可以负责自己的菜单，而统一的菜单则由类似 TransformTool 的工具提供。
+
+然后我觉得 `PointerCollider` 可以做成 `Option<Rectangle>` 这种，然后如果是 `None` 就意味着全局触发，也可以实现 active 和 fallback 的功能，还能实现一定程度的解耦，我觉得挺好。不过等有具体需求再说吧，目前没有很重要。

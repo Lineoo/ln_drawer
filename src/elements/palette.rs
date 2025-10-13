@@ -13,6 +13,7 @@ const HEIGHT: usize = 128;
 const HUE_HEIGHT: usize = 16;
 
 pub struct Palette {
+    hue: f32,
     main: Painter,
     main_knob: Wireframe,
 }
@@ -69,41 +70,10 @@ impl Element for Palette {
 }
 impl Palette {
     pub fn new(position: Position, interface: &mut Interface) -> Palette {
-        let mut data = vec![0u8; WIDTH * HEIGHT * 4];
-        for x in 0..WIDTH {
-            for y in 0..HEIGHT {
-                let start = (x + y * WIDTH) * 4;
-                let hsl: Hsl = Hsl::new(
-                    0.5,
-                    x as f32 / WIDTH as f32,
-                    (127 - y) as f32 / HEIGHT as f32,
-                );
-                let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
-                data[start] = rgb.red;
-                data[start + 1] = rgb.blue;
-                data[start + 2] = rgb.green;
-                data[start + 3] = 255;
-            }
-        }
-
-        let mut main = interface.create_painter(Rectangle {
+        let main = interface.create_painter(Rectangle {
             origin: position,
             extend: Delta::new(WIDTH as i32, HEIGHT as i32),
         });
-
-        let mut writer = main.open_writer();
-        for x in 0..WIDTH {
-            for y in 0..HEIGHT {
-                let saturation = x as f32 / WIDTH as f32;
-                let lightness = (127 - y) as f32 / HEIGHT as f32;
-                let hsl: Hsl = Hsl::new(0.5, saturation, lightness);
-                let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
-
-                writer.write(x as i32, y as i32, [rgb.red, rgb.blue, rgb.green, 255]);
-            }
-        }
-
-        drop(writer);
 
         let main_knob = interface.create_wireframe(
             Rectangle {
@@ -115,7 +85,15 @@ impl Palette {
 
         main_knob.set_z_order(ZOrder::new(1));
 
-        Palette { main, main_knob }
+        let mut palette = Palette {
+            main,
+            main_knob,
+            hue: 0.0,
+        };
+
+        palette.redraw();
+
+        palette
     }
 
     pub fn pick_color(&self) -> [u8; 4] {
@@ -124,13 +102,30 @@ impl Palette {
 
         let x = knob_position.x - base_position.x;
         let y = knob_position.y - base_position.y;
-        let cx = x.rem_euclid(WIDTH as i32);
-        let cy = y.rem_euclid(HEIGHT as i32);
 
-        let hsl: Hsl = Hsl::new(0.5, cx as f32 / WIDTH as f32, cy as f32 / HEIGHT as f32);
+        let x = x.rem_euclid(WIDTH as i32);
+        let y = (HEIGHT as i32 - 1) - y.rem_euclid(HEIGHT as i32);
+
+        let saturation = x as f32 / (WIDTH - 1) as f32;
+        let lightness = 1.0 - (y as f32 / (HEIGHT - 1) as f32);
+        let hsl: Hsl = Hsl::new(self.hue, saturation, lightness);
         let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
 
         [rgb.red, rgb.blue, rgb.green, 255]
+    }
+
+    fn redraw(&mut self) {
+        let mut writer = self.main.open_writer();
+        for x in 0..WIDTH as i32 {
+            for y in 0..HEIGHT as i32 {
+                let saturation = x as f32 / (WIDTH - 1) as f32;
+                let lightness = 1.0 - (y as f32 / (HEIGHT - 1) as f32);
+                let hsl: Hsl = Hsl::new(self.hue, saturation, lightness);
+                let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
+
+                writer.write(x, y, [rgb.red, rgb.blue, rgb.green, 255]);
+            }
+        }
     }
 }
 
@@ -151,6 +146,16 @@ impl Element for PaletteHueSlider {
                     ),
                     extend: Delta::new(1, HUE_HEIGHT as i32),
                 });
+
+                if let Some(mut palette) = entry.single_fetch_mut::<Palette>() {
+                    let base_position = this.hue.get_rect().left();
+                    let knob_position = this.hue_knob.get_rect().left();
+
+                    let x = (knob_position - base_position).rem_euclid(WIDTH as i32);
+
+                    palette.hue = (x as f32 / WIDTH as f32) * -360.0;
+                    palette.redraw();
+                }
             }
             _ => (),
         });
@@ -192,7 +197,7 @@ impl PaletteHueSlider {
 
         let mut writer = hue.open_writer();
         for x in 0..WIDTH {
-            let hsl: Hsl = Hsl::new(x as f32 / WIDTH as f32 * 360.0, 0.8, 0.6);
+            let hsl: Hsl = Hsl::new(x as f32 / WIDTH as f32 * -360.0, 0.8, 0.6);
             let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
             for y in 0..HUE_HEIGHT {
                 writer.write(x as i32, y as i32, [rgb.red, rgb.blue, rgb.green, 255]);
