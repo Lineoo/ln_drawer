@@ -368,3 +368,24 @@ fn when_inserted(&mut self, entry: WorldCellEntry) {
 - InsertWorld
 - 类型化 entry
 - single 使用 service 完成
+
+# InsertWorld
+```rust
+impl Text {
+    fn new(rect: Rectangle, text_manager: &mut TextManager, interface: &mut Interface) -> Text;
+    fn from_world(rect: Rectangle) -> impl InsertWorld;
+}
+```
+
+```rust
+let text = Text::new(
+    rect,
+    &mut world.single_fetch_mut().unwrap(),
+    &mut world.single_fetch_mut().unwrap(),
+);
+world.insert(text);
+```
+
+```rust
+world.insert(Text::from_world(rect));
+```

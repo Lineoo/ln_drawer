@@ -98,6 +98,11 @@ impl World {
         handle
     }
 
+    pub fn insert_with<F: InsertWorld>(&mut self, inserter: F) -> ElementHandle {
+        let element = inserter.insert_world(self);
+        self.insert(element)
+    }
+
     pub fn remove(&mut self, handle: ElementHandle) -> Option<Box<dyn Element>> {
         let type_id = (**self.elements.get(&handle)?).type_id();
         log::trace!("remove {:?}", handle);
@@ -280,6 +285,38 @@ impl WorldCell<'_> {
             // when_inserted
             let cell = world.cell();
             let mut element = cell.fetch_mut::<T>(estimate_handle).unwrap();
+            element.when_inserted(cell.entry(estimate_handle).unwrap());
+            drop(element);
+            drop(cell);
+        }));
+
+        estimate_handle
+    }
+
+    pub fn insert_with<F: InsertWorld + 'static>(&mut self, inserter: F) -> ElementHandle {
+        // get estimate_handle
+        // cell-mode insertion depends on *retained* handle
+        let mut cell_idx = self.cell_idx.borrow_mut();
+        cell_idx.0 += 1;
+        let estimate_handle = ElementHandle(cell_idx.0 - 1);
+        log::trace!("insert {}: {:?}", type_name::<F::Target>(), estimate_handle);
+
+        let mut inserted = self.inserted.borrow_mut();
+        inserted.insert(estimate_handle);
+
+        let mut queue = self.single_fetch_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let element = inserter.insert_world(world);
+
+            world.elements.insert(estimate_handle, Box::new(element));
+
+            // update cache
+            let cache = world.cache.entry(TypeId::of::<F::Target>()).or_default();
+            cache.insert(estimate_handle);
+
+            // when_inserted
+            let cell = world.cell();
+            let mut element = cell.fetch_mut::<F::Target>(estimate_handle).unwrap();
             element.when_inserted(cell.entry(estimate_handle).unwrap());
             drop(element);
             drop(cell);
@@ -911,6 +948,19 @@ impl<T: 'static> Element for PropertySetter<T> {}
 
 pub struct PropertyChanged<T>(pub T);
 pub struct Destroy;
+
+// InsertWorld //
+pub trait InsertWorld {
+    type Target: Element;
+    fn insert_world(self, world: &mut World) -> Self::Target;
+}
+
+impl<T: Element, F: FnOnce(&mut World) -> T> InsertWorld for F {
+    type Target = T;
+    fn insert_world(self, world: &mut World) -> Self::Target {
+        self(world)
+    }
+}
 
 #[cfg(test)]
 mod test {
