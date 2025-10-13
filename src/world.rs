@@ -293,7 +293,7 @@ impl WorldCell<'_> {
         estimate_handle
     }
 
-    pub fn insert_with<F: InsertWorld + 'static>(&mut self, inserter: F) -> ElementHandle {
+    pub fn insert_with<F: InsertWorld + 'static>(&self, inserter: F) -> ElementHandle {
         // get estimate_handle
         // cell-mode insertion depends on *retained* handle
         let mut cell_idx = self.cell_idx.borrow_mut();

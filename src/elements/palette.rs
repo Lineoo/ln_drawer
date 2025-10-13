@@ -15,8 +15,6 @@ const HUE_HEIGHT: usize = 16;
 pub struct Palette {
     main: Painter,
     main_knob: Wireframe,
-    hue: Painter,
-    hue_knob: Wireframe,
 }
 impl Element for Palette {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
@@ -61,6 +59,12 @@ impl Element for Palette {
                 extend: Delta::splat(1),
             });
         });
+
+        let slider = PaletteHueSlider::new(
+            self.main.get_rect().origin - Delta::new(0, HUE_HEIGHT as i32),
+            &mut entry.single_fetch_mut().unwrap(),
+        );
+        entry.insert(slider);
     }
 }
 impl Palette {
@@ -81,13 +85,25 @@ impl Palette {
                 data[start + 3] = 255;
             }
         }
-        let main = interface.create_painter_with(
-            Rectangle {
-                origin: position,
-                extend: Delta::new(WIDTH as i32, HEIGHT as i32),
-            },
-            data,
-        );
+
+        let mut main = interface.create_painter(Rectangle {
+            origin: position,
+            extend: Delta::new(WIDTH as i32, HEIGHT as i32),
+        });
+
+        let mut writer = main.open_writer();
+        for x in 0..WIDTH {
+            for y in 0..HEIGHT {
+                let saturation = x as f32 / WIDTH as f32;
+                let lightness = (127 - y) as f32 / HEIGHT as f32;
+                let hsl: Hsl = Hsl::new(0.5, saturation, lightness);
+                let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
+
+                writer.write(x as i32, y as i32, [rgb.red, rgb.blue, rgb.green, 255]);
+            }
+        }
+
+        drop(writer);
 
         let main_knob = interface.create_wireframe(
             Rectangle {
@@ -96,43 +112,10 @@ impl Palette {
             },
             [1.0, 1.0, 1.0, 1.0],
         );
+
         main_knob.set_z_order(ZOrder::new(1));
 
-        let mut data = vec![0u8; WIDTH * HUE_HEIGHT * 4];
-        for x in 0..WIDTH {
-            let hsl: Hsl = Hsl::new(x as f32 / WIDTH as f32 * 360.0, 0.8, 0.6);
-            let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
-            for y in 0..HUE_HEIGHT {
-                let start = (x + y * WIDTH) * 4;
-                data[start] = rgb.red;
-                data[start + 1] = rgb.blue;
-                data[start + 2] = rgb.green;
-                data[start + 3] = 255;
-            }
-        }
-        let hue = interface.create_painter_with(
-            Rectangle {
-                origin: position - Delta::new(0, HUE_HEIGHT as i32),
-                extend: Delta::new(WIDTH as i32, HUE_HEIGHT as i32),
-            },
-            data,
-        );
-
-        let hue_knob = interface.create_wireframe(
-            Rectangle {
-                origin: position - Delta::new(0, HUE_HEIGHT as i32),
-                extend: Delta::new(1, HUE_HEIGHT as i32),
-            },
-            [1.0, 1.0, 1.0, 1.0],
-        );
-        hue_knob.set_z_order(ZOrder::new(1));
-
-        Palette {
-            main,
-            main_knob,
-            hue,
-            hue_knob,
-        }
+        Palette { main, main_knob }
     }
 
     pub fn pick_color(&self) -> [u8; 4] {
@@ -148,5 +131,86 @@ impl Palette {
         let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
 
         [rgb.red, rgb.blue, rgb.green, 255]
+    }
+}
+
+pub struct PaletteHueSlider {
+    hue: Painter,
+    hue_knob: Wireframe,
+}
+impl Element for PaletteHueSlider {
+    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+        entry.observe::<PointerHit>(move |event, entry| match event.0 {
+            PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
+                let mut this = entry.fetch_mut::<PaletteHueSlider>(entry.handle()).unwrap();
+                let rect = this.hue.get_rect();
+                this.hue_knob.set_rect(Rectangle {
+                    origin: Position::new(
+                        point.x.clamp(rect.left(), rect.right() - 1),
+                        rect.down(),
+                    ),
+                    extend: Delta::new(1, HUE_HEIGHT as i32),
+                });
+            }
+            _ => (),
+        });
+
+        entry.getter::<PointerCollider>(|this| {
+            let this = this.downcast_ref::<PaletteHueSlider>().unwrap();
+            PointerCollider {
+                rect: this.hue.get_rect(),
+                z_order: this.hue.get_z_order(),
+            }
+        });
+
+        entry.getter::<Rectangle>(|this| {
+            let this = this.downcast_ref::<PaletteHueSlider>().unwrap();
+            this.hue.get_rect()
+        });
+
+        entry.setter::<Rectangle>(|this, rect| {
+            let this = this.downcast_mut::<PaletteHueSlider>().unwrap();
+
+            let orig = this.hue.get_rect().left();
+            let knob_orig = this.hue_knob.get_rect().left();
+            let relative = knob_orig - orig;
+
+            this.hue.set_rect(rect);
+            this.hue_knob.set_rect(Rectangle {
+                origin: Position::new(rect.left() + relative, rect.down()),
+                extend: Delta::new(1, HUE_HEIGHT as i32),
+            });
+        });
+    }
+}
+impl PaletteHueSlider {
+    fn new(position: Position, interface: &mut Interface) -> PaletteHueSlider {
+        let mut hue = interface.create_painter(Rectangle {
+            origin: position,
+            extend: Delta::new(WIDTH as i32, HUE_HEIGHT as i32),
+        });
+
+        let mut writer = hue.open_writer();
+        for x in 0..WIDTH {
+            let hsl: Hsl = Hsl::new(x as f32 / WIDTH as f32 * 360.0, 0.8, 0.6);
+            let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
+            for y in 0..HUE_HEIGHT {
+                writer.write(x as i32, y as i32, [rgb.red, rgb.blue, rgb.green, 255]);
+            }
+        }
+
+        drop(writer);
+
+        let hue_knob = interface.create_wireframe(
+            Rectangle {
+                origin: position,
+                extend: Delta::new(1, HUE_HEIGHT as i32),
+            },
+            [1.0, 1.0, 1.0, 1.0],
+        );
+
+        hue_knob.set_z_order(ZOrder::new(1));
+
+        PaletteHueSlider { hue, hue_knob }
     }
 }

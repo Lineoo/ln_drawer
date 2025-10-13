@@ -408,7 +408,26 @@ pub struct PainterWriter<'painter> {
 }
 impl Drop for PainterWriter<'_> {
     fn drop(&mut self) {
-        self.close();
+        let rect = self.painter.get_rect();
+        self.painter.queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &self.painter.buffer.bind_texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &self.painter.data,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(rect.width() * 4),
+                rows_per_image: Some(rect.height()),
+            },
+            Extent3d {
+                width: rect.width(),
+                height: rect.height(),
+                depth_or_array_layers: 1,
+            },
+        );
     }
 }
 impl PainterWriter<'_> {
@@ -480,29 +499,6 @@ impl PainterWriter<'_> {
                 self.painter.data[start + 3] = color[3];
             }
         }
-    }
-
-    pub fn close(&mut self) {
-        let rect = self.painter.get_rect();
-        self.painter.queue.write_texture(
-            TexelCopyTextureInfo {
-                texture: &self.painter.buffer.bind_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            &self.painter.data,
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(rect.width() * 4),
-                rows_per_image: Some(rect.height()),
-            },
-            Extent3d {
-                width: rect.width(),
-                height: rect.height(),
-                depth_or_array_layers: 1,
-            },
-        );
     }
 }
 
