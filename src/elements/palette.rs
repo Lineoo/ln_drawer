@@ -8,20 +8,27 @@ use crate::{
     world::{Element, WorldCellEntry},
 };
 
-const WIDTH: u32 = 128;
-const HEIGHT: u32 = 128;
+const WIDTH: usize = 128;
+const HEIGHT: usize = 128;
+const HUE_HEIGHT: usize = 16;
 
 pub struct Palette {
     main: Painter,
     main_knob: Wireframe,
+    hue: Painter,
+    hue_knob: Wireframe,
 }
 impl Element for Palette {
     fn when_inserted(&mut self, mut entry: WorldCellEntry) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
                 let mut this = entry.fetch_mut::<Palette>(entry.handle()).unwrap();
+                let rect = this.main.get_rect();
                 this.main_knob.set_rect(Rectangle {
-                    origin: point,
+                    origin: point.clamp(Rectangle {
+                        origin: rect.origin,
+                        extend: rect.extend - Delta::splat(1),
+                    }),
                     extend: Delta::splat(1),
                 });
             }
@@ -46,7 +53,7 @@ impl Element for Palette {
 
             let orig = this.main.get_rect().origin;
             let knob_orig = this.main_knob.get_rect().origin;
-            let relative = orig - knob_orig;
+            let relative = knob_orig - orig;
 
             this.main.set_rect(rect);
             this.main_knob.set_rect(Rectangle {
@@ -58,11 +65,15 @@ impl Element for Palette {
 }
 impl Palette {
     pub fn new(position: Position, interface: &mut Interface) -> Palette {
-        let mut data = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
-        for x in 0..128 {
-            for y in 0..128 {
-                let start = (x + y * 128) * 4;
-                let hsl: Hsl = Hsl::new(0.5, x as f32 / 128.0, (127 - y) as f32 / 128.0);
+        let mut data = vec![0u8; WIDTH * HEIGHT * 4];
+        for x in 0..WIDTH {
+            for y in 0..HEIGHT {
+                let start = (x + y * WIDTH) * 4;
+                let hsl: Hsl = Hsl::new(
+                    0.5,
+                    x as f32 / WIDTH as f32,
+                    (127 - y) as f32 / HEIGHT as f32,
+                );
                 let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
                 data[start] = rgb.red;
                 data[start + 1] = rgb.blue;
@@ -73,7 +84,7 @@ impl Palette {
         let main = interface.create_painter_with(
             Rectangle {
                 origin: position,
-                extend: Delta::splat(128),
+                extend: Delta::new(WIDTH as i32, HEIGHT as i32),
             },
             data,
         );
@@ -87,7 +98,41 @@ impl Palette {
         );
         main_knob.set_z_order(ZOrder::new(1));
 
-        Palette { main, main_knob }
+        let mut data = vec![0u8; WIDTH * HUE_HEIGHT * 4];
+        for x in 0..WIDTH {
+            let hsl: Hsl = Hsl::new(x as f32 / WIDTH as f32 * 360.0, 0.8, 0.6);
+            let rgb: Rgb<_, u8> = Rgb::from_color(hsl).into_format();
+            for y in 0..HUE_HEIGHT {
+                let start = (x + y * WIDTH) * 4;
+                data[start] = rgb.red;
+                data[start + 1] = rgb.blue;
+                data[start + 2] = rgb.green;
+                data[start + 3] = 255;
+            }
+        }
+        let hue = interface.create_painter_with(
+            Rectangle {
+                origin: position - Delta::new(0, HUE_HEIGHT as i32),
+                extend: Delta::new(WIDTH as i32, HUE_HEIGHT as i32),
+            },
+            data,
+        );
+
+        let hue_knob = interface.create_wireframe(
+            Rectangle {
+                origin: position - Delta::new(0, HUE_HEIGHT as i32),
+                extend: Delta::new(1, HUE_HEIGHT as i32),
+            },
+            [1.0, 1.0, 1.0, 1.0],
+        );
+        hue_knob.set_z_order(ZOrder::new(1));
+
+        Palette {
+            main,
+            main_knob,
+            hue,
+            hue_knob,
+        }
     }
 
     pub fn pick_color(&self) -> [u8; 4] {
