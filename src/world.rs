@@ -71,6 +71,16 @@ impl<T: Element> From<ElementHandle<T>> for ElementHandle {
     }
 }
 
+impl<T: ?Sized> ElementHandle<T> {
+    fn cast<U: Element>(self) -> ElementHandle<U> {
+        ElementHandle(self.0, PhantomData)
+    }
+
+    pub fn untyped(self) -> ElementHandle<dyn Element> {
+        ElementHandle(self.0, PhantomData)
+    }
+}
+
 // World Management //
 
 pub struct World {
@@ -122,7 +132,7 @@ impl Drop for WorldCell<'_> {
 }
 
 impl World {
-    pub fn insert<T: Element + 'static>(&mut self, element: T) -> ElementHandle {
+    pub fn insert<T: Element + 'static>(&mut self, element: T) -> ElementHandle<T> {
         self.elements.insert(self.curr_idx, Box::new(element));
         let handle = self.curr_idx;
         self.curr_idx.0 += 1;
@@ -139,7 +149,7 @@ impl World {
         drop(element);
         drop(cell);
 
-        handle
+        handle.cast()
     }
 
     pub fn remove(&mut self, handle: ElementHandle) -> Option<Box<dyn Element>> {
@@ -302,7 +312,7 @@ impl World {
 impl WorldCell<'_> {
     /// Cell-mode insertion cannot perform the operation immediately so the inserted element cannot be
     /// fetched until end of the cell span. One exception is entry, which can still be used normally.
-    pub fn insert<T: Element + 'static>(&self, element: T) -> ElementHandle {
+    pub fn insert<T: Element + 'static>(&self, element: T) -> ElementHandle<T> {
         // get estimate_handle
         // cell-mode insertion depends on *retained* handle
         let mut cell_idx = self.cell_idx.borrow_mut();
@@ -329,7 +339,7 @@ impl WorldCell<'_> {
             drop(cell);
         }));
 
-        estimate_handle
+        estimate_handle.cast()
     }
 
     /// Cell-mode removal cannot access the element immediately so we can't return the value of removed element.
@@ -646,9 +656,9 @@ impl WorldEntry<'_> {
             }
         }
 
-        self.world.entry(handle).unwrap().depend(self.handle);
+        self.world.entry(handle.untyped()).unwrap().depend(self.handle);
 
-        handle
+        handle.untyped()
     }
 
     pub fn trigger<E: 'static>(&mut self, event: &E) {
@@ -657,7 +667,7 @@ impl WorldEntry<'_> {
             && let Some(observers) = observers.observers.get(&self.handle)
         {
             for observer in observers {
-                if let Some(mut observer) = world.fetch_mut::<Observer<E>>(*observer)
+                if let Some(mut observer) = world.fetch_mut::<Observer<E>>(observer.untyped())
                     && let Some(entry) = world.entry(observer.target)
                 {
                     let observer = &mut *observer;
@@ -788,7 +798,7 @@ impl WorldCellEntry<'_> {
             }
         }));
 
-        estimate_handle
+        estimate_handle.untyped()
     }
 
     /// This will be delayed until the cell is closed. So not all observers in the cell scope could receive the
@@ -947,7 +957,8 @@ impl<F: FnOnce(&mut World) + 'static> Element for F {
 // FIXME observer cleanup
 #[derive(Default)]
 struct Observers<E> {
-    observers: HashMap<ElementHandle, SmallVec<[ElementHandle; 1]>>,
+    observers: HashMap<ElementHandle, SmallVec<[ElementHandle<Observer<E>>; 1]>>,
+    // FIXME: remove phantom
     _marker: PhantomData<E>,
 }
 #[expect(clippy::type_complexity)]
@@ -1000,11 +1011,11 @@ mod test {
 
         assert_eq!(world.single::<TestInserter>(), None);
 
-        let tester1 = world.insert(TestInserter(0xFC01));
+        let tester1 = world.insert(TestInserter(0xFC01)).untyped();
 
         assert_eq!(world.single::<TestInserter>(), Some(tester1));
 
-        let tester2 = world.insert(TestInserter(0xFF02));
+        let tester2 = world.insert(TestInserter(0xFF02)).untyped();
 
         assert_eq!(world.single::<TestInserter>(), None);
         assert_eq!(world.fetch::<TestInserter>(tester1).unwrap().0, 0xFC01);
@@ -1027,9 +1038,9 @@ mod test {
         let mut world = World::default();
         let mut world = world.cell();
 
-        let tester1h = world.insert(TestInserter(0xFC01));
-        let tester2h = world.insert(TestInserter(0xFF02));
-        let tester3h = world.insert(TestInserter(0xFB03));
+        let tester1h = world.insert(TestInserter(0xFC01)).untyped();
+        let tester2h = world.insert(TestInserter(0xFF02)).untyped();
+        let tester3h = world.insert(TestInserter(0xFB03)).untyped();
 
         world.flush();
 
@@ -1051,7 +1062,7 @@ mod test {
     #[should_panic = "is mutably borrowed"]
     fn cell_runtime_borrow_panic() {
         let mut world = World::default();
-        let tester1h = world.insert(TestInserter(0xFC01));
+        let tester1h = world.insert(TestInserter(0xFC01)).untyped();
         let world = world.cell();
 
         let _inserter1 = world.fetch_mut::<TestInserter>(tester1h).unwrap();
@@ -1061,7 +1072,7 @@ mod test {
     #[test]
     fn cell_runtime_borrow_conflict() {
         let mut world = World::default();
-        let tester1h = world.insert(TestInserter(0xFC01));
+        let tester1h = world.insert(TestInserter(0xFC01)).untyped();
         let world = world.cell();
 
         {

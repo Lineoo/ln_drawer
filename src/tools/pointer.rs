@@ -85,7 +85,7 @@ impl Element for Pointer {
                     if event.state == ElementState::Pressed {
                         let transform = entry
                             .single::<TransformTool>()
-                            .unwrap_or_else(|| entry.insert(TransformTool::default()));
+                            .unwrap_or_else(|| entry.insert(TransformTool::default()).untyped());
                         pointer.active = Some(transform);
                     } else {
                         pointer.active = None;
