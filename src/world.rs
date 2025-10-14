@@ -71,14 +71,12 @@ impl<T: Element> From<ElementHandle<T>> for ElementHandle {
     }
 }
 
-impl ElementHandle<dyn Element> {
-    fn cast<T: Element>(self) -> ElementHandle<T> {
-        ElementHandle(self.0, PhantomData)
-    }
-}
-
 impl<T: ?Sized> ElementHandle<T> {
     pub fn untyped(self) -> ElementHandle<dyn Element> {
+        self.cast()
+    }
+
+    fn cast<U: ?Sized>(self) -> ElementHandle<U> {
         ElementHandle(self.0, PhantomData)
     }
 }
@@ -134,7 +132,7 @@ impl Drop for WorldCell<'_> {
 }
 
 impl World {
-    pub fn insert<T: Element + 'static>(&mut self, element: T) -> ElementHandle<T> {
+    pub fn insert<T: Element>(&mut self, element: T) -> ElementHandle<T> {
         self.elements.insert(self.curr_idx, Box::new(element));
         let handle = self.curr_idx.cast::<T>();
         self.curr_idx.0 += 1;
@@ -308,7 +306,7 @@ impl World {
 impl WorldCell<'_> {
     /// Cell-mode insertion cannot perform the operation immediately so the inserted element cannot be
     /// fetched until end of the cell span. One exception is entry, which can still be used normally.
-    pub fn insert<T: Element + 'static>(&self, element: T) -> ElementHandle<T> {
+    pub fn insert<T: Element>(&self, element: T) -> ElementHandle<T> {
         // get estimate_handle
         // cell-mode insertion depends on *retained* handle
         let mut cell_idx = self.cell_idx.borrow_mut();
@@ -632,21 +630,14 @@ impl<T: ?Sized> WorldEntry<'_, T> {
 
         match self.world.single_fetch_mut::<Observers<E>>() {
             Some(observers) => {
-                let observers = observers
-                    .observers
-                    .entry(self.handle.untyped())
-                    .or_default();
+                let observers = observers.members.entry(self.handle.untyped()).or_default();
                 observers.push(handle);
             }
             None => {
                 let mut observers = Observers::<E> {
-                    observers: HashMap::new(),
-                    _marker: PhantomData,
+                    members: HashMap::new(),
                 };
-                let observer = observers
-                    .observers
-                    .entry(self.handle.untyped())
-                    .or_default();
+                let observer = observers.members.entry(self.handle.untyped()).or_default();
                 observer.push(handle);
                 self.insert(observers);
             }
@@ -663,7 +654,7 @@ impl<T: ?Sized> WorldEntry<'_, T> {
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         let world = self.world.cell();
         if let Some(observers) = world.single_fetch::<Observers<E>>()
-            && let Some(observers) = observers.observers.get(&self.handle.untyped())
+            && let Some(observers) = observers.members.get(&self.handle.untyped())
         {
             for observer in observers {
                 if let Some(mut observer) = world.fetch_mut::<Observer<E>>(*observer)
@@ -727,7 +718,7 @@ impl<T: ?Sized> WorldEntry<'_, T> {
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
     pub fn depend(&mut self, depend_on: ElementHandle) {
-        let depend_by = self.handle;
+        let depend_by = self.handle.untyped();
         if !self.world.contains(depend_on) {
             log::error!("{depend_by:?} try to depend on {depend_on:?}, which does not exist");
             return;
@@ -736,15 +727,15 @@ impl<T: ?Sized> WorldEntry<'_, T> {
         match self.world.single_fetch_mut::<Dependencies>() {
             Some(dependencies) => {
                 let depend = dependencies.0.entry(depend_on).or_default();
-                depend.depend_by.push(depend_by.untyped());
-                let depend = dependencies.0.entry(depend_by.untyped()).or_default();
+                depend.depend_by.push(depend_by);
+                let depend = dependencies.0.entry(depend_by).or_default();
                 depend.depend_on.push(depend_on);
             }
             None => {
                 let mut dependencies = Dependencies::default();
                 let depend = dependencies.0.entry(depend_on).or_default();
-                depend.depend_by.push(depend_by.untyped());
-                let depend = dependencies.0.entry(depend_by.untyped()).or_default();
+                depend.depend_by.push(depend_by);
+                let depend = dependencies.0.entry(depend_by).or_default();
                 depend.depend_on.push(depend_on);
                 self.world.insert(dependencies);
             }
@@ -761,6 +752,17 @@ impl<T: ?Sized> WorldEntry<'_, T> {
 
     pub fn world(&mut self) -> &mut World {
         self.world
+    }
+
+    pub fn untyped(&mut self) -> WorldEntry<'_, dyn Element> {
+        self.cast()
+    }
+
+    fn cast<U: ?Sized>(&mut self) -> WorldEntry<'_, U> {
+        WorldEntry {
+            world: self.world,
+            handle: self.handle.cast(),
+        }
     }
 }
 impl<T: ?Sized> WorldCellEntry<'_, T> {
@@ -782,15 +784,14 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
         queue.0.push(Box::new(move |world| {
             match world.single_fetch_mut::<Observers<E>>() {
                 Some(observers) => {
-                    let observers = observers.observers.entry(this).or_default();
+                    let observers = observers.members.entry(this).or_default();
                     observers.push(estimate_handle);
                 }
                 None => {
                     let mut observers = Observers::<E> {
-                        observers: HashMap::new(),
-                        _marker: PhantomData,
+                        members: HashMap::new(),
                     };
-                    let observer = observers.observers.entry(this).or_default();
+                    let observer = observers.members.entry(this).or_default();
                     observer.push(estimate_handle);
                     world.insert(observers);
                 }
@@ -867,6 +868,17 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
 
     pub fn world(&self) -> &WorldCell<'_> {
         self.world
+    }
+
+    pub fn untyped(&mut self) -> WorldCellEntry<'_, dyn Element> {
+        self.cast()
+    }
+
+    fn cast<U: ?Sized>(&mut self) -> WorldCellEntry<'_, U> {
+        WorldCellEntry {
+            world: self.world,
+            handle: self.handle.cast(),
+        }
     }
 }
 
@@ -956,9 +968,7 @@ impl<F: FnOnce(&mut World) + 'static> Element for F {
 // FIXME observer cleanup
 #[derive(Default)]
 struct Observers<E> {
-    observers: HashMap<ElementHandle, SmallVec<[ElementHandle<Observer<E>>; 1]>>,
-    // FIXME: remove phantom
-    _marker: PhantomData<E>,
+    members: HashMap<ElementHandle, SmallVec<[ElementHandle<Observer<E>>; 1]>>,
 }
 #[expect(clippy::type_complexity)]
 struct Observer<E> {
