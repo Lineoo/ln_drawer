@@ -147,7 +147,7 @@ impl World {
 
         // when_inserted
         let cell = self.cell();
-        let mut element = cell.fetch_mut::<T>(handle).unwrap();
+        let mut element = cell.fetch_mut(handle).unwrap();
         element.when_inserted(cell.entry(handle).unwrap());
         drop(element);
         drop(cell);
@@ -333,7 +333,7 @@ impl WorldCell<'_> {
 
             // when_inserted
             let cell = world.cell();
-            let mut element = cell.fetch_mut::<T>(estimate_handle).unwrap();
+            let mut element = cell.fetch_mut(estimate_handle).unwrap();
             element.when_inserted(cell.entry(estimate_handle).unwrap());
             drop(element);
             drop(cell);
@@ -721,7 +721,7 @@ impl<T: ?Sized> WorldEntry<'_, T> {
             && let Some(observers) = observers.members.get(&self.handle.untyped())
         {
             for observer in observers {
-                if let Some(mut observer) = world.fetch_mut::<Observer<E>>(*observer)
+                if let Some(mut observer) = world.fetch_mut(*observer)
                     && let Some(entry) = world.entry(observer.target)
                 {
                     let observer = &mut *observer;
@@ -1071,7 +1071,7 @@ mod test {
         let tester2 = world.insert(TestInserter(0xFF02));
 
         assert_eq!(world.single::<TestInserter>(), None);
-        assert_eq!(world.fetch::<TestInserter>(tester1).unwrap().0, 0xFC01);
+        assert_eq!(world.fetch(tester1).unwrap().0, 0xFC01);
 
         let ret = world.remove(tester1.untyped()).unwrap();
 
@@ -1080,7 +1080,7 @@ mod test {
         assert_eq!(world.single::<TestInserter>(), Some(tester2));
         assert_eq!(world.single_fetch::<TestInserter>().unwrap().0, 0xFF02);
 
-        let tester2 = world.fetch_mut::<TestInserter>(tester2).unwrap();
+        let tester2 = world.fetch_mut(tester2).unwrap();
         tester2.0 = 0xFA09;
 
         assert_eq!(world.single_fetch::<TestInserter>().unwrap().0, 0xFA09);
@@ -1097,9 +1097,9 @@ mod test {
 
         world.flush();
 
-        let mut tester1 = world.fetch_mut::<TestInserter>(tester1h).unwrap();
-        let mut tester2 = world.fetch_mut::<TestInserter>(tester2h).unwrap();
-        let tester3 = world.fetch::<TestInserter>(tester3h).unwrap();
+        let mut tester1 = world.fetch_mut(tester1h).unwrap();
+        let mut tester2 = world.fetch_mut(tester2h).unwrap();
+        let tester3 = world.fetch(tester3h).unwrap();
 
         tester2.0 = 0xCC02;
         tester1.0 = tester3.0;
@@ -1107,8 +1107,8 @@ mod test {
         world.remove(tester3h.untyped());
 
         assert!(!world.contains(tester3h.untyped()));
-        assert_eq!(world.fetch::<TestInserter>(tester1h).unwrap().0, 0xFB03);
-        assert_eq!(world.fetch::<TestInserter>(tester2h).unwrap().0, 0xCC02);
+        assert_eq!(world.fetch(tester1h).unwrap().0, 0xFB03);
+        assert_eq!(world.fetch(tester2h).unwrap().0, 0xCC02);
     }
 
     #[test]
@@ -1118,8 +1118,8 @@ mod test {
         let tester1h = world.insert(TestInserter(0xFC01));
         let world = world.cell();
 
-        let _inserter1 = world.fetch_mut::<TestInserter>(tester1h).unwrap();
-        let _inserter2 = world.fetch::<TestInserter>(tester1h).unwrap();
+        let _inserter1 = world.fetch_mut(tester1h).unwrap();
+        let _inserter2 = world.fetch(tester1h).unwrap();
     }
 
     #[test]
@@ -1134,14 +1134,14 @@ mod test {
         }
 
         {
-            let _inserter1 = world.fetch_mut::<TestInserter>(tester1h).unwrap();
+            let _inserter1 = world.fetch_mut(tester1h).unwrap();
 
             assert!(world.occupied(tester1h.untyped()));
             assert!(world.occupied_mut(tester1h.untyped()));
         }
 
         {
-            let _inserter1 = world.fetch::<TestInserter>(tester1h).unwrap();
+            let _inserter1 = world.fetch(tester1h).unwrap();
 
             assert!(!world.occupied(tester1h.untyped()));
             assert!(world.occupied_mut(tester1h.untyped()));

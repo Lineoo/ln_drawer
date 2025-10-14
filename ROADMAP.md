@@ -10,7 +10,6 @@
     - 程序设置等和导入的图像等是同一层级（只是不可删除）
 
 # Milestone
-- handle/entry 类型化
 - interface 重写：更加灵活的渲染管线
 - transform_tool 支持拉伸和仅允许 Position 的元素移动
 - menu 标准化
