@@ -19,17 +19,17 @@ impl InsertElement for ButtonRaw {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<PointerHit>(move |event, entry| {
             if let PointerHit(PointerEvent::Pressed(_)) = event {
-                let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();
+                let mut this = entry.fetch_mut().unwrap();
                 (this.action)(entry.world());
             }
         });
 
         entry.observe::<PointerEnter>(move |_event, entry| {
-            let this = entry.fetch::<ButtonRaw>(entry.handle()).unwrap();
+            let this = entry.fetch().unwrap();
             this.square.set_visible(true);
         });
         entry.observe::<PointerLeave>(move |_event, entry| {
-            let this = entry.fetch::<ButtonRaw>(entry.handle()).unwrap();
+            let this = entry.fetch().unwrap();
             this.square.set_visible(false);
         });
 

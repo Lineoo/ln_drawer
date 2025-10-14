@@ -22,7 +22,7 @@ impl InsertElement for Palette {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
-                let mut this = entry.fetch_mut::<Palette>(entry.handle()).unwrap();
+                let mut this = entry.fetch_mut().unwrap();
                 let rect = this.main.get_rect();
                 this.main_knob.set_rect(Rectangle {
                     origin: point.clamp(Rectangle {
@@ -131,7 +131,7 @@ impl InsertElement for PaletteHueSlider {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
-                let mut this = entry.fetch_mut::<PaletteHueSlider>(entry.handle()).unwrap();
+                let mut this = entry.fetch_mut().unwrap();
                 let rect = this.hue.get_rect();
                 this.hue_knob.set_rect(Rectangle {
                     origin: Position::new(

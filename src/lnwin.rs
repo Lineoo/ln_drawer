@@ -61,7 +61,7 @@ impl Element for Lnwindow {}
 impl InsertElement for Lnwindow {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<WindowEvent>(|event, entry| {
-            let mut lnwindow = entry.fetch_mut::<Lnwindow>(entry.handle()).unwrap();
+            let mut lnwindow = entry.fetch_mut().unwrap();
             let entry = entry.entry(entry.handle()).unwrap();
             lnwindow.window_event(event, entry);
         });

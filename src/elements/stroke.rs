@@ -20,7 +20,7 @@ impl InsertElement for StrokeLayer {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(position) | PointerEvent::Pressed(position) => {
-                let mut stroke = entry.fetch_mut::<StrokeLayer>(entry.handle()).unwrap();
+                let mut stroke = entry.fetch_mut().unwrap();
                 let color = (entry.single_fetch::<Palette>())
                     .map(|palette| palette.pick_color())
                     .unwrap_or([0xff; 4]);

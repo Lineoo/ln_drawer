@@ -26,7 +26,7 @@ impl Element for TransformTool {}
 impl InsertElement for TransformTool {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe(|PointerHit(event), entry| {
-            let this = &mut *entry.fetch_mut::<TransformTool>(entry.handle()).unwrap();
+            let this = &mut *entry.fetch_mut().unwrap();
 
             match (&mut this.selected, &mut this.dragging, event) {
                 (_, None, PointerEvent::Pressed(pointer)) => {

@@ -121,7 +121,7 @@ impl InsertElement for TextEdit {
 
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Pressed(position) => {
-                let mut this = entry.fetch_mut::<TextEdit>(entry.handle()).unwrap();
+                let mut this = entry.fetch_mut().unwrap();
                 let this = &mut *this;
 
                 let point = position - this.inner.get_rect().left_up();
@@ -144,7 +144,7 @@ impl InsertElement for TextEdit {
                 this.redraw();
             }
             PointerEvent::Moved(position) => {
-                let mut this = entry.fetch_mut::<TextEdit>(entry.handle()).unwrap();
+                let mut this = entry.fetch_mut().unwrap();
                 let this = &mut *this;
 
                 let point = position - this.inner.get_rect().left_up();
@@ -171,8 +171,7 @@ impl InsertElement for TextEdit {
                 return;
             }
 
-            let mut this = entry.fetch_mut::<TextEdit>(entry.handle()).unwrap();
-            let this = &mut *this;
+            let this = &mut *entry.fetch_mut().unwrap();
             let mut font_system = this.font_system.lock();
             let mut editor = this.editor.borrow_with(&mut font_system);
 

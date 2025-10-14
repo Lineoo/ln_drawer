@@ -613,7 +613,76 @@ impl WorldCell<'_> {
         })
     }
 }
-impl<T: ?Sized + 'static> WorldEntry<'_, T> {
+impl<T: Element> WorldEntry<'_, T> {
+    pub fn fetch(&self) -> Option<&T> {
+        self.world.fetch(self.handle)
+    }
+
+    pub fn fetch_mut(&mut self) -> Option<&mut T> {
+        self.world.fetch_mut(self.handle)
+    }
+
+    pub fn getter<P: 'static>(&mut self, getter: impl Fn(&T) -> P + 'static) {
+        match self.world.single_fetch_mut::<PropertyGetter<P>>() {
+            Some(service) => {
+                let ret = service.0.insert(
+                    self.handle.untyped(),
+                    Box::new(move |raw| getter(raw.downcast_ref::<T>().unwrap())),
+                );
+
+                if ret.is_some() {
+                    log::error!(
+                        "duplicated property getter of {} registered on {:?}!",
+                        type_name::<P>(),
+                        self.handle
+                    );
+                }
+            }
+            None => {
+                let mut service = PropertyGetter::<P>(HashMap::new());
+
+                service.0.insert(
+                    self.handle.untyped(),
+                    Box::new(move |raw| getter(raw.downcast_ref::<T>().unwrap())),
+                );
+                self.world.insert(service);
+
+                log::trace!("property getter of {} is registered", type_name::<P>());
+            }
+        }
+    }
+
+    pub fn setter<P: 'static>(&mut self, setter: impl Fn(&mut T, P) + 'static) {
+        match self.world.single_fetch_mut::<PropertySetter<P>>() {
+            Some(service) => {
+                let ret = service.0.insert(
+                    self.handle.untyped(),
+                    Box::new(move |raw, val| setter(raw.downcast_mut::<T>().unwrap(), val)),
+                );
+
+                if ret.is_some() {
+                    log::error!(
+                        "duplicated property setter of {} registered on {:?}!",
+                        type_name::<P>(),
+                        self.handle
+                    );
+                }
+            }
+            None => {
+                let mut service = PropertySetter::<P>(HashMap::new());
+
+                service.0.insert(
+                    self.handle.untyped(),
+                    Box::new(move |raw, val| setter(raw.downcast_mut::<T>().unwrap(), val)),
+                );
+                self.world.insert(service);
+
+                log::trace!("property setter of {} is registered", type_name::<P>());
+            }
+        }
+    }
+}
+impl<T: ?Sized> WorldEntry<'_, T> {
     pub fn observe<E: 'static>(
         &mut self,
         mut action: impl FnMut(&E, WorldCellEntry<T>) + 'static,
@@ -658,72 +727,6 @@ impl<T: ?Sized + 'static> WorldEntry<'_, T> {
                     let observer = &mut *observer;
                     (observer.action)(event, entry);
                 }
-            }
-        }
-    }
-
-    pub fn getter<P: 'static>(&mut self, getter: impl Fn(&T) -> P + 'static)
-    where
-        T: Sized,
-    {
-        match self.world.single_fetch_mut::<PropertyGetter<P>>() {
-            Some(service) => {
-                let ret = service.0.insert(
-                    self.handle.untyped(),
-                    Box::new(move |raw| getter(raw.downcast_ref::<T>().unwrap())),
-                );
-
-                if ret.is_some() {
-                    log::error!(
-                        "duplicated property getter of {} registered on {:?}!",
-                        type_name::<P>(),
-                        self.handle
-                    );
-                }
-            }
-            None => {
-                let mut service = PropertyGetter::<P>(HashMap::new());
-
-                service.0.insert(
-                    self.handle.untyped(),
-                    Box::new(move |raw| getter(raw.downcast_ref::<T>().unwrap())),
-                );
-                self.world.insert(service);
-
-                log::trace!("property getter of {} is registered", type_name::<P>());
-            }
-        }
-    }
-
-    pub fn setter<P: 'static>(&mut self, setter: impl Fn(&mut T, P) + 'static)
-    where
-        T: Sized,
-    {
-        match self.world.single_fetch_mut::<PropertySetter<P>>() {
-            Some(service) => {
-                let ret = service.0.insert(
-                    self.handle.untyped(),
-                    Box::new(move |raw, val| setter(raw.downcast_mut::<T>().unwrap(), val)),
-                );
-
-                if ret.is_some() {
-                    log::error!(
-                        "duplicated property setter of {} registered on {:?}!",
-                        type_name::<P>(),
-                        self.handle
-                    );
-                }
-            }
-            None => {
-                let mut service = PropertySetter::<P>(HashMap::new());
-
-                service.0.insert(
-                    self.handle.untyped(),
-                    Box::new(move |raw, val| setter(raw.downcast_mut::<T>().unwrap(), val)),
-                );
-                self.world.insert(service);
-
-                log::trace!("property setter of {} is registered", type_name::<P>());
             }
         }
     }
@@ -778,7 +781,42 @@ impl<T: ?Sized + 'static> WorldEntry<'_, T> {
         }
     }
 }
-impl<T: ?Sized + 'static> WorldCellEntry<'_, T> {
+impl<T: Element> WorldCellEntry<'_, T> {
+    pub fn fetch(&self) -> Option<Ref<'_, T>> {
+        self.world.fetch(self.handle)
+    }
+
+    pub fn fetch_mut(&self) -> Option<RefMut<'_, T>> {
+        self.world.fetch_mut(self.handle)
+    }
+
+    /// This will be delayed until the cell is closed.
+    pub fn getter<P: 'static>(&self, getter: impl Fn(&T) -> P + 'static)
+    where
+        T: Sized,
+    {
+        let handle = self.handle;
+        let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry(handle).unwrap();
+            this.getter(getter);
+        }));
+    }
+
+    /// This will be delayed until the cell is closed.
+    pub fn setter<P: 'static>(&self, setter: impl Fn(&mut T, P) + 'static)
+    where
+        T: Sized,
+    {
+        let handle = self.handle;
+        let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let mut this = world.entry(handle).unwrap();
+            this.setter(setter);
+        }));
+    }
+}
+impl<T: ?Sized> WorldCellEntry<'_, T> {
     /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(
@@ -828,32 +866,6 @@ impl<T: ?Sized + 'static> WorldCellEntry<'_, T> {
         }));
     }
 
-    /// This will be delayed until the cell is closed.
-    pub fn getter<P: 'static>(&self, getter: impl Fn(&T) -> P + 'static)
-    where
-        T: Sized,
-    {
-        let handle = self.handle;
-        let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
-        queue.0.push(Box::new(move |world| {
-            let mut this = world.entry(handle).unwrap();
-            this.getter(getter);
-        }));
-    }
-
-    /// This will be delayed until the cell is closed.
-    pub fn setter<P: 'static>(&self, setter: impl Fn(&mut T, P) + 'static)
-    where
-        T: Sized,
-    {
-        let handle = self.handle;
-        let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
-        queue.0.push(Box::new(move |world| {
-            let mut this = world.entry(handle).unwrap();
-            this.setter(setter);
-        }));
-    }
-
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
     pub fn depend(&self, depend_on: ElementHandle) {
@@ -865,7 +877,10 @@ impl<T: ?Sized + 'static> WorldCellEntry<'_, T> {
         }));
     }
 
-    pub fn queue(&self, f: impl FnOnce(WorldEntry<T>) + 'static) {
+    pub fn queue(&self, f: impl FnOnce(WorldEntry<T>) + 'static)
+    where
+        T: 'static,
+    {
         let handle = self.handle;
         let mut queue = self.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {

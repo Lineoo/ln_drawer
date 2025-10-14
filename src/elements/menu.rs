@@ -32,9 +32,9 @@ impl InsertElement for Menu {
         let obs = entry
             .single_entry::<Lnwindow>()
             .unwrap()
-            .observe::<PointerEvent>(move |event, world| {
+            .observe::<PointerEvent>(move |event, entry| {
                 if let &PointerEvent::Moved(point) = event {
-                    let mut this = world.fetch_mut::<Menu>(handle).unwrap();
+                    let mut this = entry.world().fetch_mut(handle).unwrap();
                     let frame = this.frame.get_rect();
 
                     let delta1 = point - frame.origin;
@@ -49,10 +49,10 @@ impl InsertElement for Menu {
                         this.select_frame.set_visible(false);
                     }
                 } else if let &PointerEvent::Pressed(point) = event {
-                    let this = world.fetch::<Menu>(handle).unwrap();
+                    let this = entry.world().fetch(handle).unwrap();
                     let frame = this.frame.get_rect();
                     if !frame.contains(point) {
-                        world.remove(handle.untyped());
+                        entry.remove(handle.untyped());
                     }
                 }
             });
@@ -60,7 +60,7 @@ impl InsertElement for Menu {
         entry.entry(obs).unwrap().depend(handle.untyped());
 
         entry.observe::<PointerHit>(move |event, entry| {
-            let this = entry.fetch::<Menu>(handle).unwrap();
+            let this = entry.world().fetch(handle).unwrap();
             let frame = this.frame.get_rect();
 
             if let &PointerHit(PointerEvent::Pressed(point)) = event {
