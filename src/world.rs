@@ -1,6 +1,8 @@
 use std::{
     any::{Any, TypeId, type_name},
     cell::RefCell,
+    fmt,
+    hash::{Hash, Hasher},
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -13,6 +15,7 @@ use smallvec::SmallVec;
 pub trait Element: Any {
     fn when_inserted(&mut self, entry: WorldCellEntry) {}
 }
+
 impl dyn Element {
     pub fn is<T: Any>(&self) -> bool {
         (self as &dyn Any).is::<T>()
@@ -26,8 +29,49 @@ impl dyn Element {
 }
 
 /// Represent an element in the [`World`]. It's an handle so manual validation is needed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ElementHandle(usize);
+pub struct ElementHandle<T: ?Sized = dyn Element>(usize, PhantomData<T>);
+
+impl<T: ?Sized> Clone for ElementHandle<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: ?Sized> Copy for ElementHandle<T> {}
+
+impl<T: ?Sized> PartialEq for ElementHandle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl<T: ?Sized> Eq for ElementHandle<T> {}
+
+impl<T: ?Sized> Hash for ElementHandle<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<T: ?Sized> fmt::Debug for ElementHandle<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Handle<{}>({})", type_name::<T>(), self.0)
+    }
+}
+
+impl<T: ?Sized> fmt::Display for ElementHandle<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
+
+impl<T: Element> From<ElementHandle<T>> for ElementHandle {
+    fn from(value: ElementHandle<T>) -> Self {
+        ElementHandle(value.0, PhantomData)
+    }
+}
+
+// World Management //
 
 pub struct World {
     curr_idx: ElementHandle,
@@ -59,7 +103,7 @@ pub struct WorldCellEntry<'world> {
 impl Default for World {
     fn default() -> Self {
         World {
-            curr_idx: ElementHandle(0),
+            curr_idx: ElementHandle(0, PhantomData),
             elements: HashMap::new(),
             cache: HashMap::new(),
         }
@@ -80,8 +124,8 @@ impl Drop for WorldCell<'_> {
 impl World {
     pub fn insert<T: Element + 'static>(&mut self, element: T) -> ElementHandle {
         self.elements.insert(self.curr_idx, Box::new(element));
+        let handle = self.curr_idx;
         self.curr_idx.0 += 1;
-        let handle = ElementHandle(self.curr_idx.0 - 1);
         log::trace!("insert {}: {:?}", type_name::<T>(), handle);
 
         // update cache
@@ -262,8 +306,8 @@ impl WorldCell<'_> {
         // get estimate_handle
         // cell-mode insertion depends on *retained* handle
         let mut cell_idx = self.cell_idx.borrow_mut();
+        let estimate_handle = *cell_idx;
         cell_idx.0 += 1;
-        let estimate_handle = ElementHandle(cell_idx.0 - 1);
         log::trace!("insert {}: {:?}", type_name::<T>(), estimate_handle);
 
         let mut inserted = self.inserted.borrow_mut();
