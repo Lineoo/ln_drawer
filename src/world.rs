@@ -77,7 +77,7 @@ impl ElementHandle<dyn Element> {
     }
 }
 
-impl<T: Element> ElementHandle<T> {
+impl<T: ?Sized> ElementHandle<T> {
     pub fn untyped(self) -> ElementHandle<dyn Element> {
         ElementHandle(self.0, PhantomData)
     }
@@ -101,15 +101,15 @@ pub struct WorldCell<'world> {
 }
 
 /// A full mutable world reference with specific element selected.
-pub struct WorldEntry<'world> {
+pub struct WorldEntry<'world, T: ?Sized = dyn Element> {
     world: &'world mut World,
-    handle: ElementHandle,
+    handle: ElementHandle<T>,
 }
 
 /// A world cell reference with specific element selected. No borrowing effect.
-pub struct WorldCellEntry<'world> {
+pub struct WorldCellEntry<'world, T: ?Sized = dyn Element> {
     world: &'world WorldCell<'world>,
-    handle: ElementHandle,
+    handle: ElementHandle<T>,
 }
 
 impl Default for World {
@@ -234,8 +234,8 @@ impl World {
     }
 
     /// Return `Some` if there is ONLY one element of target type.
-    pub fn single_entry<T: Element>(&mut self) -> Option<WorldEntry<'_>> {
-        self.entry(self.single::<T>()?.untyped())
+    pub fn single_entry<T: Element>(&mut self) -> Option<WorldEntry<'_, T>> {
+        self.entry(self.single::<T>()?)
     }
 
     pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
@@ -294,8 +294,8 @@ impl World {
         }
     }
 
-    pub fn entry(&mut self, handle: ElementHandle) -> Option<WorldEntry<'_>> {
-        if !self.elements.contains_key(&handle) {
+    pub fn entry<T: ?Sized>(&mut self, handle: ElementHandle<T>) -> Option<WorldEntry<'_, T>> {
+        if !self.elements.contains_key(&handle.untyped()) {
             return None;
         }
 
@@ -505,8 +505,8 @@ impl WorldCell<'_> {
     }
 
     /// Return `Some` if there is ONLY one element of target type.
-    pub fn single_entry<T: Element>(&self) -> Option<WorldCellEntry<'_>> {
-        self.entry(self.single::<T>()?.untyped())
+    pub fn single_entry<T: Element>(&self) -> Option<WorldCellEntry<'_, T>> {
+        self.entry(self.single::<T>()?)
     }
 
     pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
@@ -608,8 +608,9 @@ impl WorldCell<'_> {
         self.world
     }
 
-    pub fn entry(&self, handle: ElementHandle) -> Option<WorldCellEntry<'_>> {
-        if !(self.contains(handle) || self.inserted.borrow().contains(&handle)) {
+    pub fn entry<T: ?Sized>(&self, handle: ElementHandle<T>) -> Option<WorldCellEntry<'_, T>> {
+        if !(self.contains(handle.untyped()) || self.inserted.borrow().contains(&handle.untyped()))
+        {
             return None;
         }
 
@@ -619,20 +620,22 @@ impl WorldCell<'_> {
         })
     }
 }
-impl WorldEntry<'_> {
+impl<T: ?Sized> WorldEntry<'_, T> {
     pub fn observe<E: 'static>(
         &mut self,
         action: impl FnMut(&E, WorldCellEntry) + 'static,
     ) -> ElementHandle {
-        let this = self.handle;
         let handle = self.world.insert(Observer {
             action: Box::new(action),
-            target: this,
+            target: self.handle.untyped(),
         });
 
         match self.world.single_fetch_mut::<Observers<E>>() {
             Some(observers) => {
-                let observers = observers.observers.entry(self.handle).or_default();
+                let observers = observers
+                    .observers
+                    .entry(self.handle.untyped())
+                    .or_default();
                 observers.push(handle);
             }
             None => {
@@ -640,7 +643,10 @@ impl WorldEntry<'_> {
                     observers: HashMap::new(),
                     _marker: PhantomData,
                 };
-                let observer = observers.observers.entry(self.handle).or_default();
+                let observer = observers
+                    .observers
+                    .entry(self.handle.untyped())
+                    .or_default();
                 observer.push(handle);
                 self.insert(observers);
             }
@@ -649,7 +655,7 @@ impl WorldEntry<'_> {
         self.world
             .entry(handle.untyped())
             .unwrap()
-            .depend(self.handle);
+            .depend(self.handle.untyped());
 
         handle.untyped()
     }
@@ -657,7 +663,7 @@ impl WorldEntry<'_> {
     pub fn trigger<E: 'static>(&mut self, event: &E) {
         let world = self.world.cell();
         if let Some(observers) = world.single_fetch::<Observers<E>>()
-            && let Some(observers) = observers.observers.get(&self.handle)
+            && let Some(observers) = observers.observers.get(&self.handle.untyped())
         {
             for observer in observers {
                 if let Some(mut observer) = world.fetch_mut::<Observer<E>>(*observer)
@@ -670,50 +676,50 @@ impl WorldEntry<'_> {
         }
     }
 
-    pub fn getter<T: 'static>(&mut self, getter: fn(&dyn Element) -> T) {
-        match self.world.single_fetch_mut::<PropertyGetter<T>>() {
+    pub fn getter<P: 'static>(&mut self, getter: fn(&dyn Element) -> P) {
+        match self.world.single_fetch_mut::<PropertyGetter<P>>() {
             Some(service) => {
-                let ret = service.0.insert(self.handle, getter);
+                let ret = service.0.insert(self.handle.untyped(), getter);
 
                 if ret.is_some() {
                     log::error!(
                         "duplicated property getter of {} registered on {:?}!",
-                        type_name::<T>(),
+                        type_name::<P>(),
                         self.handle
                     );
                 }
             }
             None => {
-                let mut service = PropertyGetter::<T>(HashMap::new());
+                let mut service = PropertyGetter::<P>(HashMap::new());
 
-                service.0.insert(self.handle, getter);
+                service.0.insert(self.handle.untyped(), getter);
                 self.world.insert(service);
 
-                log::trace!("property getter of {} is registered", type_name::<T>());
+                log::trace!("property getter of {} is registered", type_name::<P>());
             }
         }
     }
 
-    pub fn setter<T: 'static>(&mut self, setter: fn(&mut dyn Element, T)) {
-        match self.world.single_fetch_mut::<PropertySetter<T>>() {
+    pub fn setter<P: 'static>(&mut self, setter: fn(&mut dyn Element, P)) {
+        match self.world.single_fetch_mut::<PropertySetter<P>>() {
             Some(service) => {
-                let ret = service.0.insert(self.handle, setter);
+                let ret = service.0.insert(self.handle.untyped(), setter);
 
                 if ret.is_some() {
                     log::error!(
                         "duplicated property setter of {} registered on {:?}!",
-                        type_name::<T>(),
+                        type_name::<P>(),
                         self.handle
                     );
                 }
             }
             None => {
-                let mut service = PropertySetter::<T>(HashMap::new());
+                let mut service = PropertySetter::<P>(HashMap::new());
 
-                service.0.insert(self.handle, setter);
+                service.0.insert(self.handle.untyped(), setter);
                 self.world.insert(service);
 
-                log::trace!("property setter of {} is registered", type_name::<T>());
+                log::trace!("property setter of {} is registered", type_name::<P>());
             }
         }
     }
@@ -730,15 +736,15 @@ impl WorldEntry<'_> {
         match self.world.single_fetch_mut::<Dependencies>() {
             Some(dependencies) => {
                 let depend = dependencies.0.entry(depend_on).or_default();
-                depend.depend_by.push(depend_by);
-                let depend = dependencies.0.entry(depend_by).or_default();
+                depend.depend_by.push(depend_by.untyped());
+                let depend = dependencies.0.entry(depend_by.untyped()).or_default();
                 depend.depend_on.push(depend_on);
             }
             None => {
                 let mut dependencies = Dependencies::default();
                 let depend = dependencies.0.entry(depend_on).or_default();
-                depend.depend_by.push(depend_by);
-                let depend = dependencies.0.entry(depend_by).or_default();
+                depend.depend_by.push(depend_by.untyped());
+                let depend = dependencies.0.entry(depend_by.untyped()).or_default();
                 depend.depend_on.push(depend_on);
                 self.world.insert(dependencies);
             }
@@ -746,10 +752,10 @@ impl WorldEntry<'_> {
     }
 
     pub fn destroy(self) {
-        self.world.remove(self.handle);
+        self.world.remove(self.handle.untyped());
     }
 
-    pub fn handle(&self) -> ElementHandle {
+    pub fn handle(&self) -> ElementHandle<T> {
         self.handle
     }
 
@@ -757,14 +763,14 @@ impl WorldEntry<'_> {
         self.world
     }
 }
-impl WorldCellEntry<'_> {
+impl<T: ?Sized> WorldCellEntry<'_, T> {
     /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(
         &self,
         action: impl FnMut(&E, WorldCellEntry) + 'static,
     ) -> ElementHandle {
-        let this = self.handle;
+        let this = self.handle.untyped();
         let estimate_handle = self.world.insert(Observer {
             action: Box::new(action),
             target: this,
@@ -800,7 +806,7 @@ impl WorldCellEntry<'_> {
     /// This function has some limit since the event is delayed until cell closed, thus acquiring the ownership
     /// of the event.
     pub fn trigger<E: 'static>(&self, event: E) {
-        let handle = self.handle;
+        let handle = self.handle.untyped();
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
@@ -809,8 +815,8 @@ impl WorldCellEntry<'_> {
     }
 
     /// This will be delayed until the cell is closed.
-    pub fn getter<T: 'static>(&self, getter: fn(&dyn Element) -> T) {
-        let handle = self.handle;
+    pub fn getter<P: 'static>(&self, getter: fn(&dyn Element) -> P) {
+        let handle = self.handle.untyped();
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
@@ -819,8 +825,8 @@ impl WorldCellEntry<'_> {
     }
 
     /// This will be delayed until the cell is closed.
-    pub fn setter<T: 'static>(&self, setter: fn(&mut dyn Element, T)) {
-        let handle = self.handle;
+    pub fn setter<P: 'static>(&self, setter: fn(&mut dyn Element, P)) {
+        let handle = self.handle.untyped();
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
@@ -831,7 +837,7 @@ impl WorldCellEntry<'_> {
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
     pub fn depend(&self, depend_on: ElementHandle) {
-        let handle = self.handle;
+        let handle = self.handle.untyped();
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
@@ -840,7 +846,7 @@ impl WorldCellEntry<'_> {
     }
 
     pub fn queue(&self, f: impl FnOnce(WorldEntry) + 'static) {
-        let handle = self.handle;
+        let handle = self.handle.untyped();
         let mut queue = self.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             if let Some(entry) = world.entry(handle) {
@@ -852,10 +858,10 @@ impl WorldCellEntry<'_> {
     }
 
     pub fn destroy(self) {
-        self.world.remove(self.handle);
+        self.world.remove(self.handle.untyped());
     }
 
-    pub fn handle(&self) -> ElementHandle {
+    pub fn handle(&self) -> ElementHandle<T> {
         self.handle
     }
 
@@ -864,18 +870,18 @@ impl WorldCellEntry<'_> {
     }
 }
 
-impl Deref for WorldEntry<'_> {
+impl<T: ?Sized> Deref for WorldEntry<'_, T> {
     type Target = World;
     fn deref(&self) -> &Self::Target {
         self.world
     }
 }
-impl DerefMut for WorldEntry<'_> {
+impl<T: ?Sized> DerefMut for WorldEntry<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.world
     }
 }
-impl<'world> Deref for WorldCellEntry<'world> {
+impl<'world, T: ?Sized> Deref for WorldCellEntry<'world, T> {
     type Target = WorldCell<'world>;
     fn deref(&self) -> &Self::Target {
         self.world
