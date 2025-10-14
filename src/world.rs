@@ -71,11 +71,13 @@ impl<T: Element> From<ElementHandle<T>> for ElementHandle {
     }
 }
 
-impl<T: ?Sized> ElementHandle<T> {
-    fn cast<U: Element>(self) -> ElementHandle<U> {
+impl ElementHandle<dyn Element> {
+    fn cast<T: Element>(self) -> ElementHandle<T> {
         ElementHandle(self.0, PhantomData)
     }
+}
 
+impl<T: Element> ElementHandle<T> {
     pub fn untyped(self) -> ElementHandle<dyn Element> {
         ElementHandle(self.0, PhantomData)
     }
@@ -134,22 +136,22 @@ impl Drop for WorldCell<'_> {
 impl World {
     pub fn insert<T: Element + 'static>(&mut self, element: T) -> ElementHandle<T> {
         self.elements.insert(self.curr_idx, Box::new(element));
-        let handle = self.curr_idx;
+        let handle = self.curr_idx.cast::<T>();
         self.curr_idx.0 += 1;
         log::trace!("insert {}: {:?}", type_name::<T>(), handle);
 
         // update cache
         let cache = self.cache.entry(TypeId::of::<T>()).or_default();
-        cache.insert(handle);
+        cache.insert(handle.untyped());
 
         // when_inserted
         let cell = self.cell();
         let mut element = cell.fetch_mut::<T>(handle).unwrap();
-        element.when_inserted(cell.entry(handle).unwrap());
+        element.when_inserted(cell.entry(handle.untyped()).unwrap());
         drop(element);
         drop(cell);
 
-        handle.cast()
+        handle
     }
 
     pub fn remove(&mut self, handle: ElementHandle) -> Option<Box<dyn Element>> {
@@ -199,32 +201,26 @@ impl World {
         self.elements.contains_key(&handle)
     }
 
-    pub fn contains_type<T: Element>(&self, handle: ElementHandle) -> bool {
+    pub fn fetch<T: Element>(&self, handle: ElementHandle<T>) -> Option<&T> {
         self.elements
-            .get(&handle)
-            .is_some_and(|element| element.is::<T>())
-    }
-
-    pub fn fetch<T: Element>(&self, handle: ElementHandle) -> Option<&T> {
-        self.elements
-            .get(&handle)
+            .get(&handle.untyped())
             .and_then(|element| element.downcast_ref())
     }
 
-    pub fn fetch_mut<T: Element>(&mut self, handle: ElementHandle) -> Option<&mut T> {
+    pub fn fetch_mut<T: Element>(&mut self, handle: ElementHandle<T>) -> Option<&mut T> {
         self.elements
-            .get_mut(&handle)
+            .get_mut(&handle.untyped())
             .and_then(|element| element.downcast_mut())
     }
 
     /// Return `Some` if there is ONLY one element of target type.
-    pub fn single<T: Element>(&self) -> Option<ElementHandle> {
+    pub fn single<T: Element>(&self) -> Option<ElementHandle<T>> {
         let mut iter = self.cache.get(&TypeId::of::<T>())?.iter();
         let ret = iter.next()?;
         if iter.next().is_some() {
             return None;
         }
-        Some(*ret)
+        Some(ret.cast())
     }
 
     /// Return `Some` if there is ONLY one element of target type.
@@ -239,7 +235,7 @@ impl World {
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single_entry<T: Element>(&mut self) -> Option<WorldEntry<'_>> {
-        self.entry(self.single::<T>()?)
+        self.entry(self.single::<T>()?.untyped())
     }
 
     pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
@@ -299,7 +295,7 @@ impl World {
     }
 
     pub fn entry(&mut self, handle: ElementHandle) -> Option<WorldEntry<'_>> {
-        if !self.contains(handle) {
+        if !self.elements.contains_key(&handle) {
             return None;
         }
 
@@ -316,30 +312,32 @@ impl WorldCell<'_> {
         // get estimate_handle
         // cell-mode insertion depends on *retained* handle
         let mut cell_idx = self.cell_idx.borrow_mut();
-        let estimate_handle = *cell_idx;
+        let estimate_handle = cell_idx.cast::<T>();
         cell_idx.0 += 1;
         log::trace!("insert {}: {:?}", type_name::<T>(), estimate_handle);
 
         let mut inserted = self.inserted.borrow_mut();
-        inserted.insert(estimate_handle);
+        inserted.insert(estimate_handle.untyped());
 
         let mut queue = self.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
-            world.elements.insert(estimate_handle, Box::new(element));
+            world
+                .elements
+                .insert(estimate_handle.untyped(), Box::new(element));
 
             // update cache
             let cache = world.cache.entry(TypeId::of::<T>()).or_default();
-            cache.insert(estimate_handle);
+            cache.insert(estimate_handle.untyped());
 
             // when_inserted
             let cell = world.cell();
             let mut element = cell.fetch_mut::<T>(estimate_handle).unwrap();
-            element.when_inserted(cell.entry(estimate_handle).unwrap());
+            element.when_inserted(cell.entry(estimate_handle.untyped()).unwrap());
             drop(element);
             drop(cell);
         }));
 
-        estimate_handle.cast()
+        estimate_handle
     }
 
     /// Cell-mode removal cannot access the element immediately so we can't return the value of removed element.
@@ -442,28 +440,20 @@ impl WorldCell<'_> {
         self.world.contains(handle)
     }
 
-    /// Insertion happened within the cell scope will not be included
-    pub fn contains_type<T: Element>(&self, handle: ElementHandle) -> bool {
-        if self.removed.borrow().contains(&handle) {
-            return false;
-        }
-        self.world.contains_type::<T>(handle)
-    }
-
-    pub fn fetch<T: Element>(&self, handle: ElementHandle) -> Option<Ref<'_, T>> {
-        if self.removed.borrow().contains(&handle) {
+    pub fn fetch<T: Element>(&self, handle: ElementHandle<T>) -> Option<Ref<'_, T>> {
+        if self.removed.borrow().contains(&handle.untyped()) {
             return None;
         }
 
         let mut occupied = self.occupied.borrow_mut();
 
-        let cnt = occupied.entry(handle).or_default();
+        let cnt = occupied.entry(handle.untyped()).or_default();
         if *cnt < 0 {
             panic!("{handle:?} is mutably borrowed");
         }
 
         *cnt += 1;
-        let element = self.world.elements.get(&handle)?.downcast_ref()?;
+        let element = self.world.elements.get(&handle.untyped())?.downcast_ref()?;
 
         Some(Ref {
             ptr: element as *const T,
@@ -472,20 +462,20 @@ impl WorldCell<'_> {
         })
     }
 
-    pub fn fetch_mut<T: Element>(&self, handle: ElementHandle) -> Option<RefMut<'_, T>> {
-        if self.removed.borrow().contains(&handle) {
+    pub fn fetch_mut<T: Element>(&self, handle: ElementHandle<T>) -> Option<RefMut<'_, T>> {
+        if self.removed.borrow().contains(&handle.untyped()) {
             return None;
         }
 
         let mut occupied = self.occupied.borrow_mut();
 
-        let cnt = occupied.entry(handle).or_default();
+        let cnt = occupied.entry(handle.untyped()).or_default();
         if *cnt != 0 {
             panic!("{handle:?} is borrowed");
         }
 
         *cnt -= 1;
-        let element = self.world.elements.get(&handle)?.downcast_ref()?;
+        let element = self.world.elements.get(&handle.untyped())?.downcast_ref()?;
 
         Some(RefMut {
             ptr: element as *const T as *mut T,
@@ -495,13 +485,13 @@ impl WorldCell<'_> {
     }
 
     /// Return `Some` if there is ONLY one element of target type.
-    pub fn single<T: Element>(&self) -> Option<ElementHandle> {
+    pub fn single<T: Element>(&self) -> Option<ElementHandle<T>> {
         let mut iter = self.world.cache.get(&TypeId::of::<T>())?.iter();
         let ret = iter.next()?;
         if iter.next().is_some() {
             return None;
         }
-        Some(*ret)
+        Some(ret.cast())
     }
 
     /// Return `Some` if there is ONLY one element of target type.
@@ -516,7 +506,7 @@ impl WorldCell<'_> {
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single_entry<T: Element>(&self) -> Option<WorldCellEntry<'_>> {
-        self.entry(self.single::<T>()?)
+        self.entry(self.single::<T>()?.untyped())
     }
 
     pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
@@ -656,7 +646,10 @@ impl WorldEntry<'_> {
             }
         }
 
-        self.world.entry(handle.untyped()).unwrap().depend(self.handle);
+        self.world
+            .entry(handle.untyped())
+            .unwrap()
+            .depend(self.handle);
 
         handle.untyped()
     }
@@ -667,7 +660,7 @@ impl WorldEntry<'_> {
             && let Some(observers) = observers.observers.get(&self.handle)
         {
             for observer in observers {
-                if let Some(mut observer) = world.fetch_mut::<Observer<E>>(observer.untyped())
+                if let Some(mut observer) = world.fetch_mut::<Observer<E>>(*observer)
                     && let Some(entry) = world.entry(observer.target)
                 {
                     let observer = &mut *observer;
@@ -890,50 +883,50 @@ impl<'world> Deref for WorldCellEntry<'world> {
 }
 
 /// A world's immutable element reference.
-pub struct Ref<'world, T: ?Sized> {
+pub struct Ref<'world, T: Element> {
     ptr: *const T,
     world: &'world WorldCell<'world>,
-    handle: ElementHandle,
+    handle: ElementHandle<T>,
 }
 
 /// A world's limitedly mutable element reference.
-pub struct RefMut<'world, T: ?Sized> {
+pub struct RefMut<'world, T: Element> {
     ptr: *mut T,
     world: &'world WorldCell<'world>,
-    handle: ElementHandle,
+    handle: ElementHandle<T>,
 }
 
-impl<T: ?Sized> Deref for Ref<'_, T> {
+impl<T: Element> Deref for Ref<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         // SAFETY: guaranteed by World's cell_occupied
         unsafe { self.ptr.as_ref().unwrap() }
     }
 }
-impl<T: ?Sized> Deref for RefMut<'_, T> {
+impl<T: Element> Deref for RefMut<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         // SAFETY: guaranteed by World's cell_occupied
         unsafe { self.ptr.as_ref().unwrap() }
     }
 }
-impl<T: ?Sized> DerefMut for RefMut<'_, T> {
+impl<T: Element> DerefMut for RefMut<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: guaranteed by World's cell_occupied
         unsafe { self.ptr.as_mut().unwrap() }
     }
 }
-impl<T: ?Sized> Drop for Ref<'_, T> {
+impl<T: Element> Drop for Ref<'_, T> {
     fn drop(&mut self) {
         let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied.get_mut(&self.handle).unwrap();
+        let cnt = occupied.get_mut(&self.handle.untyped()).unwrap();
         *cnt -= 1;
     }
 }
-impl<T: ?Sized> Drop for RefMut<'_, T> {
+impl<T: Element> Drop for RefMut<'_, T> {
     fn drop(&mut self) {
         let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied.get_mut(&self.handle).unwrap();
+        let cnt = occupied.get_mut(&self.handle.untyped()).unwrap();
         *cnt += 1;
     }
 }
@@ -1011,16 +1004,16 @@ mod test {
 
         assert_eq!(world.single::<TestInserter>(), None);
 
-        let tester1 = world.insert(TestInserter(0xFC01)).untyped();
+        let tester1 = world.insert(TestInserter(0xFC01));
 
         assert_eq!(world.single::<TestInserter>(), Some(tester1));
 
-        let tester2 = world.insert(TestInserter(0xFF02)).untyped();
+        let tester2 = world.insert(TestInserter(0xFF02));
 
         assert_eq!(world.single::<TestInserter>(), None);
         assert_eq!(world.fetch::<TestInserter>(tester1).unwrap().0, 0xFC01);
 
-        let ret = world.remove(tester1).unwrap();
+        let ret = world.remove(tester1.untyped()).unwrap();
 
         assert!(ret.is::<TestInserter>());
         assert_eq!(ret.downcast_ref::<TestInserter>().unwrap().0, 0xFC01);
@@ -1038,9 +1031,9 @@ mod test {
         let mut world = World::default();
         let mut world = world.cell();
 
-        let tester1h = world.insert(TestInserter(0xFC01)).untyped();
-        let tester2h = world.insert(TestInserter(0xFF02)).untyped();
-        let tester3h = world.insert(TestInserter(0xFB03)).untyped();
+        let tester1h = world.insert(TestInserter(0xFC01));
+        let tester2h = world.insert(TestInserter(0xFF02));
+        let tester3h = world.insert(TestInserter(0xFB03));
 
         world.flush();
 
@@ -1051,9 +1044,9 @@ mod test {
         tester2.0 = 0xCC02;
         tester1.0 = tester3.0;
 
-        world.remove(tester3h);
+        world.remove(tester3h.untyped());
 
-        assert!(!world.contains(tester3h));
+        assert!(!world.contains(tester3h.untyped()));
         assert_eq!(world.fetch::<TestInserter>(tester1h).unwrap().0, 0xFB03);
         assert_eq!(world.fetch::<TestInserter>(tester2h).unwrap().0, 0xCC02);
     }
@@ -1062,7 +1055,7 @@ mod test {
     #[should_panic = "is mutably borrowed"]
     fn cell_runtime_borrow_panic() {
         let mut world = World::default();
-        let tester1h = world.insert(TestInserter(0xFC01)).untyped();
+        let tester1h = world.insert(TestInserter(0xFC01));
         let world = world.cell();
 
         let _inserter1 = world.fetch_mut::<TestInserter>(tester1h).unwrap();
@@ -1072,26 +1065,26 @@ mod test {
     #[test]
     fn cell_runtime_borrow_conflict() {
         let mut world = World::default();
-        let tester1h = world.insert(TestInserter(0xFC01)).untyped();
+        let tester1h = world.insert(TestInserter(0xFC01));
         let world = world.cell();
 
         {
-            assert!(!world.occupied(tester1h));
-            assert!(!world.occupied_mut(tester1h));
+            assert!(!world.occupied(tester1h.untyped()));
+            assert!(!world.occupied_mut(tester1h.untyped()));
         }
 
         {
             let _inserter1 = world.fetch_mut::<TestInserter>(tester1h).unwrap();
 
-            assert!(world.occupied(tester1h));
-            assert!(world.occupied_mut(tester1h));
+            assert!(world.occupied(tester1h.untyped()));
+            assert!(world.occupied_mut(tester1h.untyped()));
         }
 
         {
             let _inserter1 = world.fetch::<TestInserter>(tester1h).unwrap();
 
-            assert!(!world.occupied(tester1h));
-            assert!(world.occupied_mut(tester1h));
+            assert!(!world.occupied(tester1h.untyped()));
+            assert!(world.occupied_mut(tester1h.untyped()));
         }
     }
 }
