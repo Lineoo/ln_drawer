@@ -83,7 +83,7 @@ impl Text {
     }
 }
 impl Element for Text {
-    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
         entry.getter::<PointerCollider>(|this| {
             let this = this.downcast_ref::<Text>().unwrap();
             PointerCollider {
@@ -111,7 +111,7 @@ pub struct TextEdit {
     swash_cache: Arc<Mutex<SwashCache>>,
 }
 impl Element for TextEdit {
-    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
         entry.getter::<PointerCollider>(|this| {
             let this = this.downcast_ref::<TextEdit>().unwrap();
             PointerCollider {

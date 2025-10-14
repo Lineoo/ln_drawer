@@ -43,10 +43,10 @@ impl Element for Pointer {
                 if !pressed {
                     let pointer_onto = pointer.intersect(world.world(), point);
                     if pointer_on != pointer_onto {
-                        if let Some(mut pointer_on) = pointer_on.and_then(|e| world.entry(e)) {
+                        if let Some(pointer_on) = pointer_on.and_then(|e| world.entry(e)) {
                             pointer_on.trigger(PointerLeave);
                         }
-                        if let Some(mut pointer_onto) = pointer_onto.and_then(|e| world.entry(e)) {
+                        if let Some(pointer_onto) = pointer_onto.and_then(|e| world.entry(e)) {
                             pointer_onto.trigger(PointerEnter);
                         }
                     }
@@ -58,11 +58,11 @@ impl Element for Pointer {
                 }
 
                 if pressed {
-                    if let Some(mut active) = pointer.active.and_then(|w| world.entry(w)) {
+                    if let Some(active) = pointer.active.and_then(|w| world.entry(w)) {
                         active.trigger(PointerHit(event));
-                    } else if let Some(mut pointer_on) = pointer_on.and_then(|w| world.entry(w)) {
+                    } else if let Some(pointer_on) = pointer_on.and_then(|w| world.entry(w)) {
                         pointer_on.trigger(PointerHit(event));
-                    } else if let Some(mut fallback) = pointer.fallback.and_then(|w| world.entry(w))
+                    } else if let Some(fallback) = pointer.fallback.and_then(|w| world.entry(w))
                     {
                         fallback.trigger(PointerHit(event));
                     }

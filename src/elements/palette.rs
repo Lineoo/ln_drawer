@@ -18,7 +18,7 @@ pub struct Palette {
     main_knob: Wireframe,
 }
 impl Element for Palette {
-    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
                 let mut this = entry.fetch_mut::<Palette>(entry.handle()).unwrap();
@@ -134,7 +134,7 @@ pub struct PaletteHueSlider {
     hue_knob: Wireframe,
 }
 impl Element for PaletteHueSlider {
-    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
                 let mut this = entry.fetch_mut::<PaletteHueSlider>(entry.handle()).unwrap();

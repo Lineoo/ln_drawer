@@ -16,7 +16,7 @@ pub struct StrokeLayer {
     chunks: HashMap<[i32; 2], StrokeChunk>,
 }
 impl Element for StrokeLayer {
-    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(position) | PointerEvent::Pressed(position) => {
                 let mut stroke = entry.fetch_mut::<StrokeLayer>(entry.handle()).unwrap();

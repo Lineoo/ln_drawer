@@ -363,6 +363,11 @@ impl WorldCell<'_> {
         occupied.get(&handle).is_some_and(|cnt| *cnt != 0)
     }
 
+    pub fn queue(&self, f: impl FnOnce(&mut World) + 'static) {
+        let mut queue = self.single_fetch_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(f));
+    }
+
     pub fn flush(&mut self) {
         self.world.curr_idx = *self.cell_idx.get_mut();
 
@@ -709,7 +714,7 @@ impl WorldCellEntry<'_> {
     /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(
-        &mut self,
+        &self,
         action: impl FnMut(&E, WorldCellEntry) + 'static,
     ) -> ElementHandle {
         let this = self.handle;
@@ -747,7 +752,7 @@ impl WorldCellEntry<'_> {
     ///
     /// This function has some limit since the event is delayed until cell closed, thus acquiring the ownership
     /// of the event.
-    pub fn trigger<E: 'static>(&mut self, event: E) {
+    pub fn trigger<E: 'static>(&self, event: E) {
         let handle = self.handle;
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
@@ -757,7 +762,7 @@ impl WorldCellEntry<'_> {
     }
 
     /// This will be delayed until the cell is closed.
-    pub fn getter<T: 'static>(&mut self, getter: fn(&dyn Element) -> T) {
+    pub fn getter<T: 'static>(&self, getter: fn(&dyn Element) -> T) {
         let handle = self.handle;
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
@@ -767,7 +772,7 @@ impl WorldCellEntry<'_> {
     }
 
     /// This will be delayed until the cell is closed.
-    pub fn setter<T: 'static>(&mut self, setter: fn(&mut dyn Element, T)) {
+    pub fn setter<T: 'static>(&self, setter: fn(&mut dyn Element, T)) {
         let handle = self.handle;
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
@@ -778,12 +783,24 @@ impl WorldCellEntry<'_> {
 
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
-    pub fn depend(&mut self, depend_on: ElementHandle) {
+    pub fn depend(&self, depend_on: ElementHandle) {
         let handle = self.handle;
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
             this.depend(depend_on);
+        }));
+    }
+
+    pub fn queue(&self, f: impl FnOnce(WorldEntry) + 'static) {
+        let handle = self.handle;
+        let mut queue = self.single_fetch_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            if let Some(entry) = world.entry(handle) {
+                f(entry);
+            } else {
+                log::error!("queued entry action for {handle:?} cannot access its target element");
+            }
         }));
     }
 
@@ -864,6 +881,19 @@ impl<T: ?Sized> Drop for RefMut<'_, T> {
         let mut occupied = self.world.occupied.borrow_mut();
         let cnt = occupied.get_mut(&self.handle).unwrap();
         *cnt += 1;
+    }
+}
+
+impl<F: FnOnce(&mut World) + 'static> Element for F {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
+        let handle = entry.handle;
+        let mut queue = entry.single_fetch_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            let f = world.remove(handle).unwrap();
+            if let Ok(f) = (f as Box<dyn Any>).downcast::<F>() {
+                f(world);
+            }
+        }));
     }
 }
 

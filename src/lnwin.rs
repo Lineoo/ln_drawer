@@ -58,7 +58,7 @@ pub struct Lnwindow {
     camera_origin: Option<[i32; 2]>,
 }
 impl Element for Lnwindow {
-    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
         entry.observe::<WindowEvent>(|event, entry| {
             let mut lnwindow = entry.fetch_mut::<Lnwindow>(entry.handle()).unwrap();
             let entry = entry.entry(entry.handle()).unwrap();
@@ -101,7 +101,7 @@ impl Lnwindow {
         }
     }
 
-    fn window_event(&mut self, event: &WindowEvent, mut entry: WorldCellEntry) {
+    fn window_event(&mut self, event: &WindowEvent, entry: WorldCellEntry) {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 // The viewport needs to be updated before the viewport transform

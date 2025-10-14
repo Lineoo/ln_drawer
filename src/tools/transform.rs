@@ -23,7 +23,7 @@ struct Dragging {
 }
 
 impl Element for TransformTool {
-    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
         entry.observe(|PointerHit(event), entry| {
             let this = &mut *entry.fetch_mut::<TransformTool>(entry.handle()).unwrap();
 

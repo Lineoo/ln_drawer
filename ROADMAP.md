@@ -16,6 +16,7 @@
 - menu 标准化
 - pointer 右键修改
 - save 序列化
+- span 与自动依赖
 - palette panel: 把目前零散的 palette 组件并起来
 - redraw 优化：目前基于鼠标事件的逻辑都是实时重绘，太卡
 - 内存泄漏问题 不可用的 observer 和 property 无法自动清理
@@ -257,6 +258,16 @@ Linux: $XDG_DATA_HOME/LnDrawer/world.ln-save
 
 # World for Element
 世界是一个 Element 显然也是合理的吧？！子世界嘛！
+
+但是如果想要深度集成呢？
+
+```rust
+struct ElementHandle<T> {
+    world: usize,
+    index: usize,
+    _marker: PhantomData<T>
+}
+```
 
 # Property & Modify
 依赖 Service 提供类型化服务

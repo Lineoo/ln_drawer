@@ -15,7 +15,7 @@ pub struct ButtonRaw {
     action: Box<dyn FnMut(&WorldCell)>,
 }
 impl Element for ButtonRaw {
-    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
         entry.observe::<PointerHit>(move |event, entry| {
             if let PointerHit(PointerEvent::Pressed(_)) = event {
                 let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();

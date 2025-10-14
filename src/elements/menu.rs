@@ -26,7 +26,7 @@ pub struct Menu {
     collider: PointerCollider,
 }
 impl Element for Menu {
-    fn when_inserted(&mut self, mut entry: WorldCellEntry) {
+    fn when_inserted(&mut self, entry: WorldCellEntry) {
         let handle = entry.handle();
         let obs = entry
             .single_entry::<Lnwindow>()
