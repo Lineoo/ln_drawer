@@ -12,7 +12,7 @@ use crate::{
         focus::{Focus, FocusInput},
         pointer::{PointerCollider, PointerHit},
     },
-    world::{Element, WorldCellEntry},
+    world::{Element, InsertElement, WorldCellEntry},
 };
 
 pub struct TextManager {
@@ -30,6 +30,7 @@ impl Default for TextManager {
     }
 }
 impl Element for TextManager {}
+impl InsertElement for TextManager {}
 
 pub struct Text {
     inner: Painter,
@@ -82,23 +83,17 @@ impl Text {
         self.inner.set_z_order(order);
     }
 }
-impl Element for Text {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
-        entry.getter::<PointerCollider>(|this| {
-            let this = this.downcast_ref::<Text>().unwrap();
-            PointerCollider {
-                rect: this.inner.get_rect(),
-                z_order: this.inner.get_z_order(),
-            }
+impl Element for Text {}
+impl InsertElement for Text {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
+        entry.getter::<PointerCollider>(|this| PointerCollider {
+            rect: this.inner.get_rect(),
+            z_order: this.inner.get_z_order(),
         });
 
-        entry.getter::<Rectangle>(|this| {
-            let this = this.downcast_ref::<Text>().unwrap();
-            this.inner.get_rect()
-        });
+        entry.getter::<Rectangle>(|this| this.inner.get_rect());
 
         entry.setter::<Rectangle>(|this, rect| {
-            let this = this.downcast_mut::<Text>().unwrap();
             this.inner.set_rect(rect);
         });
     }
@@ -110,23 +105,17 @@ pub struct TextEdit {
     font_system: Arc<Mutex<FontSystem>>,
     swash_cache: Arc<Mutex<SwashCache>>,
 }
-impl Element for TextEdit {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
-        entry.getter::<PointerCollider>(|this| {
-            let this = this.downcast_ref::<TextEdit>().unwrap();
-            PointerCollider {
-                rect: this.inner.get_rect(),
-                z_order: this.inner.get_z_order(),
-            }
+impl Element for TextEdit {}
+impl InsertElement for TextEdit {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
+        entry.getter::<PointerCollider>(|this| PointerCollider {
+            rect: this.inner.get_rect(),
+            z_order: this.inner.get_z_order(),
         });
 
-        entry.getter::<Rectangle>(|this| {
-            let this = this.downcast_ref::<TextEdit>().unwrap();
-            this.inner.get_rect()
-        });
+        entry.getter::<Rectangle>(|this| this.inner.get_rect());
 
         entry.setter::<Rectangle>(|this, rect| {
-            let this = this.downcast_mut::<TextEdit>().unwrap();
             this.inner.set_rect(rect);
         });
 
@@ -150,7 +139,7 @@ impl Element for TextEdit {
                 drop(font_system);
 
                 let mut focus = entry.single_fetch_mut::<Focus>().unwrap();
-                focus.set(Some(entry.handle()), &entry);
+                focus.set(Some(entry.handle().untyped()), &entry);
 
                 this.redraw();
             }

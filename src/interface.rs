@@ -19,7 +19,7 @@ use crate::{
     },
     lnwin::Viewport,
     measures::Rectangle,
-    world::Element,
+    world::{Element, InsertElement},
 };
 
 /// Main render part
@@ -42,6 +42,7 @@ pub struct Interface {
     viewport: InterfaceViewport,
 }
 impl Element for Interface {}
+impl InsertElement for Interface {}
 impl Interface {
     pub async fn new(window: impl Into<SurfaceTarget<'static>>, viewport: &Viewport) -> Interface {
         let instance = Instance::default();

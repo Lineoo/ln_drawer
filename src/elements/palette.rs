@@ -5,7 +5,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerHit},
-    world::{Element, WorldCellEntry},
+    world::{Element, InsertElement, WorldCellEntry},
 };
 
 const WIDTH: usize = 128;
@@ -17,8 +17,9 @@ pub struct Palette {
     main: Painter,
     main_knob: Wireframe,
 }
-impl Element for Palette {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
+impl Element for Palette {}
+impl InsertElement for Palette {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
                 let mut this = entry.fetch_mut::<Palette>(entry.handle()).unwrap();
@@ -34,22 +35,14 @@ impl Element for Palette {
             _ => (),
         });
 
-        entry.getter::<PointerCollider>(|this| {
-            let this = this.downcast_ref::<Palette>().unwrap();
-            PointerCollider {
-                rect: this.main.get_rect(),
-                z_order: this.main.get_z_order(),
-            }
+        entry.getter::<PointerCollider>(|this| PointerCollider {
+            rect: this.main.get_rect(),
+            z_order: this.main.get_z_order(),
         });
 
-        entry.getter::<Rectangle>(|this| {
-            let this = this.downcast_ref::<Palette>().unwrap();
-            this.main.get_rect()
-        });
+        entry.getter::<Rectangle>(|this| this.main.get_rect());
 
         entry.setter::<Rectangle>(|this, rect| {
-            let this = this.downcast_mut::<Palette>().unwrap();
-
             let orig = this.main.get_rect().origin;
             let knob_orig = this.main_knob.get_rect().origin;
             let relative = knob_orig - orig;
@@ -133,8 +126,9 @@ pub struct PaletteHueSlider {
     hue: Painter,
     hue_knob: Wireframe,
 }
-impl Element for PaletteHueSlider {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
+impl Element for PaletteHueSlider {}
+impl InsertElement for PaletteHueSlider {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
                 let mut this = entry.fetch_mut::<PaletteHueSlider>(entry.handle()).unwrap();
@@ -160,22 +154,14 @@ impl Element for PaletteHueSlider {
             _ => (),
         });
 
-        entry.getter::<PointerCollider>(|this| {
-            let this = this.downcast_ref::<PaletteHueSlider>().unwrap();
-            PointerCollider {
-                rect: this.hue.get_rect(),
-                z_order: this.hue.get_z_order(),
-            }
+        entry.getter::<PointerCollider>(|this| PointerCollider {
+            rect: this.hue.get_rect(),
+            z_order: this.hue.get_z_order(),
         });
 
-        entry.getter::<Rectangle>(|this| {
-            let this = this.downcast_ref::<PaletteHueSlider>().unwrap();
-            this.hue.get_rect()
-        });
+        entry.getter::<Rectangle>(|this| this.hue.get_rect());
 
         entry.setter::<Rectangle>(|this, rect| {
-            let this = this.downcast_mut::<PaletteHueSlider>().unwrap();
-
             let orig = this.hue.get_rect().left();
             let knob_orig = this.hue_knob.get_rect().left();
             let relative = knob_orig - orig;

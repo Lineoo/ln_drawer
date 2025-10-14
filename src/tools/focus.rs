@@ -2,15 +2,16 @@ use winit::event::{KeyEvent, WindowEvent};
 
 use crate::{
     lnwin::Lnwindow,
-    world::{Element, ElementHandle, WorldCell, WorldCellEntry},
+    world::{Element, ElementHandle, InsertElement, WorldCell, WorldCellEntry},
 };
 
 #[derive(Default)]
 pub struct Focus {
     on: Option<ElementHandle>,
 }
-impl Element for Focus {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
+impl Element for Focus {}
+impl InsertElement for Focus {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry
             .single_entry::<Lnwindow>()
             .unwrap()

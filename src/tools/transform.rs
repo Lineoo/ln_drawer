@@ -3,7 +3,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Position, Rectangle},
     tools::pointer::{Pointer, PointerHit},
-    world::{Element, ElementHandle, WorldCellEntry},
+    world::{Element, ElementHandle, InsertElement, WorldCellEntry},
 };
 
 #[derive(Default)]
@@ -22,8 +22,9 @@ struct Dragging {
     pointer_start: Position,
 }
 
-impl Element for TransformTool {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
+impl Element for TransformTool {}
+impl InsertElement for TransformTool {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe(|PointerHit(event), entry| {
             let this = &mut *entry.fetch_mut::<TransformTool>(entry.handle()).unwrap();
 

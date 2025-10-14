@@ -14,7 +14,7 @@ use crate::{
     measures::Position,
     text::TextManager,
     tools::{focus::Focus, pointer::Pointer},
-    world::{Element, World, WorldCellEntry},
+    world::{Element, InsertElement, World, WorldCellEntry},
 };
 
 #[derive(Default)]
@@ -57,8 +57,9 @@ pub struct Lnwindow {
     camera_cursor_start: [f64; 2],
     camera_origin: Option<[i32; 2]>,
 }
-impl Element for Lnwindow {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
+impl Element for Lnwindow {}
+impl InsertElement for Lnwindow {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<WindowEvent>(|event, entry| {
             let mut lnwindow = entry.fetch_mut::<Lnwindow>(entry.handle()).unwrap();
             let entry = entry.entry(entry.handle()).unwrap();
@@ -101,7 +102,7 @@ impl Lnwindow {
         }
     }
 
-    fn window_event(&mut self, event: &WindowEvent, entry: WorldCellEntry) {
+    fn window_event(&mut self, event: &WindowEvent, entry: WorldCellEntry<Lnwindow>) {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 // The viewport needs to be updated before the viewport transform
@@ -276,3 +277,4 @@ pub enum PointerEvent {
 #[derive(Default)]
 pub struct LnwinModifiers(pub Modifiers);
 impl Element for LnwinModifiers {}
+impl InsertElement for LnwinModifiers {}

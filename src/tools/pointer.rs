@@ -7,7 +7,7 @@ use crate::{
     lnwin::{Lnwindow, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
     tools::transform::TransformTool,
-    world::{Element, ElementHandle, WorldCell, WorldCellEntry},
+    world::{Element, ElementHandle, InsertElement, WorldCell, WorldCellEntry},
 };
 
 #[derive(Clone, Copy)]
@@ -26,8 +26,9 @@ pub struct Pointer {
     fallback: Option<ElementHandle>,
     active: Option<ElementHandle>,
 }
-impl Element for Pointer {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
+impl Element for Pointer {}
+impl InsertElement for Pointer {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         let mut pressed = false;
         let mut pointer_on = None;
         entry
@@ -62,8 +63,7 @@ impl Element for Pointer {
                         active.trigger(PointerHit(event));
                     } else if let Some(pointer_on) = pointer_on.and_then(|w| world.entry(w)) {
                         pointer_on.trigger(PointerHit(event));
-                    } else if let Some(fallback) = pointer.fallback.and_then(|w| world.entry(w))
-                    {
+                    } else if let Some(fallback) = pointer.fallback.and_then(|w| world.entry(w)) {
                         fallback.trigger(PointerHit(event));
                     }
                 }
@@ -85,8 +85,8 @@ impl Element for Pointer {
                     if event.state == ElementState::Pressed {
                         let transform = entry
                             .single::<TransformTool>()
-                            .unwrap_or_else(|| entry.insert(TransformTool::default()).untyped());
-                        pointer.active = Some(transform);
+                            .unwrap_or_else(|| entry.insert(TransformTool::default()));
+                        pointer.active = Some(transform.untyped());
                     } else {
                         pointer.active = None;
                     }

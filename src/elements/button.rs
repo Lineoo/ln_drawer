@@ -3,7 +3,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave},
-    world::{Element, WorldCell, WorldCellEntry},
+    world::{Element, InsertElement, WorldCell, WorldCellEntry},
 };
 
 /// Only contains raw button interaction logic. See [`Button`] if a complete button
@@ -14,8 +14,9 @@ pub struct ButtonRaw {
     collider: PointerCollider,
     action: Box<dyn FnMut(&WorldCell)>,
 }
-impl Element for ButtonRaw {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
+impl Element for ButtonRaw {}
+impl InsertElement for ButtonRaw {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<PointerHit>(move |event, entry| {
             if let PointerHit(PointerEvent::Pressed(_)) = event {
                 let mut this = entry.fetch_mut::<ButtonRaw>(entry.handle()).unwrap();
@@ -32,7 +33,7 @@ impl Element for ButtonRaw {
             this.square.set_visible(false);
         });
 
-        entry.getter::<PointerCollider>(|this| this.downcast_ref::<ButtonRaw>().unwrap().collider);
+        entry.getter::<PointerCollider>(|this| this.collider);
     }
 }
 impl ButtonRaw {

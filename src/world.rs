@@ -11,10 +11,7 @@ use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 
 /// A shared form of objects in the [`World`].
-#[expect(unused_variables)]
-pub trait Element: Any {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {}
-}
+pub trait Element: Any {}
 
 impl dyn Element {
     pub fn is<T: Any>(&self) -> bool {
@@ -26,6 +23,12 @@ impl dyn Element {
     pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
         (self as &mut dyn Any).downcast_mut()
     }
+}
+
+/// Indicated that it is used for insertion
+#[expect(unused_variables)]
+pub trait InsertElement: Element {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {}
 }
 
 /// Represent an element in the [`World`]. It's an handle so manual validation is needed.
@@ -132,7 +135,7 @@ impl Drop for WorldCell<'_> {
 }
 
 impl World {
-    pub fn insert<T: Element>(&mut self, element: T) -> ElementHandle<T> {
+    pub fn insert<T: InsertElement>(&mut self, element: T) -> ElementHandle<T> {
         self.elements.insert(self.curr_idx, Box::new(element));
         let handle = self.curr_idx.cast::<T>();
         self.curr_idx.0 += 1;
@@ -145,7 +148,7 @@ impl World {
         // when_inserted
         let cell = self.cell();
         let mut element = cell.fetch_mut::<T>(handle).unwrap();
-        element.when_inserted(cell.entry(handle.untyped()).unwrap());
+        element.when_inserted(cell.entry(handle).unwrap());
         drop(element);
         drop(cell);
 
@@ -307,7 +310,7 @@ impl World {
 impl WorldCell<'_> {
     /// Cell-mode insertion cannot perform the operation immediately so the inserted element cannot be
     /// fetched until end of the cell span. One exception is entry, which can still be used normally.
-    pub fn insert<T: Element>(&self, element: T) -> ElementHandle<T> {
+    pub fn insert<T: InsertElement>(&self, element: T) -> ElementHandle<T> {
         // get estimate_handle
         // cell-mode insertion depends on *retained* handle
         let mut cell_idx = self.cell_idx.borrow_mut();
@@ -331,7 +334,7 @@ impl WorldCell<'_> {
             // when_inserted
             let cell = world.cell();
             let mut element = cell.fetch_mut::<T>(estimate_handle).unwrap();
-            element.when_inserted(cell.entry(estimate_handle.untyped()).unwrap());
+            element.when_inserted(cell.entry(estimate_handle).unwrap());
             drop(element);
             drop(cell);
         }));
@@ -965,9 +968,10 @@ impl<T: Element> Drop for RefMut<'_, T> {
     }
 }
 
-impl<F: FnOnce(&mut World) + 'static> Element for F {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
-        let handle = entry.handle;
+impl<F: FnOnce(&mut World) + 'static> Element for F {}
+impl<F: FnOnce(&mut World) + 'static> InsertElement for F {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
+        let handle = entry.handle.untyped();
         let mut queue = entry.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let f = world.remove(handle).unwrap();
@@ -993,12 +997,15 @@ struct Observer<E> {
 }
 impl<E: 'static> Element for Observers<E> {}
 impl<E: 'static> Element for Observer<E> {}
+impl<E: 'static> InsertElement for Observers<E> {}
+impl<E: 'static> InsertElement for Observer<E> {}
 
 // cell queue
 #[derive(Default)]
 #[expect(clippy::type_complexity)]
 struct Queue(Vec<Box<dyn FnOnce(&mut World)>>);
 impl Element for Queue {}
+impl InsertElement for Queue {}
 
 // depend
 #[derive(Default)]
@@ -1009,13 +1016,18 @@ struct Dependence {
     depend_by: SmallVec<[ElementHandle; 4]>,
 }
 impl Element for Dependencies {}
+impl InsertElement for Dependencies {}
 
 // property
 // FIXME property cleanup
-struct PropertyGetter<P>(HashMap<ElementHandle, Box<dyn Fn(&dyn Element) -> P>>);
-struct PropertySetter<P>(HashMap<ElementHandle, Box<dyn Fn(&mut dyn Element, P)>>);
+type Getter<P> = HashMap<ElementHandle, Box<dyn Fn(&dyn Element) -> P>>;
+type Setter<P> = HashMap<ElementHandle, Box<dyn Fn(&mut dyn Element, P)>>;
+struct PropertyGetter<P>(Getter<P>);
+struct PropertySetter<P>(Setter<P>);
 impl<P: 'static> Element for PropertyGetter<P> {}
 impl<P: 'static> Element for PropertySetter<P> {}
+impl<P: 'static> InsertElement for PropertyGetter<P> {}
+impl<P: 'static> InsertElement for PropertySetter<P> {}
 
 // Builtin Events //
 
@@ -1029,6 +1041,7 @@ mod test {
     #[derive(Debug, PartialEq, Eq)]
     struct TestInserter(usize);
     impl Element for TestInserter {}
+    impl InsertElement for TestInserter {}
 
     #[test]
     fn basic() {

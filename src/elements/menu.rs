@@ -5,7 +5,7 @@ use crate::{
     measures::{Delta, Position, Rectangle, ZOrder},
     text::{Text, TextEdit, TextManager},
     tools::pointer::{PointerCollider, PointerHit},
-    world::{Element, WorldCell, WorldCellEntry},
+    world::{Element, InsertElement, WorldCell, WorldCellEntry},
 };
 
 const PAD: i32 = 10;
@@ -25,8 +25,9 @@ pub struct Menu {
     entries: Vec<MenuEntry>,
     collider: PointerCollider,
 }
-impl Element for Menu {
-    fn when_inserted(&mut self, entry: WorldCellEntry) {
+impl Element for Menu {}
+impl InsertElement for Menu {
+    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         let handle = entry.handle();
         let obs = entry
             .single_entry::<Lnwindow>()
@@ -51,12 +52,12 @@ impl Element for Menu {
                     let this = world.fetch::<Menu>(handle).unwrap();
                     let frame = this.frame.get_rect();
                     if !frame.contains(point) {
-                        world.remove(handle);
+                        world.remove(handle.untyped());
                     }
                 }
             });
 
-        entry.entry(obs).unwrap().depend(handle);
+        entry.entry(obs).unwrap().depend(handle.untyped());
 
         entry.observe::<PointerHit>(move |event, entry| {
             let this = entry.fetch::<Menu>(handle).unwrap();
@@ -68,12 +69,12 @@ impl Element for Menu {
                 if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
                     let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
                     (this.entries[index].action)(entry.world());
-                    entry.remove(handle);
+                    entry.remove(handle.untyped());
                 }
             }
         });
 
-        entry.getter::<PointerCollider>(|this| this.downcast_ref::<Menu>().unwrap().collider);
+        entry.getter::<PointerCollider>(|this| this.collider);
     }
 }
 impl Menu {
