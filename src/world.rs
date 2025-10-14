@@ -236,19 +236,19 @@ impl World {
         self.entry(self.single::<T>()?)
     }
 
-    pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
-        let getter = *self.single_fetch::<PropertyGetter<T>>()?.0.get(&handle)?;
+    pub fn get<P: 'static>(&self, handle: ElementHandle) -> Option<P> {
+        let getter = self.single_fetch::<PropertyGetter<P>>()?.0.get(&handle)?;
         let element = self.elements.get(&handle)?.as_ref();
         Some(getter(element))
     }
 
-    pub fn set<T: 'static>(&mut self, handle: ElementHandle, value: T) -> Option<()> {
-        let setter = *self.single_fetch::<PropertySetter<T>>()?.0.get(&handle)?;
+    pub fn set<P: 'static>(&mut self, handle: ElementHandle, value: P) -> Option<()> {
+        let setter = self.single_fetch::<PropertySetter<P>>()?.0.get(&handle)? as *const Box<_>;
         let element = self.elements.get_mut(&handle)?.as_mut();
 
-        setter(element, value);
+        unsafe { (*setter)(element, value) };
 
-        let getter = *self.single_fetch::<PropertyGetter<T>>()?.0.get(&handle)?;
+        let getter = self.single_fetch::<PropertyGetter<P>>()?.0.get(&handle)?;
         let element = self.elements.get(&handle).unwrap().as_ref();
 
         let value = getter(element);
@@ -257,9 +257,9 @@ impl World {
         Some(())
     }
 
-    pub fn get_foreach<T: 'static>(&self, mut action: impl FnMut(T)) {
-        if let Some(property) = self.single_fetch::<PropertyGetter<T>>() {
-            for (&handle, &getter) in &property.0 {
+    pub fn get_foreach<P: 'static>(&self, mut action: impl FnMut(P)) {
+        if let Some(property) = self.single_fetch::<PropertyGetter<P>>() {
+            for (&handle, getter) in &property.0 {
                 if let Some(element) = self.elements.get(&handle) {
                     action(getter(element.as_ref()));
                 }
@@ -267,9 +267,10 @@ impl World {
         }
     }
 
-    pub fn set_foreach<T: 'static>(&mut self, mut action: impl FnMut() -> T) {
-        if let Some(property) = self.single_fetch::<PropertySetter<T>>() {
-            for (handle, setter) in property.0.clone() {
+    pub fn set_foreach<P: 'static>(&mut self, mut action: impl FnMut() -> P) {
+        if let Some(property) = self.single_fetch::<PropertySetter<P>>() {
+            let property = property as *const PropertySetter<P>;
+            for (&handle, setter) in unsafe { &(*property).0 } {
                 if let Some(element) = self.elements.get_mut(&handle) {
                     setter(element.as_mut(), action());
                 }
@@ -507,7 +508,7 @@ impl WorldCell<'_> {
         self.entry(self.single::<T>()?)
     }
 
-    pub fn get<T: 'static>(&self, handle: ElementHandle) -> Option<T> {
+    pub fn get<P: 'static>(&self, handle: ElementHandle) -> Option<P> {
         if self.removed.borrow().contains(&handle) {
             return None;
         }
@@ -519,16 +520,13 @@ impl WorldCell<'_> {
             panic!("{handle:?} is mutably borrowed");
         }
 
-        let getter = *self
-            .world
-            .single_fetch::<PropertyGetter<T>>()?
-            .0
-            .get(&handle)?;
+        let property_getter = self.world.single_fetch::<PropertyGetter<P>>()?;
+        let getter = property_getter.0.get(&handle)?;
         let element = self.world.elements.get(&handle)?.as_ref();
         Some(getter(element))
     }
 
-    pub fn set<T: 'static>(&self, handle: ElementHandle, value: T) -> Option<()> {
+    pub fn set<P: 'static>(&self, handle: ElementHandle, value: P) -> Option<()> {
         if self.removed.borrow().contains(&handle) {
             return None;
         }
@@ -540,21 +538,15 @@ impl WorldCell<'_> {
             panic!("{handle:?} is borrowed");
         }
 
-        let setter = *self
-            .world
-            .single_fetch::<PropertySetter<T>>()?
-            .0
-            .get(&handle)?;
+        let property_setter = self.world.single_fetch::<PropertySetter<P>>()?;
+        let setter = property_setter.0.get(&handle)?;
         let element = self.world.elements.get(&handle)?.as_ref();
 
         let element_ptr = element as *const dyn Element as *mut dyn Element;
         setter(unsafe { element_ptr.as_mut().unwrap() }, value);
 
-        let getter = *self
-            .world
-            .single_fetch::<PropertyGetter<T>>()?
-            .0
-            .get(&handle)?;
+        let property_getter = self.world.single_fetch::<PropertyGetter<P>>()?;
+        let getter = property_getter.0.get(&handle)?;
         let element = self.world.elements.get(&handle).unwrap().as_ref();
 
         drop(occupied);
@@ -565,10 +557,10 @@ impl WorldCell<'_> {
         Some(())
     }
 
-    pub fn get_foreach<T: 'static>(&self, mut action: impl FnMut(ElementHandle, T)) {
-        if let Some(property) = self.world.single_fetch::<PropertyGetter<T>>() {
+    pub fn get_foreach<P: 'static>(&self, mut action: impl FnMut(ElementHandle, P)) {
+        if let Some(property) = self.world.single_fetch::<PropertyGetter<P>>() {
             let mut occupied = self.occupied.borrow_mut();
-            for (&handle, &getter) in &property.0 {
+            for (&handle, getter) in &property.0 {
                 let cnt = occupied.entry(handle).or_default();
                 if *cnt < 0 {
                     log::error!("{handle:?} is mutably borrowed during foreach");
@@ -582,10 +574,10 @@ impl WorldCell<'_> {
         }
     }
 
-    pub fn set_foreach<T: 'static>(&mut self, mut action: impl FnMut(ElementHandle) -> T) {
-        if let Some(property) = self.world.single_fetch::<PropertySetter<T>>() {
+    pub fn set_foreach<P: 'static>(&mut self, mut action: impl FnMut(ElementHandle) -> P) {
+        if let Some(property) = self.world.single_fetch::<PropertySetter<P>>() {
             let mut occupied = self.occupied.borrow_mut();
-            for (handle, setter) in property.0.clone() {
+            for (&handle, setter) in &property.0 {
                 let cnt = occupied.entry(handle).or_default();
                 if *cnt != 0 {
                     log::error!("{handle:?} is borrowed during foreach");
@@ -618,7 +610,7 @@ impl WorldCell<'_> {
         })
     }
 }
-impl<T: ?Sized> WorldEntry<'_, T> {
+impl<T: ?Sized + 'static> WorldEntry<'_, T> {
     pub fn observe<E: 'static>(
         &mut self,
         mut action: impl FnMut(&E, WorldCellEntry<T>) + 'static,
@@ -667,10 +659,16 @@ impl<T: ?Sized> WorldEntry<'_, T> {
         }
     }
 
-    pub fn getter<P: 'static>(&mut self, getter: fn(&dyn Element) -> P) {
+    pub fn getter<P: 'static>(&mut self, getter: impl Fn(&T) -> P + 'static)
+    where
+        T: Sized,
+    {
         match self.world.single_fetch_mut::<PropertyGetter<P>>() {
             Some(service) => {
-                let ret = service.0.insert(self.handle.untyped(), getter);
+                let ret = service.0.insert(
+                    self.handle.untyped(),
+                    Box::new(move |raw| getter(raw.downcast_ref::<T>().unwrap())),
+                );
 
                 if ret.is_some() {
                     log::error!(
@@ -683,7 +681,10 @@ impl<T: ?Sized> WorldEntry<'_, T> {
             None => {
                 let mut service = PropertyGetter::<P>(HashMap::new());
 
-                service.0.insert(self.handle.untyped(), getter);
+                service.0.insert(
+                    self.handle.untyped(),
+                    Box::new(move |raw| getter(raw.downcast_ref::<T>().unwrap())),
+                );
                 self.world.insert(service);
 
                 log::trace!("property getter of {} is registered", type_name::<P>());
@@ -691,10 +692,16 @@ impl<T: ?Sized> WorldEntry<'_, T> {
         }
     }
 
-    pub fn setter<P: 'static>(&mut self, setter: fn(&mut dyn Element, P)) {
+    pub fn setter<P: 'static>(&mut self, setter: impl Fn(&mut T, P) + 'static)
+    where
+        T: Sized,
+    {
         match self.world.single_fetch_mut::<PropertySetter<P>>() {
             Some(service) => {
-                let ret = service.0.insert(self.handle.untyped(), setter);
+                let ret = service.0.insert(
+                    self.handle.untyped(),
+                    Box::new(move |raw, val| setter(raw.downcast_mut::<T>().unwrap(), val)),
+                );
 
                 if ret.is_some() {
                     log::error!(
@@ -707,7 +714,10 @@ impl<T: ?Sized> WorldEntry<'_, T> {
             None => {
                 let mut service = PropertySetter::<P>(HashMap::new());
 
-                service.0.insert(self.handle.untyped(), setter);
+                service.0.insert(
+                    self.handle.untyped(),
+                    Box::new(move |raw, val| setter(raw.downcast_mut::<T>().unwrap(), val)),
+                );
                 self.world.insert(service);
 
                 log::trace!("property setter of {} is registered", type_name::<P>());
@@ -765,7 +775,7 @@ impl<T: ?Sized> WorldEntry<'_, T> {
         }
     }
 }
-impl<T: ?Sized> WorldCellEntry<'_, T> {
+impl<T: ?Sized + 'static> WorldCellEntry<'_, T> {
     /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(
@@ -816,8 +826,11 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
     }
 
     /// This will be delayed until the cell is closed.
-    pub fn getter<P: 'static>(&self, getter: fn(&dyn Element) -> P) {
-        let handle = self.handle.untyped();
+    pub fn getter<P: 'static>(&self, getter: impl Fn(&T) -> P + 'static)
+    where
+        T: Sized,
+    {
+        let handle = self.handle;
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
@@ -826,8 +839,11 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
     }
 
     /// This will be delayed until the cell is closed.
-    pub fn setter<P: 'static>(&self, setter: fn(&mut dyn Element, P)) {
-        let handle = self.handle.untyped();
+    pub fn setter<P: 'static>(&self, setter: impl Fn(&mut T, P) + 'static)
+    where
+        T: Sized,
+    {
+        let handle = self.handle;
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             let mut this = world.entry(handle).unwrap();
@@ -846,8 +862,8 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
         }));
     }
 
-    pub fn queue(&self, f: impl FnOnce(WorldEntry) + 'static) {
-        let handle = self.handle.untyped();
+    pub fn queue(&self, f: impl FnOnce(WorldEntry<T>) + 'static) {
+        let handle = self.handle;
         let mut queue = self.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
             if let Some(entry) = world.entry(handle) {
@@ -996,14 +1012,14 @@ impl Element for Dependencies {}
 
 // property
 // FIXME property cleanup
-struct PropertyGetter<T>(HashMap<ElementHandle, fn(&dyn Element) -> T>);
-struct PropertySetter<T>(HashMap<ElementHandle, fn(&mut dyn Element, T)>);
-impl<T: 'static> Element for PropertyGetter<T> {}
-impl<T: 'static> Element for PropertySetter<T> {}
+struct PropertyGetter<P>(HashMap<ElementHandle, Box<dyn Fn(&dyn Element) -> P>>);
+struct PropertySetter<P>(HashMap<ElementHandle, Box<dyn Fn(&mut dyn Element, P)>>);
+impl<P: 'static> Element for PropertyGetter<P> {}
+impl<P: 'static> Element for PropertySetter<P> {}
 
 // Builtin Events //
 
-pub struct PropertyChanged<T>(pub T);
+pub struct PropertyChanged<P>(pub P);
 pub struct Destroy;
 
 #[cfg(test)]
