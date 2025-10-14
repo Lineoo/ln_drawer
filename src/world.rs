@@ -621,10 +621,10 @@ impl WorldCell<'_> {
 impl<T: ?Sized> WorldEntry<'_, T> {
     pub fn observe<E: 'static>(
         &mut self,
-        action: impl FnMut(&E, WorldCellEntry) + 'static,
+        mut action: impl FnMut(&E, WorldCellEntry<T>) + 'static,
     ) -> ElementHandle {
         let handle = self.world.insert(Observer {
-            action: Box::new(action),
+            action: Box::new(move |event, entry| action(event, entry.cast())),
             target: self.handle.untyped(),
         });
 
@@ -770,11 +770,11 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(
         &self,
-        action: impl FnMut(&E, WorldCellEntry) + 'static,
+        mut action: impl FnMut(&E, WorldCellEntry<T>) + 'static,
     ) -> ElementHandle {
         let this = self.handle.untyped();
         let estimate_handle = self.world.insert(Observer {
-            action: Box::new(action),
+            action: Box::new(move |event, entry| action(event, entry.cast())),
             target: this,
         });
 
@@ -870,11 +870,11 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
         self.world
     }
 
-    pub fn untyped(&mut self) -> WorldCellEntry<'_, dyn Element> {
+    pub fn untyped(&self) -> WorldCellEntry<'_, dyn Element> {
         self.cast()
     }
 
-    fn cast<U: ?Sized>(&mut self) -> WorldCellEntry<'_, U> {
+    fn cast<U: ?Sized>(&self) -> WorldCellEntry<'_, U> {
         WorldCellEntry {
             world: self.world,
             handle: self.handle.cast(),
