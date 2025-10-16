@@ -3,8 +3,8 @@ use std::sync::mpsc::Sender;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::interface::ComponentCommand;
 use crate::interface::viewport::InterfaceViewport;
+use crate::interface::{ComponentCommand, Interface};
 use crate::measures::{Position, Rectangle, ZOrder};
 
 pub struct SquarePipeline {
@@ -211,6 +211,11 @@ impl Drop for Square {
     }
 }
 impl Square {
+    #[must_use = "The square will be destroyed when being drop."]
+    pub fn new(rect: Rectangle, color: [f32; 4], interface: &mut Interface) -> Square {
+        interface.create_square(rect, color)
+    }
+
     pub fn get_rect(&self) -> Rectangle {
         self.rect
     }

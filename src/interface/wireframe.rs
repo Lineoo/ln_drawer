@@ -3,8 +3,8 @@ use std::sync::mpsc::Sender;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::interface::ComponentCommand;
 use crate::interface::viewport::InterfaceViewport;
+use crate::interface::{ComponentCommand, Interface};
 use crate::measures::{Rectangle, ZOrder};
 
 pub struct WireframePipeline {
@@ -211,10 +211,15 @@ impl Drop for Wireframe {
     }
 }
 impl Wireframe {
+    #[must_use = "The wireframe will be destroyed when being drop."]
+    pub fn new(rect: Rectangle, color: [f32; 4], interface: &mut Interface) -> Wireframe {
+        interface.create_wireframe(rect, color)
+    }
+
     pub fn get_rect(&self) -> Rectangle {
         self.rect
     }
-    
+
     pub fn set_rect(&mut self, rect: Rectangle) {
         self.rect = rect;
         self.queue.write_buffer(

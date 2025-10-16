@@ -35,7 +35,7 @@ impl InsertElement for TransformTool {
                         && let Some(rect) = entry.get::<Rectangle>(element)
                     {
                         let mut interact = entry.single_fetch_mut::<Interface>().unwrap();
-                        let frame = interact.create_wireframe(rect, [0.8, 0.8, 0.8, 0.9]);
+                        let frame = Wireframe::new(rect, [0.8, 0.8, 0.8, 0.9], &mut interact);
                         this.selected = Some(Selected { frame, element });
                         this.dragging = Some(Dragging {
                             element_start: rect.origin,

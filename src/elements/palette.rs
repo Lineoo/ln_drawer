@@ -63,17 +63,21 @@ impl InsertElement for Palette {
 }
 impl Palette {
     pub fn new(position: Position, interface: &mut Interface) -> Palette {
-        let main = interface.create_painter(Rectangle {
-            origin: position,
-            extend: Delta::new(WIDTH as i32, HEIGHT as i32),
-        });
+        let main = Painter::new(
+            Rectangle {
+                origin: position,
+                extend: Delta::new(WIDTH as i32, HEIGHT as i32),
+            },
+            interface,
+        );
 
-        let main_knob = interface.create_wireframe(
+        let main_knob = Wireframe::new(
             Rectangle {
                 origin: position,
                 extend: Delta::splat(1),
             },
             [1.0, 1.0, 1.0, 1.0],
+            interface,
         );
 
         main_knob.set_z_order(ZOrder::new(1));
@@ -176,10 +180,13 @@ impl InsertElement for PaletteHueSlider {
 }
 impl PaletteHueSlider {
     fn new(position: Position, interface: &mut Interface) -> PaletteHueSlider {
-        let mut hue = interface.create_painter(Rectangle {
-            origin: position,
-            extend: Delta::new(WIDTH as i32, HUE_HEIGHT as i32),
-        });
+        let mut hue = Painter::new(
+            Rectangle {
+                origin: position,
+                extend: Delta::new(WIDTH as i32, HUE_HEIGHT as i32),
+            },
+            interface,
+        );
 
         let mut writer = hue.open_writer();
         for x in 0..WIDTH {
@@ -192,12 +199,13 @@ impl PaletteHueSlider {
 
         drop(writer);
 
-        let hue_knob = interface.create_wireframe(
+        let hue_knob = Wireframe::new(
             Rectangle {
                 origin: position,
                 extend: Delta::new(1, HUE_HEIGHT as i32),
             },
             [1.0, 1.0, 1.0, 1.0],
+            interface,
         );
 
         hue_knob.set_z_order(ZOrder::new(1));

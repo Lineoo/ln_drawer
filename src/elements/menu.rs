@@ -90,10 +90,10 @@ impl Menu {
                 PAD + (ENTRY_HEIGHT + PAD) * ENTRY_NUM as i32,
             ),
         };
-        let frame = interface.create_square(rect, [0.1, 0.1, 0.1, 1.0]);
+        let frame = Square::new(rect, [0.1, 0.1, 0.1, 1.0], interface);
         frame.set_z_order(ZOrder::new(90));
 
-        let select_frame = interface.create_square(rect, [0.1, 0.1, 0.9, 0.2]);
+        let select_frame = Square::new(rect, [0.1, 0.1, 0.9, 0.2], interface);
         select_frame.set_z_order(ZOrder::new(120));
         select_frame.set_visible(false);
 
@@ -103,7 +103,7 @@ impl Menu {
                 origin: position + Delta::new(PAD, PAD),
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
-            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
+            let frame = Square::new(rect, [0.2, 0.2, 0.2, 1.0], interface);
             frame.set_z_order(ZOrder::new(100));
             let mut _text = Text::new(rect, "Label".into(), text_manager, interface);
             _text.set_order(ZOrder::new(110));
@@ -125,7 +125,7 @@ impl Menu {
                 origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT)),
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
-            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
+            let frame = Square::new(rect, [0.2, 0.2, 0.2, 1.0], interface);
             frame.set_z_order(ZOrder::new(100));
             let mut _text = Text::new(rect, "Palette".into(), text_manager, interface);
             _text.set_order(ZOrder::new(110));
@@ -143,7 +143,7 @@ impl Menu {
                 origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT) * 2),
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
-            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
+            let frame = Square::new(rect, [0.2, 0.2, 0.2, 1.0], interface);
             frame.set_z_order(ZOrder::new(100));
             let mut _text = Text::new(rect, "Button".into(), text_manager, interface);
             _text.set_order(ZOrder::new(110));
@@ -167,7 +167,7 @@ impl Menu {
                 origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT) * 3),
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
-            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
+            let frame = Square::new(rect, [0.2, 0.2, 0.2, 1.0], interface);
             frame.set_z_order(ZOrder::new(100));
             let mut _text = Text::new(rect, "LnDrawer Logo".into(), text_manager, interface);
             _text.set_order(ZOrder::new(110));
@@ -189,7 +189,7 @@ impl Menu {
                 origin: position + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT) * 4),
                 extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
             };
-            let frame = interface.create_square(rect, [0.2, 0.2, 0.2, 1.0]);
+            let frame = Square::new(rect, [0.2, 0.2, 0.2, 1.0], interface);
             frame.set_z_order(ZOrder::new(100));
             let mut _text = Text::new(rect, "Text Edit".into(), text_manager, interface);
             _text.set_order(ZOrder::new(110));

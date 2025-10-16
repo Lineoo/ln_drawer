@@ -10,7 +10,7 @@ use winit::{
 
 use crate::{
     elements::{Image, Menu, StrokeLayer},
-    interface::Interface,
+    interface::{Interface, Redraw},
     measures::Position,
     text::TextManager,
     tools::{focus::Focus, pointer::Pointer},
@@ -213,6 +213,7 @@ impl Lnwindow {
             WindowEvent::RedrawRequested => {
                 let mut interface = entry.single_fetch_mut::<Interface>().unwrap();
                 interface.resize(&self.viewport);
+                entry.single_entry::<Interface>().unwrap().trigger(&Redraw);
                 interface.restructure();
                 interface.redraw();
             }

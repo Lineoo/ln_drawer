@@ -183,7 +183,7 @@ impl Interface {
     }
 
     #[must_use = "The wireframe will be destroyed when being drop."]
-    pub fn create_wireframe(&mut self, rect: Rectangle, color: [f32; 4]) -> Wireframe {
+    fn create_wireframe(&mut self, rect: Rectangle, color: [f32; 4]) -> Wireframe {
         let wireframe = (self.wireframe).create(
             rect,
             color,
@@ -201,7 +201,7 @@ impl Interface {
     }
 
     #[must_use = "The wireframe will be destroyed when being drop."]
-    pub fn create_square(&mut self, rect: Rectangle, color: [f32; 4]) -> Square {
+    fn create_square(&mut self, rect: Rectangle, color: [f32; 4]) -> Square {
         let square = (self.square).create(
             rect,
             color,
@@ -218,8 +218,7 @@ impl Interface {
         square
     }
 
-    #[must_use = "The painter will be destroyed when being drop."]
-    pub fn create_painter(&mut self, rect: Rectangle) -> Painter {
+    fn create_painter(&mut self, rect: Rectangle) -> Painter {
         let empty = vec![0; (rect.width() * rect.height() * 4) as usize];
         let painter = self.painter.create(
             rect,
@@ -237,8 +236,7 @@ impl Interface {
         painter
     }
 
-    #[must_use = "The painter will be destroyed when being drop."]
-    pub fn create_painter_with(&mut self, rect: Rectangle, data: Vec<u8>) -> Painter {
+    fn create_painter_with(&mut self, rect: Rectangle, data: Vec<u8>) -> Painter {
         let painter = self.painter.create(
             rect,
             data,
@@ -262,6 +260,8 @@ impl Interface {
             .sort_by(|_, c1, _, c2| c1.z_order.cmp(&c2.z_order));
     }
 }
+
+pub struct Redraw;
 
 struct Component {
     component: ComponentInner,

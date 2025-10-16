@@ -71,7 +71,7 @@ impl Text {
         );
 
         Text {
-            inner: interface.create_painter_with(rect, data),
+            inner: Painter::new_with(rect, data, interface),
         }
     }
 
@@ -321,7 +321,7 @@ impl TextEdit {
             },
         );
 
-        let inner = interface.create_painter_with(rect, data);
+        let inner = Painter::new_with(rect, data, interface);
 
         TextEdit {
             inner,

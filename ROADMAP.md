@@ -11,13 +11,13 @@
 
 # Milestone
 - interface 重写：更加灵活的渲染管线
+- redraw 优化：目前基于鼠标事件的逻辑都是实时重绘，太卡
 - transform_tool 支持拉伸和仅允许 Position 的元素移动
 - menu 标准化
 - pointer 右键修改
 - save 序列化
 - span 与自动依赖
 - palette panel: 把目前零散的 palette 组件并起来
-- redraw 优化：目前基于鼠标事件的逻辑都是实时重绘，太卡
 - 内存泄漏问题 不可用的 observer 和 property 无法自动清理
 
 # 世界
@@ -296,3 +296,39 @@ entry.property::<Position>(|this|, setter);
 让右键和左键同样进入 Pointer 一并处理也是挺好的。这样 Element 就可以负责自己的菜单，而统一的菜单则由类似 TransformTool 的工具提供。
 
 然后我觉得 `PointerCollider` 可以做成 `Option<Rectangle>` 这种，然后如果是 `None` 就意味着全局触发，也可以实现 active 和 fallback 的功能，还能实现一定程度的解耦，我觉得挺好。不过等有具体需求再说吧，目前没有很重要。
+
+# Interface 重写
+现在：
+```rust
+let wireframe = interface.create_wireframe(rect, color);
+```
+
+和其他组件对齐：
+```rust
+let wireframe = Wireframe::new(rect, color, &mut interface);
+```
+
+Square 直接 shader:
+```rust
+let square = Square::shader(include_str!("shader.wgsl"), &mut interface);
+```
+
+RedrawRequest:
+```rust
+match event {
+    WindowEvent::RedrawRequest => {
+        entry.trigger(&Redraw);
+    }
+}
+```
+
+```rust
+palette.observe(|Redraw, entry| {
+    palette.redraw();
+});
+```
+
+有关 observers:
+```rust
+
+```

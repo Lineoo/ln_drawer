@@ -42,7 +42,7 @@ impl ButtonRaw {
         action: impl FnMut(&WorldCell) + 'static,
         interface: &mut Interface,
     ) -> ButtonRaw {
-        let square = interface.create_square(rect, [1.0, 1.0, 1.0, 0.6]);
+        let square = Square::new(rect, [1.0, 1.0, 1.0, 0.6], interface);
         square.set_visible(false);
         let collider = PointerCollider {
             rect: square.get_rect(),

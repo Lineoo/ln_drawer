@@ -39,12 +39,14 @@ impl StrokeLayer {
         ];
         let chunk_orig = Position::new(chunk_key[0] * CHUNK_SIZE, chunk_key[1] * CHUNK_SIZE);
 
-        let chunk = self.chunks.entry(chunk_key).or_insert_with(|| {
-            let painter = interface.create_painter(Rectangle {
-                origin: chunk_orig,
-                extend: Delta::new(CHUNK_SIZE, CHUNK_SIZE),
-            });
-            StrokeChunk { painter }
+        let chunk = self.chunks.entry(chunk_key).or_insert_with(|| StrokeChunk {
+            painter: Painter::new(
+                Rectangle {
+                    origin: chunk_orig,
+                    extend: Delta::new(CHUNK_SIZE, CHUNK_SIZE),
+                },
+                &mut interface,
+            ),
         });
 
         chunk.painter.set_pixel(point, color);

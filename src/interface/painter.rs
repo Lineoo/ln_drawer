@@ -5,8 +5,8 @@ use palette::blend::Compose;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::interface::ComponentCommand;
 use crate::interface::viewport::InterfaceViewport;
+use crate::interface::{ComponentCommand, Interface};
 use crate::measures::{Position, Rectangle, ZOrder};
 
 pub struct PainterPipeline {
@@ -285,6 +285,16 @@ impl Drop for Painter {
     }
 }
 impl Painter {
+    #[must_use = "The painter will be destroyed when being drop."]
+    pub fn new(rect: Rectangle, interface: &mut Interface) -> Painter {
+        interface.create_painter(rect)
+    }
+
+    #[must_use = "The painter will be destroyed when being drop."]
+    pub fn new_with(rect: Rectangle, data: Vec<u8>, interface: &mut Interface) -> Painter {
+        interface.create_painter_with(rect, data)
+    }
+
     pub fn open_writer(&mut self) -> PainterWriter<'_> {
         PainterWriter { painter: self }
     }
