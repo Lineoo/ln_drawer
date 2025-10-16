@@ -5,17 +5,19 @@ use wgpu::*;
 
 mod painter;
 mod square;
+mod standard_square;
 mod viewport;
 mod wireframe;
 
 pub use painter::Painter;
 pub use square::Square;
 pub use wireframe::Wireframe;
+pub use standard_square::StandardSquare;
 
 use crate::{
     interface::{
-        painter::PainterBuffer, square::SquareBuffer, viewport::InterfaceViewport,
-        wireframe::WireframeBuffer,
+        painter::PainterBuffer, square::SquareBuffer, standard_square::StandardSquareInstance,
+        viewport::InterfaceViewport, wireframe::WireframeBuffer,
     },
     lnwin::Viewport,
     measures::Rectangle,
@@ -32,6 +34,7 @@ pub struct Interface {
     wireframe: wireframe::WireframePipeline,
     square: square::SquarePipeline,
     painter: painter::PainterPipeline,
+    standard_square: standard_square::StandardSquareManager,
 
     components_tx: Sender<(usize, ComponentCommand)>,
     components_rx: Receiver<(usize, ComponentCommand)>,
@@ -41,8 +44,10 @@ pub struct Interface {
 
     viewport: InterfaceViewport,
 }
+
 impl Element for Interface {}
 impl InsertElement for Interface {}
+
 impl Interface {
     pub async fn new(window: impl Into<SurfaceTarget<'static>>, viewport: &Viewport) -> Interface {
         let instance = Instance::default();
@@ -73,7 +78,14 @@ impl Interface {
         let surface_config = surface
             .get_default_config(&adapter, viewport.width, viewport.height)
             .unwrap();
+
         let viewport = InterfaceViewport::new(viewport, &device);
+
+        let standard_square = standard_square::StandardSquareInstance::manager(
+            &device,
+            &viewport.layout,
+            surface_config.format,
+        );
 
         // Render Components
         let wireframe = wireframe::WireframePipeline::init(&device, &surface_config, &viewport);
@@ -90,6 +102,7 @@ impl Interface {
             wireframe,
             square,
             painter,
+            standard_square,
             components_tx,
             components_rx,
             components_idx: 0,
@@ -164,6 +177,9 @@ impl Interface {
                 ComponentInner::Painter(painter) => {
                     self.painter.set_pipeline(&mut rpass);
                     painter.draw(&mut rpass);
+                }
+                ComponentInner::StandardSquare(standard_square) => {
+                    standard_square.draw(&mut rpass, &self.viewport.bind, &self.standard_square);
                 }
             }
         }
@@ -273,6 +289,7 @@ enum ComponentInner {
     Painter(PainterBuffer),
     Wireframe(WireframeBuffer),
     Square(SquareBuffer),
+    StandardSquare(StandardSquareInstance),
 }
 
 enum ComponentCommand {

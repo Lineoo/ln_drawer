@@ -51,4 +51,8 @@ impl Delta {
     pub fn splat(n: i32) -> Delta {
         Delta { x: n, y: n }
     }
+
+    pub fn into_array(self) -> [i32; 2] {
+        [self.x, self.y]
+    }
 }

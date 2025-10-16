@@ -156,6 +156,7 @@ impl Menu {
                             origin: rect.origin,
                             extend: Delta::new(100, 100),
                         },
+                        ZOrder::new(0),
                         |_| println!("Button hit!"),
                         &mut world.single_fetch_mut().unwrap(),
                     ));

@@ -1,5 +1,5 @@
 use crate::{
-    interface::{Interface, Square},
+    interface::{Interface, StandardSquare},
     lnwin::PointerEvent,
     measures::{Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave},
@@ -9,9 +9,7 @@ use crate::{
 /// Only contains raw button interaction logic. See [`Button`] if a complete button
 /// including text and image is needed.
 pub struct ButtonRaw {
-    rect: Rectangle,
-    square: Square,
-    collider: PointerCollider,
+    square: StandardSquare,
     action: Box<dyn FnMut(&WorldCell)>,
 }
 impl Element for ButtonRaw {}
@@ -25,33 +23,32 @@ impl InsertElement for ButtonRaw {
         });
 
         entry.observe::<PointerEnter>(move |_event, entry| {
-            let this = entry.fetch().unwrap();
+            let mut this = entry.fetch_mut().unwrap();
             this.square.set_visible(true);
         });
         entry.observe::<PointerLeave>(move |_event, entry| {
-            let this = entry.fetch().unwrap();
+            let mut this = entry.fetch_mut().unwrap();
             this.square.set_visible(false);
         });
 
-        entry.getter::<PointerCollider>(|this| this.collider);
+        entry.getter::<PointerCollider>(|this| PointerCollider {
+            rect: this.square.get_rect(),
+            z_order: this.square.get_z_order(),
+        });
+
+        entry.getter::<Rectangle>(|this| this.square.get_rect());
+        entry.setter::<Rectangle>(|this, rect| this.square.set_rect(rect));
     }
 }
 impl ButtonRaw {
     pub fn new(
         rect: Rectangle,
+        z_order: ZOrder,
         action: impl FnMut(&WorldCell) + 'static,
         interface: &mut Interface,
     ) -> ButtonRaw {
-        let square = Square::new(rect, [1.0, 1.0, 1.0, 0.6], interface);
-        square.set_visible(false);
-        let collider = PointerCollider {
-            rect: square.get_rect(),
-            z_order: ZOrder::default(),
-        };
         ButtonRaw {
-            rect,
-            square,
-            collider,
+            square: StandardSquare::new(rect, z_order, false, interface),
             action: Box::new(action),
         }
     }

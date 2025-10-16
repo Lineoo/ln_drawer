@@ -6,16 +6,29 @@ use wgpu::{
 use crate::lnwin::Viewport;
 
 pub struct InterfaceViewport {
-    buffer: Buffer,
+    pub layout: BindGroupLayout,
+    pub bind: BindGroup,
+    pub buffer: Buffer,
 }
 impl InterfaceViewport {
-    pub fn new(
-        viewport: &Viewport,
-        device: &Device,
-    ) -> InterfaceViewport {
-        let viewport_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("viewport_buffer"),
-            contents: bytemuck::bytes_of(&InterfaceViewportBind {
+    pub fn new(viewport: &Viewport, device: &Device) -> InterfaceViewport {
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("viewport"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX_FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("viewport"),
+            contents: bytemuck::bytes_of(&ViewportUniform {
                 width: viewport.width,
                 height: viewport.height,
                 camera: viewport.camera,
@@ -24,8 +37,24 @@ impl InterfaceViewport {
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
+
+        let bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("viewport"),
+            layout: &layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
         InterfaceViewport {
-            buffer: viewport_buffer,
+            layout,
+            buffer,
+            bind,
         }
     }
 
@@ -33,7 +62,7 @@ impl InterfaceViewport {
         queue.write_buffer(
             &self.buffer,
             0,
-            bytemuck::bytes_of(&InterfaceViewportBind {
+            bytemuck::bytes_of(&ViewportUniform {
                 width: viewport.width,
                 height: viewport.height,
                 camera: viewport.camera,
@@ -42,15 +71,11 @@ impl InterfaceViewport {
             }),
         );
     }
-
-    pub fn buffer(&self) -> &Buffer {
-        &self.buffer
-    }
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct InterfaceViewportBind {
+struct ViewportUniform {
     width: u32,
     height: u32,
     camera: [i32; 2],
