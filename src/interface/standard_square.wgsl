@@ -37,13 +37,17 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
     return ret;
 }
 
+const edge = 10.0;
+
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
-    const EDGE = 10;
     let relative = vertex.world_space - vec2f(rectangle.origin);
-    let clamped = clamp(relative, vec2f(EDGE), vec2f(rectangle.extend) - vec2f(EDGE));
-    let delta = (relative - clamped) / vec2f(EDGE);
-    let val = pow(length(delta), 3.0);
-    let frame = vec3f(smoothstep(0.4, 0.5, val) - smoothstep(0.5, 1.0, val));
+    let clamped = clamp(relative, vec2f(edge), vec2f(rectangle.extend) - vec2f(edge));
+    let delta = (relative - clamped) / vec2f(edge);
+    let val = length(delta);
+    let frame = vec3f(max(
+        step(0.45, val) - step(0.5, val),
+        (smoothstep(0.4, 0.5, val) - smoothstep(0.5, 0.6, val)) * 0.5
+    ));
     return vec4f(frame, 1.0);
 }
