@@ -114,10 +114,9 @@ impl InsertElement for TextEdit {
         });
 
         entry.getter::<Rectangle>(|this| this.inner.get_rect());
+        entry.setter::<Rectangle>(|this, rect| this.inner.set_rect(rect));
 
-        entry.setter::<Rectangle>(|this, rect| {
-            this.inner.set_rect(rect);
-        });
+        entry.getter::<String>(|this| this.clone_text());
 
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Pressed(position) => {
@@ -329,6 +328,22 @@ impl TextEdit {
             font_system: manager.font_system.clone(),
             swash_cache: manager.swash_cache.clone(),
         }
+    }
+
+    pub fn clone_text(&self) -> String {
+        self.editor.with_buffer(|buffer| {
+            let mut selection = String::new();
+
+            if let Some(line) = buffer.lines.first() {
+                selection.push_str(line.text());
+                for line_i in 1..buffer.lines.len() {
+                    selection.push('\n');
+                    selection.push_str(buffer.lines[line_i].text());
+                }
+            }
+
+            selection
+        })
     }
 
     fn redraw(&mut self) {

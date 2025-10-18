@@ -791,10 +791,7 @@ impl<T: Element> WorldCellEntry<'_, T> {
     }
 
     /// This will be delayed until the cell is closed.
-    pub fn getter<P: 'static>(&self, getter: impl Fn(&T) -> P + 'static)
-    where
-        T: Sized,
-    {
+    pub fn getter<P: 'static>(&self, getter: impl Fn(&T) -> P + 'static) {
         let handle = self.handle;
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
@@ -804,10 +801,7 @@ impl<T: Element> WorldCellEntry<'_, T> {
     }
 
     /// This will be delayed until the cell is closed.
-    pub fn setter<P: 'static>(&self, setter: impl Fn(&mut T, P) + 'static)
-    where
-        T: Sized,
-    {
+    pub fn setter<P: 'static>(&self, setter: impl Fn(&mut T, P) + 'static) {
         let handle = self.handle;
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
         queue.0.push(Box::new(move |world| {
@@ -1035,7 +1029,7 @@ impl InsertElement for Dependencies {}
 
 // property
 // FIXME property cleanup
-type Getter<P> = HashMap<ElementHandle, Box<dyn Fn(&dyn Element) -> P>>;
+type Getter<P> = HashMap<ElementHandle, Box<dyn for<'a> Fn(&'a dyn Element) -> P>>;
 type Setter<P> = HashMap<ElementHandle, Box<dyn Fn(&mut dyn Element, P)>>;
 struct PropertyGetter<P>(Getter<P>);
 struct PropertySetter<P>(Setter<P>);

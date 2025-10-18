@@ -252,6 +252,18 @@ Linux: $XDG_DATA_HOME/LnDrawer/world.ln-save
 
 接口即需要实现 Port 这个 Service
 
+TextEdit:
+```rust
+// when_insert
+
+
+```
+
+ShellButton
+```rust
+
+```
+
 # wgpu 集成深度
 目前对于 wgpu 我们采用了最小集成，即整个世界只有 Interface 这么一个元素进行交互。我觉得挺好。
 
