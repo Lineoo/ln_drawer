@@ -1,12 +1,12 @@
 use winit::{
-    event::{ElementState, WindowEvent},
+    event::{ElementState, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
 };
 
 use crate::{
     lnwin::{Lnwindow, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
-    tools::transform::TransformTool,
+    tools::{node::NodeTool, transform::TransformTool},
     world::{Element, ElementHandle, InsertElement, WorldCell, WorldCellEntry},
 };
 
@@ -77,18 +77,43 @@ impl InsertElement for Pointer {
             .single_entry::<Lnwindow>()
             .unwrap()
             .observe::<WindowEvent>(|event, entry| {
-                if let WindowEvent::KeyboardInput { event, .. } = event
-                    && !event.repeat
-                    && event.physical_key == PhysicalKey::Code(KeyCode::KeyS)
+                if let &WindowEvent::KeyboardInput {
+                    event:
+                        KeyEvent {
+                            repeat: false,
+                            physical_key: PhysicalKey::Code(key),
+                            state,
+                            ..
+                        },
+                    ..
+                } = event
                 {
-                    let mut pointer = entry.single_fetch_mut::<Pointer>().unwrap();
-                    if event.state == ElementState::Pressed {
-                        let transform = entry
-                            .single::<TransformTool>()
-                            .unwrap_or_else(|| entry.insert(TransformTool::default()));
-                        pointer.active = Some(transform.untyped());
-                    } else {
-                        pointer.active = None;
+                    match key {
+                        KeyCode::KeyS => {
+                            let mut pointer = entry.single_fetch_mut::<Pointer>().unwrap();
+                            if state == ElementState::Pressed {
+                                let transform = entry
+                                    .single::<TransformTool>()
+                                    .unwrap_or_else(|| entry.insert(TransformTool::default()));
+                                pointer.active = Some(transform.untyped());
+                            } else {
+                                pointer.active = None;
+                            }
+                        }
+                        KeyCode::KeyN => {
+                            let mut pointer = entry.single_fetch_mut::<Pointer>().unwrap();
+                            if state == ElementState::Pressed {
+                                let node = entry.single::<NodeTool>().unwrap_or_else(|| {
+                                    entry.insert(NodeTool::new(
+                                        &mut entry.single_fetch_mut().unwrap(),
+                                    ))
+                                });
+                                pointer.active = Some(node.untyped());
+                            } else {
+                                pointer.active = None;
+                            }
+                        }
+                        _ => {}
                     }
                 }
             });

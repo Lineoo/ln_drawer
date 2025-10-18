@@ -63,10 +63,6 @@ impl Rectangle {
         }
     }
 
-    pub fn from_points(orig: Position, dest: Position) -> Rectangle {
-        Rectangle::new(orig.x, orig.y, dest.x, dest.y)
-    }
-
     #[inline]
     pub fn width(self) -> u32 {
         self.extend.x as u32
