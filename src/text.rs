@@ -63,6 +63,9 @@ impl Text {
             |x, y, _, _, color| {
                 let start = ((x + y * rect.width() as i32) * 4) as usize;
                 let rgba = color.as_rgba();
+                if start >= data.len() {
+                    return;
+                }
                 data[start] = rgba[0];
                 data[start + 1] = rgba[1];
                 data[start + 2] = rgba[2];

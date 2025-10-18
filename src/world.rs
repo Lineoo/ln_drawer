@@ -134,6 +134,15 @@ impl Drop for WorldCell<'_> {
     }
 }
 
+impl<T: ?Sized> Clone for WorldCellEntry<'_, T> {
+    fn clone(&self) -> Self {
+        WorldCellEntry {
+            world: self.world,
+            handle: self.handle,
+        }
+    }
+}
+
 impl World {
     pub fn insert<T: InsertElement>(&mut self, element: T) -> ElementHandle<T> {
         self.elements.insert(self.curr_idx, Box::new(element));

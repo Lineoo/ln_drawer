@@ -151,13 +151,12 @@ impl Menu {
                 frame,
                 _text,
                 action: Box::new(move |world| {
-                    world.insert(ButtonRaw::new(
+                    world.insert(ButtonRaw::shell(
                         Rectangle {
                             origin: rect.origin,
                             extend: Delta::new(100, 100),
                         },
                         ZOrder::new(0),
-                        |_| println!("Button hit!"),
                         &mut world.single_fetch_mut().unwrap(),
                     ));
                 }),
