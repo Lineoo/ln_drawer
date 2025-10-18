@@ -968,20 +968,6 @@ impl<T: Element> Drop for RefMut<'_, T> {
     }
 }
 
-impl<F: FnOnce(&mut World) + 'static> Element for F {}
-impl<F: FnOnce(&mut World) + 'static> InsertElement for F {
-    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
-        let handle = entry.handle.untyped();
-        let mut queue = entry.single_fetch_mut::<Queue>().unwrap();
-        queue.0.push(Box::new(move |world| {
-            let f = world.remove(handle).unwrap();
-            if let Ok(f) = (f as Box<dyn Any>).downcast::<F>() {
-                f(world);
-            }
-        }));
-    }
-}
-
 // Internal Elements //
 
 // observer & trigger
