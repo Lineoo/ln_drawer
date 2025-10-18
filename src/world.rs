@@ -159,27 +159,12 @@ impl World {
         let type_id = (**self.elements.get(&handle)?).type_id();
         log::trace!("remove {:?}", handle);
 
-        // remove children first
-        if let Some(dependencies) = self.single_fetch::<Dependencies>()
-            && let Some(this) = dependencies.0.get(&handle)
-        {
-            for child in this.depend_by.clone() {
-                self.remove(child);
-            }
-        }
-
-        // trigger events
-        self.entry(handle).unwrap().trigger(&Destroy);
-
-        // update cache
-        let cache = self.cache.entry(type_id).or_default();
-        cache.remove(&handle);
-
-        // clean dependence to parent
+        // maintain dependency
         if let Some(dependencies) = self.single_fetch_mut::<Dependencies>()
-            && let Some(this) = dependencies.0.get(&handle)
+            && let Some(this) = dependencies.0.remove(&handle)
         {
-            for parent in this.depend_on.clone() {
+            // clean for parents
+            for parent in this.depend_on {
                 if let Some(parent) = dependencies.0.get_mut(&parent) {
                     // search for itself and swap remove
                     for i in 0..parent.depend_by.len() {
@@ -191,8 +176,18 @@ impl World {
                 }
             }
 
-            dependencies.0.remove(&handle);
+            // remove children
+            for child in this.depend_by {
+                self.remove(child);
+            }
         }
+
+        // trigger events
+        self.entry(handle).unwrap().trigger(&Destroy);
+
+        // update cache
+        let cache = self.cache.entry(type_id).or_default();
+        cache.remove(&handle);
 
         // TODO RemovalCapture(Box<dyn Element>)
         self.elements.remove(&handle)
@@ -355,11 +350,26 @@ impl WorldCell<'_> {
 
         let mut cnt = 1;
 
-        // remove children first
-        if let Some(dependencies) = self.single_fetch::<Dependencies>()
-            && let Some(this) = dependencies.0.get(&handle)
+        // maintain dependency
+        if let Some(mut dependencies) = self.single_fetch_mut::<Dependencies>()
+            && let Some(this) = dependencies.0.remove(&handle)
         {
-            for child in this.depend_by.clone() {
+            // clean for parents
+            for parent in this.depend_on {
+                if let Some(parent) = dependencies.0.get_mut(&parent) {
+                    // search for itself and swap remove
+                    for i in 0..parent.depend_by.len() {
+                        if parent.depend_by[i] == handle {
+                            parent.depend_by.swap_remove(i);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // remove children
+            drop(dependencies);
+            for child in this.depend_by {
                 cnt += self.remove(child);
             }
         }
@@ -378,25 +388,6 @@ impl WorldCell<'_> {
             // update cache
             let cache = world.cache.entry(type_id).or_default();
             cache.remove(&handle);
-
-            // clean dependence to parent
-            if let Some(dependencies) = world.single_fetch_mut::<Dependencies>()
-                && let Some(this) = dependencies.0.get(&handle)
-            {
-                for parent in this.depend_on.clone() {
-                    if let Some(parent) = dependencies.0.get_mut(&parent) {
-                        // search for itself and swap remove
-                        for i in 0..parent.depend_by.len() {
-                            if parent.depend_by[i] == handle {
-                                parent.depend_by.swap_remove(i);
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                dependencies.0.remove(&handle);
-            }
 
             // TODO RemovalCapture(Box<dyn Element>)
             world.elements.remove(&handle);
@@ -1140,5 +1131,26 @@ mod test {
             assert!(!world.occupied(tester1h.untyped()));
             assert!(world.occupied_mut(tester1h.untyped()));
         }
+    }
+
+    #[test]
+    fn loop_dependency() {
+        let mut world = World::default();
+
+        let left = world.insert(TestInserter(1));
+        let right = world.insert(TestInserter(2));
+        let right_now = world.insert(TestInserter(3));
+        let but = world.insert(TestInserter(4));
+
+        world.entry(left).unwrap().depend(right.untyped());
+        world.entry(right).unwrap().depend(left.untyped());
+        world.entry(right_now).unwrap().depend(right.untyped());
+
+        world.remove(left.untyped());
+
+        assert!(!world.contains(left.untyped()));
+        assert!(!world.contains(right.untyped()));
+        assert!(!world.contains(right_now.untyped()));
+        assert!(world.contains(but.untyped()));
     }
 }
