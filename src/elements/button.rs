@@ -74,26 +74,30 @@ impl ButtonRaw {
                     && let Some(source) = links.get_link(entry.handle().untyped())
                     && let Some(text) = entry.get::<String>(source)
                 {
-                    match std::process::Command::new(text).output() {
-                        Ok(output) => {
-                            let curr_rect =
-                                entry.get::<Rectangle>(entry.handle().untyped()).unwrap();
-                            entry.insert(Text::new(
-                                curr_rect.with_origin(curr_rect.origin + Delta::splat(40)),
-                                String::from_utf8_lossy(&output.stdout).into(),
-                                &mut entry.single_fetch_mut().unwrap(),
-                                &mut entry.single_fetch_mut().unwrap(),
-                            ));
-                        }
-                        Err(error) => {
-                            let curr_rect =
-                                entry.get::<Rectangle>(entry.handle().untyped()).unwrap();
-                            entry.insert(Text::new(
-                                curr_rect.with_origin(curr_rect.origin + Delta::splat(40)),
-                                error.to_string(),
-                                &mut entry.single_fetch_mut().unwrap(),
-                                &mut entry.single_fetch_mut().unwrap(),
-                            ));
+                    let mut text = text.split(' ');
+
+                    if let Some(program) = text.next() {
+                        match std::process::Command::new(program).args(text).output() {
+                            Ok(output) => {
+                                let curr_rect =
+                                    entry.get::<Rectangle>(entry.handle().untyped()).unwrap();
+                                entry.insert(Text::new(
+                                    curr_rect.with_origin(curr_rect.origin + Delta::splat(40)),
+                                    String::from_utf8_lossy(&output.stdout).into(),
+                                    &mut entry.single_fetch_mut().unwrap(),
+                                    &mut entry.single_fetch_mut().unwrap(),
+                                ));
+                            }
+                            Err(error) => {
+                                let curr_rect =
+                                    entry.get::<Rectangle>(entry.handle().untyped()).unwrap();
+                                entry.insert(Text::new(
+                                    curr_rect.with_origin(curr_rect.origin + Delta::splat(40)),
+                                    error.to_string(),
+                                    &mut entry.single_fetch_mut().unwrap(),
+                                    &mut entry.single_fetch_mut().unwrap(),
+                                ));
+                            }
                         }
                     }
                 }

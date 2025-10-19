@@ -45,9 +45,8 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
     let clamped = clamp(relative, vec2f(edge), vec2f(rectangle.extend) - vec2f(edge));
     let delta = (relative - clamped) / vec2f(edge);
     let val = length(delta);
-    let frame = vec3f(max(
+    return vec4f(max(
         step(0.45, val) - step(0.5, val),
         (smoothstep(0.4, 0.5, val) - smoothstep(0.5, 0.6, val)) * 0.5
     ));
-    return vec4f(frame, 1.0);
 }
