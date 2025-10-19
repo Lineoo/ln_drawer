@@ -514,7 +514,9 @@ impl WorldCell<'_> {
 
     /// Return `Some` if there is ONLY one element of target type.
     pub fn single<T: Element>(&self) -> Option<ElementHandle<T>> {
-        let mut iter = self.world.cache.get(&TypeId::of::<T>())?.iter();
+        let removed = self.removed.borrow();
+        let cache = self.world.cache.get(&TypeId::of::<T>())?;
+        let mut iter = cache.iter().filter(|&x| !removed.contains(x));
         let ret = iter.next()?;
         if iter.next().is_some() {
             return None;
@@ -715,7 +717,11 @@ impl<T: ?Sized> WorldEntry<'_, T> {
     ) -> ElementHandle {
         let this = self.handle().untyped();
         let handle = self.world.insert(Observer {
-            action: Box::new(move |event, world| action(event, world.entry(this).unwrap().cast())),
+            action: Box::new(move |event, world| {
+                if let Some(entry) = world.entry(this) {
+                    action(event, entry.cast());
+                }
+            }),
             target: self.handle.untyped(),
         });
 
@@ -856,7 +862,11 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
     ) -> ElementHandle {
         let this = self.handle.untyped();
         let estimate_handle = self.world.insert(Observer {
-            action: Box::new(move |event, world| action(event, world.entry(this).unwrap().cast())),
+            action: Box::new(move |event, world| {
+                if let Some(entry) = world.entry(this) {
+                    action(event, entry.cast());
+                }
+            }),
             target: this,
         });
 
@@ -880,6 +890,8 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
             }
         }));
 
+        self.world.entry(estimate_handle.untyped()).unwrap().depend(this);
+        
         estimate_handle.untyped()
     }
 
@@ -974,7 +986,11 @@ impl<T: ?Sized, U: ?Sized> WorldOther<'_, T, U> {
         let this = self.handle.untyped();
         let other = self.other.untyped();
         let handle = self.world.insert(Observer {
-            action: Box::new(move |event, world| action(event, world.entry(this).unwrap().cast())),
+            action: Box::new(move |event, world| {
+                if let Some(entry) = world.entry(this) {
+                    action(event, entry.cast());
+                }
+            }),
             target: other,
         });
 
@@ -993,6 +1009,7 @@ impl<T: ?Sized, U: ?Sized> WorldOther<'_, T, U> {
             }
         }
 
+        self.world.entry(handle.untyped()).unwrap().depend(this);
         self.world.entry(handle.untyped()).unwrap().depend(other);
 
         handle.untyped()
@@ -1030,7 +1047,9 @@ impl<T: ?Sized, U: ?Sized> WorldCellOther<'_, T, U> {
         let other = self.other.untyped();
         let estimate_handle = self.world.insert(Observer {
             action: Box::new(move |event, world| {
-                action(event, world.entry(this).unwrap().cast());
+                if let Some(entry) = world.entry(this) {
+                    action(event, entry.cast());
+                }
             }),
             target: other,
         });
@@ -1054,6 +1073,9 @@ impl<T: ?Sized, U: ?Sized> WorldCellOther<'_, T, U> {
                 }
             }
         }));
+        
+        self.world.entry(estimate_handle.untyped()).unwrap().depend(this);
+        self.world.entry(estimate_handle.untyped()).unwrap().depend(other);
 
         estimate_handle.untyped()
     }
@@ -1264,6 +1286,10 @@ mod test {
 
         tester2.0 = 0xCC02;
         tester1.0 = tester3.0;
+
+        drop(tester1);
+        drop(tester2);
+        drop(tester3);
 
         world.remove(tester3h.untyped());
 
