@@ -6,7 +6,7 @@ use winit::{
 use crate::{
     lnwin::{Lnwindow, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
-    tools::{node::NodeTool, transform::TransformTool},
+    tools::{focus::Focus, node::NodeTool, transform::TransformTool},
     world::{Element, ElementHandle, InsertElement, WorldCell, WorldCellEntry},
 };
 
@@ -32,38 +32,40 @@ impl InsertElement for Pointer {
         let mut pressed = false;
         let mut pointer_on = None;
         entry
-            .single_entry::<Lnwindow>()
+            .single_other::<Lnwindow>()
             .unwrap()
-            .observe::<PointerEvent>(move |&event, world| {
-                let pointer = world.single_fetch::<Pointer>().unwrap();
+            .observe::<PointerEvent>(move |&event, entry| {
+                let pointer = entry.fetch().unwrap();
 
                 let (PointerEvent::Moved(point)
                 | PointerEvent::Pressed(point)
                 | PointerEvent::Released(point)) = event;
 
                 if !pressed {
-                    let pointer_onto = pointer.intersect(world.world(), point);
+                    let pointer_onto = pointer.intersect(entry.world(), point);
                     if pointer_on != pointer_onto {
-                        if let Some(pointer_on) = pointer_on.and_then(|e| world.entry(e)) {
+                        if let Some(pointer_on) = pointer_on.and_then(|e| entry.entry(e)) {
                             pointer_on.trigger(PointerLeave);
                         }
-                        if let Some(pointer_onto) = pointer_onto.and_then(|e| world.entry(e)) {
+                        if let Some(pointer_onto) = pointer_onto.and_then(|e| entry.entry(e)) {
                             pointer_onto.trigger(PointerEnter);
                         }
                     }
-                    pointer_on = pointer.intersect(world.world(), point);
+                    pointer_on = pointer.intersect(entry.world(), point);
                 }
 
                 if let PointerEvent::Pressed(_) = event {
                     pressed = true;
+                    let mut focus = entry.single_fetch_mut::<Focus>().unwrap();
+                    focus.set(None, &entry);
                 }
 
                 if pressed {
-                    if let Some(active) = pointer.active.and_then(|w| world.entry(w)) {
+                    if let Some(active) = pointer.active.and_then(|w| entry.entry(w)) {
                         active.trigger(PointerHit(event));
-                    } else if let Some(pointer_on) = pointer_on.and_then(|w| world.entry(w)) {
+                    } else if let Some(pointer_on) = pointer_on.and_then(|w| entry.entry(w)) {
                         pointer_on.trigger(PointerHit(event));
-                    } else if let Some(fallback) = pointer.fallback.and_then(|w| world.entry(w)) {
+                    } else if let Some(fallback) = pointer.fallback.and_then(|w| entry.entry(w)) {
                         fallback.trigger(PointerHit(event));
                     }
                 }
@@ -74,7 +76,7 @@ impl InsertElement for Pointer {
             });
 
         entry
-            .single_entry::<Lnwindow>()
+            .single_other::<Lnwindow>()
             .unwrap()
             .observe::<WindowEvent>(|event, entry| {
                 if let &WindowEvent::KeyboardInput {
@@ -90,7 +92,7 @@ impl InsertElement for Pointer {
                 {
                     match key {
                         KeyCode::KeyS => {
-                            let mut pointer = entry.single_fetch_mut::<Pointer>().unwrap();
+                            let mut pointer = entry.fetch_mut().unwrap();
                             if state == ElementState::Pressed {
                                 let transform = entry
                                     .single::<TransformTool>()
@@ -101,7 +103,7 @@ impl InsertElement for Pointer {
                             }
                         }
                         KeyCode::KeyN => {
-                            let mut pointer = entry.single_fetch_mut::<Pointer>().unwrap();
+                            let mut pointer = entry.fetch_mut().unwrap();
                             if state == ElementState::Pressed {
                                 let node = entry.single::<NodeTool>().unwrap_or_else(|| {
                                     entry.insert(NodeTool::new(

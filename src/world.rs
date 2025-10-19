@@ -870,6 +870,8 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
             target: this,
         });
 
+        self.world.entry(estimate_handle.untyped()).unwrap().depend(this);
+
         // observer will be registered in queue to prevent that some event triggered
         // before the insertion above hasn't even done yet
         let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
@@ -890,8 +892,6 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
             }
         }));
 
-        self.world.entry(estimate_handle.untyped()).unwrap().depend(this);
-        
         estimate_handle.untyped()
     }
 
@@ -1053,6 +1053,9 @@ impl<T: ?Sized, U: ?Sized> WorldCellOther<'_, T, U> {
             }),
             target: other,
         });
+        
+        self.world.entry(estimate_handle.untyped()).unwrap().depend(this);
+        self.world.entry(estimate_handle.untyped()).unwrap().depend(other);
 
         // observer will be registered in queue to prevent that some event triggered
         // before the insertion above hasn't even done yet
@@ -1073,9 +1076,6 @@ impl<T: ?Sized, U: ?Sized> WorldCellOther<'_, T, U> {
                 }
             }
         }));
-        
-        self.world.entry(estimate_handle.untyped()).unwrap().depend(this);
-        self.world.entry(estimate_handle.untyped()).unwrap().depend(other);
 
         estimate_handle.untyped()
     }
