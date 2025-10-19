@@ -213,7 +213,7 @@ impl Lnwindow {
             WindowEvent::RedrawRequested => {
                 let mut interface = entry.single_fetch_mut::<Interface>().unwrap();
                 interface.resize(&self.viewport);
-                entry.single_entry::<Interface>().unwrap().trigger(&Redraw);
+                entry.single_entry::<Interface>().unwrap().trigger(Redraw);
                 interface.restructure();
                 interface.redraw();
             }

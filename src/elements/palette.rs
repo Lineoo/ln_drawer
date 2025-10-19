@@ -1,7 +1,7 @@
 use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
-    interface::{Interface, Painter, Wireframe},
+    interface::{Interface, Painter, Redraw, Wireframe},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerHit},
@@ -16,6 +16,8 @@ pub struct Palette {
     hue: f32,
     main: Painter,
     main_knob: Wireframe,
+
+    redraw: bool,
 }
 impl Element for Palette {}
 impl InsertElement for Palette {
@@ -34,6 +36,15 @@ impl InsertElement for Palette {
             }
             _ => (),
         });
+
+        let handle = entry.handle();
+        entry
+            .single_entry::<Interface>()
+            .unwrap()
+            .observe(move |Redraw, entry| {
+                let mut this = entry.world().fetch_mut(handle).unwrap();
+                this.redraw();
+            });
 
         entry.getter::<PointerCollider>(|this| PointerCollider {
             rect: this.main.get_rect(),
@@ -86,6 +97,7 @@ impl Palette {
             main,
             main_knob,
             hue: 0.0,
+            redraw: false,
         };
 
         palette.redraw();
@@ -112,6 +124,7 @@ impl Palette {
     }
 
     fn redraw(&mut self) {
+        self.redraw = false;
         let mut writer = self.main.open_writer();
         for x in 0..WIDTH as i32 {
             for y in 0..HEIGHT as i32 {
@@ -152,7 +165,7 @@ impl InsertElement for PaletteHueSlider {
                     let x = (knob_position - base_position).rem_euclid(WIDTH as i32);
 
                     palette.hue = (x as f32 / WIDTH as f32) * -360.0;
-                    palette.redraw();
+                    palette.redraw = true;
                 }
             }
             _ => (),

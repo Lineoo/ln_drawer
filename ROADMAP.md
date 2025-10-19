@@ -344,3 +344,53 @@ palette.observe(|Redraw, entry| {
 ```rust
 
 ```
+
+# 核移位（Other 类型）
+```rust
+let handle = entry.handle();
+entry.single_entry::<Interface>().unwrap().observe::<Redraw>(move |event, entry: WorldCellEntry<Interface>| {
+    let this = entry.entry(handle).unwrap();
+    /* .. */            
+});
+```
+
+```rust
+entry.single_other::<Interface>().unwrap().observe::<Redraw>(|event, entry: WorldCellEntry<Self>|) {
+    /* .. */
+}
+```
+
+```rust
+struct Other<'world, W, T: ?Sized, U: ?Sized> {
+    world: W,
+    handle: ElementHandle<T>,
+    target: ElementHandle<U>,
+}
+impl<T: ?Sized, U: ?Sized> Other<'world, &'world mut World, T, U> {}
+impl<T: ?Sized, U: ?Sized> Other<'world, &'world WorldCell, T, U> {}
+```
+
+# 合异为 (泛型 entry)
+```rust
+struct Entry<'world, W, T: ?Sized> {
+    world: W,
+    handle: ElementHandle<T>,
+}
+impl<T: ?Sized> Entry<'world, &'world mut World, T> {}
+impl<T: ?Sized> Entry<'world, &'world WorldCell, T> {}
+```
+
+# 何意味?
+
+```rust
+entry.single_other::<Interface>().unwrap().observe::<Redraw>(|event, entry: WorldCellEntry<Self>|) {
+    /* .. */
+}
+```
+
+```rust
+entry.single_other::<Interface>()?.observe::<Redraw>(|event, entry|) {
+    let content = entry.fetch_mut()?;
+    /* .. */
+}
+```
