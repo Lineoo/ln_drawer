@@ -10,6 +10,8 @@ use std::{
 use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 
+// Element Section //
+
 /// A shared form of objects in the [`World`].
 pub trait Element: Any {}
 
@@ -102,15 +104,29 @@ pub struct WorldCell<'world> {
 }
 
 /// A full mutable world reference with specific element selected.
-pub struct WorldEntry<'world, T: ?Sized = dyn Element> {
+pub struct WorldEntry<'world, T: ?Sized> {
     world: &'world mut World,
     handle: ElementHandle<T>,
 }
 
 /// A world cell reference with specific element selected. No borrowing effect.
-pub struct WorldCellEntry<'world, T: ?Sized = dyn Element> {
+pub struct WorldCellEntry<'world, T: ?Sized> {
     world: &'world WorldCell<'world>,
     handle: ElementHandle<T>,
+}
+
+/// A full mutable world reference with specific element selected.
+pub struct WorldOther<'world, T: ?Sized, U: ?Sized> {
+    world: &'world mut World,
+    handle: ElementHandle<T>,
+    other: ElementHandle<U>,
+}
+
+/// A world cell reference with specific element selected. No borrowing effect.
+pub struct WorldCellOther<'world, T: ?Sized, U: ?Sized> {
+    world: &'world WorldCell<'world>,
+    handle: ElementHandle<T>,
+    other: ElementHandle<U>,
 }
 
 impl Default for World {
@@ -139,6 +155,16 @@ impl<T: ?Sized> Clone for WorldCellEntry<'_, T> {
         WorldCellEntry {
             world: self.world,
             handle: self.handle,
+        }
+    }
+}
+
+impl<T: ?Sized, U: ?Sized> Clone for WorldCellOther<'_, T, U> {
+    fn clone(&self) -> Self {
+        WorldCellOther {
+            world: self.world,
+            handle: self.handle,
+            other: self.other,
         }
     }
 }
@@ -687,8 +713,9 @@ impl<T: ?Sized> WorldEntry<'_, T> {
         &mut self,
         mut action: impl FnMut(&E, WorldCellEntry<T>) + 'static,
     ) -> ElementHandle {
+        let this = self.handle().untyped();
         let handle = self.world.insert(Observer {
-            action: Box::new(move |event, entry| action(event, entry.cast())),
+            action: Box::new(move |event, world| action(event, world.entry(this).unwrap().cast())),
             target: self.handle.untyped(),
         });
 
@@ -721,11 +748,9 @@ impl<T: ?Sized> WorldEntry<'_, T> {
             && let Some(observers) = observers.members.get(&self.handle.untyped())
         {
             for observer in observers {
-                if let Some(mut observer) = world.fetch_mut(*observer)
-                    && let Some(entry) = world.entry(observer.target)
-                {
+                if let Some(mut observer) = world.fetch_mut(*observer) {
                     let observer = &mut *observer;
-                    (observer.action)(event, entry);
+                    (observer.action)(event, &world);
                 }
             }
         }
@@ -768,6 +793,18 @@ impl<T: ?Sized> WorldEntry<'_, T> {
 
     pub fn world(&mut self) -> &mut World {
         self.world
+    }
+
+    pub fn other<U: ?Sized>(&mut self, other: ElementHandle<U>) -> Option<WorldOther<'_, T, U>> {
+        if !(self.contains(other.untyped())) {
+            return None;
+        }
+
+        Some(WorldOther {
+            world: self.world,
+            handle: self.handle,
+            other,
+        })
     }
 
     pub fn untyped(&mut self) -> WorldEntry<'_, dyn Element> {
@@ -819,7 +856,7 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
     ) -> ElementHandle {
         let this = self.handle.untyped();
         let estimate_handle = self.world.insert(Observer {
-            action: Box::new(move |event, entry| action(event, entry.cast())),
+            action: Box::new(move |event, world| action(event, world.entry(this).unwrap().cast())),
             target: this,
         });
 
@@ -894,6 +931,22 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
         self.handle
     }
 
+    pub fn other<U: ?Sized>(&self, other: ElementHandle<U>) -> Option<WorldCellOther<'_, T, U>> {
+        if !(self.contains(other.untyped()) || self.inserted.borrow().contains(&other.untyped())) {
+            return None;
+        }
+
+        Some(WorldCellOther {
+            world: self.world,
+            handle: self.handle,
+            other,
+        })
+    }
+
+    pub fn single_other<U: Element>(&self) -> Option<WorldCellOther<'_, T, U>> {
+        self.other(self.world.single::<U>()?)
+    }
+
     pub fn world(&self) -> &WorldCell<'_> {
         self.world
     }
@@ -906,6 +959,121 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
         WorldCellEntry {
             world: self.world,
             handle: self.handle.cast(),
+        }
+    }
+}
+impl<T: ?Sized, U: ?Sized> WorldOther<'_, T, U> {
+    /// Will depend on both.
+    ///
+    /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
+    /// effect (by its adding order instead).
+    pub fn observe<E: 'static>(
+        &mut self,
+        mut action: impl FnMut(&E, WorldCellEntry<T>) + 'static,
+    ) -> ElementHandle {
+        let this = self.handle.untyped();
+        let other = self.other.untyped();
+        let handle = self.world.insert(Observer {
+            action: Box::new(move |event, world| action(event, world.entry(this).unwrap().cast())),
+            target: other,
+        });
+
+        match self.world.single_fetch_mut::<Observers<E>>() {
+            Some(observers) => {
+                let observers = observers.members.entry(other).or_default();
+                observers.push(handle);
+            }
+            None => {
+                let mut observers = Observers::<E> {
+                    members: HashMap::new(),
+                };
+                let observer = observers.members.entry(other).or_default();
+                observer.push(handle);
+                self.world.insert(observers);
+            }
+        }
+
+        self.world.entry(handle.untyped()).unwrap().depend(other);
+
+        handle.untyped()
+    }
+
+    pub fn handle(&self) -> ElementHandle<T> {
+        self.handle
+    }
+
+    pub fn other(&self) -> ElementHandle<U> {
+        self.other
+    }
+
+    pub fn world(&mut self) -> &mut World {
+        self.world
+    }
+
+    pub fn entry(&mut self) -> WorldEntry<'_, T> {
+        WorldEntry {
+            world: self.world,
+            handle: self.handle,
+        }
+    }
+}
+impl<T: ?Sized, U: ?Sized> WorldCellOther<'_, T, U> {
+    /// Will depend on both.
+    ///
+    /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
+    /// effect (by its adding order instead).
+    pub fn observe<E: 'static>(
+        &self,
+        mut action: impl FnMut(&E, WorldCellEntry<T>) + 'static,
+    ) -> ElementHandle {
+        let this = self.handle.untyped();
+        let other = self.other.untyped();
+        let estimate_handle = self.world.insert(Observer {
+            action: Box::new(move |event, world| {
+                action(event, world.entry(this).unwrap().cast());
+            }),
+            target: other,
+        });
+
+        // observer will be registered in queue to prevent that some event triggered
+        // before the insertion above hasn't even done yet
+        let mut queue = self.world.single_fetch_mut::<Queue>().unwrap();
+        queue.0.push(Box::new(move |world| {
+            match world.single_fetch_mut::<Observers<E>>() {
+                Some(observers) => {
+                    let observers = observers.members.entry(other).or_default();
+                    observers.push(estimate_handle);
+                }
+                None => {
+                    let mut observers = Observers::<E> {
+                        members: HashMap::new(),
+                    };
+                    let observer = observers.members.entry(other).or_default();
+                    observer.push(estimate_handle);
+                    world.insert(observers);
+                }
+            }
+        }));
+
+        estimate_handle.untyped()
+    }
+
+    pub fn handle(&self) -> ElementHandle<T> {
+        self.handle
+    }
+
+    pub fn other(&self) -> ElementHandle<U> {
+        self.other
+    }
+
+    pub fn world(&self) -> &WorldCell<'_> {
+        self.world
+    }
+
+    pub fn entry(&self) -> WorldCellEntry<'_, T> {
+        WorldCellEntry {
+            world: self.world,
+            handle: self.handle,
         }
     }
 }
@@ -987,7 +1155,7 @@ struct Observers<E> {
 }
 #[expect(clippy::type_complexity)]
 struct Observer<E> {
-    action: Box<dyn FnMut(&E, WorldCellEntry)>,
+    action: Box<dyn FnMut(&E, &WorldCell)>,
     target: ElementHandle,
 }
 impl<E: 'static> Element for Observers<E> {}
@@ -1037,6 +1205,19 @@ mod test {
     struct TestInserter(usize);
     impl Element for TestInserter {}
     impl InsertElement for TestInserter {}
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestGoodInserter(usize);
+    impl Element for TestGoodInserter {}
+    impl InsertElement for TestGoodInserter {}
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct TestEvent(usize);
+
+    #[derive(Debug)]
+    struct SingletonBoard;
+    impl Element for SingletonBoard {}
+    impl InsertElement for SingletonBoard {}
 
     #[test]
     fn basic() {
@@ -1133,8 +1314,8 @@ mod test {
         let mut world = World::default();
 
         let left = world.insert(TestInserter(1));
-        let right = world.insert(TestInserter(2));
-        let right_now = world.insert(TestInserter(3));
+        let right = world.insert(TestGoodInserter(2));
+        let right_now = world.insert(TestGoodInserter(3));
         let but = world.insert(TestInserter(4));
 
         world.entry(left).unwrap().depend(right.untyped());
@@ -1147,5 +1328,33 @@ mod test {
         assert!(!world.contains(right.untyped()));
         assert!(!world.contains(right_now.untyped()));
         assert!(world.contains(but.untyped()));
+    }
+
+    #[test]
+    fn observers() {
+        let mut world = World::default();
+
+        let left = world.insert(TestInserter(1));
+        let right = world.insert(TestGoodInserter(2));
+
+        world.entry(left).unwrap().observe(|TestEvent(i), entry| {
+            let mut this = entry.fetch_mut().unwrap();
+            this.0 += i;
+        });
+
+        world
+            .entry(right)
+            .unwrap()
+            .other(left)
+            .unwrap()
+            .observe(|TestEvent(i), entry| {
+                let mut this = entry.fetch_mut().unwrap();
+                this.0 += i;
+            });
+
+        world.entry(left).unwrap().trigger(&TestEvent(10));
+
+        assert_eq!(world.fetch(left).unwrap(), &TestInserter(11));
+        assert_eq!(world.fetch(right).unwrap(), &TestGoodInserter(12));
     }
 }
