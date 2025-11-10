@@ -11,8 +11,8 @@ mod wireframe;
 
 pub use painter::Painter;
 pub use square::Square;
-pub use wireframe::Wireframe;
 pub use standard_square::StandardSquare;
+pub use wireframe::Wireframe;
 
 use crate::{
     interface::{
@@ -21,7 +21,7 @@ use crate::{
     },
     lnwin::Viewport,
     measures::Rectangle,
-    world::{Element, InsertElement},
+    world::Element,
 };
 
 /// Main render part
@@ -46,7 +46,6 @@ pub struct Interface {
 }
 
 impl Element for Interface {}
-impl InsertElement for Interface {}
 
 impl Interface {
     pub async fn new(window: impl Into<SurfaceTarget<'static>>, viewport: &Viewport) -> Interface {

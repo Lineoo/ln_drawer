@@ -7,7 +7,7 @@ use crate::interface::{Component, ComponentCommand, ComponentInner, Interface};
 use crate::{
     measures::{Rectangle, ZOrder},
     tools::pointer::PointerCollider,
-    world::{Element, InsertElement, WorldCellEntry},
+    world::{Element, WorldCellEntry},
 };
 
 pub struct StandardSquareManager {
@@ -231,8 +231,7 @@ impl Drop for StandardSquare {
     }
 }
 
-impl Element for StandardSquare {}
-impl InsertElement for StandardSquare {
+impl Element for StandardSquare {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.getter::<PointerCollider>(|this| PointerCollider {
             rect: this.rect,

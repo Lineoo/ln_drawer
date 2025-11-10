@@ -12,7 +12,7 @@ use crate::{
         focus::{Focus, FocusInput},
         pointer::{PointerCollider, PointerHit},
     },
-    world::{Element, InsertElement, WorldCellEntry},
+    world::{Element, WorldCellEntry},
 };
 
 pub struct TextManager {
@@ -30,7 +30,6 @@ impl Default for TextManager {
     }
 }
 impl Element for TextManager {}
-impl InsertElement for TextManager {}
 
 pub struct Text {
     inner: Painter,
@@ -86,8 +85,7 @@ impl Text {
         self.inner.set_z_order(order);
     }
 }
-impl Element for Text {}
-impl InsertElement for Text {
+impl Element for Text {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.getter::<PointerCollider>(|this| PointerCollider {
             rect: this.inner.get_rect(),
@@ -108,8 +106,7 @@ pub struct TextEdit {
     font_system: Arc<Mutex<FontSystem>>,
     swash_cache: Arc<Mutex<SwashCache>>,
 }
-impl Element for TextEdit {}
-impl InsertElement for TextEdit {
+impl Element for TextEdit {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.getter::<PointerCollider>(|this| PointerCollider {
             rect: this.inner.get_rect(),

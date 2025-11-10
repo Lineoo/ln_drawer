@@ -5,7 +5,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerHit},
-    world::{Element, InsertElement, WorldCellEntry},
+    world::{Element, WorldCellEntry},
 };
 
 const WIDTH: usize = 128;
@@ -19,8 +19,7 @@ pub struct Palette {
 
     redraw: bool,
 }
-impl Element for Palette {}
-impl InsertElement for Palette {
+impl Element for Palette {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
@@ -143,8 +142,7 @@ pub struct PaletteHueSlider {
     hue: Painter,
     hue_knob: Wireframe,
 }
-impl Element for PaletteHueSlider {}
-impl InsertElement for PaletteHueSlider {
+impl Element for PaletteHueSlider {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {

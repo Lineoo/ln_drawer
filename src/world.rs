@@ -13,28 +13,13 @@ use smallvec::SmallVec;
 // Element Section //
 
 /// A shared form of objects in the [`World`].
-pub trait Element: Any {}
-
-impl dyn Element {
-    pub fn is<T: Any>(&self) -> bool {
-        (self as &dyn Any).is::<T>()
-    }
-    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
-        (self as &dyn Any).downcast_ref()
-    }
-    pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
-        (self as &mut dyn Any).downcast_mut()
-    }
-}
-
-/// Indicated that it is used for insertion
-#[expect(unused_variables)]
-pub trait InsertElement: Element {
+pub trait Element: Any {
+    #[expect(unused_variables)]
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {}
 }
 
 /// Represent an element in the [`World`]. It's an handle so manual validation is needed.
-pub struct ElementHandle<T: ?Sized = dyn Element>(usize, PhantomData<T>);
+pub struct ElementHandle<T: ?Sized = dyn Any>(usize, PhantomData<T>);
 
 impl<T: ?Sized> Clone for ElementHandle<T> {
     fn clone(&self) -> Self {
@@ -77,7 +62,7 @@ impl<T: Element> From<ElementHandle<T>> for ElementHandle {
 }
 
 impl<T: ?Sized> ElementHandle<T> {
-    pub fn untyped(self) -> ElementHandle<dyn Element> {
+    pub fn untyped(self) -> ElementHandle<dyn Any> {
         self.cast()
     }
 
@@ -90,7 +75,7 @@ impl<T: ?Sized> ElementHandle<T> {
 
 pub struct World {
     curr_idx: ElementHandle,
-    elements: HashMap<ElementHandle, Box<dyn Element>>,
+    elements: HashMap<ElementHandle, Box<dyn Any>>,
     cache: HashMap<TypeId, HashSet<ElementHandle>>,
 }
 
@@ -170,7 +155,7 @@ impl<T: ?Sized, U: ?Sized> Clone for WorldCellOther<'_, T, U> {
 }
 
 impl World {
-    pub fn insert<T: InsertElement>(&mut self, element: T) -> ElementHandle<T> {
+    pub fn insert<T: Element>(&mut self, element: T) -> ElementHandle<T> {
         self.elements.insert(self.curr_idx, Box::new(element));
         let handle = self.curr_idx.cast::<T>();
         self.curr_idx.0 += 1;
@@ -190,7 +175,7 @@ impl World {
         handle
     }
 
-    pub fn remove(&mut self, handle: ElementHandle) -> Option<Box<dyn Element>> {
+    pub fn remove(&mut self, handle: ElementHandle) -> Option<Box<dyn Any>> {
         let type_id = (**self.elements.get(&handle)?).type_id();
         log::trace!("remove {:?}", handle);
 
@@ -224,7 +209,7 @@ impl World {
         let cache = self.cache.entry(type_id).or_default();
         cache.remove(&handle);
 
-        // TODO RemovalCapture(Box<dyn Element>)
+        // TODO RemovalCapture(Box<dyn Any>)
         self.elements.remove(&handle)
     }
 
@@ -340,7 +325,7 @@ impl World {
 impl WorldCell<'_> {
     /// Cell-mode insertion cannot perform the operation immediately so the inserted element cannot be
     /// fetched until end of the cell span. One exception is entry, which can still be used normally.
-    pub fn insert<T: InsertElement>(&self, element: T) -> ElementHandle<T> {
+    pub fn insert<T: Element>(&self, element: T) -> ElementHandle<T> {
         // get estimate_handle
         // cell-mode insertion depends on *retained* handle
         let mut cell_idx = self.cell_idx.borrow_mut();
@@ -424,7 +409,7 @@ impl WorldCell<'_> {
             let cache = world.cache.entry(type_id).or_default();
             cache.remove(&handle);
 
-            // TODO RemovalCapture(Box<dyn Element>)
+            // TODO RemovalCapture(Box<dyn Any>)
             world.elements.remove(&handle);
         }));
 
@@ -490,7 +475,7 @@ impl WorldCell<'_> {
         })
     }
 
-    pub fn fetch_dyn(&self, handle: ElementHandle) -> Option<Ref<'_, dyn Element>> {
+    pub fn fetch_dyn(&self, handle: ElementHandle) -> Option<Ref<'_, dyn Any>> {
         if self.removed.borrow().contains(&handle.untyped()) {
             return None;
         }
@@ -506,7 +491,7 @@ impl WorldCell<'_> {
         let element = self.world.elements.get(&handle.untyped())?.as_ref();
 
         Some(Ref {
-            ptr: element as *const dyn Element,
+            ptr: element as *const dyn Any,
             world: self,
             handle,
         })
@@ -534,7 +519,7 @@ impl WorldCell<'_> {
         })
     }
 
-    pub fn fetch_mut_dyn(&self, handle: ElementHandle) -> Option<RefMut<'_, dyn Element>> {
+    pub fn fetch_mut_dyn(&self, handle: ElementHandle) -> Option<RefMut<'_, dyn Any>> {
         if self.removed.borrow().contains(&handle.untyped()) {
             return None;
         }
@@ -550,7 +535,7 @@ impl WorldCell<'_> {
         let element = self.world.elements.get(&handle.untyped())?.as_ref();
 
         Some(RefMut {
-            ptr: element as *const dyn Element as *mut dyn Element,
+            ptr: element as *const dyn Any as *mut dyn Any,
             world: self,
             handle,
         })
@@ -617,7 +602,7 @@ impl WorldCell<'_> {
         let setter = property_setter.0.get(&handle)?;
         let element = self.world.elements.get(&handle)?.as_ref();
 
-        let element_ptr = element as *const dyn Element as *mut dyn Element;
+        let element_ptr = element as *const dyn Any as *mut dyn Any;
         setter(unsafe { element_ptr.as_mut().unwrap() }, value);
 
         let property_getter = self.world.single_fetch::<PropertyGetter<P>>()?;
@@ -660,7 +645,7 @@ impl WorldCell<'_> {
                 }
 
                 if let Some(element) = self.world.elements.get(&handle) {
-                    let element_ptr = element.as_ref() as *const dyn Element as *mut dyn Element;
+                    let element_ptr = element.as_ref() as *const dyn Any as *mut dyn Any;
                     setter(unsafe { element_ptr.as_mut().unwrap() }, action(handle));
 
                     // FIXME event is not triggered
@@ -857,7 +842,7 @@ impl<T: ?Sized> WorldEntry<'_, T> {
         })
     }
 
-    pub fn untyped(&mut self) -> WorldEntry<'_, dyn Element> {
+    pub fn untyped(&mut self) -> WorldEntry<'_, dyn Any> {
         self.cast()
     }
 
@@ -898,11 +883,11 @@ impl<T: Element> WorldCellEntry<'_, T> {
     }
 }
 impl<T: ?Sized> WorldCellEntry<'_, T> {
-    pub fn fetch_dyn(&self) -> Option<Ref<'_, dyn Element>> {
+    pub fn fetch_dyn(&self) -> Option<Ref<'_, dyn Any>> {
         self.world.fetch_dyn(self.handle.untyped())
     }
 
-    pub fn fetch_mut_dyn(&self) -> Option<RefMut<'_, dyn Element>> {
+    pub fn fetch_mut_dyn(&self) -> Option<RefMut<'_, dyn Any>> {
         self.world.fetch_mut_dyn(self.handle.untyped())
     }
 
@@ -1053,7 +1038,7 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
         self.world
     }
 
-    pub fn untyped(&self) -> WorldCellEntry<'_, dyn Element> {
+    pub fn untyped(&self) -> WorldCellEntry<'_, dyn Any> {
         self.cast()
     }
 
@@ -1266,14 +1251,14 @@ impl<T: ?Sized> Drop for RefMut<'_, T> {
 /// A service immutable reference.
 pub struct ServiceRef<'world, T: ?Sized> {
     services: Ref<'world, Services<T>>,
-    element: Ref<'world, dyn Element>,
+    element: Ref<'world, dyn Any>,
     handle: ElementHandle,
 }
 
 /// A service mutable reference.
 pub struct ServiceRefMut<'world, T: ?Sized> {
     services: RefMut<'world, Services<T>>,
-    element: RefMut<'world, dyn Element>,
+    element: RefMut<'world, dyn Any>,
     handle: ElementHandle,
 }
 
@@ -1315,15 +1300,12 @@ struct Observer<E> {
 }
 impl<E: 'static> Element for Observers<E> {}
 impl<E: 'static> Element for Observer<E> {}
-impl<E: 'static> InsertElement for Observers<E> {}
-impl<E: 'static> InsertElement for Observer<E> {}
 
 // cell queue
 #[derive(Default)]
 #[expect(clippy::type_complexity)]
 struct Queue(Vec<Box<dyn FnOnce(&mut World)>>);
 impl Element for Queue {}
-impl InsertElement for Queue {}
 
 // depend
 #[derive(Default)]
@@ -1334,45 +1316,41 @@ struct Dependence {
     depend_by: SmallVec<[ElementHandle; 4]>,
 }
 impl Element for Dependencies {}
-impl InsertElement for Dependencies {}
 
 // property
 // FIXME property cleanup
-type Getter<P> = HashMap<ElementHandle, Box<dyn for<'a> Fn(&'a dyn Element) -> P>>;
-type Setter<P> = HashMap<ElementHandle, Box<dyn Fn(&mut dyn Element, P)>>;
+type Getter<P> = HashMap<ElementHandle, Box<dyn for<'a> Fn(&'a dyn Any) -> P>>;
+type Setter<P> = HashMap<ElementHandle, Box<dyn Fn(&mut dyn Any, P)>>;
 struct PropertyGetter<P>(Getter<P>);
 struct PropertySetter<P>(Setter<P>);
 impl<P: 'static> Element for PropertyGetter<P> {}
 impl<P: 'static> Element for PropertySetter<P> {}
-impl<P: 'static> InsertElement for PropertyGetter<P> {}
-impl<P: 'static> InsertElement for PropertySetter<P> {}
 
 // services //
 
 /// services represent an object attached to it
 pub trait Service<T: ?Sized> {
-    fn action<'w>(&'w self, element: &'w dyn Element) -> &'w T;
-    fn action_mut<'w>(&'w mut self, element: &'w mut dyn Element) -> &'w mut T;
+    fn action<'w>(&'w self, element: &'w dyn Any) -> &'w T;
+    fn action_mut<'w>(&'w mut self, element: &'w mut dyn Any) -> &'w mut T;
 }
 
 impl<
     T: ?Sized + 'static,
-    F: for<'world> Fn(&'world dyn Element) -> &'world T,
-    FM: for<'world> FnMut(&'world mut dyn Element) -> &'world mut T,
+    F: for<'world> Fn(&'world dyn Any) -> &'world T,
+    FM: for<'world> FnMut(&'world mut dyn Any) -> &'world mut T,
 > Service<T> for (F, FM)
 {
-    fn action<'w>(&'w self, element: &'w dyn Element) -> &'w T {
+    fn action<'w>(&'w self, element: &'w dyn Any) -> &'w T {
         (self.0)(element)
     }
 
-    fn action_mut<'w>(&'w mut self, element: &'w mut dyn Element) -> &'w mut T {
+    fn action_mut<'w>(&'w mut self, element: &'w mut dyn Any) -> &'w mut T {
         (self.1)(element)
     }
 }
 
 struct Services<T: ?Sized>(HashMap<ElementHandle, Box<dyn Service<T>>>);
 impl<T: ?Sized + 'static> Element for Services<T> {}
-impl<T: ?Sized + 'static> InsertElement for Services<T> {}
 
 // Builtin Events //
 
@@ -1386,20 +1364,13 @@ mod test {
     #[derive(Debug, PartialEq, Eq)]
     struct TestInserter(usize);
     impl Element for TestInserter {}
-    impl InsertElement for TestInserter {}
 
     #[derive(Debug, PartialEq, Eq)]
     struct TestGoodInserter(usize);
     impl Element for TestGoodInserter {}
-    impl InsertElement for TestGoodInserter {}
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct TestEvent(usize);
-
-    #[derive(Debug)]
-    struct SingletonBoard;
-    impl Element for SingletonBoard {}
-    impl InsertElement for SingletonBoard {}
 
     #[test]
     fn basic() {

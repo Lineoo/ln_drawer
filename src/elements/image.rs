@@ -3,14 +3,13 @@ use std::{error::Error, path::Path};
 use crate::{
     interface::{Interface, Painter},
     measures::{Delta, Position, Rectangle},
-    world::{Element, InsertElement},
+    world::Element,
 };
 
 pub struct Image {
     painter: Painter,
 }
 impl Element for Image {}
-impl InsertElement for Image {}
 impl Image {
     pub fn new(path: impl AsRef<Path>, interface: &mut Interface) -> Result<Image, Box<dyn Error>> {
         let reader = image::ImageReader::open(path)?;

@@ -5,7 +5,7 @@ use crate::{
     measures::{Delta, Position, Rectangle, ZOrder},
     text::{Text, TextEdit, TextManager},
     tools::pointer::{PointerCollider, PointerHit},
-    world::{Element, InsertElement, WorldCell, WorldCellEntry},
+    world::{Element, WorldCell, WorldCellEntry},
 };
 
 const PAD: i32 = 10;
@@ -25,8 +25,7 @@ pub struct Menu {
     entries: Vec<MenuEntry>,
     collider: PointerCollider,
 }
-impl Element for Menu {}
-impl InsertElement for Menu {
+impl Element for Menu {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         let handle = entry.handle();
         let obs = entry

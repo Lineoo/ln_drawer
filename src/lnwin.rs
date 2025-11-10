@@ -14,7 +14,7 @@ use crate::{
     measures::Position,
     text::TextManager,
     tools::{focus::Focus, pointer::Pointer},
-    world::{Element, InsertElement, World, WorldCellEntry},
+    world::{Element, World, WorldCellEntry},
 };
 
 #[derive(Default)]
@@ -57,8 +57,7 @@ pub struct Lnwindow {
     camera_cursor_start: [f64; 2],
     camera_origin: Option<[i32; 2]>,
 }
-impl Element for Lnwindow {}
-impl InsertElement for Lnwindow {
+impl Element for Lnwindow {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<WindowEvent>(|event, entry| {
             let mut lnwindow = entry.fetch_mut().unwrap();
@@ -278,4 +277,3 @@ pub enum PointerEvent {
 #[derive(Default)]
 pub struct LnwinModifiers(pub Modifiers);
 impl Element for LnwinModifiers {}
-impl InsertElement for LnwinModifiers {}

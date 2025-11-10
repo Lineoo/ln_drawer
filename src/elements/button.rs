@@ -7,7 +7,7 @@ use crate::{
         node::NodeLinks,
         pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave},
     },
-    world::{Element, InsertElement, WorldCellEntry},
+    world::{Element, WorldCellEntry},
 };
 
 type ButtonAction = Box<dyn FnMut(WorldCellEntry<ButtonRaw>)>;
@@ -18,8 +18,7 @@ pub struct ButtonRaw {
     square: StandardSquare,
     action: ButtonAction,
 }
-impl Element for ButtonRaw {}
-impl InsertElement for ButtonRaw {
+impl Element for ButtonRaw {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         entry.observe::<PointerHit>(move |event, entry| {
             if let PointerHit(PointerEvent::Pressed(_)) = event {

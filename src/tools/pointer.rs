@@ -7,7 +7,7 @@ use crate::{
     lnwin::{Lnwindow, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
     tools::{focus::Focus, node::NodeTool, transform::TransformTool},
-    world::{Element, ElementHandle, InsertElement, WorldCell, WorldCellEntry},
+    world::{Element, ElementHandle, WorldCell, WorldCellEntry},
 };
 
 #[derive(Clone, Copy)]
@@ -26,8 +26,7 @@ pub struct Pointer {
     fallback: Option<ElementHandle>,
     active: Option<ElementHandle>,
 }
-impl Element for Pointer {}
-impl InsertElement for Pointer {
+impl Element for Pointer {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         let mut pressed = false;
         let mut pointer_on = None;

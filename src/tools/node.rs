@@ -5,7 +5,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::Rectangle,
     tools::pointer::{Pointer, PointerHit},
-    world::{Destroy, Element, ElementHandle, InsertElement, WorldCell, WorldCellEntry},
+    world::{Destroy, Element, ElementHandle, WorldCell, WorldCellEntry},
 };
 
 pub struct NodeLinks {
@@ -64,7 +64,6 @@ impl NodeLinks {
 }
 
 impl Element for NodeLinks {}
-impl InsertElement for NodeLinks {}
 
 pub struct NodeTool {
     from_frame: Wireframe,
@@ -85,8 +84,7 @@ impl NodeTool {
     }
 }
 
-impl Element for NodeTool {}
-impl InsertElement for NodeTool {
+impl Element for NodeTool {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         if entry.single::<NodeLinks>().is_none() {
             entry.insert(NodeLinks {
