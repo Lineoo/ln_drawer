@@ -490,6 +490,28 @@ impl WorldCell<'_> {
         })
     }
 
+    pub fn fetch_dyn(&self, handle: ElementHandle) -> Option<Ref<'_, dyn Element>> {
+        if self.removed.borrow().contains(&handle.untyped()) {
+            return None;
+        }
+
+        let mut occupied = self.occupied.borrow_mut();
+
+        let cnt = occupied.entry(handle.untyped()).or_default();
+        if *cnt < 0 {
+            panic!("{handle:?} is mutably borrowed");
+        }
+
+        *cnt += 1;
+        let element = self.world.elements.get(&handle.untyped())?.as_ref();
+
+        Some(Ref {
+            ptr: element as *const dyn Element,
+            world: self,
+            handle,
+        })
+    }
+
     pub fn fetch_mut<T: Element>(&self, handle: ElementHandle<T>) -> Option<RefMut<'_, T>> {
         if self.removed.borrow().contains(&handle.untyped()) {
             return None;
@@ -507,6 +529,28 @@ impl WorldCell<'_> {
 
         Some(RefMut {
             ptr: element as *const T as *mut T,
+            world: self,
+            handle,
+        })
+    }
+
+    pub fn fetch_mut_dyn(&self, handle: ElementHandle) -> Option<RefMut<'_, dyn Element>> {
+        if self.removed.borrow().contains(&handle.untyped()) {
+            return None;
+        }
+
+        let mut occupied = self.occupied.borrow_mut();
+
+        let cnt = occupied.entry(handle.untyped()).or_default();
+        if *cnt != 0 {
+            panic!("{handle:?} is borrowed");
+        }
+
+        *cnt -= 1;
+        let element = self.world.elements.get(&handle.untyped())?.as_ref();
+
+        Some(RefMut {
+            ptr: element as *const dyn Element as *mut dyn Element,
             world: self,
             handle,
         })
@@ -854,6 +898,49 @@ impl<T: Element> WorldCellEntry<'_, T> {
     }
 }
 impl<T: ?Sized> WorldCellEntry<'_, T> {
+    pub fn fetch_dyn(&self) -> Option<Ref<'_, dyn Element>> {
+        self.world.fetch_dyn(self.handle.untyped())
+    }
+
+    pub fn fetch_mut_dyn(&self) -> Option<RefMut<'_, dyn Element>> {
+        self.world.fetch_mut_dyn(self.handle.untyped())
+    }
+
+    pub fn service<U: ?Sized + 'static>(&self) -> Option<ServiceRef<'_, U>> {
+        let services = self.single_fetch::<Services<U>>()?;
+        if !services.0.contains_key(&self.handle.untyped()) {
+            return None;
+        }
+        let element = self.fetch_dyn()?;
+        Some(ServiceRef {
+            services,
+            element,
+            handle: self.handle.untyped(),
+        })
+    }
+
+    pub fn service_mut<U: ?Sized + 'static>(&self) -> Option<ServiceRefMut<'_, U>> {
+        let services = self.single_fetch_mut::<Services<U>>()?;
+        if !services.0.contains_key(&self.handle.untyped()) {
+            return None;
+        }
+        let element = self.fetch_mut_dyn()?;
+        Some(ServiceRefMut {
+            services,
+            element,
+            handle: self.handle.untyped(),
+        })
+    }
+
+    pub fn register<U: ?Sized + 'static>(&self, service: impl Service<U> + 'static) {
+        if self.single::<Services<U>>().is_none() {
+            self.insert(Services::<U>(HashMap::new()));
+        }
+
+        let mut services = self.single_fetch_mut::<Services<U>>().unwrap();
+        services.0.insert(self.handle.untyped(), Box::new(service));
+    }
+
     /// This will be delayed until the cell is closed. So not all triggers in the cell scope would come into
     /// effect (by its adding order instead).
     pub fn observe<E: 'static>(
@@ -870,7 +957,10 @@ impl<T: ?Sized> WorldCellEntry<'_, T> {
             target: this,
         });
 
-        self.world.entry(estimate_handle.untyped()).unwrap().depend(this);
+        self.world
+            .entry(estimate_handle.untyped())
+            .unwrap()
+            .depend(this);
 
         // observer will be registered in queue to prevent that some event triggered
         // before the insertion above hasn't even done yet
@@ -1053,9 +1143,15 @@ impl<T: ?Sized, U: ?Sized> WorldCellOther<'_, T, U> {
             }),
             target: other,
         });
-        
-        self.world.entry(estimate_handle.untyped()).unwrap().depend(this);
-        self.world.entry(estimate_handle.untyped()).unwrap().depend(other);
+
+        self.world
+            .entry(estimate_handle.untyped())
+            .unwrap()
+            .depend(this);
+        self.world
+            .entry(estimate_handle.untyped())
+            .unwrap()
+            .depend(other);
 
         // observer will be registered in queue to prevent that some event triggered
         // before the insertion above hasn't even done yet
@@ -1119,51 +1215,88 @@ impl<'world, T: ?Sized> Deref for WorldCellEntry<'world, T> {
 }
 
 /// A world's immutable element reference.
-pub struct Ref<'world, T: Element> {
+pub struct Ref<'world, T: ?Sized> {
     ptr: *const T,
     world: &'world WorldCell<'world>,
     handle: ElementHandle<T>,
 }
 
 /// A world's limitedly mutable element reference.
-pub struct RefMut<'world, T: Element> {
+pub struct RefMut<'world, T: ?Sized> {
     ptr: *mut T,
     world: &'world WorldCell<'world>,
     handle: ElementHandle<T>,
 }
 
-impl<T: Element> Deref for Ref<'_, T> {
+impl<T: ?Sized> Deref for Ref<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         // SAFETY: guaranteed by World's cell_occupied
         unsafe { self.ptr.as_ref().unwrap() }
     }
 }
-impl<T: Element> Deref for RefMut<'_, T> {
+impl<T: ?Sized> Deref for RefMut<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         // SAFETY: guaranteed by World's cell_occupied
         unsafe { self.ptr.as_ref().unwrap() }
     }
 }
-impl<T: Element> DerefMut for RefMut<'_, T> {
+impl<T: ?Sized> DerefMut for RefMut<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: guaranteed by World's cell_occupied
         unsafe { self.ptr.as_mut().unwrap() }
     }
 }
-impl<T: Element> Drop for Ref<'_, T> {
+impl<T: ?Sized> Drop for Ref<'_, T> {
     fn drop(&mut self) {
         let mut occupied = self.world.occupied.borrow_mut();
         let cnt = occupied.get_mut(&self.handle.untyped()).unwrap();
         *cnt -= 1;
     }
 }
-impl<T: Element> Drop for RefMut<'_, T> {
+impl<T: ?Sized> Drop for RefMut<'_, T> {
     fn drop(&mut self) {
         let mut occupied = self.world.occupied.borrow_mut();
         let cnt = occupied.get_mut(&self.handle.untyped()).unwrap();
         *cnt += 1;
+    }
+}
+
+/// A service immutable reference.
+pub struct ServiceRef<'world, T: ?Sized> {
+    services: Ref<'world, Services<T>>,
+    element: Ref<'world, dyn Element>,
+    handle: ElementHandle,
+}
+
+/// A service mutable reference.
+pub struct ServiceRefMut<'world, T: ?Sized> {
+    services: RefMut<'world, Services<T>>,
+    element: RefMut<'world, dyn Element>,
+    handle: ElementHandle,
+}
+
+impl<T: ?Sized> Deref for ServiceRef<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        let service = self.services.0.get(&self.handle).unwrap();
+        service.action(&*self.element)
+    }
+}
+
+impl<T: ?Sized> Deref for ServiceRefMut<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        let service = self.services.0.get(&self.handle).unwrap();
+        service.action(&*self.element)
+    }
+}
+
+impl<T: ?Sized> DerefMut for ServiceRefMut<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let service = self.services.0.get_mut(&self.handle).unwrap();
+        service.action_mut(&mut *self.element)
     }
 }
 
@@ -1213,6 +1346,33 @@ impl<P: 'static> Element for PropertyGetter<P> {}
 impl<P: 'static> Element for PropertySetter<P> {}
 impl<P: 'static> InsertElement for PropertyGetter<P> {}
 impl<P: 'static> InsertElement for PropertySetter<P> {}
+
+// services //
+
+/// services represent an object attached to it
+pub trait Service<T: ?Sized> {
+    fn action<'w>(&'w self, element: &'w dyn Element) -> &'w T;
+    fn action_mut<'w>(&'w mut self, element: &'w mut dyn Element) -> &'w mut T;
+}
+
+impl<
+    T: ?Sized + 'static,
+    F: for<'world> Fn(&'world dyn Element) -> &'world T,
+    FM: for<'world> FnMut(&'world mut dyn Element) -> &'world mut T,
+> Service<T> for (F, FM)
+{
+    fn action<'w>(&'w self, element: &'w dyn Element) -> &'w T {
+        (self.0)(element)
+    }
+
+    fn action_mut<'w>(&'w mut self, element: &'w mut dyn Element) -> &'w mut T {
+        (self.1)(element)
+    }
+}
+
+struct Services<T: ?Sized>(HashMap<ElementHandle, Box<dyn Service<T>>>);
+impl<T: ?Sized + 'static> Element for Services<T> {}
+impl<T: ?Sized + 'static> InsertElement for Services<T> {}
 
 // Builtin Events //
 
