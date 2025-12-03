@@ -22,30 +22,38 @@
 
 # 待办事项
 - [ ] 右键菜单
-    - [ ] 菜单显示
-        - [ ] 圆角矩形
-        - [ ] 浮点渲染
-        - [ ] 文字渲染
-    - [ ] 交互
+    - [x] 菜单项目
+        - [ ] 使用世界来注册元素项目
+    - [x] 菜单显示
+        - [x] SDF 圆角矩形
+            - [ ] 修复矩形精度问题
+            - [ ] 可修改的圆角大小
+            - [ ] 曲率连续圆角
+        - [x] 浮点渲染
+        - [ ] 文字更高精度渲染
 - [ ] 交互操作改进
     - [ ] 操作层级统一
         - [ ] 使用 `after_insert` 和 `depend` 来注册操作元素
+            - [ ] 各种元素的构建比较复杂，推荐使用 Descriptor 模式
+                - [ ] (trait) ElementDescriptor 用于直接在世界新建 Element，自动获取 interface 等等的资源
             - [ ] 各种 Entry, Other 写法
             - [ ] 检查 `depend` 是否多对多完整（编写测试）
             - [ ] 删除 `Service` 和 `Property` 并保持 `world` 模块整洁
                 - [ ] `Observer` 模块分离
             - [ ] 事件转发
                 - [ ] Any 观察者
+            - [ ] 和注册操作元素一样可注册悬浮元素
         - [ ] 无限大操作区域
             - [ ] 偏移与精度修复
-        - [ ] 现有工具修复
+        - [ ] 现有工具更新
+            - [ ] 选择工具
+            - [ ] 菜单使用
     - [ ] Alt 取色
         - [ ] 橡皮擦
             - [ ] 橡皮擦按钮
                 - [ ] 按钮
                     - [ ] 执行动作
                     - [ ] 悬浮高亮
-                        - [ ] 和注册操作元素一样注册悬浮元素
                 - [ ] 画板工具状态机
                     - [ ] 画笔按钮
             - [ ] 全 Alpha 区块垃圾清理
@@ -211,6 +219,7 @@ impl Bar {
 }
 ```
 
+以下也同样不推荐：
 ```rust
 impl Baz {
     pub fn new(property: Property) {
@@ -225,6 +234,24 @@ impl Element for Baz {
         self.inner = Some(inner);
     }
 }
+```
+
+等到 ElementDescriptor 实现后，我们也推荐如下写法：
+```rust
+struct BazDescriptor {
+    property: Property
+}
+impl ElementDescriptor for BazDescriptor {
+    type Target = Baz;
+    fn prepare(self, world: &WorldCell) -> Self::Target {
+        // Descriptor 就是专门干这个活的
+        let interface = world.single_mut::<Interface>().unwrap();
+        let inner = interface.create_painter(/* .. */);
+        // 也没有非法状态
+        Baz { inner }
+    }
+}
+
 ```
 
 # Element 清理

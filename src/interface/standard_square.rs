@@ -22,9 +22,10 @@ pub struct StandardSquareInstance {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct RectangleUniform {
+struct StandardSquareUniform {
     origin: [i32; 2],
     extend: [i32; 2],
+    color: [f32; 4],
 }
 
 impl StandardSquareInstance {
@@ -95,14 +96,16 @@ impl StandardSquareInstance {
 
     pub fn create(
         rect: Rectangle,
+        color: palette::Srgba,
         device: &Device,
         manager: &StandardSquareManager,
     ) -> StandardSquareInstance {
         let rectangle_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("standard_square_rectangle"),
-            contents: bytemuck::bytes_of(&RectangleUniform {
+            contents: bytemuck::bytes_of(&StandardSquareUniform {
                 origin: rect.origin.into_array(),
                 extend: rect.extend.into_array(),
+                color: [color.red, color.blue, color.green, color.alpha],
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -155,10 +158,15 @@ impl StandardSquare {
         rect: Rectangle,
         z_order: ZOrder,
         visible: bool,
+        color: palette::Srgba,
         interface: &mut Interface,
     ) -> StandardSquare {
-        let instance =
-            StandardSquareInstance::create(rect, &interface.device, &interface.standard_square);
+        let instance = StandardSquareInstance::create(
+            rect,
+            color,
+            &interface.device,
+            &interface.standard_square,
+        );
         let rectangle_buffer = instance.rectangle_buffer.clone();
 
         interface.insert(Component {
@@ -187,10 +195,7 @@ impl StandardSquare {
         self.queue.write_buffer(
             &self.rectangle_buffer,
             0,
-            bytemuck::bytes_of(&RectangleUniform {
-                origin: rect.origin.into_array(),
-                extend: rect.extend.into_array(),
-            }),
+            bytemuck::bytes_of(&[rect.origin.into_array(), rect.extend.into_array()]),
         );
     }
 
@@ -223,8 +228,7 @@ impl StandardSquare {
 
 impl Drop for StandardSquare {
     fn drop(&mut self) {
-        let ret =
-            (self.comp_tx).send((self.comp_idx, ComponentCommand::Destroy));
+        let ret = (self.comp_tx).send((self.comp_idx, ComponentCommand::Destroy));
         if let Err(e) = ret {
             log::warn!("destroying: {e}");
         }

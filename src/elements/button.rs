@@ -60,14 +60,26 @@ impl ButtonRaw {
         interface: &mut Interface,
     ) -> ButtonRaw {
         ButtonRaw {
-            square: StandardSquare::new(rect, z_order, false, interface),
+            square: StandardSquare::new(
+                rect,
+                z_order,
+                false,
+                palette::Srgba::new(1.0, 1.0, 1.0, 1.0),
+                interface,
+            ),
             action: Box::new(action),
         }
     }
 
     pub fn shell(rect: Rectangle, z_order: ZOrder, interface: &mut Interface) -> ButtonRaw {
         ButtonRaw {
-            square: StandardSquare::new(rect, z_order, false, interface),
+            square: StandardSquare::new(
+                rect,
+                z_order,
+                false,
+                palette::Srgba::new(1.0, 1.0, 1.0, 1.0),
+                interface,
+            ),
             action: Box::new(|entry| {
                 if let Some(links) = entry.single_fetch::<NodeLinks>()
                     && let Some(source) = links.get_link(entry.handle().untyped())

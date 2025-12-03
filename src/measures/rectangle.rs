@@ -118,10 +118,17 @@ impl Rectangle {
             && (self.down() <= position.y && position.y < self.up())
     }
 
-    pub fn with_origin(self, orig: Position) -> Rectangle {
+    pub fn with_origin(self, origin: Position) -> Rectangle {
         Rectangle {
-            origin: orig,
+            origin,
             extend: self.extend,
+        }
+    }
+
+    pub fn with_extend(self, extend: Delta) -> Rectangle {
+        Rectangle {
+            origin: self.origin,
+            extend,
         }
     }
 
