@@ -5,13 +5,13 @@ use crate::{
     measures::{Delta, Position, Rectangle, ZOrder},
     text::{Text, TextEdit, TextManager},
     tools::pointer::{PointerCollider, PointerHit},
-    world::{Element, WorldCell, WorldCellEntry},
+    world::{Element, ElementDescriptor, WorldCell, WorldCellEntry},
 };
 
 const PAD: i32 = 10;
 const PAD_H: i32 = PAD / 2;
 const PAD_TEXT: i32 = 8;
-const ENTRY_NUM: usize = 5;
+
 const ENTRY_WIDTH: i32 = 300;
 const ENTRY_HEIGHT: i32 = 40;
 
@@ -26,6 +26,18 @@ struct MenuEntry {
     frame: StandardSquare,
     text: Text,
     action: Box<dyn Fn(&WorldCell)>,
+}
+
+pub struct MenuDescriptor {
+    pub position: Position,
+    pub entry_width: i32,
+    pub entry_height: i32,
+    pub entries: Vec<MenuEntryDescriptor>,
+}
+
+pub struct MenuEntryDescriptor {
+    pub label: String,
+    pub action: Box<dyn Fn(&WorldCell)>,
 }
 
 impl Element for Menu {
@@ -79,17 +91,30 @@ impl Element for Menu {
         entry.getter::<PointerCollider>(|this| this.collider);
     }
 }
+
+impl ElementDescriptor for MenuDescriptor {
+    type Target = Menu;
+
+    fn build(self, world: &WorldCell) -> Self::Target {
+        Menu::new(
+            self,
+            &mut world.single_fetch_mut().unwrap(),
+            &mut world.single_fetch_mut().unwrap(),
+        )
+    }
+}
+
 impl Menu {
     pub fn new(
-        position: Position,
+        descriptor: MenuDescriptor,
         text_manager: &mut TextManager,
         interface: &mut Interface,
     ) -> Menu {
         let rect = Rectangle {
-            origin: position,
+            origin: descriptor.position,
             extend: Delta::new(
-                PAD + (ENTRY_WIDTH + PAD),
-                PAD + (ENTRY_HEIGHT + PAD) * ENTRY_NUM as i32,
+                PAD + (descriptor.entry_width + PAD),
+                PAD + (descriptor.entry_height + PAD) * descriptor.entries.len() as i32,
             ),
         };
 
@@ -114,131 +139,117 @@ impl Menu {
             z_order: ZOrder::new(100),
         };
 
-        let entries = Vec::new();
+        let mut entries = Vec::with_capacity(descriptor.entries.len());
+        for entry in descriptor.entries {
+            let rect = Rectangle {
+                origin: frame.get_rect().origin
+                    + Delta::new(PAD, PAD + (ENTRY_HEIGHT + PAD) * entries.len() as i32),
+                extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
+            };
 
-        let mut menu = Menu {
+            let frame = StandardSquare::new(
+                rect,
+                ZOrder::new(100),
+                true,
+                palette::Srgba::new(0.1, 0.1, 0.1, 0.0),
+                interface,
+            );
+
+            let mut text = Text::new(
+                Rectangle {
+                    origin: rect.origin + Delta::splat(PAD_TEXT),
+                    extend: rect.extend - Delta::splat(PAD_TEXT * 2),
+                },
+                entry.label,
+                text_manager,
+                interface,
+            );
+            text.set_order(ZOrder::new(140));
+
+            entries.push(MenuEntry {
+                frame,
+                text,
+                action: entry.action,
+            });
+        }
+
+        Menu {
             frame,
             select_frame,
             entries,
             collider,
-        };
-
-        menu.add(
-            "New Label".into(),
-            Box::new(move |world| {
-                world.insert(Text::new(
-                    rect,
-                    "New Label".into(),
-                    &mut world.single_fetch_mut().unwrap(),
-                    &mut world.single_fetch_mut().unwrap(),
-                ));
-            }),
-            text_manager,
-            interface,
-        );
-
-        menu.add(
-            "New Palette".into(),
-            Box::new(move |world| {
-                let palette = Palette::new(rect.origin, &mut world.single_fetch_mut().unwrap());
-                world.insert(palette);
-            }),
-            text_manager,
-            interface,
-        );
-
-        menu.add(
-            "New ButtonRaw".into(),
-            Box::new(move |world| {
-                world.insert(ButtonRaw::shell(
-                    Rectangle {
-                        origin: rect.origin,
-                        extend: Delta::new(100, 100),
-                    },
-                    ZOrder::new(0),
-                    &mut world.single_fetch_mut().unwrap(),
-                ));
-            }),
-            text_manager,
-            interface,
-        );
-
-        menu.add(
-            "LnDrawer".into(),
-            Box::new(move |world| {
-                let image = Image::from_bytes(
-                    include_bytes!("../../res/icon.png"),
-                    &mut world.single_fetch_mut().unwrap(),
-                )
-                .unwrap();
-                world.insert(image);
-            }),
-            text_manager,
-            interface,
-        );
-
-        menu.add(
-            "New TextEdit".into(),
-            Box::new(move |world| {
-                world.insert(TextEdit::new(
-                    Rectangle {
-                        origin: Position::new(0, 0),
-                        extend: Delta::splat(300),
-                    },
-                    "Enter text here".into(),
-                    &mut world.single_fetch_mut().unwrap(),
-                    &mut world.single_fetch_mut().unwrap(),
-                ));
-            }),
-            text_manager,
-            interface,
-        );
-
-        menu
+        }
     }
 
-    pub fn add(
-        &mut self,
-        label: String,
-        action: Box<dyn Fn(&WorldCell)>,
-        text_manager: &mut TextManager,
-        interface: &mut Interface,
-    ) {
-        let rect = Rectangle {
-            origin: self.frame.get_rect().origin
-                + Delta::new(PAD, PAD + (PAD + ENTRY_HEIGHT) * self.entries.len() as i32),
-            extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
-        };
-
-        let frame = StandardSquare::new(
-            rect,
-            ZOrder::new(100),
-            true,
-            palette::Srgba::new(0.1, 0.1, 0.1, 0.0),
-            interface,
-        );
-
-        let mut text = Text::new(
-            Rectangle {
-                origin: rect.origin + Delta::splat(PAD_TEXT),
-                extend: rect.extend - Delta::splat(PAD_TEXT * 2),
-            },
-            label,
-            text_manager,
-            interface,
-        );
-        text.set_order(ZOrder::new(140));
-
-        self.entries.push(MenuEntry {
-            frame,
-            text,
-            action,
-        });
-
-        self.frame
-            .set_rect(self.frame.get_rect().with_extend(Delta::new(
-                PAD + (ENTRY_WIDTH + PAD),
-                PAD + (ENTRY_HEIGHT + PAD) * ENTRY_NUM as i32,
-            )));
+    pub fn test_descriptor(position: Position) -> MenuDescriptor {
+        MenuDescriptor {
+            position,
+            entry_width: 400,
+            entry_height: 40,
+            entries: vec![
+                MenuEntryDescriptor {
+                    label: "New Label".into(),
+                    action: Box::new(move |world| {
+                        world.insert(Text::new(
+                            Rectangle {
+                                origin: Position::default(),
+                                extend: Delta::new(100, 100),
+                            },
+                            "New Label".into(),
+                            &mut world.single_fetch_mut().unwrap(),
+                            &mut world.single_fetch_mut().unwrap(),
+                        ));
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "New Palette".into(),
+                    action: Box::new(move |world| {
+                        let palette = Palette::new(
+                            Position::default(),
+                            &mut world.single_fetch_mut().unwrap(),
+                        );
+                        world.insert(palette);
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "New ButtonRaw".into(),
+                    action: Box::new(move |world| {
+                        world.insert(ButtonRaw::shell(
+                            Rectangle {
+                                origin: Position::default(),
+                                extend: Delta::new(100, 100),
+                            },
+                            ZOrder::new(0),
+                            &mut world.single_fetch_mut().unwrap(),
+                        ));
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "LnDrawer".into(),
+                    action: Box::new(move |world| {
+                        let image = Image::from_bytes(
+                            include_bytes!("../../res/icon.png"),
+                            &mut world.single_fetch_mut().unwrap(),
+                        )
+                        .unwrap();
+                        world.insert(image);
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "New TextEdit".into(),
+                    action: Box::new(move |world| {
+                        world.insert(TextEdit::new(
+                            Rectangle {
+                                origin: Position::default(),
+                                extend: Delta::new(300, 600),
+                            },
+                            "Enter text here".into(),
+                            &mut world.single_fetch_mut().unwrap(),
+                            &mut world.single_fetch_mut().unwrap(),
+                        ));
+                    }),
+                },
+            ],
+        }
     }
 }

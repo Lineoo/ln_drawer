@@ -150,11 +150,7 @@ impl Lnwindow {
                 if let Some(menu) = entry.single_entry::<Menu>() {
                     menu.destroy();
                 }
-                entry.insert(Menu::new(
-                    point,
-                    &mut entry.single_fetch_mut().unwrap(),
-                    &mut entry.single_fetch_mut().unwrap(),
-                ));
+                entry.build(Menu::test_descriptor(point));
                 self.window.request_redraw();
             }
 

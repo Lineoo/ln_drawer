@@ -153,6 +153,7 @@ pub struct StandardSquare {
     queue: Queue,
     rectangle_buffer: Buffer,
 }
+
 impl StandardSquare {
     pub fn new(
         rect: Rectangle,

@@ -18,6 +18,13 @@ pub trait Element: Any {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {}
 }
 
+/// A way to build elements in the [`World`].
+pub trait ElementDescriptor {
+    type Target: Element;
+
+    fn build(self, world: &WorldCell) -> Self::Target;
+}
+
 /// Represent an element in the [`World`]. It's an handle so manual validation is needed.
 pub struct ElementHandle<T: ?Sized = dyn Any>(usize, PhantomData<T>);
 
@@ -155,6 +162,11 @@ impl<T: ?Sized, U: ?Sized> Clone for WorldCellOther<'_, T, U> {
 }
 
 impl World {
+    pub fn build<B: ElementDescriptor>(&mut self, descriptor: B) -> ElementHandle<B::Target> {
+        let element = descriptor.build(&self.cell());
+        self.insert(element)
+    }
+
     pub fn insert<T: Element>(&mut self, element: T) -> ElementHandle<T> {
         self.elements.insert(self.curr_idx, Box::new(element));
         let handle = self.curr_idx.cast::<T>();
@@ -323,6 +335,11 @@ impl World {
     }
 }
 impl WorldCell<'_> {
+    pub fn build<B: ElementDescriptor>(&self, descriptor: B) -> ElementHandle<B::Target> {
+        let element = descriptor.build(self);
+        self.insert(element)
+    }
+
     /// Cell-mode insertion cannot perform the operation immediately so the inserted element cannot be
     /// fetched until end of the cell span. One exception is entry, which can still be used normally.
     pub fn insert<T: Element>(&self, element: T) -> ElementHandle<T> {
