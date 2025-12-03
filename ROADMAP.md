@@ -33,16 +33,16 @@
         - [ ] 文字更高精度渲染
 - [ ] 交互操作改进
     - [ ] 操作层级统一
-        - [ ] 使用 `after_insert` 和 `depend` 来注册操作元素
-            - [ ] 各种元素的构建比较复杂，推荐使用 Descriptor 模式
-                - [ ] (trait) ElementDescriptor 用于直接在世界新建 Element，自动获取 interface 等等的资源
-            - [ ] 各种 Entry, Other 写法
-            - [ ] 检查 `depend` 是否多对多完整（编写测试）
-            - [ ] 删除 `Service` 和 `Property` 并保持 `world` 模块整洁
+        - [x] 使用 `when_insert` 和 `depend` 来注册操作元素
+            - [x] 删除 `Service` 和 `Property` 并保持 `world` 模块整洁
                 - [ ] `Observer` 模块分离
-            - [ ] 事件转发
+                - [ ] 删除各种 Entry, Other 写法
+            - [x] 各种元素的构建比较复杂，推荐使用 Descriptor 模式
+                - [x] (trait) ElementDescriptor 用于直接在世界新建 Element，自动获取 interface 等等的资源
+            - [ ] 事件自动转发
                 - [ ] Any 观察者
-            - [ ] 和注册操作元素一样可注册悬浮元素
+            - [ ] 和注册操作元素一样可注册悬浮元素，变换元素
+                - [ ] 变换元素原本使用 setter 实现的改为使用 trigger 实现
         - [ ] 无限大操作区域
             - [ ] 偏移与精度修复
         - [ ] 现有工具更新

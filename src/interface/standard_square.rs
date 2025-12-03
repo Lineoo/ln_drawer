@@ -235,15 +235,3 @@ impl Drop for StandardSquare {
         }
     }
 }
-
-impl Element for StandardSquare {
-    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
-        entry.getter::<PointerCollider>(|this| PointerCollider {
-            rect: this.rect,
-            z_order: ZOrder::new(0),
-        });
-
-        entry.getter::<Rectangle>(StandardSquare::get_rect);
-        entry.setter::<Rectangle>(StandardSquare::set_rect);
-    }
-}

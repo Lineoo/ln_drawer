@@ -64,6 +64,10 @@ impl Position {
         Position { x, y }
     }
 
+    pub fn splat(n: i32) -> Position {
+        Position { x: n, y: n }
+    }
+
     pub fn into_array(self) -> [i32; 2] {
         [self.x, self.y]
     }
@@ -89,5 +93,12 @@ impl Position {
         let h = (delta.y).rem_euclid(rect.height() as i32);
 
         rect.origin + Delta::new(w, h)
+    }
+
+    pub fn wrapping_sub(self, rhs: Self) -> Delta {
+        Delta {
+            x: self.x.wrapping_sub(rhs.x),
+            y: self.y.wrapping_sub(rhs.y),
+        }
     }
 }

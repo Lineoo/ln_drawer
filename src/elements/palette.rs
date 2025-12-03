@@ -45,25 +45,6 @@ impl Element for Palette {
                 this.redraw();
             });
 
-        entry.getter::<PointerCollider>(|this| PointerCollider {
-            rect: this.main.get_rect(),
-            z_order: this.main.get_z_order(),
-        });
-
-        entry.getter::<Rectangle>(|this| this.main.get_rect());
-
-        entry.setter::<Rectangle>(|this, rect| {
-            let orig = this.main.get_rect().origin;
-            let knob_orig = this.main_knob.get_rect().origin;
-            let relative = knob_orig - orig;
-
-            this.main.set_rect(rect);
-            this.main_knob.set_rect(Rectangle {
-                origin: rect.origin + relative,
-                extend: Delta::splat(1),
-            });
-        });
-
         let slider = PaletteHueSlider::new(
             self.main.get_rect().origin - Delta::new(0, HUE_HEIGHT as i32),
             &mut entry.single_fetch_mut().unwrap(),
@@ -167,25 +148,6 @@ impl Element for PaletteHueSlider {
                 }
             }
             _ => (),
-        });
-
-        entry.getter::<PointerCollider>(|this| PointerCollider {
-            rect: this.hue.get_rect(),
-            z_order: this.hue.get_z_order(),
-        });
-
-        entry.getter::<Rectangle>(|this| this.hue.get_rect());
-
-        entry.setter::<Rectangle>(|this, rect| {
-            let orig = this.hue.get_rect().left();
-            let knob_orig = this.hue_knob.get_rect().left();
-            let relative = knob_orig - orig;
-
-            this.hue.set_rect(rect);
-            this.hue_knob.set_rect(Rectangle {
-                origin: Position::new(rect.left() + relative, rect.down()),
-                extend: Delta::new(1, HUE_HEIGHT as i32),
-            });
         });
     }
 }

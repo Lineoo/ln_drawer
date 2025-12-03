@@ -4,8 +4,8 @@ use crate::{
     elements::Palette,
     interface::{Interface, Painter},
     lnwin::PointerEvent,
-    measures::{Delta, Position, Rectangle},
-    tools::pointer::PointerHit,
+    measures::{Delta, Position, Rectangle, ZOrder},
+    tools::pointer::{PointerCollider, PointerHit},
     world::{Element, WorldCell, WorldCellEntry},
 };
 
@@ -27,6 +27,25 @@ impl Element for StrokeLayer {
             }
             _ => (),
         });
+
+        let collider = entry.insert(PointerCollider {
+            rect: Rectangle {
+                origin: Position::splat(i32::MIN),
+                extend: Delta::splat(i32::MAX),
+            },
+            z_order: ZOrder::new(-100),
+        });
+
+        let this = entry.handle().untyped();
+
+        entry.entry(collider).unwrap().depend(this);
+
+        entry
+            .entry(collider)
+            .unwrap()
+            .observe::<PointerHit>(move |hit, entry| {
+                entry.entry(this).unwrap().trigger(*hit);
+            });
     }
 }
 impl StrokeLayer {

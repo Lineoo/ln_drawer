@@ -1,12 +1,7 @@
-use winit::{
-    event::{ElementState, KeyEvent, WindowEvent},
-    keyboard::{KeyCode, PhysicalKey},
-};
-
 use crate::{
     lnwin::{Lnwindow, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
-    tools::{focus::Focus, node::NodeTool, transform::TransformTool},
+    tools::focus::Focus,
     world::{Element, ElementHandle, WorldCell, WorldCellEntry},
 };
 
@@ -19,13 +14,13 @@ pub struct PointerCollider {
 pub struct PointerEnter;
 pub struct PointerLeave;
 
+#[derive(Clone, Copy)]
 pub struct PointerHit(pub PointerEvent);
 
+impl Element for PointerCollider {}
+
 #[derive(Default)]
-pub struct Pointer {
-    fallback: Option<ElementHandle>,
-    active: Option<ElementHandle>,
-}
+pub struct Pointer;
 impl Element for Pointer {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
         let mut pressed = false;
@@ -59,86 +54,31 @@ impl Element for Pointer {
                     focus.set(None, &entry);
                 }
 
-                if pressed {
-                    if let Some(active) = pointer.active.and_then(|w| entry.entry(w)) {
-                        active.trigger(PointerHit(event));
-                    } else if let Some(pointer_on) = pointer_on.and_then(|w| entry.entry(w)) {
-                        pointer_on.trigger(PointerHit(event));
-                    } else if let Some(fallback) = pointer.fallback.and_then(|w| entry.entry(w)) {
-                        fallback.trigger(PointerHit(event));
-                    }
+                if pressed && let Some(pointer_on) = pointer_on.and_then(|w| entry.entry(w)) {
+                    pointer_on.trigger(PointerHit(event));
                 }
 
                 if let PointerEvent::Released(_) = event {
                     pressed = false;
                 }
             });
-
-        entry
-            .single_other::<Lnwindow>()
-            .unwrap()
-            .observe::<WindowEvent>(|event, entry| {
-                if let &WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            repeat: false,
-                            physical_key: PhysicalKey::Code(key),
-                            state,
-                            ..
-                        },
-                    ..
-                } = event
-                {
-                    match key {
-                        KeyCode::KeyS => {
-                            let mut pointer = entry.fetch_mut().unwrap();
-                            if state == ElementState::Pressed {
-                                let transform = entry
-                                    .single::<TransformTool>()
-                                    .unwrap_or_else(|| entry.insert(TransformTool::default()));
-                                pointer.active = Some(transform.untyped());
-                            } else {
-                                pointer.active = None;
-                            }
-                        }
-                        KeyCode::KeyN => {
-                            let mut pointer = entry.fetch_mut().unwrap();
-                            if state == ElementState::Pressed {
-                                let node = entry.single::<NodeTool>().unwrap_or_else(|| {
-                                    entry.insert(NodeTool::new(
-                                        &mut entry.single_fetch_mut().unwrap(),
-                                    ))
-                                });
-                                pointer.active = Some(node.untyped());
-                            } else {
-                                pointer.active = None;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            });
     }
 }
 impl Pointer {
-    // TODO Optimize
-    pub fn intersect(&self, world: &WorldCell, point: Position) -> Option<ElementHandle> {
+    pub fn intersect(
+        &self,
+        world: &WorldCell,
+        point: Position,
+    ) -> Option<ElementHandle<PointerCollider>> {
         let mut top_result = None;
         let mut max_order = ZOrder::new(isize::MIN);
-        world.get_foreach::<PointerCollider>(|handle, intersection| {
+        world.foreach_fetch::<PointerCollider>(|handle, intersection| {
             if (intersection.z_order > max_order) && intersection.rect.contains(point) {
                 max_order = intersection.z_order;
                 top_result = Some(handle);
             }
         });
+
         top_result
-    }
-
-    pub fn get_fallback(&self) -> Option<ElementHandle> {
-        self.fallback
-    }
-
-    pub fn set_fallback(&mut self, element: ElementHandle) {
-        self.fallback = Some(element);
     }
 }

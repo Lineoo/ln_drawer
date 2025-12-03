@@ -10,7 +10,7 @@ use crate::{
     measures::{Position, Rectangle, ZOrder},
     tools::{
         focus::{Focus, FocusInput},
-        pointer::{PointerCollider, PointerHit},
+        pointer::PointerHit,
     },
     world::{Element, WorldCellEntry},
 };
@@ -85,20 +85,7 @@ impl Text {
         self.inner.set_z_order(order);
     }
 }
-impl Element for Text {
-    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
-        entry.getter::<PointerCollider>(|this| PointerCollider {
-            rect: this.inner.get_rect(),
-            z_order: this.inner.get_z_order(),
-        });
-
-        entry.getter::<Rectangle>(|this| this.inner.get_rect());
-
-        entry.setter::<Rectangle>(|this, rect| {
-            this.inner.set_rect(rect);
-        });
-    }
-}
+impl Element for Text {}
 
 pub struct TextEdit {
     inner: Painter,
@@ -108,16 +95,6 @@ pub struct TextEdit {
 }
 impl Element for TextEdit {
     fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
-        entry.getter::<PointerCollider>(|this| PointerCollider {
-            rect: this.inner.get_rect(),
-            z_order: this.inner.get_z_order(),
-        });
-
-        entry.getter::<Rectangle>(|this| this.inner.get_rect());
-        entry.setter::<Rectangle>(|this, rect| this.inner.set_rect(rect));
-
-        entry.getter::<String>(|this| this.clone_text());
-
         entry.observe::<PointerHit>(move |event, entry| match event.0 {
             PointerEvent::Pressed(position) => {
                 let mut this = entry.fetch_mut().unwrap();

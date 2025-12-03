@@ -114,8 +114,8 @@ impl Rectangle {
     }
 
     pub fn contains(self, position: Position) -> bool {
-        (self.left() <= position.x && position.x < self.right())
-            && (self.down() <= position.y && position.y < self.up())
+        let delta = position.wrapping_sub(self.origin);
+        (delta.x as u32) < (self.extend.x as u32) && (delta.y as u32) < (self.extend.y as u32)
     }
 
     pub fn with_origin(self, origin: Position) -> Rectangle {

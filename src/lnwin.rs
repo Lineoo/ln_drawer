@@ -68,10 +68,8 @@ impl Element for Lnwindow {
         entry.insert(TextManager::default());
         entry.insert(LnwinModifiers::default());
         entry.insert(Focus::default());
-        let stroke = entry.insert(StrokeLayer::default()).untyped();
-        let mut selection = Pointer::default();
-        selection.set_fallback(stroke);
-        entry.insert(selection);
+        entry.insert(StrokeLayer::default());
+        entry.insert(Pointer);
     }
 }
 impl Lnwindow {

@@ -4,7 +4,6 @@ use crate::{
     measures::{Delta, Rectangle, ZOrder},
     text::Text,
     tools::{
-        node::NodeLinks,
         pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave},
     },
     world::{Element, WorldCellEntry},
@@ -42,14 +41,6 @@ impl Element for ButtonRaw {
             let mut this = entry.fetch_mut().unwrap();
             this.square.set_visible(false);
         });
-
-        entry.getter::<PointerCollider>(|this| PointerCollider {
-            rect: this.square.get_rect(),
-            z_order: this.square.get_z_order(),
-        });
-
-        entry.getter::<Rectangle>(|this| this.square.get_rect());
-        entry.setter::<Rectangle>(|this, rect| this.square.set_rect(rect));
     }
 }
 impl ButtonRaw {
@@ -68,51 +59,6 @@ impl ButtonRaw {
                 interface,
             ),
             action: Box::new(action),
-        }
-    }
-
-    pub fn shell(rect: Rectangle, z_order: ZOrder, interface: &mut Interface) -> ButtonRaw {
-        ButtonRaw {
-            square: StandardSquare::new(
-                rect,
-                z_order,
-                false,
-                palette::Srgba::new(1.0, 1.0, 1.0, 1.0),
-                interface,
-            ),
-            action: Box::new(|entry| {
-                if let Some(links) = entry.single_fetch::<NodeLinks>()
-                    && let Some(source) = links.get_link(entry.handle().untyped())
-                    && let Some(text) = entry.get::<String>(source)
-                {
-                    let mut text = text.split(' ');
-
-                    if let Some(program) = text.next() {
-                        match std::process::Command::new(program).args(text).output() {
-                            Ok(output) => {
-                                let curr_rect =
-                                    entry.get::<Rectangle>(entry.handle().untyped()).unwrap();
-                                entry.insert(Text::new(
-                                    curr_rect.with_origin(curr_rect.origin + Delta::splat(40)),
-                                    String::from_utf8_lossy(&output.stdout).into(),
-                                    &mut entry.single_fetch_mut().unwrap(),
-                                    &mut entry.single_fetch_mut().unwrap(),
-                                ));
-                            }
-                            Err(error) => {
-                                let curr_rect =
-                                    entry.get::<Rectangle>(entry.handle().untyped()).unwrap();
-                                entry.insert(Text::new(
-                                    curr_rect.with_origin(curr_rect.origin + Delta::splat(40)),
-                                    error.to_string(),
-                                    &mut entry.single_fetch_mut().unwrap(),
-                                    &mut entry.single_fetch_mut().unwrap(),
-                                ));
-                            }
-                        }
-                    }
-                }
-            }),
         }
     }
 }

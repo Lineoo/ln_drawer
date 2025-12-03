@@ -1,5 +1,5 @@
 use crate::{
-    elements::{ButtonRaw, Image, Palette},
+    elements::{Image, Palette},
     interface::{Interface, StandardSquare},
     lnwin::{Lnwindow, PointerEvent},
     measures::{Delta, Position, Rectangle, ZOrder},
@@ -12,7 +12,6 @@ const PAD: i32 = 10;
 const PAD_H: i32 = PAD / 2;
 const PAD_TEXT: i32 = 8;
 
-const ENTRY_WIDTH: i32 = 300;
 const ENTRY_HEIGHT: i32 = 40;
 
 pub struct Menu {
@@ -87,8 +86,6 @@ impl Element for Menu {
                 }
             }
         });
-
-        entry.getter::<PointerCollider>(|this| this.collider);
     }
 }
 
@@ -144,7 +141,7 @@ impl Menu {
             let rect = Rectangle {
                 origin: frame.get_rect().origin
                     + Delta::new(PAD, PAD + (ENTRY_HEIGHT + PAD) * entries.len() as i32),
-                extend: Delta::new(ENTRY_WIDTH, ENTRY_HEIGHT),
+                extend: Delta::new(descriptor.entry_width - PAD * 2, ENTRY_HEIGHT),
             };
 
             let frame = StandardSquare::new(
@@ -209,19 +206,6 @@ impl Menu {
                             &mut world.single_fetch_mut().unwrap(),
                         );
                         world.insert(palette);
-                    }),
-                },
-                MenuEntryDescriptor {
-                    label: "New ButtonRaw".into(),
-                    action: Box::new(move |world| {
-                        world.insert(ButtonRaw::shell(
-                            Rectangle {
-                                origin: Position::default(),
-                                extend: Delta::new(100, 100),
-                            },
-                            ZOrder::new(0),
-                            &mut world.single_fetch_mut().unwrap(),
-                        ));
                     }),
                 },
                 MenuEntryDescriptor {
