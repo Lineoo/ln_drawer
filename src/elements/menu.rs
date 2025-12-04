@@ -1,7 +1,7 @@
 use crate::{
     elements::{Image, Palette},
     interface::{Interface, StandardSquare},
-    lnwin::{Lnwindow, PointerEvent},
+    lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
     text::{Text, TextEdit, TextManager},
     tools::pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave},
@@ -55,7 +55,7 @@ impl Element for Menu {
 
         for (i, entry) in self.entries.iter().enumerate() {
             let collider = world.insert(PointerCollider {
-                rect: entry.frame.get_rect(),
+                rect: entry.frame.get_rect().tweak_all(PAD),
                 z_order: ZOrder::new(110),
             });
 
@@ -135,10 +135,7 @@ impl Menu {
             );
 
             let mut text = Text::new(
-                Rectangle {
-                    origin: rect.origin + Delta::splat(PAD_TEXT),
-                    extend: rect.extend - Delta::splat(PAD_TEXT * 2),
-                },
+                rect.tweak_all(-PAD_TEXT),
                 entry.label,
                 text_manager,
                 interface,

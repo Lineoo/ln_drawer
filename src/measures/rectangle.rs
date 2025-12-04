@@ -7,6 +7,7 @@ pub struct Rectangle {
     pub origin: Position,
     pub extend: Delta,
 }
+
 impl fmt::Debug for Rectangle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Rectangle")
@@ -17,6 +18,7 @@ impl fmt::Debug for Rectangle {
             .finish()
     }
 }
+
 impl fmt::Display for Rectangle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
@@ -27,6 +29,7 @@ impl fmt::Display for Rectangle {
             .finish()
     }
 }
+
 impl ops::Add<Delta> for Rectangle {
     type Output = Rectangle;
     fn add(self, rhs: Delta) -> Self::Output {
@@ -36,11 +39,13 @@ impl ops::Add<Delta> for Rectangle {
         }
     }
 }
+
 impl ops::AddAssign<Delta> for Rectangle {
     fn add_assign(&mut self, rhs: Delta) {
         self.origin += rhs;
     }
 }
+
 impl ops::Sub<Delta> for Rectangle {
     type Output = Rectangle;
     fn sub(self, rhs: Delta) -> Self::Output {
@@ -50,11 +55,13 @@ impl ops::Sub<Delta> for Rectangle {
         }
     }
 }
+
 impl ops::SubAssign<Delta> for Rectangle {
     fn sub_assign(&mut self, rhs: Delta) {
         self.origin -= rhs;
     }
 }
+
 impl Rectangle {
     pub fn new(left: i32, down: i32, right: i32, up: i32) -> Rectangle {
         Rectangle {
@@ -116,6 +123,20 @@ impl Rectangle {
     pub fn contains(self, position: Position) -> bool {
         let delta = position.wrapping_sub(self.origin);
         (delta.x as u32) < (self.extend.x as u32) && (delta.y as u32) < (self.extend.y as u32)
+    }
+
+    pub fn tweak(self, left: i32, down: i32, right: i32, up: i32) -> Rectangle {
+        Rectangle {
+            origin: self.origin - Delta::new(left, down),
+            extend: self.extend + Delta::new(left, down) + Delta::new(right, up),
+        }
+    }
+
+    pub fn tweak_all(self, val: i32) -> Rectangle {
+        Rectangle {
+            origin: self.origin - Delta::splat(val),
+            extend: self.extend + Delta::splat(val * 2),
+        }
     }
 
     pub fn with_origin(self, origin: Position) -> Rectangle {

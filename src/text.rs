@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{
-    interface::{Interface, Painter},
+    interface::{Interface, Painter, Redraw},
     lnwin::{LnwinModifiers, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
     tools::{
@@ -92,6 +92,8 @@ pub struct TextEdit {
     editor: Editor<'static>,
     font_system: Arc<Mutex<FontSystem>>,
     swash_cache: Arc<Mutex<SwashCache>>,
+
+    redraw: bool,
 }
 
 impl Element for TextEdit {
@@ -124,16 +126,16 @@ impl Element for TextEdit {
                 let focus = world.single::<Focus>().unwrap();
                 world.trigger(focus, RequestFocus(Some(this.untyped())));
 
-                fetched.redraw();
+                fetched.redraw = true;
             }
             PointerEvent::Moved(position) => {
-                let this = &mut *world.fetch_mut(this).unwrap();
+                let fetched = &mut *world.fetch_mut(this).unwrap();
 
-                let point = position - this.inner.get_rect().left_up();
+                let point = position - fetched.inner.get_rect().left_up();
                 let point = Position::new(point.x, -point.y);
 
-                let mut font_system = this.font_system.lock();
-                this.editor.action(
+                let mut font_system = fetched.font_system.lock();
+                fetched.editor.action(
                     &mut font_system,
                     Action::Drag {
                         x: point.x,
@@ -143,7 +145,7 @@ impl Element for TextEdit {
 
                 drop(font_system);
 
-                this.redraw();
+                fetched.redraw = true;
             }
             PointerEvent::Released(_) => (),
         });
@@ -153,9 +155,10 @@ impl Element for TextEdit {
                 return;
             }
 
-            let this = &mut *world.fetch_mut(this).unwrap();
-            let mut font_system = this.font_system.lock();
-            let mut editor = this.editor.borrow_with(&mut font_system);
+            let fetched = &mut *world.fetch_mut(this).unwrap();
+
+            let mut font_system = fetched.font_system.lock();
+            let mut editor = fetched.editor.borrow_with(&mut font_system);
 
             let modifiers = world.single_fetch::<LnwinModifiers>().unwrap();
             let ctrl_down = modifiers.0.state().control_key();
@@ -264,8 +267,20 @@ impl Element for TextEdit {
 
             drop(font_system);
 
-            this.redraw();
+            fetched.redraw = true;
         });
+
+        let interface = world.single::<Interface>().unwrap();
+
+        let tracker = world.observer(interface, move |Redraw, world, _| {
+            let mut this = world.fetch_mut(this).unwrap();
+            
+            if this.redraw {
+                this.redraw();
+            }
+        });
+
+        world.dependency(tracker, this);
     }
 }
 
@@ -311,6 +326,7 @@ impl TextEdit {
             editor: Editor::new(buffer),
             font_system: manager.font_system.clone(),
             swash_cache: manager.swash_cache.clone(),
+            redraw: false,
         }
     }
 
@@ -331,6 +347,8 @@ impl TextEdit {
     }
 
     fn redraw(&mut self) {
+        self.redraw = false;
+
         let mut font_system = self.font_system.lock();
         let mut swash_cache = self.swash_cache.lock();
 

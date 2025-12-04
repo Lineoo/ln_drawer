@@ -1,6 +1,9 @@
 use winit::event::{KeyEvent, WindowEvent};
 
-use crate::world::{Element, Handle, World};
+use crate::{
+    lnwin::Lnwindow,
+    world::{Element, Handle, World},
+};
 
 #[derive(Default)]
 pub struct Focus {
@@ -9,7 +12,9 @@ pub struct Focus {
 
 impl Element for Focus {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |event: &WindowEvent, world, this| {
+        let lnwindow = world.single::<Lnwindow>().unwrap();
+
+        world.observer(lnwindow, move |event: &WindowEvent, world, _| {
             let WindowEvent::KeyboardInput { event, .. } = event else {
                 return;
             };

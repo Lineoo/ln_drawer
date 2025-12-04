@@ -55,7 +55,10 @@ impl Element for Palette {
 
         let tracker = world.observer(interface, move |Redraw, world, _| {
             let mut this = world.fetch_mut(this).unwrap();
-            this.redraw();
+
+            if this.redraw {
+                this.redraw();
+            }
         });
 
         world.dependency(tracker, this);
