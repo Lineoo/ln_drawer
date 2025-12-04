@@ -20,7 +20,7 @@ pub trait Element: Any {
 
 /// A way to build [`Element`] in the [`World`].
 pub trait ElementDescriptor {
-    type Target: Element;
+    type Target;
     fn build(self, world: &World) -> Self::Target;
 }
 
@@ -126,7 +126,7 @@ impl Default for WorldStorage {
 impl World {
     // lifecycle //
 
-    pub fn build<B: ElementDescriptor>(&self, descriptor: B) -> Handle<B::Target> {
+    pub fn build<B: ElementDescriptor<Target: Element>>(&self, descriptor: B) -> Handle<B::Target> {
         let element = descriptor.build(self);
         self.insert(element)
     }

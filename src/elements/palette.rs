@@ -1,10 +1,10 @@
 use palette::{FromColor, Hsl, rgb::Rgb};
 
 use crate::{
-    interface::{Interface, Painter, Redraw, Wireframe},
+    interface::{Interface, Painter, Redraw, StandardSquare, Wireframe},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
-    tools::pointer::PointerHit,
+    tools::pointer::{PointerCollider, PointerHit},
     world::{Element, Handle, World},
 };
 
@@ -17,12 +17,24 @@ pub struct Palette {
     main: Painter,
     main_knob: Wireframe,
 
+    frame: StandardSquare,
+
     redraw: bool,
+}
+
+pub struct PaletteHueSlider {
+    hue: Painter,
+    hue_knob: Wireframe,
 }
 
 impl Element for Palette {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |&PointerHit(event), world, this| match event {
+        let collider = world.insert(PointerCollider {
+            rect: self.main.get_rect(),
+            z_order: ZOrder::new(0),
+        });
+
+        world.observer(collider, move |&PointerHit(event), world, _| match event {
             PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
                 let mut this = world.fetch_mut(this).unwrap();
                 let rect = this.main.get_rect();
@@ -34,8 +46,10 @@ impl Element for Palette {
                     extend: Delta::splat(1),
                 });
             }
-            _ => (),
+            _ => {}
         });
+
+        world.dependency(collider, this);
 
         let interface = world.single::<Interface>().unwrap();
 
@@ -50,6 +64,40 @@ impl Element for Palette {
             self.main.get_rect().origin - Delta::new(0, HUE_HEIGHT as i32),
             &mut world.single_fetch_mut().unwrap(),
         ));
+    }
+}
+
+impl Element for PaletteHueSlider {
+    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+        let collider = world.insert(PointerCollider {
+            rect: self.hue.get_rect(),
+            z_order: ZOrder::new(0),
+        });
+
+        world.observer(collider, move |&PointerHit(event), world, _| match event {
+            PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
+                let mut this = world.fetch_mut(this).unwrap();
+                let rect = this.hue.get_rect();
+                this.hue_knob.set_rect(Rectangle {
+                    origin: Position::new(
+                        point.x.clamp(rect.left(), rect.right() - 1),
+                        rect.down(),
+                    ),
+                    extend: Delta::new(1, HUE_HEIGHT as i32),
+                });
+
+                if let Some(mut palette) = world.single_fetch_mut::<Palette>() {
+                    let base_position = this.hue.get_rect().left();
+                    let knob_position = this.hue_knob.get_rect().left();
+
+                    let x = (knob_position - base_position).rem_euclid(WIDTH as i32);
+
+                    palette.hue = (x as f32 / WIDTH as f32) * -360.0;
+                    palette.redraw = true;
+                }
+            }
+            _ => {}
+        });
     }
 }
 
@@ -74,10 +122,26 @@ impl Palette {
 
         main_knob.set_z_order(ZOrder::new(1));
 
+        const PAD: i32 = 10;
+        let frame = StandardSquare::new(
+            Rectangle {
+                origin: position - Delta::new(PAD, HUE_HEIGHT as i32 + PAD),
+                extend: Delta::new(
+                    WIDTH as i32 + PAD * 2,
+                    HEIGHT as i32 + HUE_HEIGHT as i32 + PAD * 2,
+                ),
+            },
+            ZOrder::new(-10),
+            true,
+            palette::Srgba::new(0.1, 0.1, 0.1, 0.9),
+            interface,
+        );
+
         let mut palette = Palette {
+            hue: 0.0,
             main,
             main_knob,
-            hue: 0.0,
+            frame,
             redraw: false,
         };
 
@@ -117,40 +181,6 @@ impl Palette {
                 writer.write(x, y, [rgb.red, rgb.blue, rgb.green, 255]);
             }
         }
-    }
-}
-
-pub struct PaletteHueSlider {
-    hue: Painter,
-    hue_knob: Wireframe,
-}
-
-impl Element for PaletteHueSlider {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |&PointerHit(event), world, this| match event {
-            PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
-                let mut this = world.fetch_mut(this).unwrap();
-                let rect = this.hue.get_rect();
-                this.hue_knob.set_rect(Rectangle {
-                    origin: Position::new(
-                        point.x.clamp(rect.left(), rect.right() - 1),
-                        rect.down(),
-                    ),
-                    extend: Delta::new(1, HUE_HEIGHT as i32),
-                });
-
-                if let Some(mut palette) = world.single_fetch_mut::<Palette>() {
-                    let base_position = this.hue.get_rect().left();
-                    let knob_position = this.hue_knob.get_rect().left();
-
-                    let x = (knob_position - base_position).rem_euclid(WIDTH as i32);
-
-                    palette.hue = (x as f32 / WIDTH as f32) * -360.0;
-                    palette.redraw = true;
-                }
-            }
-            _ => (),
-        });
     }
 }
 

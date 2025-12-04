@@ -9,8 +9,8 @@ use crate::{
     lnwin::{LnwinModifiers, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
     tools::{
-        focus::{Focus, FocusInput},
-        pointer::PointerHit,
+        focus::{Focus, FocusInput, RequestFocus},
+        pointer::{PointerCollider, PointerHit},
     },
     world::{Element, Handle, World},
 };
@@ -93,17 +93,25 @@ pub struct TextEdit {
     font_system: Arc<Mutex<FontSystem>>,
     swash_cache: Arc<Mutex<SwashCache>>,
 }
+
 impl Element for TextEdit {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |&PointerHit(event), world, handle| match event {
-            PointerEvent::Pressed(position) => {
-                let this = &mut *world.fetch_mut(handle).unwrap();
+        let collider = world.insert(PointerCollider {
+            rect: self.inner.get_rect(),
+            z_order: self.inner.get_z_order(),
+        });
 
-                let point = position - this.inner.get_rect().left_up();
+        world.dependency(collider, this);
+
+        world.observer(collider, move |&PointerHit(event), world, _| match event {
+            PointerEvent::Pressed(position) => {
+                let fetched = &mut *world.fetch_mut(this).unwrap();
+
+                let point = position - fetched.inner.get_rect().left_up();
                 let point = Position::new(point.x, -point.y);
 
-                let mut font_system = this.font_system.lock();
-                this.editor.action(
+                let mut font_system = fetched.font_system.lock();
+                fetched.editor.action(
                     &mut font_system,
                     Action::Click {
                         x: point.x,
@@ -113,13 +121,13 @@ impl Element for TextEdit {
 
                 drop(font_system);
 
-                let mut focus = world.single_fetch_mut::<Focus>().unwrap();
-                focus.set(Some(handle.untyped()), world);
+                let focus = world.single::<Focus>().unwrap();
+                world.trigger(focus, RequestFocus(Some(this.untyped())));
 
-                this.redraw();
+                fetched.redraw();
             }
             PointerEvent::Moved(position) => {
-                let this = &mut *world.fetch_mut(handle).unwrap();
+                let this = &mut *world.fetch_mut(this).unwrap();
 
                 let point = position - this.inner.get_rect().left_up();
                 let point = Position::new(point.x, -point.y);
@@ -260,6 +268,7 @@ impl Element for TextEdit {
         });
     }
 }
+
 impl TextEdit {
     pub fn new(
         rect: Rectangle,

@@ -4,42 +4,46 @@ use crate::world::{Element, Handle, World};
 
 #[derive(Default)]
 pub struct Focus {
-    on: Option<Handle>,
+    focus: Option<Handle>,
 }
 
 impl Element for Focus {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |event: &WindowEvent, world, _| {
-            if let Some(focus) = world.single_fetch::<Focus>()
-                && let Some(focus_on) = focus.get()
-                && let WindowEvent::KeyboardInput { event, .. } = event
-            {
+        world.observer(this, |event: &WindowEvent, world, this| {
+            let WindowEvent::KeyboardInput { event, .. } = event else {
+                return;
+            };
+
+            let fetched = world.fetch(this).unwrap();
+
+            if let Some(focus_on) = fetched.focus {
                 world.trigger(focus_on, FocusInput(event.clone()));
+            }
+        });
+
+        world.observer(this, |&RequestFocus(on), world, this| {
+            let mut fetched = world.fetch_mut(this).unwrap();
+
+            let off = fetched.focus;
+            fetched.focus = on;
+
+            if off != on {
+                if let Some(off) = off {
+                    world.trigger(off, FocusLeave);
+                }
+
+                if let Some(on) = on {
+                    world.trigger(on, FocusEnter);
+                }
             }
         });
     }
 }
 
-impl Focus {
-    pub fn get(&self) -> Option<Handle> {
-        self.on
-    }
+pub struct RequestFocus(pub Option<Handle>);
 
-    pub fn set(&mut self, on: Option<Handle>, world: &World) {
-        let off = self.on;
-        self.on = on;
-        if off != on {
-            if let Some(off) = off {
-                world.trigger(off, &FocusOff);
-            }
-            if let Some(on) = on {
-                world.trigger(on, &FocusOn);
-            }
-        }
-    }
-}
+pub struct FocusEnter;
 
-pub struct FocusOn;
-pub struct FocusOff;
+pub struct FocusLeave;
 
 pub struct FocusInput(pub KeyEvent);

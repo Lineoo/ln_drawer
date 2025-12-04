@@ -1,7 +1,7 @@
 use crate::{
     lnwin::{Lnwindow, PointerEvent},
-    measures::{Position, Rectangle, ZOrder},
-    tools::focus::Focus,
+    measures::{Delta, Position, Rectangle, ZOrder},
+    tools::focus::{Focus, RequestFocus},
     world::{Element, Handle, World},
 };
 
@@ -11,13 +11,28 @@ pub struct PointerCollider {
     pub z_order: ZOrder,
 }
 
-pub struct PointerEnter;
-pub struct PointerLeave;
-
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHit(pub PointerEvent);
 
+#[derive(Debug, Clone, Copy)]
+pub struct PointerEnter;
+
+#[derive(Debug, Clone, Copy)]
+pub struct PointerLeave;
+
 impl Element for PointerCollider {}
+
+impl PointerCollider {
+    pub fn fullscreen(z_order: ZOrder) -> PointerCollider {
+        PointerCollider {
+            rect: Rectangle {
+                origin: Position::splat(i32::MIN / 2),
+                extend: Delta::splat(i32::MAX),
+            },
+            z_order,
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct Pointer;
@@ -38,11 +53,11 @@ impl Element for Pointer {
                 let pointer_onto = pointer.intersect(world, point);
                 if pointer_on != pointer_onto {
                     if let Some(pointer_on) = pointer_on {
-                        world.trigger(pointer_on, &PointerLeave);
+                        world.trigger(pointer_on, PointerLeave);
                     }
 
                     if let Some(pointer_onto) = pointer_onto {
-                        world.trigger(pointer_onto, &PointerEnter);
+                        world.trigger(pointer_onto, PointerEnter);
                     }
                 }
 
@@ -51,8 +66,8 @@ impl Element for Pointer {
 
             if let PointerEvent::Pressed(_) = event {
                 pressed = true;
-                let mut focus = world.single_fetch_mut::<Focus>().unwrap();
-                focus.set(None, world);
+                let focus = world.single::<Focus>().unwrap();
+                world.trigger(focus, RequestFocus(Some(this.untyped())));
             }
 
             if pressed && let Some(pointer_on) = pointer_on {
@@ -66,11 +81,7 @@ impl Element for Pointer {
     }
 }
 impl Pointer {
-    pub fn intersect(
-        &self,
-        world: &World,
-        point: Position,
-    ) -> Option<Handle<PointerCollider>> {
+    pub fn intersect(&self, world: &World, point: Position) -> Option<Handle<PointerCollider>> {
         let mut top_result = None;
         let mut max_order = ZOrder::new(isize::MIN);
         world.foreach_fetch::<PointerCollider>(|handle, intersection| {

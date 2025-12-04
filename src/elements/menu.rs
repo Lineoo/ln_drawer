@@ -4,19 +4,15 @@ use crate::{
     lnwin::{Lnwindow, PointerEvent},
     measures::{Delta, Position, Rectangle, ZOrder},
     text::{Text, TextEdit, TextManager},
-    tools::pointer::{PointerCollider, PointerHit},
+    tools::pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave},
     world::{Element, ElementDescriptor, Handle, World},
 };
 
 const PAD: i32 = 10;
-const PAD_H: i32 = PAD / 2;
 const PAD_TEXT: i32 = 8;
-
-const ENTRY_HEIGHT: i32 = 40;
 
 pub struct Menu {
     frame: StandardSquare,
-    select_frame: StandardSquare,
     entries: Vec<MenuEntry>,
 }
 
@@ -40,56 +36,51 @@ pub struct MenuEntryDescriptor {
 
 impl Element for Menu {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
-
-        let obs = world.observer(lnwindow, move |event: &PointerEvent, world, _| {
-            if let &PointerEvent::Moved(point) = event {
-                let mut fetched = world.fetch_mut(this).unwrap();
-                let frame = fetched.frame.get_rect();
-
-                let delta1 = point - frame.origin;
-                let delta2 = frame.right_up() - point;
-                if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
-                    let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
-                    let rect = fetched.entries[index].frame.get_rect();
-                    fetched.select_frame.set_rect(rect);
-                    fetched.select_frame.set_visible(true);
-                } else {
-                    fetched.select_frame.set_visible(false);
-                }
-            } else if let &PointerEvent::Pressed(point) = event {
-                let fetched = world.fetch(this).unwrap();
-                let frame = fetched.frame.get_rect();
-
-                if !frame.contains(point) {
-                    world.remove(this);
-                }
-            }
-        });
-
-        world.dependency(obs, this);
-
-        let collider = world.insert(PointerCollider {
-            rect: self.frame.get_rect(),
-            z_order: ZOrder::new(100),
-        });
+        let collider = world.insert(PointerCollider::fullscreen(ZOrder::new(80)));
 
         world.dependency(collider, this);
 
         world.observer(collider, move |&PointerHit(event), world, _| {
+            let PointerEvent::Pressed(point) = event else {
+                return;
+            };
+
             let fetched = world.fetch(this).unwrap();
             let frame = fetched.frame.get_rect();
 
-            if let PointerEvent::Pressed(point) = event {
-                let delta1 = point - frame.origin;
-                let delta2 = frame.right_up() - point;
-                if delta1.x > PAD_H && delta1.y > PAD_H && delta2.x > PAD_H && delta2.y > PAD_H {
-                    let index = ((delta1.y - PAD_H) / (ENTRY_HEIGHT + PAD)) as usize;
-                    (fetched.entries[index].action)(world);
-                    world.remove(this);
-                }
+            if !frame.contains(point) {
+                world.remove(this);
             }
         });
+
+        for (i, entry) in self.entries.iter().enumerate() {
+            let collider = world.insert(PointerCollider {
+                rect: entry.frame.get_rect(),
+                z_order: ZOrder::new(110),
+            });
+
+            world.dependency(collider, this);
+
+            world.observer(collider, move |&PointerHit(event), world, _| {
+                let PointerEvent::Pressed(_) = event else {
+                    return;
+                };
+
+                let fetched = world.fetch(this).unwrap();
+                (fetched.entries[i].action)(world);
+                world.remove(this);
+            });
+
+            world.observer(collider, move |&PointerEnter, world, _| {
+                let mut fetched = world.fetch_mut(this).unwrap();
+                fetched.entries[i].frame.set_visible(true);
+            });
+
+            world.observer(collider, move |&PointerLeave, world, _| {
+                let mut fetched = world.fetch_mut(this).unwrap();
+                fetched.entries[i].frame.set_visible(false);
+            });
+        }
     }
 }
 
@@ -127,27 +118,19 @@ impl Menu {
             interface,
         );
 
-        let select_frame = StandardSquare::new(
-            rect,
-            ZOrder::new(120),
-            false,
-            palette::Srgba::new(0.3, 0.3, 0.3, 1.0),
-            interface,
-        );
-
         let mut entries = Vec::with_capacity(descriptor.entries.len());
         for entry in descriptor.entries {
+            let prev = (descriptor.entry_height + PAD) * entries.len() as i32;
             let rect = Rectangle {
-                origin: frame.get_rect().origin
-                    + Delta::new(PAD, PAD + (ENTRY_HEIGHT + PAD) * entries.len() as i32),
-                extend: Delta::new(descriptor.entry_width - PAD * 2, ENTRY_HEIGHT),
+                origin: frame.get_rect().origin + Delta::new(PAD, PAD + prev),
+                extend: Delta::new(descriptor.entry_width, descriptor.entry_height),
             };
 
             let frame = StandardSquare::new(
                 rect,
-                ZOrder::new(100),
-                true,
-                palette::Srgba::new(0.1, 0.1, 0.1, 0.0),
+                ZOrder::new(120),
+                false,
+                palette::Srgba::new(0.3, 0.3, 0.3, 1.0),
                 interface,
             );
 
@@ -169,11 +152,7 @@ impl Menu {
             });
         }
 
-        Menu {
-            frame,
-            select_frame,
-            entries,
-        }
+        Menu { frame, entries }
     }
 
     pub fn test_descriptor(position: Position) -> MenuDescriptor {
@@ -223,7 +202,7 @@ impl Menu {
                         world.insert(TextEdit::new(
                             Rectangle {
                                 origin: Position::default(),
-                                extend: Delta::new(300, 600),
+                                extend: Delta::new(600, 200),
                             },
                             "Enter text here".into(),
                             &mut world.single_fetch_mut().unwrap(),

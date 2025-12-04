@@ -17,13 +17,7 @@ pub struct StrokeLayer {
 }
 impl Element for StrokeLayer {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
-        let collider = world.insert(PointerCollider {
-            rect: Rectangle {
-                origin: Position::splat(i32::MIN / 2),
-                extend: Delta::splat(i32::MAX),
-            },
-            z_order: ZOrder::new(-100),
-        });
+        let collider = world.insert(PointerCollider::fullscreen(ZOrder::new(-100)));
 
         world.dependency(collider, this);
 
@@ -37,7 +31,6 @@ impl Element for StrokeLayer {
             }
             _ => (),
         });
-
     }
 }
 impl StrokeLayer {
