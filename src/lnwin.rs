@@ -210,11 +210,15 @@ impl Lnwindow {
 
             // Render //
             WindowEvent::RedrawRequested => {
-                let mut interface = world.single_fetch_mut::<Interface>().unwrap();
-                interface.resize(&self.viewport);
+                let interface = world.single::<Interface>().unwrap();
+                let mut fetched = world.fetch_mut(interface).unwrap();
+                fetched.resize(&self.viewport);
                 world.trigger(world.single::<Interface>().unwrap(), Redraw);
-                interface.restructure();
-                interface.redraw();
+                world.queue(move |world| {
+                    let mut fetched = world.fetch_mut(interface).unwrap();
+                    fetched.restructure();
+                    fetched.redraw();
+                });
             }
 
             WindowEvent::Resized(size) => {

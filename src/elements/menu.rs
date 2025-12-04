@@ -1,10 +1,10 @@
 use crate::{
     elements::{Image, Palette},
     interface::{Interface, StandardSquare},
-    lnwin::PointerEvent,
+    lnwin::{Lnwindow, PointerEvent},
     measures::{Delta, Position, Rectangle, ZOrder},
     text::{Text, TextEdit, TextManager},
-    tools::pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave},
+    tools::pointer::{Pointer, PointerCollider, PointerEnter, PointerHit, PointerLeave},
     world::{Element, ElementDescriptor, Handle, World},
 };
 
@@ -50,6 +50,11 @@ impl Element for Menu {
 
             if !frame.contains(point) {
                 world.remove(this);
+
+                if let PointerEvent::RightClick(_) = event {
+                    let lnwindow = world.single::<Lnwindow>().unwrap();
+                    world.trigger(lnwindow, event);
+                }
             }
         });
 

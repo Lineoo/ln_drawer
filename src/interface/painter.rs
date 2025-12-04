@@ -361,6 +361,7 @@ impl Painter {
                 depth_or_array_layers: 1,
             },
         );
+
     }
 
     pub fn get_rect(&self) -> Rectangle {
@@ -412,7 +413,6 @@ impl Painter {
 }
 
 /// A more efficient way to write data into painter's Buffer
-/// TODO Smaller ranged writing
 pub struct PainterWriter<'painter> {
     painter: &'painter mut Painter,
 }

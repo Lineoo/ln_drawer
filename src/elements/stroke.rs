@@ -1,7 +1,8 @@
 use hashbrown::HashMap;
+use palette::Srgb;
 
 use crate::{
-    elements::{Menu, Palette},
+    elements::Menu,
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
@@ -14,6 +15,7 @@ const CHUNK_SIZE: i32 = 512;
 #[derive(Default)]
 pub struct StrokeLayer {
     chunks: HashMap<[i32; 2], StrokeChunk>,
+    pub color: Srgb<u8>,
 }
 impl Element for StrokeLayer {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
@@ -24,10 +26,7 @@ impl Element for StrokeLayer {
         world.observer(collider, move |&PointerHit(event), world, _| match event {
             PointerEvent::Moved(position) | PointerEvent::Pressed(position) => {
                 let mut stroke = world.fetch_mut(this).unwrap();
-                let color = (world.single_fetch::<Palette>())
-                    .map(|palette| palette.pick_color())
-                    .unwrap_or([0xff; 4]);
-                stroke.write_pixel(position, color, world);
+                stroke.draw(position, world);
             }
             PointerEvent::RightClick(position) => {
                 world.build(Menu::test_descriptor(position));
@@ -37,7 +36,7 @@ impl Element for StrokeLayer {
     }
 }
 impl StrokeLayer {
-    pub fn write_pixel(&mut self, point: Position, color: [u8; 4], world: &World) {
+    pub fn draw(&mut self, point: Position, world: &World) {
         let mut interface = world.single_fetch_mut::<Interface>().unwrap();
         let chunk_key = [
             point.x.div_euclid(CHUNK_SIZE),
@@ -55,7 +54,10 @@ impl StrokeLayer {
             ),
         });
 
-        chunk.painter.set_pixel(point, color);
+        chunk.painter.set_pixel(
+            point,
+            [self.color.red, self.color.green, self.color.blue, 255],
+        );
     }
 }
 
