@@ -9,7 +9,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image, StrokeLayer},
+    elements::{image::Image, stroke::StrokeLayer},
     interface::{Interface, Redraw},
     measures::Position,
     text::TextManager,
@@ -151,13 +151,14 @@ impl Lnwindow {
                 ..
             } => {
                 let point = self.viewport.screen_to_world(self.cursor);
-                world.trigger(this, PointerEvent::RightClick(point));
+                world.trigger(this, PointerAltEvent(point));
 
                 self.window.request_redraw();
             }
 
             WindowEvent::ModifiersChanged(modifiers) => {
-                world.single_fetch_mut::<LnwinModifiers>().unwrap().0 = *modifiers;
+                let mut fetched = world.single_fetch_mut::<LnwinModifiers>().unwrap();
+                fetched.0 = *modifiers;
             }
 
             WindowEvent::KeyboardInput { .. } => {
@@ -277,8 +278,10 @@ pub enum PointerEvent {
     Moved(Position),
     Pressed(Position),
     Released(Position),
-    RightClick(Position),
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct PointerAltEvent(pub Position);
 
 #[derive(Default)]
 pub struct LnwinModifiers(pub Modifiers);

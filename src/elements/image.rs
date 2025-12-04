@@ -1,15 +1,41 @@
 use std::{error::Error, path::Path};
 
 use crate::{
+    elements::menu::{MenuDescriptor, MenuEntryDescriptor},
     interface::{Interface, Painter},
-    measures::{Delta, Position, Rectangle},
-    world::Element,
+    measures::{Delta, Position, Rectangle, ZOrder},
+    tools::pointer::{PointerCollider, PointerMenu},
+    world::{Element, Handle, World},
 };
 
 pub struct Image {
     painter: Painter,
 }
-impl Element for Image {}
+
+impl Element for Image {
+    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+        let collider = world.insert(PointerCollider {
+            rect: self.painter.get_rect(),
+            z_order: ZOrder::new(0),
+        });
+
+        world.dependency(collider, this);
+
+        world.observer(collider, move |&PointerMenu(position), world, _| {
+            world.build(MenuDescriptor {
+                position,
+                entries: vec![MenuEntryDescriptor {
+                    label: "Remove".into(),
+                    action: Box::new(move |world| {
+                        world.remove(this);
+                    }),
+                }],
+                ..Default::default()
+            });
+        });
+    }
+}
+
 impl Image {
     pub fn new(path: impl AsRef<Path>, interface: &mut Interface) -> Result<Image, Box<dyn Error>> {
         let reader = image::ImageReader::open(path)?;
@@ -40,9 +66,5 @@ impl Image {
         );
 
         Ok(Image { painter })
-    }
-
-    pub fn get_rect(&self) -> Rectangle {
-        self.painter.get_rect()
     }
 }

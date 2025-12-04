@@ -1,11 +1,14 @@
 use palette::{FromColor, Hsl, Srgb, rgb::Rgb};
 
 use crate::{
-    elements::StrokeLayer,
+    elements::{
+        menu::{MenuDescriptor, MenuEntryDescriptor},
+        stroke::StrokeLayer,
+    },
     interface::{Interface, Painter, Redraw, Wireframe},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
-    tools::pointer::{PointerCollider, PointerHit},
+    tools::pointer::{PointerCollider, PointerHit, PointerMenu},
     world::{Element, Handle, World},
 };
 
@@ -27,61 +30,67 @@ impl Element for Palette {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
         // main collider //
 
-        let collider = world.insert(PointerCollider {
+        let main_collider = world.insert(PointerCollider {
             rect: self.main.get_rect(),
             z_order: ZOrder::new(0),
         });
 
-        world.observer(collider, move |&PointerHit(event), world, _| match event {
-            PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
-                let mut this = world.fetch_mut(this).unwrap();
-                let rect = this.main.get_rect();
-                this.main_knob.set_rect(Rectangle {
-                    origin: point.clamp(Rectangle {
-                        origin: rect.origin,
-                        extend: rect.extend - Delta::splat(1),
-                    }),
-                    extend: Delta::splat(1),
-                });
+        world.observer(
+            main_collider,
+            move |&PointerHit(event), world, _| match event {
+                PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
+                    let mut this = world.fetch_mut(this).unwrap();
+                    let rect = this.main.get_rect();
+                    this.main_knob.set_rect(Rectangle {
+                        origin: point.clamp(Rectangle {
+                            origin: rect.origin,
+                            extend: rect.extend - Delta::splat(1),
+                        }),
+                        extend: Delta::splat(1),
+                    });
 
-                let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
-                layer.color = this.get_color();
+                    let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
+                    layer.color = this.get_color();
 
-                this.redraw = true;
-            }
-            _ => {}
-        });
+                    this.redraw = true;
+                }
+                _ => {}
+            },
+        );
 
-        world.dependency(collider, this);
+        world.dependency(main_collider, this);
 
         // hue collider //
 
-        let collider = world.insert(PointerCollider {
+        let hue_collider = world.insert(PointerCollider {
             rect: self.hue.get_rect(),
             z_order: ZOrder::new(0),
         });
 
-        world.observer(collider, move |&PointerHit(event), world, _| match event {
-            PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
-                let mut this = world.fetch_mut(this).unwrap();
-                let rect = this.hue.get_rect();
-                this.hue_knob.set_rect(Rectangle {
-                    origin: Position::new(
-                        point.x.clamp(rect.left(), rect.right() - 1),
-                        rect.down(),
-                    ),
-                    extend: Delta::new(1, HUE_HEIGHT as i32),
-                });
+        world.observer(
+            hue_collider,
+            move |&PointerHit(event), world, _| match event {
+                PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
+                    let mut this = world.fetch_mut(this).unwrap();
+                    let rect = this.hue.get_rect();
+                    this.hue_knob.set_rect(Rectangle {
+                        origin: Position::new(
+                            point.x.clamp(rect.left(), rect.right() - 1),
+                            rect.down(),
+                        ),
+                        extend: Delta::new(1, HUE_HEIGHT as i32),
+                    });
 
-                let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
-                layer.color = this.get_color();
+                    let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
+                    layer.color = this.get_color();
 
-                this.redraw = true;
-            }
-            _ => {}
-        });
+                    this.redraw = true;
+                }
+                _ => {}
+            },
+        );
 
-        world.dependency(collider, this);
+        world.dependency(hue_collider, this);
 
         // track redraw request //
 
@@ -96,6 +105,34 @@ impl Element for Palette {
         });
 
         world.dependency(tracker, this);
+
+        // menu //
+
+        world.observer(main_collider, move |&PointerMenu(position), world, _| {
+            world.build(MenuDescriptor {
+                position,
+                entries: vec![MenuEntryDescriptor {
+                    label: "Remove".into(),
+                    action: Box::new(move |world| {
+                        world.remove(this);
+                    }),
+                }],
+                ..Default::default()
+            });
+        });
+
+        world.observer(hue_collider, move |&PointerMenu(position), world, _| {
+            world.build(MenuDescriptor {
+                position,
+                entries: vec![MenuEntryDescriptor {
+                    label: "Remove".into(),
+                    action: Box::new(move |world| {
+                        world.remove(this);
+                    }),
+                }],
+                ..Default::default()
+            });
+        });
     }
 }
 
@@ -156,6 +193,10 @@ impl Palette {
         Srgb::from_color(self.get_hsl()).into_format()
     }
 
+    pub fn set_color(&mut self, color: Srgb<u8>) {
+        self.set_hsl(Hsl::from_color(color.into_format()));
+    }
+
     fn get_hsl(&self) -> Hsl {
         let base_position = self.hue.get_rect().left();
         let knob_position = self.hue_knob.get_rect().left();
@@ -173,6 +214,34 @@ impl Palette {
         let lightness = lightness as f32 / HEIGHT as f32;
 
         Hsl::new(hue, saturation, lightness)
+    }
+
+    fn set_hsl(&mut self, hsl: Hsl) {
+        let (hue, saturation, lightness) = hsl.into_components();
+
+        let hue = (hue.into_degrees() / 360.0 * WIDTH as f32).floor() as i32;
+        let hx = (self.hue.get_rect().left() + hue).rem_euclid(WIDTH as i32);
+
+        let saturation = (saturation * WIDTH as f32).floor() as i32;
+        let mx = (self.main.get_rect().left() + saturation).rem_euclid(WIDTH as i32);
+
+        let lightness = (lightness * HEIGHT as f32).floor() as i32;
+        let my = (self.main.get_rect().down() + lightness).rem_euclid(HEIGHT as i32);
+
+        let hr = self.hue_knob.get_rect();
+        let mr = self.main_knob.get_rect();
+
+        self.hue_knob.set_rect(Rectangle {
+            origin: Position::new(hx, hr.origin.y),
+            extend: hr.extend,
+        });
+
+        self.main_knob.set_rect(Rectangle {
+            origin: Position::new(mx, my),
+            extend: mr.extend,
+        });
+
+        self.redraw = true;
     }
 
     fn redraw(&mut self) {

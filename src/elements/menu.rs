@@ -1,10 +1,10 @@
 use crate::{
-    elements::{Image, Palette},
+    elements::{image::Image, palette::Palette},
     interface::{Interface, StandardSquare},
-    lnwin::{Lnwindow, PointerEvent},
+    lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
     measures::{Delta, Position, Rectangle, ZOrder},
     text::{Text, TextEdit, TextManager},
-    tools::pointer::{Pointer, PointerCollider, PointerEnter, PointerHit, PointerLeave},
+    tools::pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu},
     world::{Element, ElementDescriptor, Handle, World},
 };
 
@@ -34,6 +34,17 @@ pub struct MenuEntryDescriptor {
     pub action: Box<dyn Fn(&World)>,
 }
 
+impl Default for MenuDescriptor {
+    fn default() -> Self {
+        Self {
+            position: Position::default(),
+            entry_width: 400,
+            entry_height: 40,
+            entries: Vec::new(),
+        }
+    }
+}
+
 impl Element for Menu {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
         let collider = world.insert(PointerCollider::fullscreen(ZOrder::new(80)));
@@ -41,7 +52,7 @@ impl Element for Menu {
         world.dependency(collider, this);
 
         world.observer(collider, move |&PointerHit(event), world, _| {
-            let (PointerEvent::Pressed(point) | PointerEvent::RightClick(point)) = event else {
+            let PointerEvent::Pressed(point) = event else {
                 return;
             };
 
@@ -50,12 +61,14 @@ impl Element for Menu {
 
             if !frame.contains(point) {
                 world.remove(this);
-
-                if let PointerEvent::RightClick(_) = event {
-                    let lnwindow = world.single::<Lnwindow>().unwrap();
-                    world.trigger(lnwindow, event);
-                }
             }
+        });
+
+        world.observer(collider, move |&PointerMenu(position), world, _| {
+            world.remove(this);
+
+            let lnwindow = world.single::<Lnwindow>().unwrap();
+            world.trigger(lnwindow, PointerAltEvent(position));
         });
 
         for (i, entry) in self.entries.iter().enumerate() {

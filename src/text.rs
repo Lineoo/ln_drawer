@@ -5,12 +5,13 @@ use parking_lot::Mutex;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{
+    elements::menu::{MenuDescriptor, MenuEntryDescriptor},
     interface::{Interface, Painter, Redraw},
     lnwin::{LnwinModifiers, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
     tools::{
         focus::{Focus, FocusInput, RequestFocus},
-        pointer::{PointerCollider, PointerHit},
+        pointer::{PointerCollider, PointerHit, PointerMenu},
     },
     world::{Element, Handle, World},
 };
@@ -268,6 +269,19 @@ impl Element for TextEdit {
             drop(font_system);
 
             fetched.redraw = true;
+        });
+
+        world.observer(collider, move |&PointerMenu(position), world, _| {
+            world.build(MenuDescriptor {
+                position,
+                entries: vec![MenuEntryDescriptor {
+                    label: "Remove".into(),
+                    action: Box::new(move |world| {
+                        world.remove(this);
+                    }),
+                }],
+                ..Default::default()
+            });
         });
 
         let interface = world.single::<Interface>().unwrap();

@@ -1,5 +1,5 @@
 use crate::{
-    lnwin::{Lnwindow, PointerEvent},
+    lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
     measures::{Delta, Position, Rectangle, ZOrder},
     tools::focus::{Focus, RequestFocus},
     world::{Element, Handle, World},
@@ -19,6 +19,9 @@ pub struct PointerEnter;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerLeave;
+
+#[derive(Debug, Clone, Copy)]
+pub struct PointerMenu(pub Position);
 
 impl Element for PointerCollider {}
 
@@ -47,8 +50,7 @@ impl Element for Pointer {
 
             let (PointerEvent::Moved(point)
             | PointerEvent::Pressed(point)
-            | PointerEvent::Released(point)
-            | PointerEvent::RightClick(point)) = event;
+            | PointerEvent::Released(point)) = event;
 
             if !pressed {
                 let pointer_onto = pointer.intersect(world, point);
@@ -71,14 +73,20 @@ impl Element for Pointer {
                 world.trigger(focus, RequestFocus(Some(this.untyped())));
             }
 
-            if let Some(pointer_on) = pointer_on
-                && (pressed || matches!(event, PointerEvent::RightClick(_)))
-            {
+            if pressed && let Some(pointer_on) = pointer_on {
                 world.trigger(pointer_on, PointerHit(event));
             }
 
             if let PointerEvent::Released(_) = event {
                 pressed = false;
+            }
+        });
+
+        world.observer(lnwindow, move |&PointerAltEvent(point), world, _| {
+            let fetched = world.fetch(this).unwrap();
+
+            if let Some(pointer_on) = fetched.intersect(world, point) {
+                world.trigger(pointer_on, PointerMenu(point));
             }
         });
     }

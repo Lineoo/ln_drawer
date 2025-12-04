@@ -1,9 +1,4 @@
-mod image;
-mod menu;
-mod palette;
-mod stroke;
-
-pub use image::Image;
-pub use menu::Menu;
-pub use palette::Palette;
-pub use stroke::StrokeLayer;
+pub mod image;
+pub mod menu;
+pub mod palette;
+pub mod stroke;
