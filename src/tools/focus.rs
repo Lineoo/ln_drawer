@@ -1,44 +1,39 @@
 use winit::event::{KeyEvent, WindowEvent};
 
-use crate::{
-    lnwin::Lnwindow,
-    world::{Element, ElementHandle, WorldCell, WorldCellEntry},
-};
+use crate::world::{Element, Handle, World};
 
 #[derive(Default)]
 pub struct Focus {
-    on: Option<ElementHandle>,
+    on: Option<Handle>,
 }
+
 impl Element for Focus {
-    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
-        entry
-            .single_entry::<Lnwindow>()
-            .unwrap()
-            .observe::<WindowEvent>(|event, entry| {
-                if let Some(focus) = entry.single_fetch::<Focus>()
-                    && let Some(focus_on) = focus.get()
-                    && let Some(focus_on) = entry.entry(focus_on)
-                    && let WindowEvent::KeyboardInput { event, .. } = event
-                {
-                    focus_on.trigger(FocusInput(event.clone()));
-                }
-            });
+    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(this, |event: &WindowEvent, world, _| {
+            if let Some(focus) = world.single_fetch::<Focus>()
+                && let Some(focus_on) = focus.get()
+                && let WindowEvent::KeyboardInput { event, .. } = event
+            {
+                world.trigger(focus_on, FocusInput(event.clone()));
+            }
+        });
     }
 }
+
 impl Focus {
-    pub fn get(&self) -> Option<ElementHandle> {
+    pub fn get(&self) -> Option<Handle> {
         self.on
     }
 
-    pub fn set(&mut self, on: Option<ElementHandle>, world: &WorldCell) {
+    pub fn set(&mut self, on: Option<Handle>, world: &World) {
         let off = self.on;
         self.on = on;
         if off != on {
-            if let Some(off) = off.and_then(|off| world.entry(off)) {
-                off.trigger(FocusOff);
+            if let Some(off) = off {
+                world.trigger(off, &FocusOff);
             }
-            if let Some(on) = on.and_then(|on| world.entry(on)) {
-                on.trigger(FocusOn);
+            if let Some(on) = on {
+                world.trigger(on, &FocusOn);
             }
         }
     }

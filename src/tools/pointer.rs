@@ -2,10 +2,10 @@ use crate::{
     lnwin::{Lnwindow, PointerEvent},
     measures::{Position, Rectangle, ZOrder},
     tools::focus::Focus,
-    world::{Element, ElementHandle, WorldCell, WorldCellEntry},
+    world::{Element, Handle, World},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PointerCollider {
     pub rect: Rectangle,
     pub z_order: ZOrder,
@@ -14,7 +14,7 @@ pub struct PointerCollider {
 pub struct PointerEnter;
 pub struct PointerLeave;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PointerHit(pub PointerEvent);
 
 impl Element for PointerCollider {}
@@ -22,54 +22,55 @@ impl Element for PointerCollider {}
 #[derive(Default)]
 pub struct Pointer;
 impl Element for Pointer {
-    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
+    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
         let mut pressed = false;
         let mut pointer_on = None;
-        entry
-            .single_other::<Lnwindow>()
-            .unwrap()
-            .observe::<PointerEvent>(move |&event, entry| {
-                let pointer = entry.fetch().unwrap();
 
-                let (PointerEvent::Moved(point)
-                | PointerEvent::Pressed(point)
-                | PointerEvent::Released(point)) = event;
+        let lnwindow = world.single::<Lnwindow>().unwrap();
+        world.observer(lnwindow, move |&event, world, _| {
+            let pointer = world.fetch(this).unwrap();
 
-                if !pressed {
-                    let pointer_onto = pointer.intersect(entry.world(), point);
-                    if pointer_on != pointer_onto {
-                        if let Some(pointer_on) = pointer_on.and_then(|e| entry.entry(e)) {
-                            pointer_on.trigger(PointerLeave);
-                        }
-                        if let Some(pointer_onto) = pointer_onto.and_then(|e| entry.entry(e)) {
-                            pointer_onto.trigger(PointerEnter);
-                        }
+            let (PointerEvent::Moved(point)
+            | PointerEvent::Pressed(point)
+            | PointerEvent::Released(point)) = event;
+
+            if !pressed {
+                let pointer_onto = pointer.intersect(world, point);
+                if pointer_on != pointer_onto {
+                    if let Some(pointer_on) = pointer_on {
+                        world.trigger(pointer_on, &PointerLeave);
                     }
-                    pointer_on = pointer.intersect(entry.world(), point);
+
+                    if let Some(pointer_onto) = pointer_onto {
+                        world.trigger(pointer_onto, &PointerEnter);
+                    }
                 }
 
-                if let PointerEvent::Pressed(_) = event {
-                    pressed = true;
-                    let mut focus = entry.single_fetch_mut::<Focus>().unwrap();
-                    focus.set(None, &entry);
-                }
+                pointer_on = pointer.intersect(world, point);
+            }
 
-                if pressed && let Some(pointer_on) = pointer_on.and_then(|w| entry.entry(w)) {
-                    pointer_on.trigger(PointerHit(event));
-                }
+            if let PointerEvent::Pressed(_) = event {
+                pressed = true;
+                let mut focus = world.single_fetch_mut::<Focus>().unwrap();
+                focus.set(None, world);
+            }
 
-                if let PointerEvent::Released(_) = event {
-                    pressed = false;
-                }
-            });
+            if pressed && let Some(pointer_on) = pointer_on {
+                world.trigger(pointer_on, PointerHit(event));
+            }
+
+            if let PointerEvent::Released(_) = event {
+                pressed = false;
+            }
+        });
     }
 }
 impl Pointer {
     pub fn intersect(
         &self,
-        world: &WorldCell,
+        world: &World,
         point: Position,
-    ) -> Option<ElementHandle<PointerCollider>> {
+    ) -> Option<Handle<PointerCollider>> {
         let mut top_result = None;
         let mut max_order = ZOrder::new(isize::MIN);
         world.foreach_fetch::<PointerCollider>(|handle, intersection| {

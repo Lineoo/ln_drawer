@@ -14,7 +14,7 @@ use crate::{
     measures::Position,
     text::TextManager,
     tools::{focus::Focus, pointer::Pointer},
-    world::{Element, World, WorldCellEntry},
+    world::{Element, Handle, World},
 };
 
 #[derive(Default)]
@@ -26,6 +26,7 @@ impl ApplicationHandler for Lnwin {
         if self.world.single::<Lnwindow>().is_none() {
             let lnwindow = pollster::block_on(Lnwindow::new(event_loop, &mut self.world));
             self.world.insert(lnwindow);
+            self.world.flush();
         }
     }
 
@@ -35,10 +36,12 @@ impl ApplicationHandler for Lnwin {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
-        match self.world.single_entry::<Lnwindow>() {
-            Some(mut window) => window.trigger(&event),
+        match self.world.single::<Lnwindow>() {
+            Some(window) => self.world.trigger(window, event),
             None => event_loop.exit(),
         }
+
+        self.world.flush();
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
@@ -58,18 +61,17 @@ pub struct Lnwindow {
     camera_origin: Option<[i32; 2]>,
 }
 impl Element for Lnwindow {
-    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
-        entry.observe::<WindowEvent>(|event, entry| {
-            let mut lnwindow = entry.fetch_mut().unwrap();
-            let entry = entry.entry(entry.handle()).unwrap();
-            lnwindow.window_event(event, entry);
+    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(this, |event: &WindowEvent, world, this| {
+            let mut lnwindow = world.fetch_mut(this).unwrap();
+            lnwindow.window_event(event, world, this);
         });
 
-        entry.insert(TextManager::default());
-        entry.insert(LnwinModifiers::default());
-        entry.insert(Focus::default());
-        entry.insert(StrokeLayer::default());
-        entry.insert(Pointer);
+        world.insert(TextManager::default());
+        world.insert(LnwinModifiers::default());
+        world.insert(Focus::default());
+        world.insert(StrokeLayer::default());
+        world.insert(Pointer);
     }
 }
 impl Lnwindow {
@@ -86,6 +88,7 @@ impl Lnwindow {
             camera: [0, 0],
             zoom: 0,
         };
+
         let interface = Interface::new(window.clone(), &viewport).await;
 
         world.insert(interface);
@@ -99,7 +102,7 @@ impl Lnwindow {
         }
     }
 
-    fn window_event(&mut self, event: &WindowEvent, entry: WorldCellEntry<Lnwindow>) {
+    fn window_event(&mut self, event: &WindowEvent, world: &World, this: Handle<Lnwindow>) {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 // The viewport needs to be updated before the viewport transform
@@ -114,7 +117,7 @@ impl Lnwindow {
                 }
 
                 let point = self.viewport.screen_to_world(self.cursor);
-                entry.trigger(PointerEvent::Moved(point));
+                world.trigger(this, PointerEvent::Moved(point));
 
                 self.window.request_redraw();
             }
@@ -126,16 +129,19 @@ impl Lnwindow {
                 ..
             } => {
                 let point = self.viewport.screen_to_world(self.cursor);
-                entry.trigger(PointerEvent::Pressed(point));
+                world.trigger(this, PointerEvent::Pressed(point));
+
                 self.window.request_redraw();
             }
+
             WindowEvent::MouseInput {
                 state: ElementState::Released,
                 button: MouseButton::Left,
                 ..
             } => {
                 let point = self.viewport.screen_to_world(self.cursor);
-                entry.trigger(PointerEvent::Released(point));
+                world.trigger(this, PointerEvent::Released(point));
+
                 self.window.request_redraw();
             }
 
@@ -145,15 +151,16 @@ impl Lnwindow {
                 ..
             } => {
                 let point = self.viewport.screen_to_world(self.cursor);
-                if let Some(menu) = entry.single_entry::<Menu>() {
-                    menu.destroy();
+                if let Some(menu) = world.single::<Menu>() {
+                    world.remove(menu);
                 }
-                entry.build(Menu::test_descriptor(point));
+
+                world.build(Menu::test_descriptor(point));
                 self.window.request_redraw();
             }
 
             WindowEvent::ModifiersChanged(modifiers) => {
-                entry.single_fetch_mut::<LnwinModifiers>().unwrap().0 = *modifiers;
+                world.single_fetch_mut::<LnwinModifiers>().unwrap().0 = *modifiers;
             }
 
             WindowEvent::KeyboardInput { .. } => {
@@ -169,6 +176,7 @@ impl Lnwindow {
                 self.camera_cursor_start = self.cursor;
                 self.camera_origin = Some(self.viewport.camera);
             }
+
             WindowEvent::MouseInput {
                 state: ElementState::Released,
                 button: MouseButton::Middle,
@@ -176,6 +184,7 @@ impl Lnwindow {
             } => {
                 self.camera_origin = None;
             }
+
             WindowEvent::MouseWheel { delta, .. } => {
                 match delta {
                     MouseScrollDelta::LineDelta(_rows, lines) => {
@@ -192,9 +201,9 @@ impl Lnwindow {
 
             // Misc //
             WindowEvent::DroppedFile(path) => {
-                match Image::new(path, &mut entry.single_fetch_mut().unwrap()) {
+                match Image::new(path, &mut world.single_fetch_mut().unwrap()) {
                     Ok(image) => {
-                        entry.insert(image);
+                        world.insert(image);
                     }
                     Err(err) => {
                         log::warn!("Drop File: {err}");
@@ -204,12 +213,13 @@ impl Lnwindow {
 
             // Render //
             WindowEvent::RedrawRequested => {
-                let mut interface = entry.single_fetch_mut::<Interface>().unwrap();
+                let mut interface = world.single_fetch_mut::<Interface>().unwrap();
                 interface.resize(&self.viewport);
-                entry.single_entry::<Interface>().unwrap().trigger(Redraw);
+                world.trigger(world.single::<Interface>().unwrap(), Redraw);
                 interface.restructure();
                 interface.redraw();
             }
+
             WindowEvent::Resized(size) => {
                 self.viewport.width = size.width.max(1);
                 self.viewport.height = size.height.max(1);
@@ -217,7 +227,7 @@ impl Lnwindow {
             }
 
             WindowEvent::CloseRequested => {
-                entry.destroy();
+                world.remove(this);
             }
 
             _ => (),
@@ -261,7 +271,7 @@ impl Viewport {
 }
 
 /// Pointer that has been transformed into world-space
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum PointerEvent {
     Moved(Position),
     Pressed(Position),

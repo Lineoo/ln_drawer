@@ -12,7 +12,7 @@ use crate::{
         focus::{Focus, FocusInput},
         pointer::PointerHit,
     },
-    world::{Element, WorldCellEntry},
+    world::{Element, Handle, World},
 };
 
 pub struct TextManager {
@@ -94,11 +94,10 @@ pub struct TextEdit {
     swash_cache: Arc<Mutex<SwashCache>>,
 }
 impl Element for TextEdit {
-    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
-        entry.observe::<PointerHit>(move |event, entry| match event.0 {
+    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(this, |&PointerHit(event), world, handle| match event {
             PointerEvent::Pressed(position) => {
-                let mut this = entry.fetch_mut().unwrap();
-                let this = &mut *this;
+                let this = &mut *world.fetch_mut(handle).unwrap();
 
                 let point = position - this.inner.get_rect().left_up();
                 let point = Position::new(point.x, -point.y);
@@ -114,14 +113,13 @@ impl Element for TextEdit {
 
                 drop(font_system);
 
-                let mut focus = entry.single_fetch_mut::<Focus>().unwrap();
-                focus.set(Some(entry.handle().untyped()), &entry);
+                let mut focus = world.single_fetch_mut::<Focus>().unwrap();
+                focus.set(Some(handle.untyped()), world);
 
                 this.redraw();
             }
             PointerEvent::Moved(position) => {
-                let mut this = entry.fetch_mut().unwrap();
-                let this = &mut *this;
+                let this = &mut *world.fetch_mut(handle).unwrap();
 
                 let point = position - this.inner.get_rect().left_up();
                 let point = Position::new(point.x, -point.y);
@@ -142,16 +140,16 @@ impl Element for TextEdit {
             PointerEvent::Released(_) => (),
         });
 
-        entry.observe(move |FocusInput(event), entry| {
+        world.observer(this, |FocusInput(event), world, this| {
             if !event.state.is_pressed() {
                 return;
             }
 
-            let this = &mut *entry.fetch_mut().unwrap();
+            let this = &mut *world.fetch_mut(this).unwrap();
             let mut font_system = this.font_system.lock();
             let mut editor = this.editor.borrow_with(&mut font_system);
 
-            let modifiers = entry.single_fetch::<LnwinModifiers>().unwrap();
+            let modifiers = world.single_fetch::<LnwinModifiers>().unwrap();
             let ctrl_down = modifiers.0.state().control_key();
             let shift_down = modifiers.0.state().shift_key();
 

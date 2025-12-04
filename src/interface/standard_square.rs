@@ -4,11 +4,7 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
 use crate::interface::{Component, ComponentCommand, ComponentInner, Interface};
-use crate::{
-    measures::{Rectangle, ZOrder},
-    tools::pointer::PointerCollider,
-    world::{Element, WorldCellEntry},
-};
+use crate::measures::{Rectangle, ZOrder};
 
 pub struct StandardSquareManager {
     pipeline: RenderPipeline,

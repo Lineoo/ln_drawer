@@ -36,7 +36,10 @@
         - [x] 使用 `when_insert` 和 `depend` 来注册操作元素
             - [x] 删除 `Service` 和 `Property` 并保持 `world` 模块整洁
                 - [ ] `Observer` 模块分离
-                - [ ] 删除各种 Entry, Other 写法
+                    - [ ] Observer 清理
+                - [ ] `Dependency` 仿照 Observer 将其元素化
+                - [ ] 使用 `Attaches` 简化元素对应
+                - [x] 删除各种 Entry, Other 写法
             - [x] 各种元素的构建比较复杂，推荐使用 Descriptor 模式
                 - [x] (trait) ElementDescriptor 用于直接在世界新建 Element，自动获取 interface 等等的资源
             - [ ] 事件自动转发

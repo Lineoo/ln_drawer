@@ -6,7 +6,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerHit},
-    world::{Element, WorldCell, WorldCellEntry},
+    world::{Element, Handle, World},
 };
 
 const CHUNK_SIZE: i32 = 512;
@@ -16,40 +16,32 @@ pub struct StrokeLayer {
     chunks: HashMap<[i32; 2], StrokeChunk>,
 }
 impl Element for StrokeLayer {
-    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
-        entry.observe::<PointerHit>(move |event, entry| match event.0 {
-            PointerEvent::Moved(position) | PointerEvent::Pressed(position) => {
-                let mut stroke = entry.fetch_mut().unwrap();
-                let color = (entry.single_fetch::<Palette>())
-                    .map(|palette| palette.pick_color())
-                    .unwrap_or([0xff; 4]);
-                stroke.write_pixel(position, color, entry.world());
-            }
-            _ => (),
-        });
-
-        let collider = entry.insert(PointerCollider {
+    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+        let collider = world.insert(PointerCollider {
             rect: Rectangle {
-                origin: Position::splat(i32::MIN),
+                origin: Position::splat(i32::MIN / 2),
                 extend: Delta::splat(i32::MAX),
             },
             z_order: ZOrder::new(-100),
         });
 
-        let this = entry.handle().untyped();
+        world.dependency(collider, this);
 
-        entry.entry(collider).unwrap().depend(this);
+        world.observer(collider, move |&PointerHit(event), world, _| match event {
+            PointerEvent::Moved(position) | PointerEvent::Pressed(position) => {
+                let mut stroke = world.fetch_mut(this).unwrap();
+                let color = (world.single_fetch::<Palette>())
+                    .map(|palette| palette.pick_color())
+                    .unwrap_or([0xff; 4]);
+                stroke.write_pixel(position, color, world);
+            }
+            _ => (),
+        });
 
-        entry
-            .entry(collider)
-            .unwrap()
-            .observe::<PointerHit>(move |hit, entry| {
-                entry.entry(this).unwrap().trigger(*hit);
-            });
     }
 }
 impl StrokeLayer {
-    pub fn write_pixel(&mut self, point: Position, color: [u8; 4], world: &WorldCell) {
+    pub fn write_pixel(&mut self, point: Position, color: [u8; 4], world: &World) {
         let mut interface = world.single_fetch_mut::<Interface>().unwrap();
         let chunk_key = [
             point.x.div_euclid(CHUNK_SIZE),
