@@ -1,7 +1,7 @@
 use hashbrown::HashMap;
 
 use crate::{
-    elements::Palette,
+    elements::{Menu, Palette},
     interface::{Interface, Painter},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
@@ -28,6 +28,9 @@ impl Element for StrokeLayer {
                     .map(|palette| palette.pick_color())
                     .unwrap_or([0xff; 4]);
                 stroke.write_pixel(position, color, world);
+            }
+            PointerEvent::RightClick(position) => {
+                world.build(Menu::test_descriptor(position));
             }
             _ => (),
         });

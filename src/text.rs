@@ -147,7 +147,7 @@ impl Element for TextEdit {
 
                 fetched.redraw = true;
             }
-            PointerEvent::Released(_) => (),
+            _ => {}
         });
 
         world.observer(this, |FocusInput(event), world, this| {
@@ -274,7 +274,7 @@ impl Element for TextEdit {
 
         let tracker = world.observer(interface, move |Redraw, world, _| {
             let mut this = world.fetch_mut(this).unwrap();
-            
+
             if this.redraw {
                 this.redraw();
             }

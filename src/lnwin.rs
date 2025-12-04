@@ -9,7 +9,7 @@ use winit::{
 };
 
 use crate::{
-    elements::{Image, Menu, StrokeLayer},
+    elements::{Image, StrokeLayer},
     interface::{Interface, Redraw},
     measures::Position,
     text::TextManager,
@@ -151,11 +151,8 @@ impl Lnwindow {
                 ..
             } => {
                 let point = self.viewport.screen_to_world(self.cursor);
-                if let Some(menu) = world.single::<Menu>() {
-                    world.remove(menu);
-                }
+                world.trigger(this, PointerEvent::RightClick(point));
 
-                world.build(Menu::test_descriptor(point));
                 self.window.request_redraw();
             }
 
@@ -276,6 +273,7 @@ pub enum PointerEvent {
     Moved(Position),
     Pressed(Position),
     Released(Position),
+    RightClick(Position),
 }
 
 #[derive(Default)]

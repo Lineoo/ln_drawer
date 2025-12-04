@@ -47,7 +47,8 @@ impl Element for Pointer {
 
             let (PointerEvent::Moved(point)
             | PointerEvent::Pressed(point)
-            | PointerEvent::Released(point)) = event;
+            | PointerEvent::Released(point)
+            | PointerEvent::RightClick(point)) = event;
 
             if !pressed {
                 let pointer_onto = pointer.intersect(world, point);
@@ -70,7 +71,9 @@ impl Element for Pointer {
                 world.trigger(focus, RequestFocus(Some(this.untyped())));
             }
 
-            if pressed && let Some(pointer_on) = pointer_on {
+            if let Some(pointer_on) = pointer_on
+                && (pressed || matches!(event, PointerEvent::RightClick(_)))
+            {
                 world.trigger(pointer_on, PointerHit(event));
             }
 

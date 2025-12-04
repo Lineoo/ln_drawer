@@ -41,7 +41,7 @@ impl Element for Menu {
         world.dependency(collider, this);
 
         world.observer(collider, move |&PointerHit(event), world, _| {
-            let PointerEvent::Pressed(point) = event else {
+            let (PointerEvent::Pressed(point) | PointerEvent::RightClick(point)) = event else {
                 return;
             };
 
