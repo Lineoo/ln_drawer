@@ -290,30 +290,6 @@ impl World {
         })
     }
 
-    pub fn fetch_dyn<T: ?Sized>(&self, handle: Handle<T>) -> Option<Ref<'_>> {
-        let handle = handle.cast();
-
-        if self.removed.borrow().contains(&handle) {
-            return None;
-        }
-
-        let mut occupied = self.occupied.borrow_mut();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt < 0 {
-            panic!("{handle:?} is mutably borrowed");
-        }
-
-        *cnt += 1;
-        let element = self.storage.elements.get(&handle)?.as_ref();
-
-        Some(Ref {
-            ptr: element as *const dyn Any,
-            world: self,
-            handle,
-        })
-    }
-
     pub fn fetch_mut<T: Element>(&self, handle: Handle<T>) -> Option<RefMut<'_, T>> {
         let handle = handle.cast();
 
@@ -333,30 +309,6 @@ impl World {
 
         Some(RefMut {
             ptr: element as *const T as *mut T,
-            world: self,
-            handle,
-        })
-    }
-
-    pub fn fetch_mut_dyn<T: ?Sized>(&self, handle: Handle<T>) -> Option<RefMut<'_>> {
-        let handle = handle.cast();
-
-        if self.removed.borrow().contains(&handle) {
-            return None;
-        }
-
-        let mut occupied = self.occupied.borrow_mut();
-
-        let cnt = occupied.entry(handle).or_default();
-        if *cnt != 0 {
-            panic!("{handle:?} is borrowed");
-        }
-
-        *cnt -= 1;
-        let element = self.storage.elements.get(&handle)?.as_ref();
-
-        Some(RefMut {
-            ptr: element as *const dyn Any as *mut dyn Any,
             world: self,
             handle,
         })
@@ -584,12 +536,77 @@ struct Dependency {
 
 impl Element for Dependencies {}
 
-// Attaches //
+// Group & View //
 
-#[derive(Default)]
-struct Attaches<T: Element>(HashMap<Handle, Handle<T>>);
+pub struct Group(HashMap<TypeId, HashSet<Handle>>);
 
-impl<T: Element> Element for Attaches<T> {}
+pub struct WorldView<'world> {
+    pub world: &'world World,
+    pub group: &'world Group,
+}
+
+impl Element for Group {}
+
+impl WorldView<'_> {
+    // fetch //
+
+    pub fn fetch<T: Element>(&self, handle: Handle<T>) -> Option<Ref<'_, T>> {
+        let elements = self.group.0.get(&TypeId::of::<T>())?;
+        if !elements.contains(&handle.cast()) {
+            return None;
+        }
+
+        self.world.fetch(handle)
+    }
+
+    pub fn fetch_mut<T: Element>(&self, handle: Handle<T>) -> Option<RefMut<'_, T>> {
+        let elements = self.group.0.get(&TypeId::of::<T>())?;
+        if !elements.contains(&handle.cast()) {
+            return None;
+        }
+
+        self.world.fetch_mut(handle)
+    }
+
+    // singleton //
+
+    pub fn single<T: Element>(&self) -> Option<Handle<T>> {
+        let elements = self.group.0.get(&TypeId::of::<T>())?;
+        if elements.len() > 1 {
+            return None;
+        }
+
+        elements.iter().next().map(|x| x.cast())
+    }
+
+    pub fn single_fetch<T: Element>(&self) -> Option<Ref<'_, T>> {
+        self.fetch(self.single::<T>()?)
+    }
+
+    pub fn single_fetch_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
+        self.fetch_mut(self.single::<T>()?)
+    }
+
+    // iteration //
+
+    pub fn foreach<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {
+        let Some(elements) = self.group.0.get(&TypeId::of::<T>()) else {
+            return;
+        };
+
+        for handle in elements.iter() {
+            f(handle.cast());
+        }
+    }
+
+    pub fn foreach_fetch<T: Element>(&self, mut f: impl FnMut(Handle<T>, Ref<T>)) {
+        self.foreach::<T>(|handle| f(handle, self.fetch(handle).unwrap()))
+    }
+
+    pub fn foreach_fetch_mut<T: Element>(&self, mut f: impl FnMut(Handle<T>, RefMut<T>)) {
+        self.foreach::<T>(|handle| f(handle, self.fetch_mut(handle).unwrap()))
+    }
+}
 
 // Lifecycle Events //
 

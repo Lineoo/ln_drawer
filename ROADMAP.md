@@ -19,28 +19,39 @@
     - [x] 右键元素并删除
 - [x] 更新 ROADMAP.md
 - **LnDrawer v0.1.1-alpha2**
-- [ ] `Dependency` 仿照 Observer 将其元素化
 - [ ] 元素编组
 - [ ] 元素编组可单例与遍历
 - [ ] 大家全部变成编组吧 - v- / 世界默认编组
-- [ ] 圆角描边与阴影
 - [ ] 变换工具
     - [ ] 变换接口元素
     - [ ] 位置移动
     - [ ] 矩形调整
+- [ ] 序列化保存 & 加载
+- **LnDrawer v0.1.1-alpha3**
+- [ ] 文字的高精度渲染
+    - [ ] 使用 fontdue 来实现 SDF 文字渲染
+- [ ] 统一跨端字体
+- [ ] 高精度相机位移、缩放
+- [ ] 触摸、触控板的缩放、平移手势支持
+- **LnDrawer v0.1.1**
+- [ ] 重写 Interface
+    - [ ] 使用世界元素来注册 Interface
+    - [ ] 高效渲染剔除
+- [ ] 可修改的圆角大小
+- [ ] 圆角描边与阴影
+- [ ] 动画系统
 - [ ] 简单噪音播放器
     - [ ] 开关按键
     - [ ] 音频库
     - [ ] 噪声生成
-- [ ] 序列化保存 & 加载
-- **LnDrawer v0.1.1-alpha3**
 - [ ] 音乐播放器
     - [ ] 用户界面
+- **LnDrawer v0.1.2**
+- [ ] 选择工具优化
+- [ ] 分型画板
 - [ ] 吸色实时显示颜色
-- [ ] 可修改的圆角大小
 - [ ] 曲率连续圆角
-- [ ] 重写 Interface
-    - [ ] 使用世界元素来注册 Interface
+- [ ] 用于数位板/笔的代替控制按键
 - [ ] 更多画板工具
     - [ ] 按钮列
         - [ ] 按钮图片显示
@@ -48,17 +59,14 @@
     - [ ] 画板工具状态机
         - [ ] 画笔按钮
     - [ ] 全 Alpha 区块垃圾清理
-- [ ] 偏移与精度修复
+- [ ] 修复"无限大矩形"精度问题
 - [ ] Observer & Dependency 清理
     - [ ] Element 的 `when_remove` 动作
 - [ ] Any 观察者
 - [ ] 使用 `Attaches` 简化元素对应
-- [ ] 分数单位支持
-    - [ ] 修复"无限大矩形"精度问题
-    - [ ] 相机位移
-    - [ ] 缩放
-    - [ ] 文字的高精度渲染
 - [ ] Palette & TextEdit 纹理更新时占用太大
+- [ ] 备忘录
+- [ ] 日历
 
 # 技术细节 #
 
@@ -189,6 +197,8 @@ Linux: `$XDG_DATA_HOME/LnDrawer/world.ln-save`
 
 比如单选框就是这个功能非常典型的应用：只需简单地将同组的其他单选框取消选择，即可实现一定范围内的单选。
 
+### 方案一：使用状态切换
+
 使用 `Group` 和 `group()` 函数来指定使用的编组：
 
 ```rust
@@ -204,3 +214,33 @@ let _guard: GroupGuard<'_> = world.group(Group::default());
 ```
 
 接下来的 `single` 和 `foreach` 指令都会使用该 group。
+
+### 方案二：使用编组元素 + 默认编组 shortcut
+
+优点是使用独立编组元素，相比起方案一，侵入性更小，也更加统一。
+
+缺点是没有原生实现，进而引入自指涉/初始化问题，而 `single` 和 `foreach` 等函数会变成单纯的 shortcut。
+
+```rust
+let group = world.insert(Group::default());
+let group = world.group(group);
+group.single_fetch::<Foo>();
+```
+
+### 方案三：完全独立仅元素
+
+类似方案二，但是完全独立，不对 World 原有逻辑作任何修改。
+
+没有自指涉，没有初始化，一切都很简单。
+
+更加精简，而世界层面的指令就类似 root 一样，一定可以看到所有东西。
+
+而且多亏独立与 World 的访问器以及无需 shortcut 的统一层级，我们可以获得额外的 `fetch` 控制。
+
+缺点是元素的启用/禁用等功能要求手动进入默认组，不然就是默认看得到所有东西，这会导致代码量增多。
+
+```rust
+let group = world.insert(Group::default());
+let view: GroupView<'_> = world.view(group);
+view.fetch(foo);
+```
