@@ -203,6 +203,7 @@ pub struct Wireframe {
     buffer: WireframeBuffer,
     queue: Queue,
 }
+
 impl Drop for Wireframe {
     fn drop(&mut self) {
         if let Err(e) = (self.comp_tx).send((self.comp_idx, ComponentCommand::Destroy)) {
@@ -210,6 +211,7 @@ impl Drop for Wireframe {
         }
     }
 }
+
 impl Wireframe {
     #[must_use = "The wireframe will be destroyed when being drop."]
     pub fn new(rect: Rectangle, color: [f32; 4], interface: &mut Interface) -> Wireframe {
@@ -266,6 +268,7 @@ pub struct WireframeBuffer {
     bind_group: BindGroup,
     color: Buffer,
 }
+
 impl WireframeBuffer {
     pub fn draw(&self, rpass: &mut RenderPass) {
         rpass.set_bind_group(0, Some(&self.bind_group), &[]);

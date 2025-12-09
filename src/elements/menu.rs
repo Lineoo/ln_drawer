@@ -76,7 +76,7 @@ impl Element for Menu {
 
         for (i, entry) in self.entries.iter().enumerate() {
             let collider = world.insert(PointerCollider {
-                rect: entry.frame.get_rect().tweak_all(PAD),
+                rect: entry.frame.get_rect().expand(PAD),
                 z_order: ZOrder::new(110),
             });
 
@@ -156,7 +156,7 @@ impl Menu {
             );
 
             let mut text = Text::new(
-                rect.tweak_all(-PAD_TEXT),
+                rect.expand(-PAD_TEXT),
                 entry.label,
                 text_manager,
                 interface,

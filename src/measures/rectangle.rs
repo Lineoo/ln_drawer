@@ -120,37 +120,45 @@ impl Rectangle {
         self.origin + self.extend
     }
 
+    #[inline]
+    pub fn with_left_down(self, corner: Position) -> Rectangle {
+        Rectangle::new(corner.x, corner.y, self.right(), self.up())
+    }
+
+    #[inline]
+    pub fn with_left_up(self, corner: Position) -> Rectangle {
+        Rectangle::new(corner.x, self.down(), self.right(), corner.y)
+    }
+
+    #[inline]
+    pub fn with_right_down(self, corner: Position) -> Rectangle {
+        Rectangle::new(self.left(), corner.y, corner.x, self.up())
+    }
+
+    #[inline]
+    pub fn with_right_up(self, corner: Position) -> Rectangle {
+        Rectangle::new(self.left(), self.down(), corner.x, corner.y)
+    }
+
     pub fn contains(self, position: Position) -> bool {
-        let delta = position.wrapping_sub(self.origin);
-        (delta.x as u32) < (self.extend.x as u32) && (delta.y as u32) < (self.extend.y as u32)
+        let normal = self.normalize();
+        let delta = position.wrapping_sub(normal.origin);
+        (delta.x as u32) < (normal.extend.x as u32) && (delta.y as u32) < (normal.extend.y as u32)
     }
 
-    pub fn tweak(self, left: i32, down: i32, right: i32, up: i32) -> Rectangle {
-        Rectangle {
-            origin: self.origin - Delta::new(left, down),
-            extend: self.extend + Delta::new(left, down) + Delta::new(right, up),
-        }
-    }
-
-    pub fn tweak_all(self, val: i32) -> Rectangle {
+    pub fn expand(self, val: i32) -> Rectangle {
         Rectangle {
             origin: self.origin - Delta::splat(val),
             extend: self.extend + Delta::splat(val * 2),
         }
     }
 
-    pub fn with_origin(self, origin: Position) -> Rectangle {
-        Rectangle {
-            origin,
-            extend: self.extend,
-        }
-    }
-
-    pub fn with_extend(self, extend: Delta) -> Rectangle {
-        Rectangle {
-            origin: self.origin,
-            extend,
-        }
+    pub fn normalize(self) -> Rectangle {
+        let left = i32::min(self.origin.x, self.origin.x + self.extend.x);
+        let down = i32::min(self.origin.y, self.origin.y + self.extend.y);
+        let right = i32::max(self.origin.x, self.origin.x + self.extend.x);
+        let up = i32::max(self.origin.y, self.origin.y + self.extend.y);
+        Rectangle::new(left, down, right, up)
     }
 
     pub fn into_array(self) -> [i32; 4] {

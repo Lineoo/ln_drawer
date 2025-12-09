@@ -238,10 +238,6 @@ impl Square {
         self.rect.origin
     }
 
-    pub fn set_position(&mut self, position: Position) {
-        self.set_rect(self.rect.with_origin(position));
-    }
-
     pub fn set_color(&mut self, color: [f32; 4]) {
         self.queue
             .write_buffer(&self.buffer.color, 0, bytemuck::bytes_of(&color));
