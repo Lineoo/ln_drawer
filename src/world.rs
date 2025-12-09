@@ -229,6 +229,10 @@ impl World {
             return false;
         }
 
+        if self.inserted.borrow().contains(&handle.cast()) {
+            return true;
+        }
+
         self.storage.elements.contains_key(&handle.cast())
     }
 
@@ -535,78 +539,6 @@ struct Dependency {
 }
 
 impl Element for Dependencies {}
-
-// Group & View //
-
-pub struct Group(HashMap<TypeId, HashSet<Handle>>);
-
-pub struct WorldView<'world> {
-    pub world: &'world World,
-    pub group: &'world Group,
-}
-
-impl Element for Group {}
-
-impl WorldView<'_> {
-    // fetch //
-
-    pub fn fetch<T: Element>(&self, handle: Handle<T>) -> Option<Ref<'_, T>> {
-        let elements = self.group.0.get(&TypeId::of::<T>())?;
-        if !elements.contains(&handle.cast()) {
-            return None;
-        }
-
-        self.world.fetch(handle)
-    }
-
-    pub fn fetch_mut<T: Element>(&self, handle: Handle<T>) -> Option<RefMut<'_, T>> {
-        let elements = self.group.0.get(&TypeId::of::<T>())?;
-        if !elements.contains(&handle.cast()) {
-            return None;
-        }
-
-        self.world.fetch_mut(handle)
-    }
-
-    // singleton //
-
-    pub fn single<T: Element>(&self) -> Option<Handle<T>> {
-        let elements = self.group.0.get(&TypeId::of::<T>())?;
-        if elements.len() > 1 {
-            return None;
-        }
-
-        elements.iter().next().map(|x| x.cast())
-    }
-
-    pub fn single_fetch<T: Element>(&self) -> Option<Ref<'_, T>> {
-        self.fetch(self.single::<T>()?)
-    }
-
-    pub fn single_fetch_mut<T: Element>(&self) -> Option<RefMut<'_, T>> {
-        self.fetch_mut(self.single::<T>()?)
-    }
-
-    // iteration //
-
-    pub fn foreach<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {
-        let Some(elements) = self.group.0.get(&TypeId::of::<T>()) else {
-            return;
-        };
-
-        for handle in elements.iter() {
-            f(handle.cast());
-        }
-    }
-
-    pub fn foreach_fetch<T: Element>(&self, mut f: impl FnMut(Handle<T>, Ref<T>)) {
-        self.foreach::<T>(|handle| f(handle, self.fetch(handle).unwrap()))
-    }
-
-    pub fn foreach_fetch_mut<T: Element>(&self, mut f: impl FnMut(Handle<T>, RefMut<T>)) {
-        self.foreach::<T>(|handle| f(handle, self.fetch_mut(handle).unwrap()))
-    }
-}
 
 // Lifecycle Events //
 

@@ -4,7 +4,10 @@ use crate::{
     lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
     measures::{Delta, Position, Rectangle, ZOrder},
     text::{Text, TextEdit, TextManager},
-    tools::pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu},
+    tools::{
+        pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu},
+        transform::TransformTool,
+    },
     world::{Element, ElementDescriptor, Handle, World},
 };
 
@@ -223,6 +226,12 @@ impl Menu {
                             &mut world.single_fetch_mut().unwrap(),
                             &mut world.single_fetch_mut().unwrap(),
                         ));
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "Transform Tool".into(),
+                    action: Box::new(move |world| {
+                        world.insert(TransformTool::default());
                     }),
                 },
             ],

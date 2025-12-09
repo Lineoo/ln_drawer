@@ -4,7 +4,10 @@ use crate::{
     elements::menu::{MenuDescriptor, MenuEntryDescriptor},
     interface::{Interface, Painter},
     measures::{Delta, Position, Rectangle, ZOrder},
-    tools::pointer::{PointerCollider, PointerMenu},
+    tools::{
+        pointer::{PointerCollider, PointerMenu},
+        transform::{Transform, TransformUpdate},
+    },
     world::{Element, Handle, World},
 };
 
@@ -32,6 +35,22 @@ impl Element for Image {
                 }],
                 ..Default::default()
             });
+        });
+
+        let transform = world.insert(Transform {
+            rect: self.painter.get_rect(),
+            resizable: true,
+        });
+
+        world.dependency(transform, this);
+
+        world.observer(transform, move |TransformUpdate, world, transform| {
+            let mut this = world.fetch_mut(this).unwrap();
+            let mut collider = world.fetch_mut(collider).unwrap();
+            let transform = world.fetch(transform).unwrap();
+
+            this.painter.set_rect(transform.rect);
+            collider.rect = transform.rect;
         });
     }
 }

@@ -1,88 +1,102 @@
 use crate::{
-    interface::{Interface, Wireframe},
+    elements::menu::{MenuDescriptor, MenuEntryDescriptor},
     lnwin::PointerEvent,
-    measures::{Position, Rectangle},
-    tools::pointer::{Pointer, PointerHit},
-    world::{Element, ElementHandle, WorldCellEntry},
+    measures::{Position, Rectangle, ZOrder},
+    tools::pointer::{PointerCollider, PointerHit, PointerMenu},
+    world::{Element, Handle, World},
 };
 
 #[derive(Default)]
 pub struct TransformTool {
-    selected: Option<Selected>,
-    dragging: Option<Dragging>,
+    active: Option<Handle<Transform>>,
+    active_base: Option<Position>,
+    pointer_base: Option<Position>,
 }
 
-struct Selected {
-    frame: Wireframe,
-    element: ElementHandle,
+pub struct Transform {
+    pub rect: Rectangle,
+    pub resizable: bool,
 }
 
-struct Dragging {
-    element_start: Position,
-    pointer_start: Position,
-}
+pub struct TransformUpdate;
 
 impl Element for TransformTool {
-    fn when_inserted(&mut self, entry: WorldCellEntry<Self>) {
-        entry.observe(|PointerHit(event), entry| {
-            let this = &mut *entry.fetch_mut().unwrap();
+    fn when_inserted(&mut self, world: &World, tool: Handle<Self>) {
+        world.foreach_fetch::<Transform>(|transform, fetched_transform| {
+            let collider = world.insert(PointerCollider {
+                rect: fetched_transform.rect,
+                z_order: ZOrder::new(50),
+            });
 
-            match (&mut this.selected, &mut this.dragging, event) {
-                (_, None, PointerEvent::Pressed(pointer)) => {
-                    let pointer_tool = entry.single_fetch::<Pointer>().unwrap();
-                    if let Some(element) = pointer_tool.intersect(&entry, *pointer)
-                        && let Some(rect) = entry.get::<Rectangle>(element)
-                    {
-                        let mut interact = entry.single_fetch_mut::<Interface>().unwrap();
-                        let frame = Wireframe::new(rect, [0.8, 0.8, 0.8, 0.9], &mut interact);
-                        this.selected = Some(Selected { frame, element });
-                        this.dragging = Some(Dragging {
-                            element_start: rect.origin,
-                            pointer_start: *pointer,
-                        });
-                    } else {
-                        this.selected = None;
-                        this.dragging = None;
+            world.dependency(collider, tool);
+
+            world.observer(collider, move |PointerHit(event), world, _| {
+                let mut tool = world.fetch_mut(tool).unwrap();
+                let mut fetched_transform = world.fetch_mut(transform).unwrap();
+                match event {
+                    PointerEvent::Pressed(position) => {
+                        tool.active.replace(transform);
+                        tool.active_base.replace(fetched_transform.rect.origin);
+                        tool.pointer_base.replace(*position);
                     }
-                }
-                (
-                    Some(Selected { frame, element }),
-                    Some(Dragging {
-                        element_start,
-                        pointer_start,
-                    }),
-                    PointerEvent::Moved(pointer),
-                ) => {
-                    let delta = *pointer - *pointer_start;
-                    let dest = *element_start + delta;
-
-                    if let Some(mut rect) = entry.get::<Rectangle>(*element) {
-                        rect.origin = dest;
-                        entry.set::<Rectangle>(*element, rect);
-                        frame.set_rect(rect);
+                    PointerEvent::Moved(position) => {
+                        let delta = *position - tool.pointer_base.unwrap();
+                        fetched_transform.rect.origin = tool.active_base.unwrap() + delta;
+                        world.trigger(transform, TransformUpdate);
                     }
+                    PointerEvent::Released(_) => {}
                 }
-                (
-                    Some(Selected { frame, element }),
-                    Some(Dragging {
-                        element_start,
-                        pointer_start,
-                    }),
-                    PointerEvent::Released(pointer),
-                ) => {
-                    let delta = *pointer - *pointer_start;
-                    let dest = *element_start + delta;
+            });
 
-                    if let Some(mut rect) = entry.get::<Rectangle>(*element) {
-                        rect.origin = dest;
-                        entry.set::<Rectangle>(*element, rect);
-                        frame.set_rect(rect);
-                    }
+            world.observer(collider, move |&PointerMenu(position), world, _| {
+                world.build(MenuDescriptor {
+                    position,
+                    entries: vec![
+                        MenuEntryDescriptor {
+                            label: "Reposition to World Original Point".into(),
+                            action: Box::new(move |world| {
+                                let mut fetched = world.fetch_mut(transform).unwrap();
+                                fetched.rect.origin = Position::default();
+                                world.trigger(transform, TransformUpdate);
+                            }),
+                        },
+                        MenuEntryDescriptor {
+                            label: "Stop Transform Tool".into(),
+                            action: Box::new(move |world| {
+                                world.remove(tool);
+                            }),
+                        },
+                    ],
+                    ..Default::default()
+                });
+            });
 
-                    this.dragging = None;
-                }
-                _ => {}
-            }
+            let track = world.observer(transform, move |TransformUpdate, world, transform| {
+                let fetched_transform = world.fetch(transform).unwrap();
+                let mut collider = world.fetch_mut(collider).unwrap();
+                collider.rect = fetched_transform.rect;
+            });
+
+            world.dependency(track, collider);
         });
+
+        let main_collider = world.insert(PointerCollider::fullscreen(ZOrder::new(40)));
+
+        world.observer(main_collider, move |&PointerMenu(position), world, _| {
+            world.build(MenuDescriptor {
+                position,
+                entries: vec![MenuEntryDescriptor {
+                    label: "Stop Transform Tool".into(),
+                    action: Box::new(move |world| {
+                        world.remove(tool);
+                    }),
+                }],
+                ..Default::default()
+            });
+        });
+
+        world.dependency(main_collider, tool);
     }
 }
+
+impl Element for Transform {}
