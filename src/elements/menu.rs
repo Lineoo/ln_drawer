@@ -1,5 +1,5 @@
 use crate::{
-    elements::{image::Image, palette::Palette},
+    elements::{image::Image, palette::PaletteDescriptor},
     interface::{Interface, StandardSquare},
     lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
     measures::{Delta, Position, Rectangle, ZOrder},
@@ -155,12 +155,7 @@ impl Menu {
                 interface,
             );
 
-            let mut text = Text::new(
-                rect.expand(-PAD_TEXT),
-                entry.label,
-                text_manager,
-                interface,
-            );
+            let mut text = Text::new(rect.expand(-PAD_TEXT), entry.label, text_manager, interface);
             text.set_order(ZOrder::new(140));
 
             entries.push(MenuEntry {
@@ -196,11 +191,7 @@ impl Menu {
                 MenuEntryDescriptor {
                     label: "New Palette".into(),
                     action: Box::new(move |world| {
-                        let palette = Palette::new(
-                            Position::default(),
-                            &mut world.single_fetch_mut().unwrap(),
-                        );
-                        world.insert(palette);
+                        world.build(PaletteDescriptor::default());
                     }),
                 },
                 MenuEntryDescriptor {
@@ -232,6 +223,18 @@ impl Menu {
                     label: "Transform Tool".into(),
                     action: Box::new(move |world| {
                         world.insert(TransformTool::default());
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "World Save".into(),
+                    action: Box::new(move |world| {
+                        crate::save::save_into_file(world);
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "World Load".into(),
+                    action: Box::new(move |world| {
+                        crate::save::read_from_file(world);
                     }),
                 },
             ],

@@ -2,11 +2,12 @@ use std::{fmt, ops};
 
 use crate::measures::{Rectangle, delta::Delta};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Position {
     pub x: i32,
     pub y: i32,
 }
+
 impl fmt::Debug for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Position")
@@ -15,11 +16,13 @@ impl fmt::Debug for Position {
             .finish()
     }
 }
+
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("").field(&self.x).field(&self.y).finish()
     }
 }
+
 impl ops::Add<Delta> for Position {
     type Output = Position;
     fn add(self, rhs: Delta) -> Self::Output {
@@ -29,12 +32,14 @@ impl ops::Add<Delta> for Position {
         }
     }
 }
+
 impl ops::AddAssign<Delta> for Position {
     fn add_assign(&mut self, rhs: Delta) {
         self.x += rhs.x;
         self.y += rhs.y;
     }
 }
+
 impl ops::Sub<Delta> for Position {
     type Output = Position;
     fn sub(self, rhs: Delta) -> Self::Output {
@@ -44,12 +49,14 @@ impl ops::Sub<Delta> for Position {
         }
     }
 }
+
 impl ops::SubAssign<Delta> for Position {
     fn sub_assign(&mut self, rhs: Delta) {
         self.x -= rhs.x;
         self.y -= rhs.y;
     }
 }
+
 impl ops::Sub for Position {
     type Output = Delta;
     fn sub(self, rhs: Self) -> Self::Output {
@@ -59,6 +66,7 @@ impl ops::Sub for Position {
         }
     }
 }
+
 impl Position {
     pub fn new(x: i32, y: i32) -> Position {
         Position { x, y }

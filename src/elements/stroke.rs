@@ -91,4 +91,6 @@ impl StrokeLayer {
             });
         }
     }
+
+    pub fn into_bytes() {}
 }

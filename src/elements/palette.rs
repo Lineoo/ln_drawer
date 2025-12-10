@@ -9,7 +9,7 @@ use crate::{
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
     tools::pointer::{PointerCollider, PointerHit, PointerMenu},
-    world::{Element, Handle, World},
+    world::{Element, ElementDescriptor, Handle, World},
 };
 
 const WIDTH: usize = 256;
@@ -24,6 +24,14 @@ pub struct Palette {
     hue_knob: Wireframe,
 
     redraw: bool,
+}
+
+#[derive(Debug, Default, bincode::Encode, bincode::Decode)]
+pub struct PaletteDescriptor {
+    position: Position,
+    hue: f32,
+    saturation: f32,
+    lightness: f32,
 }
 
 impl Element for Palette {
@@ -136,11 +144,19 @@ impl Element for Palette {
     }
 }
 
+impl ElementDescriptor for PaletteDescriptor {
+    type Target = Palette;
+
+    fn build(self, world: &World) -> Self::Target {
+        Palette::new(self, &mut world.single_fetch_mut().unwrap())
+    }
+}
+
 impl Palette {
-    pub fn new(position: Position, interface: &mut Interface) -> Palette {
+    pub fn new(descriptor: PaletteDescriptor, interface: &mut Interface) -> Palette {
         let main = Painter::new(
             Rectangle {
-                origin: position,
+                origin: descriptor.position,
                 extend: Delta::new(WIDTH as i32, HEIGHT as i32),
             },
             interface,
@@ -148,7 +164,7 @@ impl Palette {
 
         let main_knob = Wireframe::new(
             Rectangle {
-                origin: position,
+                origin: descriptor.position,
                 extend: Delta::splat(1),
             },
             [1.0, 1.0, 1.0, 1.0],
@@ -159,7 +175,7 @@ impl Palette {
 
         let hue = Painter::new(
             Rectangle {
-                origin: position - Delta::new(0, HUE_HEIGHT as i32),
+                origin: descriptor.position - Delta::new(0, HUE_HEIGHT as i32),
                 extend: Delta::new(WIDTH as i32, HUE_HEIGHT as i32),
             },
             interface,
@@ -167,7 +183,7 @@ impl Palette {
 
         let hue_knob = Wireframe::new(
             Rectangle {
-                origin: position - Delta::new(0, HUE_HEIGHT as i32),
+                origin: descriptor.position - Delta::new(0, HUE_HEIGHT as i32),
                 extend: Delta::new(1, HUE_HEIGHT as i32),
             },
             [1.0, 1.0, 1.0, 1.0],
@@ -184,9 +200,25 @@ impl Palette {
             redraw: false,
         };
 
+        palette.set_hsl(Hsl::new(
+            descriptor.hue,
+            descriptor.saturation,
+            descriptor.lightness,
+        ));
+
         palette.redraw();
 
         palette
+    }
+
+    pub fn to_descriptor(&self) -> PaletteDescriptor {
+        let hsl = self.get_hsl();
+        PaletteDescriptor {
+            position: self.main.get_rect().left_down(),
+            hue: hsl.hue.into_degrees(),
+            saturation: hsl.saturation,
+            lightness: hsl.lightness,
+        }
     }
 
     pub fn get_color(&self) -> Srgb<u8> {
