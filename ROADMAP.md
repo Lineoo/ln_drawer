@@ -24,7 +24,7 @@
     - [x] 位置移动
     - [x] 矩形调整
 - [x] 序列化保存 & 加载
-- [ ] 笔刷层的保存
+- [x] 笔刷层的保存
 - **LnDrawer v0.1.1-alpha3**
 - [ ] 文字的高精度渲染
     - [ ] 使用 fontdue 来实现 SDF 文字渲染
@@ -32,6 +32,7 @@
 - [ ] 高精度相机位移、缩放
 - [ ] 触摸、触控板的缩放、平移手势支持
 - **LnDrawer v0.1.1**
+- [ ] ElementDescriptor 更自由
 - [ ] 重写 Interface
     - [ ] 使用世界元素来注册 Interface
     - [ ] 高效渲染剔除
@@ -49,11 +50,25 @@
 - [ ] 音乐播放器
     - [ ] 用户界面
 - **LnDrawer v0.1.2**
+- [ ] PointerEdgeCollider
 - [ ] 选择工具优化
-- [ ] 分型画板
 - [ ] 吸色实时显示颜色
 - [ ] 曲率连续圆角
 - [ ] 用于数位板/笔的代替控制按键
+- [ ] 修复"无限大矩形"精度问题
+- [ ] Dependency 和 Observer 一样使用并返回 Handle
+    - [ ] 公开 Dependency 和 Observer 类型
+- [ ] Observer & Dependency 清理
+    - [ ] Element 的 `when_remove` 动作
+- [ ] Any 观察者
+- [ ] 使用 `Attaches` 简化元素对应
+- [ ] Palette & TextEdit 纹理更新时占用太大 - 缓冲鼠标输入
+- [ ] 拖放图片
+- [ ] 备忘录
+- [ ] 日历
+- [ ] 元素编组
+- **LnDrawer v0.1.3**
+- [ ] 分型画板
 - [ ] 更多画板工具
     - [ ] 按钮列
         - [ ] 按钮图片显示
@@ -61,15 +76,7 @@
     - [ ] 画板工具状态机
         - [ ] 画笔按钮
     - [ ] 全 Alpha 区块垃圾清理
-- [ ] 修复"无限大矩形"精度问题
-- [ ] Observer & Dependency 清理
-    - [ ] Element 的 `when_remove` 动作
-- [ ] Any 观察者
-- [ ] 使用 `Attaches` 简化元素对应
-- [ ] Palette & TextEdit 纹理更新时占用太大
-- [ ] 备忘录
-- [ ] 日历
-- [ ] 元素编组
+- **LnDrawer v0.2.0**
 
 # 技术细节 #
 

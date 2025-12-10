@@ -1,13 +1,16 @@
-use std::io::Read;
-
 use crate::{
-    elements::palette::{Palette, PaletteDescriptor},
+    elements::{
+        image::Image, palette::{Palette, PaletteDescriptor}, stroke::{StrokeLayer, StrokeLayerDescriptor}
+    },
+    interface::PainterDescriptor,
     world::World,
 };
 
 #[derive(Debug, Default, bincode::Encode, bincode::Decode)]
 struct SaveFile {
     palettes: Vec<PaletteDescriptor>,
+    images: Vec<PainterDescriptor>,
+    stroke: Option<StrokeLayerDescriptor>,
 }
 
 pub fn save_into_file(world: &World) {
@@ -16,6 +19,14 @@ pub fn save_into_file(world: &World) {
     world.foreach_fetch::<Palette>(|_, palette| {
         save.palettes.push(palette.to_descriptor());
     });
+
+    world.foreach_fetch::<Image>(|_, image| {
+        save.images.push(image.to_descriptor());
+    });
+
+    if let Some(stroke) = world.single_fetch_mut::<StrokeLayer>() {
+        save.stroke.replace(stroke.to_descriptor());
+    }
 
     let Ok(()) = std::fs::create_dir_all("target") else {
         log::warn!("failed to create target folder");
@@ -48,5 +59,13 @@ pub fn read_from_file(world: &World) {
 
     for palette in save.palettes {
         world.build(palette);
+    }
+
+    for image in save.images {
+        world.insert(Image::new(image, &mut world.single_fetch_mut().unwrap()));
+    }
+
+    if let Some(stroke) = save.stroke {
+        world.build(stroke);
     }
 }

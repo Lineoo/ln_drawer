@@ -1,5 +1,6 @@
 use std::sync::mpsc::Sender;
 
+use bincode::de;
 use palette::LinSrgba;
 use palette::blend::Compose;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -132,10 +133,13 @@ impl PainterPipeline {
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
+    #[expect(clippy::too_many_arguments)]
     pub fn create(
         &mut self,
         rect: Rectangle,
         data: Vec<u8>,
+        width: u32,
+        height: u32,
         comp_idx: usize,
         comp_tx: Sender<(usize, ComponentCommand)>,
         device: &Device,
@@ -171,9 +175,6 @@ impl PainterPipeline {
         });
 
         // Texture Buffer
-
-        let width = rect.width();
-        let height = rect.height();
 
         let bind_texture = device.create_texture(&TextureDescriptor {
             label: Some("painter_texture"),
@@ -276,6 +277,16 @@ pub struct Painter {
     queue: Queue,
     buffer: PainterBuffer,
 }
+
+#[derive(Debug, Default, bincode::Encode, bincode::Decode)]
+pub struct PainterDescriptor {
+    pub rect: Rectangle,
+    pub z_order: ZOrder,
+    pub width: u32,
+    pub height: u32,
+    pub data: Vec<u8>,
+}
+
 impl Drop for Painter {
     fn drop(&mut self) {
         // FIXME: when program terminate
@@ -284,15 +295,31 @@ impl Drop for Painter {
         }
     }
 }
+
 impl Painter {
     #[must_use = "The painter will be destroyed when being drop."]
-    pub fn new(rect: Rectangle, interface: &mut Interface) -> Painter {
+    pub fn new(descriptor: PainterDescriptor, interface: &mut Interface) -> Painter {
+        interface.create_painter_with(descriptor.rect, descriptor.width, descriptor.height, descriptor.data)
+    }
+
+    #[must_use = "The painter will be destroyed when being drop."]
+    pub fn new_empty(rect: Rectangle, interface: &mut Interface) -> Painter {
         interface.create_painter(rect)
     }
 
     #[must_use = "The painter will be destroyed when being drop."]
     pub fn new_with(rect: Rectangle, data: Vec<u8>, interface: &mut Interface) -> Painter {
-        interface.create_painter_with(rect, data)
+        interface.create_painter_with(rect, rect.width(), rect.height(), data)
+    }
+
+    pub fn to_descriptor(&self) -> PainterDescriptor {
+        PainterDescriptor {
+            rect: self.rect,
+            z_order: ZOrder::new(self.z_order),
+            width: self.width,
+            height: self.height,
+            data: self.data.clone(),
+        }
     }
 
     pub fn open_writer(&mut self) -> PainterWriter<'_> {
@@ -361,7 +388,6 @@ impl Painter {
                 depth_or_array_layers: 1,
             },
         );
-
     }
 
     pub fn get_rect(&self) -> Rectangle {

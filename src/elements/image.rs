@@ -2,7 +2,7 @@ use std::{error::Error, path::Path};
 
 use crate::{
     elements::menu::{MenuDescriptor, MenuEntryDescriptor},
-    interface::{Interface, Painter},
+    interface::{Interface, Painter, PainterDescriptor},
     measures::{Delta, Position, Rectangle, ZOrder},
     tools::{
         pointer::{PointerCollider, PointerMenu},
@@ -56,20 +56,14 @@ impl Element for Image {
 }
 
 impl Image {
-    pub fn new(path: impl AsRef<Path>, interface: &mut Interface) -> Result<Image, Box<dyn Error>> {
-        let reader = image::ImageReader::open(path)?;
-        let image = reader.decode()?;
+    pub fn new(descriptor: PainterDescriptor, interface: &mut Interface) -> Image {
+        Image {
+            painter: Painter::new(descriptor, interface),
+        }
+    }
 
-        let painter = Painter::new_with(
-            Rectangle {
-                origin: Position::new(0, 0),
-                extend: Delta::new(image.width() as i32, image.height() as i32),
-            },
-            Vec::from(image.as_bytes()),
-            interface,
-        );
-
-        Ok(Image { painter })
+    pub fn to_descriptor(&self) -> PainterDescriptor {
+        self.painter.to_descriptor()
     }
 
     pub fn from_bytes(bytes: &[u8], interface: &mut Interface) -> Result<Image, Box<dyn Error>> {

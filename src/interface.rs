@@ -9,7 +9,7 @@ mod standard_square;
 mod viewport;
 mod wireframe;
 
-pub use painter::Painter;
+pub use painter::{Painter, PainterDescriptor};
 pub use square::Square;
 pub use standard_square::StandardSquare;
 pub use wireframe::Wireframe;
@@ -238,6 +238,8 @@ impl Interface {
         let painter = self.painter.create(
             rect,
             empty,
+            rect.width(),
+            rect.height(),
             self.components_idx,
             self.components_tx.clone(),
             &self.device,
@@ -251,10 +253,18 @@ impl Interface {
         painter
     }
 
-    fn create_painter_with(&mut self, rect: Rectangle, data: Vec<u8>) -> Painter {
+    fn create_painter_with(
+        &mut self,
+        rect: Rectangle,
+        width: u32,
+        height: u32,
+        data: Vec<u8>,
+    ) -> Painter {
         let painter = self.painter.create(
             rect,
             data,
+            width,
+            height,
             self.components_idx,
             self.components_tx.clone(),
             &self.device,

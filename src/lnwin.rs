@@ -197,18 +197,6 @@ impl Lnwindow {
                 self.window.request_redraw();
             }
 
-            // Misc //
-            WindowEvent::DroppedFile(path) => {
-                match Image::new(path, &mut world.single_fetch_mut().unwrap()) {
-                    Ok(image) => {
-                        world.insert(image);
-                    }
-                    Err(err) => {
-                        log::warn!("Drop File: {err}");
-                    }
-                }
-            }
-
             // Render //
             WindowEvent::RedrawRequested => {
                 let interface = world.single::<Interface>().unwrap();

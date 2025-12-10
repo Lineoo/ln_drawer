@@ -1,10 +1,11 @@
 use std::{fmt, ops};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Delta {
     pub x: i32,
     pub y: i32,
 }
+
 impl fmt::Debug for Delta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Delta")
@@ -13,6 +14,7 @@ impl fmt::Debug for Delta {
             .finish()
     }
 }
+
 impl ops::Add for Delta {
     type Output = Delta;
     fn add(self, rhs: Self) -> Self::Output {
@@ -22,12 +24,14 @@ impl ops::Add for Delta {
         }
     }
 }
+
 impl ops::AddAssign for Delta {
     fn add_assign(&mut self, rhs: Self) {
         self.x += rhs.x;
         self.y += rhs.y;
     }
 }
+
 impl ops::Sub for Delta {
     type Output = Delta;
     fn sub(self, rhs: Self) -> Self::Output {
@@ -37,12 +41,14 @@ impl ops::Sub for Delta {
         }
     }
 }
+
 impl ops::SubAssign for Delta {
     fn sub_assign(&mut self, rhs: Self) {
         self.x -= rhs.x;
         self.y -= rhs.y;
     }
 }
+
 impl Delta {
     pub fn new(x: i32, y: i32) -> Delta {
         Delta { x, y }

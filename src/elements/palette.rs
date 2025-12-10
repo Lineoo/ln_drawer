@@ -8,7 +8,10 @@ use crate::{
     interface::{Interface, Painter, Redraw, Wireframe},
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
-    tools::pointer::{PointerCollider, PointerHit, PointerMenu},
+    tools::{
+        pointer::{PointerCollider, PointerHit, PointerMenu},
+        transform::{Transform, TransformUpdate},
+    },
     world::{Element, ElementDescriptor, Handle, World},
 };
 
@@ -141,6 +144,39 @@ impl Element for Palette {
                 ..Default::default()
             });
         });
+
+        // transform //
+
+        let transform = world.insert(Transform {
+            rect: self.main.get_rect(),
+            resizable: false,
+        });
+
+        world.observer(transform, move |TransformUpdate, world, transform| {
+            let mut fetched = world.fetch_mut(this).unwrap();
+            let mut main_collider = world.fetch_mut(main_collider).unwrap();
+            let mut hue_collider = world.fetch_mut(hue_collider).unwrap();
+            let transform = world.fetch(transform).unwrap();
+
+            let delta = transform.rect.left_down() - fetched.main.get_rect().left_down();
+
+            let dest = fetched.main.get_rect() + delta;
+            fetched.main.set_rect(dest);
+
+            let dest = fetched.main_knob.get_rect() + delta;
+            fetched.main_knob.set_rect(dest);
+
+            let dest = fetched.hue.get_rect() + delta;
+            fetched.hue.set_rect(dest);
+
+            let dest = fetched.hue_knob.get_rect() + delta;
+            fetched.hue_knob.set_rect(dest);
+
+            main_collider.rect += delta;
+            hue_collider.rect += delta;
+        });
+
+        world.dependency(transform, this);
     }
 }
 
@@ -154,7 +190,7 @@ impl ElementDescriptor for PaletteDescriptor {
 
 impl Palette {
     pub fn new(descriptor: PaletteDescriptor, interface: &mut Interface) -> Palette {
-        let main = Painter::new(
+        let main = Painter::new_empty(
             Rectangle {
                 origin: descriptor.position,
                 extend: Delta::new(WIDTH as i32, HEIGHT as i32),
@@ -173,7 +209,7 @@ impl Palette {
 
         main_knob.set_z_order(ZOrder::new(1));
 
-        let hue = Painter::new(
+        let hue = Painter::new_empty(
             Rectangle {
                 origin: descriptor.position - Delta::new(0, HUE_HEIGHT as i32),
                 extend: Delta::new(WIDTH as i32, HUE_HEIGHT as i32),

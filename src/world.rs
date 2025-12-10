@@ -342,12 +342,18 @@ impl World {
     // iteration //
 
     pub fn foreach<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {
-        let removed = self.removed.borrow();
         let Some(cache) = self.storage.cache.get(&TypeId::of::<T>()) else {
             return;
         };
 
-        for handle in cache.iter().filter(|&x| !removed.contains(x)) {
+        for handle in cache.iter() {
+            let removed = self.removed.borrow();
+            if removed.contains(handle) {
+                continue;
+            }
+
+            drop(removed);
+
             f(handle.cast());
         }
     }

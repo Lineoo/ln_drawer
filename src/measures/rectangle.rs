@@ -2,7 +2,7 @@ use std::{fmt, ops};
 
 use crate::measures::{delta::Delta, position::Position};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Rectangle {
     pub origin: Position,
     pub extend: Delta,
