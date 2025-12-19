@@ -52,7 +52,7 @@ impl Element for StrokeLayer {
                 let mut stroke = world.fetch_mut(this).unwrap();
 
                 let modifiers = world.single_fetch::<LnwinModifiers>().unwrap();
-                if modifiers.0.state().alt_key() {
+                if modifiers.has_alt() {
                     stroke.pick(position, world);
                 } else {
                     stroke.draw(position, world);
