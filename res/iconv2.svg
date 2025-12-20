@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="512"
+   height="512"
+   viewBox="0 0 512 512"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.2 (ebf0e940d0, 2025-05-08)"
+   sodipodi:docname="iconv2_clear.svg"
+   inkscape:export-filename="iconv2_clear.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="px"
+     showgrid="true"
+     showguides="true"
+     inkscape:zoom="1.0192281"
+     inkscape:cx="-4.4151057"
+     inkscape:cy="300.22719"
+     inkscape:window-width="1707"
+     inkscape:window-height="995"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer2">
+    <inkscape:grid
+       id="grid7"
+       units="px"
+       originx="0"
+       originy="0"
+       spacingx="32"
+       spacingy="32"
+       empcolor="#0099e5"
+       empopacity="0.30196078"
+       color="#0099e5"
+       opacity="0.14901961"
+       empspacing="5"
+       enabled="false"
+       visible="true" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1">
+    <inkscape:path-effect
+       offset_pt="342.72088,357.63687"
+       effect="parallel"
+       id="path-effect45"
+       is_visible="true"
+       lpeversion="1"
+       length-left="150"
+       length-right="150" />
+    <inkscape:path-effect
+       effect="line_segment"
+       id="path-effect15"
+       is_visible="true"
+       lpeversion="1"
+       end_type="open_both" />
+  </defs>
+  <g
+     inkscape:groupmode="layer"
+     id="layer2"
+     inkscape:label="图层 2">
+    <path
+       d="m 329.29102,160 c -46.19701,63.79403 -92.39491,127.57948 -137.7129,192 h 59.44374 C 300.972,250.79106 386.80276,171.02802 408.30843,229.15529 429.19762,197.79716 408.82389,167.16352 352.00039,160 Z"
+       style="fill:#f5c8bb;fill-opacity:1;stroke:#000000;stroke-opacity:0"
+       id="path5"
+       sodipodi:nodetypes="cccccc" />
+    <path
+       d="m 352.00039,160 c 96,64 64,160 0,192 128,0 192,-192 0,-192 z"
+       style="fill:#f2a6a7;fill-opacity:1;stroke:#000000;stroke-opacity:0"
+       id="path31-1"
+       sodipodi:nodetypes="ccc" />
+    <path
+       d="M 99.988134,256 C 39.954341,283.13201 87.959859,339.37728 160,352 c 6.54361,-0.97338 20.2316,-3.67296 25.70898,-5.86914 L 254.06234,250.8882 C 189.81595,312.72305 108.50307,298.10053 99.988134,256 Z"
+       style="fill:#5dd9c5;stroke:#000000;stroke-opacity:0"
+       id="path6"
+       sodipodi:nodetypes="ccccc" />
+    <path
+       d="M 160,352 C 64,288 96,192 160,160 32,160 -32,352 160,352 Z"
+       style="fill:#50bab8;stroke:#000000;stroke-opacity:0;fill-opacity:1"
+       id="path28"
+       sodipodi:nodetypes="ccc" />
+  </g>
+</svg>
