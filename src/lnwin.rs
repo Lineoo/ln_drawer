@@ -186,16 +186,21 @@ impl Lnwindow {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                match delta {
-                    MouseScrollDelta::LineDelta(_rows, lines) => {
-                        let level = lines.ceil() as i32;
-                        self.viewport.zoom += level;
-                    }
-                    MouseScrollDelta::PixelDelta(delta) => {
-                        let level = delta.y.div_euclid(16.0) as i32 + 1;
-                        self.viewport.zoom += level;
-                    }
+                let zoom_delta = match delta {
+                    MouseScrollDelta::LineDelta(_rows, lines) => Fract::from_f32(*lines),
+                    MouseScrollDelta::PixelDelta(delta) => Fract::from_f64(delta.y / 16.0),
+                };
+
+                let cursor = self.viewport.screen_to_world(self.cursor);
+                self.viewport.center =
+                    cursor + (self.viewport.center - cursor) * (-zoom_delta.into_f32()).exp2();
+                if let Some(camera_origin) = &mut self.camera_origin {
+                    *camera_origin =
+                        cursor + (*camera_origin - cursor) * (-zoom_delta.into_f32()).exp2();
                 }
+
+                self.viewport.zoom += zoom_delta;
+
                 self.window.request_redraw();
             }
 
@@ -245,7 +250,7 @@ impl Viewport {
     }
 
     pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> DeltaFract {
-        let scale = f64::powf(2.0, self.zoom.n as f64 + self.zoom.nf as f64 * 1e-32);
+        let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
         let x = delta[0] / scale * self.size.w as f64 / 2.0;
         let y = delta[1] / scale * self.size.h as f64 / 2.0;
         DeltaFract::new(

@@ -36,11 +36,11 @@ impl ops::Add<DeltaFract> for PositionFract {
         let mut y = self.y.wrapping_add(rhs.y);
 
         if ox {
-            x += 1;
+            x = x.wrapping_add(1);
         }
 
         if oy {
-            y += 1;
+            y = y.wrapping_add(1);
         }
 
         PositionFract { x, xf, y, yf }
@@ -85,14 +85,14 @@ impl ops::Sub for PositionFract {
         let (xf, ox) = self.xf.overflowing_sub(rhs.xf);
         let (yf, oy) = self.yf.overflowing_sub(rhs.yf);
         let mut x = self.x.wrapping_sub(rhs.x);
-        let mut y = self.y.wrapping_sub(rhs.x);
+        let mut y = self.y.wrapping_sub(rhs.y);
 
         if ox {
-            x -= 1;
+            x = x.wrapping_sub(1);
         }
 
         if oy {
-            y -= 1;
+            y = y.wrapping_sub(1);
         }
 
         DeltaFract { x, xf, y, yf }
@@ -135,5 +135,16 @@ impl PositionFract {
             y: array[1],
             yf: arrayf[1],
         }
+    }
+}
+
+mod test {
+    use crate::measures::{DeltaFract, PositionFract};
+
+    #[test]
+    fn sub() {
+        let a = PositionFract::new(12, 0, 14, 0);
+        let b = PositionFract::new(1, 0, 1, 0);
+        assert_eq!(a - b, DeltaFract::new(11, 0, 13, 0));
     }
 }

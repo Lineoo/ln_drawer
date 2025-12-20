@@ -91,4 +91,22 @@ impl Fract {
     pub fn new(n: i32, nf: u32) -> Fract {
         Fract { n, nf }
     }
+
+    pub fn from_f32(f: f32) -> Fract {
+        Fract {
+            n: f.floor() as i32,
+            nf: ((f - f.floor()) * 32f32.exp2()) as u32,
+        }
+    }
+
+    pub fn from_f64(f: f64) -> Fract {
+        Fract {
+            n: f.floor() as i32,
+            nf: ((f - f.floor()) * 32f64.exp2()) as u32,
+        }
+    }
+
+    pub fn into_f32(self) -> f32 {
+        self.n as f32 + self.nf as f32 * (-32f32).exp2()
+    }
 }
