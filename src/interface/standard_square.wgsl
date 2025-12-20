@@ -1,8 +1,18 @@
 struct Viewport {
-    width: u32,
-    height: u32,
-    camera: vec2i,
+    size: vec2u,
+    center: vec2i,
+    center_fract: vec2u,
     zoom: i32,
+    zoom_fract: u32,
+}
+
+fn viewport_convert(world_space: vec2i) -> vec2f {
+    let camera_space = world_space - viewport.center;
+    let viewport_scale = pow(2.0, f32(viewport.zoom) + f32(viewport.zoom_fract) * 0x1p-32);
+    let screen_space = (vec2f(camera_space) - vec2f(viewport.center_fract) * vec2f(0x1p-32))
+        / vec2f(viewport.size) * viewport_scale * 2.0;
+
+    return screen_space;
 }
 
 struct Rectangle {
@@ -34,14 +44,8 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
         ((i32(index) % 2) * 2 - 1) * edge,
     );
 
-    let camera_space = vec2f(world_space_extend - viewport.camera);
-
-    let viewport_range = vec2f(f32(viewport.width), f32(viewport.height));
-    let viewport = camera_space / viewport_range * pow(2.0, f32(viewport.zoom)) * 2.0;
-
-    // TODO using world_space directly feels weird and will cause precision loss
     var ret: VertexOutput;
-    ret.position = vec4f(viewport, 0.0, 1.0);
+    ret.position = vec4f(viewport_convert(world_space_extend), 0.0, 1.0);
     ret.world_space = vec2f(world_space_extend);
     return ret;
 }

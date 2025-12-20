@@ -10,6 +10,7 @@ pub struct InterfaceViewport {
     pub bind: BindGroup,
     pub buffer: Buffer,
 }
+
 impl InterfaceViewport {
     pub fn new(viewport: &Viewport, device: &Device) -> InterfaceViewport {
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -29,11 +30,11 @@ impl InterfaceViewport {
         let buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("viewport"),
             contents: bytemuck::bytes_of(&ViewportUniform {
-                width: viewport.width,
-                height: viewport.height,
-                camera: viewport.camera,
-                zoom: viewport.zoom,
-                _padding: 0,
+                size: viewport.size.into_array(),
+                center: viewport.center.into_array(),
+                center_fract: viewport.center.into_arrayf(),
+                zoom: viewport.zoom.n,
+                zoom_fract: viewport.zoom.nf,
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -63,11 +64,11 @@ impl InterfaceViewport {
             &self.buffer,
             0,
             bytemuck::bytes_of(&ViewportUniform {
-                width: viewport.width,
-                height: viewport.height,
-                camera: viewport.camera,
-                zoom: viewport.zoom,
-                _padding: 0,
+                size: viewport.size.into_array(),
+                center: viewport.center.into_array(),
+                center_fract: viewport.center.into_arrayf(),
+                zoom: viewport.zoom.n,
+                zoom_fract: viewport.zoom.nf,
             }),
         );
     }
@@ -76,10 +77,9 @@ impl InterfaceViewport {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct ViewportUniform {
-    width: u32,
-    height: u32,
-    camera: [i32; 2],
+    size: [u32; 2],
+    center: [i32; 2],
+    center_fract: [u32; 2],
     zoom: i32,
-    /// 8 bytes alignment in WGSL
-    _padding: u32,
+    zoom_fract: u32,
 }

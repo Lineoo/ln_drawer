@@ -75,7 +75,7 @@ impl Interface {
 
         // Surface Configuration
         let surface_config = surface
-            .get_default_config(&adapter, viewport.width, viewport.height)
+            .get_default_config(&adapter, viewport.size.h, viewport.size.w)
             .unwrap();
 
         let viewport = InterfaceViewport::new(viewport, &device);
@@ -192,8 +192,8 @@ impl Interface {
 
     pub fn resize(&mut self, viewport: &Viewport) {
         self.viewport.resize(viewport, &self.queue);
-        self.surface_config.width = viewport.width;
-        self.surface_config.height = viewport.height;
+        self.surface_config.width = viewport.size.w;
+        self.surface_config.height = viewport.size.h;
         self.surface.configure(&self.device, &self.surface_config);
     }
 

@@ -26,8 +26,9 @@
 - [x] 序列化保存 & 加载
 - [x] 笔刷层的保存
 - **LnDrawer v0.1.1-alpha3**
-- [ ] 统一跨端字体
-- [ ] 高精度相机位移、缩放
+- [x] 统一跨端字体
+- [x] 高精度相机位移、缩放
+- [ ] 相机缩放逻辑修正
 - [ ] 触摸、触控板的缩放、平移手势支持
 - **LnDrawer v0.1.1**
 - [ ] ElementDescriptor 更自由
@@ -56,6 +57,7 @@
 - [ ] 曲率连续圆角
 - [ ] 用于数位板/笔的代替控制按键
 - [ ] 修复"无限大矩形"精度问题
+- [ ] 几个单位的分数进位 & 整数环绕
 - [ ] Dependency 和 Observer 一样使用并返回 Handle
     - [ ] 公开 Dependency 和 Observer 类型
 - [ ] Observer & Dependency 清理

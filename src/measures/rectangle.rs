@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-use crate::measures::{delta::Delta, position::Position};
+use crate::measures::{Delta, Position};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Rectangle {
