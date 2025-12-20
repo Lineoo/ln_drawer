@@ -198,7 +198,7 @@ impl Menu {
                     label: "LnDrawer".into(),
                     action: Box::new(move |world| {
                         let image = Image::from_bytes(
-                            include_bytes!("../../res/icon.png"),
+                            include_bytes!("../../res/iconv2.png"),
                             &mut world.single_fetch_mut().unwrap(),
                         )
                         .unwrap();

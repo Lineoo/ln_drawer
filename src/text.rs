@@ -22,11 +22,14 @@ pub struct TextManager {
 }
 impl Default for TextManager {
     fn default() -> Self {
-        let font_system = Arc::new(Mutex::new(FontSystem::new()));
-        let swash_cache = Arc::new(Mutex::new(SwashCache::new()));
+        let mut font_system = FontSystem::new();
+        let database = font_system.db_mut();
+        database.load_font_data(include_bytes!("../fonts/SourceHanSansCN-Regular.otf").to_vec());
+        database.load_font_data(include_bytes!("../fonts/SourceHanSerifCN-Regular.otf").to_vec());
+
         TextManager {
-            font_system,
-            swash_cache,
+            font_system: Arc::new(Mutex::new(font_system)),
+            swash_cache: Arc::new(Mutex::new(SwashCache::new())),
         }
     }
 }
@@ -50,7 +53,7 @@ impl Text {
         let mut buffer = Buffer::new(&mut font_system, metrics);
         let mut buffer_borrow = buffer.borrow_with(&mut font_system);
 
-        let attrs = Attrs::new();
+        let attrs = Attrs::new().family(Family::Name("Source Han Sans CN"));
         buffer_borrow.set_size(Some(rect.width() as f32), Some(rect.height() as f32));
         buffer_borrow.set_text(&text, &attrs, Shaping::Advanced);
         buffer_borrow.shape_until_scroll(true);
@@ -313,7 +316,7 @@ impl TextEdit {
         let mut buffer = Buffer::new(&mut font_system, metrics);
         let mut buffer_borrow = buffer.borrow_with(&mut font_system);
 
-        let attrs = Attrs::new().family(Family::Monospace);
+        let attrs = Attrs::new().family(Family::Name("Source Han Sans CN"));
         buffer_borrow.set_size(Some(rect.width() as f32), Some(rect.height() as f32));
         buffer_borrow.set_text(&text, &attrs, Shaping::Advanced);
         buffer_borrow.shape_until_scroll(true);
