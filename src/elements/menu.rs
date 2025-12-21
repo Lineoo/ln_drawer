@@ -191,7 +191,7 @@ impl Menu {
                 MenuEntryDescriptor {
                     label: "New Palette".into(),
                     action: Box::new(move |world| {
-                        world.build(PaletteDescriptor::default());
+                        world.insert(world.build(PaletteDescriptor::default()));
                     }),
                 },
                 MenuEntryDescriptor {

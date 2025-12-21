@@ -120,7 +120,7 @@ impl Element for Palette {
         // menu //
 
         world.observer(main_collider, move |&PointerMenu(position), world, _| {
-            world.build(MenuDescriptor {
+            world.insert(world.build(MenuDescriptor {
                 position,
                 entries: vec![MenuEntryDescriptor {
                     label: "Remove".into(),
@@ -129,11 +129,11 @@ impl Element for Palette {
                     }),
                 }],
                 ..Default::default()
-            });
+            }));
         });
 
         world.observer(hue_collider, move |&PointerMenu(position), world, _| {
-            world.build(MenuDescriptor {
+            world.insert(world.build(MenuDescriptor {
                 position,
                 entries: vec![MenuEntryDescriptor {
                     label: "Remove".into(),
@@ -142,7 +142,7 @@ impl Element for Palette {
                     }),
                 }],
                 ..Default::default()
-            });
+            }));
         });
 
         // transform //

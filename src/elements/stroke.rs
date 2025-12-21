@@ -62,7 +62,7 @@ impl Element for StrokeLayer {
         });
 
         world.observer(collider, move |&PointerMenu(position), world, _| {
-            world.build(Menu::test_descriptor(position));
+            world.insert(world.build(Menu::test_descriptor(position)));
         });
     }
 }

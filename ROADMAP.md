@@ -31,13 +31,12 @@
 - [x] 相机缩放逻辑调整
 - [x] 触摸、触控板的缩放、平移手势支持
 - **LnDrawer v0.1.1**
-- [ ] ElementDescriptor 更自由
+- [x] 任意位置命令
 - [ ] 重写 Interface
     - [ ] 使用世界元素来注册 Interface
     - [ ] 高效渲染剔除
 - [ ] 文字的高精度渲染
     - [ ] 编写专用的文本渲染管线
-    - [-] ~~使用 fontdue 来实现 SDF 文字渲染~~
 - [ ] 修复变换工具的一系列问题
 - [ ] 可修改的圆角大小
 - [ ] 圆角描边与阴影
@@ -201,13 +200,6 @@ impl ElementDescriptor for BazDescriptor {
 - tools: 有关用户输入处理
 - widgets: 预设的用户组件
 
-## 数据持久化
-
-extension: `ln-save`
-
-Windows: `%AppData%/Roaming/LnDrawer/world.ln-save`
-Linux: `$XDG_DATA_HOME/LnDrawer/world.ln-save`
-
 ## 元素编组
 
 元素编组主要是为了解决管理多元素交互，可见性，权限管理与元素分层等需求。
@@ -261,3 +253,105 @@ let group = world.insert(Group::default());
 let view: GroupView<'_> = world.view(group);
 view.fetch(foo);
 ```
+
+## 新的渲染流程 ##
+
+目前的渲染流程控制关系复杂且难以拓展。
+
+### 1. 概述
+
+渲染分为多个部分：
+1. **渲染控制** - 控制渲染组件的排序、剔除、可见性，负责 Surface，Viewport 等
+2. **渲染管线** - 负责记录绑定组，管线布局，Shader 等
+3. **渲染组件** - 负责实际的绘制
+
+对于渲染组件，可用的生命周期：
+1. **初始化**
+2. **渲染绘制**
+3. **修改同步**
+4. **移除**
+
+我们会采用**任意位置命令**进行**全生命周期的渲染组件跟踪**。
+
+### 2. 初始化
+
+管线相关初始化此处省略。此章重点规范**独立渲染组件的初始化**。
+> 独立渲染组件是**不直接被插入世界的渲染组件**，它们依赖*描述构建模式*来注册进渲染控制。
+
+```rust
+struct Panel {
+    rectangle: RoundedRectangle,
+}
+
+world.insert(Panel {
+    rectangle：world.build(RoundedRectangleDescriptor {
+        position: Position::new(1, 2),
+        ..Default::default()
+    }),
+});
+```
+
+渲染组件首选**描述构建模式**来初始化渲染实例。过程：
+1. 初始化并获取**对应的渲染管线**
+2. 注册对应的 **GPU 实例节点**，如需要的 Buffer 等
+3. 在世界中生成**渲染控制节点**并完成注册
+4. 在世界中完成**生命周期追踪**，主要是观察者和对象依赖
+
+也就是说，插入了三种元素：
+- 核心元素 `Panel`
+- GPU 实例节点 `RoundedRectangleBuffer`
+- 渲染控制节点 `RenderControl`
+
+### 3. 渲染绘制
+
+渲染命令从事件循环出发，并由 `lnwin` 转移给**渲染控制系统**。
+
+1. 解析所有渲染控制节点，进行排序、剔除
+2. 按序遍历所有节点并触发重绘事件
+
+渲染控制节点是一种**附属节点**，给渲染控制系统提供控制信息和一个事件触发点。
+
+```rust
+let control = world.insert(RenderControl {
+    clip: None,
+    z_order: ZOrder::new(50),
+    ..Default::default()
+});
+
+world.observer(control, move |Redraw(rpass), world| {
+    let instance = world.fetch_mut(instance).unwrap();
+    instance.redraw(rpass);
+});
+```
+
+### 4. 修改同步 & 删除
+
+在核心元素修改后，我们需要同步将其上传到 GPU；删除元素后，也需要及时通知。
+> **不能依赖核心元素**的生命周期事件，因为两者的生命周期不一定相同。（比如使用了 `Option<T>` 时）
+
+用下文的**任意位置命令**可以利用 `mpsc` 来隐藏对应逻辑。
+
+```rust
+panel.rectangle.location = Rectangle::new(0, 0, 100, 100);
+panel.rectangle.upload();
+```
+
+## 任意位置命令 ##
+
+允许获取世界的命令队列，然后**从任何地方直接发送命令**到世界。
+
+可以简化组合元素的更新与清理。
+
+## 无头组件 ##
+
+**无头组件 Headless Widget** 是解耦很重要的一步。而 `ln_drawer` 原生的事件系统让这变得相当自然。
+
+## 原则 & 规范 ##
+
+### 1. 平移一致性
+
+在不同的位置，所有组件应当表现出一致的行为。
+
+### 2. 行为完整性
+
+任意元素的任意功能都应当能够**独立于世界环境存在**，即能够被简单地通过 newtype 模式进行功能拓展。

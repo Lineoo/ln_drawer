@@ -275,7 +275,7 @@ impl Element for TextEdit {
         });
 
         world.observer(collider, move |&PointerMenu(position), world, _| {
-            world.build(MenuDescriptor {
+            world.insert(world.build(MenuDescriptor {
                 position,
                 entries: vec![MenuEntryDescriptor {
                     label: "Remove".into(),
@@ -284,7 +284,7 @@ impl Element for TextEdit {
                     }),
                 }],
                 ..Default::default()
-            });
+            }));
         });
 
         let interface = world.single::<Interface>().unwrap();

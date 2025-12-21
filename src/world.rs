@@ -5,6 +5,7 @@ use std::{
     hash::{Hash, Hasher},
     marker::PhantomData,
     ops::{Deref, DerefMut},
+    sync::mpsc::{Receiver, Sender, channel},
 };
 
 use hashbrown::{HashMap, HashSet};
@@ -83,6 +84,8 @@ impl<T: ?Sized> Handle<T> {
 
 // World Management //
 
+pub type WorldCommand = Box<dyn FnOnce(&mut World)>;
+
 // Center of multiple accesses in world, which also prevents constructional changes
 pub struct World {
     storage: WorldStorage,
@@ -90,8 +93,8 @@ pub struct World {
     cell_idx: RefCell<Handle>,
     inserted: RefCell<HashSet<Handle>>,
     removed: RefCell<HashSet<Handle>>,
-    #[expect(clippy::type_complexity)]
-    queue: RefCell<Vec<Box<dyn FnOnce(&mut World)>>>,
+    queue: Receiver<WorldCommand>,
+    commander: Sender<WorldCommand>,
 }
 
 pub struct WorldStorage {
@@ -102,13 +105,15 @@ pub struct WorldStorage {
 
 impl Default for World {
     fn default() -> Self {
+        let (commander, queue) = channel();
         World {
             storage: WorldStorage::default(),
             occupied: RefCell::new(HashMap::new()),
             cell_idx: RefCell::new(Handle(0, PhantomData)),
             inserted: RefCell::default(),
             removed: RefCell::default(),
-            queue: RefCell::default(),
+            queue,
+            commander,
         }
     }
 }
@@ -126,9 +131,10 @@ impl Default for WorldStorage {
 impl World {
     // lifecycle //
 
-    pub fn build<B: ElementDescriptor<Target: Element>>(&self, descriptor: B) -> Handle<B::Target> {
-        let element = descriptor.build(self);
-        self.insert(element)
+    /// Will access data from world to build target object.
+    #[must_use = "built architects are supposed to be consumed properly"]
+    pub fn build<B: ElementDescriptor>(&self, descriptor: B) -> B::Target {
+        descriptor.build(self)
     }
 
     /// Due to limit of cell, the inserted element cannot be fetched until `flush` is called.
@@ -250,18 +256,21 @@ impl World {
         occupied.get(&handle.cast()).is_some_and(|cnt| *cnt != 0)
     }
 
+    pub fn commander(&self) -> Sender<WorldCommand> {
+        self.commander.clone()
+    }
+
     pub fn queue(&self, f: impl FnOnce(&mut World) + 'static) {
-        let mut queue = self.queue.borrow_mut();
-        queue.push(Box::new(f));
+        let result = self.commander.send(Box::new(f));
+        if let Err(err) = result {
+            log::error!("error in world queue ops: {err}");
+        }
     }
 
     pub fn flush(&mut self) {
         self.storage.curr_idx = *self.cell_idx.get_mut();
 
-        let queue = self.queue.get_mut();
-        let mut buf = Vec::with_capacity(queue.len());
-        buf.append(queue);
-
+        let buf = self.queue.try_iter().collect::<Vec<_>>();
         for cmd in buf {
             cmd(self);
             self.flush();

@@ -113,7 +113,7 @@ impl Element for TransformTool {
             });
 
             world.observer(collider, move |&PointerMenu(position), world, _| {
-                world.build(MenuDescriptor {
+                world.insert(world.build(MenuDescriptor {
                     position,
                     entries: vec![
                         MenuEntryDescriptor {
@@ -132,7 +132,7 @@ impl Element for TransformTool {
                         },
                     ],
                     ..Default::default()
-                });
+                }));
             });
 
             let track = world.observer(transform, move |TransformUpdate, world, transform| {
@@ -154,7 +154,7 @@ impl Element for TransformTool {
         });
 
         world.observer(main_collider, move |&PointerMenu(position), world, _| {
-            world.build(MenuDescriptor {
+            world.insert(world.build(MenuDescriptor {
                 position,
                 entries: vec![MenuEntryDescriptor {
                     label: "Stop Transform Tool".into(),
@@ -163,7 +163,7 @@ impl Element for TransformTool {
                     }),
                 }],
                 ..Default::default()
-            });
+            }));
         });
 
         world.dependency(main_collider, tool);

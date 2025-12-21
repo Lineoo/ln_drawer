@@ -25,7 +25,7 @@ impl Element for Image {
         world.dependency(collider, this);
 
         world.observer(collider, move |&PointerMenu(position), world, _| {
-            world.build(MenuDescriptor {
+            world.insert(world.build(MenuDescriptor {
                 position,
                 entries: vec![MenuEntryDescriptor {
                     label: "Remove".into(),
@@ -34,7 +34,7 @@ impl Element for Image {
                     }),
                 }],
                 ..Default::default()
-            });
+            }));
         });
 
         let transform = world.insert(Transform {

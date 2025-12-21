@@ -58,7 +58,7 @@ pub fn read_from_file(world: &World) {
     };
 
     for palette in save.palettes {
-        world.build(palette);
+        world.insert(world.build(palette));
     }
 
     for image in save.images {
@@ -66,6 +66,6 @@ pub fn read_from_file(world: &World) {
     }
 
     if let Some(stroke) = save.stroke {
-        world.build(stroke);
+        world.insert(world.build(stroke));
     }
 }
