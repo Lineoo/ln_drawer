@@ -11,7 +11,7 @@ use std::{
 use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 
-// Element Definition //
+// Definition //
 
 /// A shared form of objects in the [`World`].
 pub trait Element: Any {
@@ -19,13 +19,11 @@ pub trait Element: Any {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {}
 }
 
-/// A way to build [`Element`] in the [`World`].
-pub trait ElementDescriptor {
+/// A way to setup in the [`World`].
+pub trait Descriptor {
     type Target;
     fn build(self, world: &World) -> Self::Target;
 }
-
-// Handle Definition //
 
 /// Represent an element in the [`World`]. It may not be valid.
 pub struct Handle<T: ?Sized = dyn Any>(usize, PhantomData<T>);
@@ -84,8 +82,6 @@ impl<T: ?Sized> Handle<T> {
 
 // World Management //
 
-pub type WorldCommand = Box<dyn FnOnce(&mut World)>;
-
 // Center of multiple accesses in world, which also prevents constructional changes
 pub struct World {
     storage: WorldStorage,
@@ -133,7 +129,7 @@ impl World {
 
     /// Will access data from world to build target object.
     #[must_use = "built architects are supposed to be consumed properly"]
-    pub fn build<B: ElementDescriptor>(&self, descriptor: B) -> B::Target {
+    pub fn build<B: Descriptor>(&self, descriptor: B) -> B::Target {
         descriptor.build(self)
     }
 
@@ -229,7 +225,7 @@ impl World {
         cnt
     }
 
-    /// Insertion without `flush` will not be included
+    /// Insertion without `flush` *will* be included
     pub fn validate<T: ?Sized>(&self, handle: Handle<T>) -> bool {
         if self.removed.borrow().contains(&handle.cast()) {
             return false;
@@ -256,8 +252,10 @@ impl World {
         occupied.get(&handle.cast()).is_some_and(|cnt| *cnt != 0)
     }
 
-    pub fn commander(&self) -> Sender<WorldCommand> {
-        self.commander.clone()
+    pub fn commander(&self) -> Commander {
+        Commander {
+            inner: self.commander.clone(),
+        }
     }
 
     pub fn queue(&self, f: impl FnOnce(&mut World) + 'static) {
@@ -349,6 +347,12 @@ impl World {
     }
 
     // iteration //
+
+    pub fn len<T: Element>(&self) -> usize {
+        (self.storage.cache.get(&TypeId::of::<T>()))
+            .map(|x| x.len())
+            .unwrap_or_default()
+    }
 
     pub fn foreach<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {
         let Some(cache) = self.storage.cache.get(&TypeId::of::<T>()) else {
@@ -502,8 +506,26 @@ impl<T: ?Sized> Drop for RefMut<'_, T> {
     }
 }
 
+// Commander //
+
+type WorldCommand = Box<dyn FnOnce(&mut World)>;
+
+/// A flexible command access to world.
+#[derive(Debug, Clone)]
+pub struct Commander {
+    inner: Sender<WorldCommand>,
+}
+
+impl Commander {
+    pub fn queue(&self, f: impl FnOnce(&mut World) + 'static) {
+        let result = self.inner.send(Box::new(f));
+        if let Err(err) = result {
+            log::error!("error in world queue ops: {err}");
+        }
+    }
+}
+
 // Observer & Trigger //
-// FIXME observer cleanup
 
 #[derive(Default)]
 struct Observers<E> {

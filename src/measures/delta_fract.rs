@@ -135,6 +135,7 @@ impl DeltaFract {
     }
 }
 
+#[cfg(test)]
 mod test {
     use crate::measures::DeltaFract;
 

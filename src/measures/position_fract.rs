@@ -138,6 +138,7 @@ impl PositionFract {
     }
 }
 
+#[cfg(test)]
 mod test {
     use crate::measures::{DeltaFract, PositionFract};
 

@@ -1,26 +1,29 @@
 use crate::{
-    elements::{image::Image, palette::PaletteDescriptor},
-    interface::{Interface, StandardSquare},
+    elements::palette::PaletteDescriptor,
     lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
     measures::{Delta, Position, Rectangle, ZOrder},
-    text::{Text, TextEdit, TextManager},
+    render::{
+        canvas::CanvasDescriptor,
+        rounded::{RoundedRect, RoundedRectDescriptor},
+        text::{Text, TextDescriptor},
+    },
     tools::{
         pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu},
         transform::TransformTool,
     },
-    world::{Element, ElementDescriptor, Handle, World},
+    world::{Descriptor, Element, Handle, World},
 };
 
 const PAD: i32 = 10;
 const PAD_TEXT: i32 = 8;
 
 pub struct Menu {
-    frame: StandardSquare,
+    frame: RoundedRect,
     entries: Vec<MenuEntry>,
 }
 
 struct MenuEntry {
-    frame: StandardSquare,
+    frame: RoundedRect,
     text: Text,
     action: Box<dyn Fn(&World)>,
 }
@@ -60,7 +63,7 @@ impl Element for Menu {
             };
 
             let fetched = world.fetch(this).unwrap();
-            let frame = fetched.frame.get_rect();
+            let frame = fetched.frame.rect;
 
             if !frame.contains(point) {
                 world.remove(this);
@@ -76,7 +79,7 @@ impl Element for Menu {
 
         for (i, entry) in self.entries.iter().enumerate() {
             let collider = world.insert(PointerCollider {
-                rect: entry.frame.get_rect().expand(PAD),
+                rect: entry.frame.rect.expand(PAD),
                 z_order: ZOrder::new(110),
             });
 
@@ -94,69 +97,59 @@ impl Element for Menu {
 
             world.observer(collider, move |&PointerEnter, world, _| {
                 let mut fetched = world.fetch_mut(this).unwrap();
-                fetched.entries[i].frame.set_visible(true);
+                fetched.entries[i].frame.visible = true;
+                fetched.entries[i].frame.upload();
             });
 
             world.observer(collider, move |&PointerLeave, world, _| {
                 let mut fetched = world.fetch_mut(this).unwrap();
-                fetched.entries[i].frame.set_visible(false);
+                fetched.entries[i].frame.visible = false;
+                fetched.entries[i].frame.upload();
             });
         }
     }
 }
 
-impl ElementDescriptor for MenuDescriptor {
+impl Descriptor for MenuDescriptor {
     type Target = Menu;
 
     fn build(self, world: &World) -> Self::Target {
-        Menu::new(
-            self,
-            &mut world.single_fetch_mut().unwrap(),
-            &mut world.single_fetch_mut().unwrap(),
-        )
-    }
-}
-
-impl Menu {
-    pub fn new(
-        descriptor: MenuDescriptor,
-        text_manager: &mut TextManager,
-        interface: &mut Interface,
-    ) -> Menu {
         let rect = Rectangle {
-            origin: descriptor.position,
+            origin: self.position,
             extend: Delta::new(
-                PAD + (descriptor.entry_width + PAD),
-                PAD + (descriptor.entry_height + PAD) * descriptor.entries.len() as i32,
+                PAD + (self.entry_width + PAD),
+                PAD + (self.entry_height + PAD) * self.entries.len() as i32,
             ),
         };
 
-        let frame = StandardSquare::new(
+        let frame = world.build(RoundedRectDescriptor {
             rect,
-            ZOrder::new(90),
-            true,
-            palette::Srgba::new(0.1, 0.1, 0.1, 0.9),
-            interface,
-        );
+            color: palette::Srgba::new(0.1, 0.1, 0.1, 0.9),
+            order: 90,
+            visible: true,
+        });
 
-        let mut entries = Vec::with_capacity(descriptor.entries.len());
-        for entry in descriptor.entries {
-            let prev = (descriptor.entry_height + PAD) * entries.len() as i32;
+        let mut entries = Vec::with_capacity(self.entries.len());
+        for entry in self.entries {
+            let prev = (self.entry_height + PAD) * entries.len() as i32;
             let rect = Rectangle {
-                origin: frame.get_rect().origin + Delta::new(PAD, PAD + prev),
-                extend: Delta::new(descriptor.entry_width, descriptor.entry_height),
+                origin: rect.origin + Delta::new(PAD, PAD + prev),
+                extend: Delta::new(self.entry_width, self.entry_height),
             };
 
-            let frame = StandardSquare::new(
+            let frame = world.build(RoundedRectDescriptor {
                 rect,
-                ZOrder::new(120),
-                false,
-                palette::Srgba::new(0.3, 0.3, 0.3, 1.0),
-                interface,
-            );
+                color: palette::Srgba::new(0.3, 0.3, 0.3, 1.0),
+                order: 120,
+                visible: false,
+            });
 
-            let mut text = Text::new(rect.expand(-PAD_TEXT), entry.label, text_manager, interface);
-            text.set_order(ZOrder::new(140));
+            let text = world.build(TextDescriptor {
+                text: &entry.label,
+                rect: rect.expand(-PAD_TEXT),
+                order: 140,
+                ..Default::default()
+            });
 
             entries.push(MenuEntry {
                 frame,
@@ -167,7 +160,9 @@ impl Menu {
 
         Menu { frame, entries }
     }
+}
 
+impl Menu {
     pub fn test_descriptor(position: Position) -> MenuDescriptor {
         MenuDescriptor {
             position,
@@ -177,15 +172,14 @@ impl Menu {
                 MenuEntryDescriptor {
                     label: "New Label".into(),
                     action: Box::new(move |world| {
-                        world.insert(Text::new(
-                            Rectangle {
+                        world.insert(world.build(TextDescriptor {
+                            rect: Rectangle {
                                 origin: Position::default(),
                                 extend: Delta::new(100, 100),
                             },
-                            "New Label".into(),
-                            &mut world.single_fetch_mut().unwrap(),
-                            &mut world.single_fetch_mut().unwrap(),
-                        ));
+                            text: "New Label",
+                            ..Default::default()
+                        }));
                     }),
                 },
                 MenuEntryDescriptor {
@@ -197,26 +191,11 @@ impl Menu {
                 MenuEntryDescriptor {
                     label: "LnDrawer".into(),
                     action: Box::new(move |world| {
-                        let image = Image::from_bytes(
+                        let image = CanvasDescriptor::from_bytes(
+                            Position::default(),
                             include_bytes!("../../res/iconv2.png"),
-                            &mut world.single_fetch_mut().unwrap(),
-                        )
-                        .unwrap();
-                        world.insert(image);
-                    }),
-                },
-                MenuEntryDescriptor {
-                    label: "New TextEdit".into(),
-                    action: Box::new(move |world| {
-                        world.insert(TextEdit::new(
-                            Rectangle {
-                                origin: Position::default(),
-                                extend: Delta::new(600, 200),
-                            },
-                            "Enter text here".into(),
-                            &mut world.single_fetch_mut().unwrap(),
-                            &mut world.single_fetch_mut().unwrap(),
-                        ));
+                        );
+                        world.insert(world.build(image.unwrap()));
                     }),
                 },
                 MenuEntryDescriptor {

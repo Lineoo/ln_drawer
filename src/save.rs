@@ -1,15 +1,16 @@
 use crate::{
     elements::{
-        image::Image, palette::{Palette, PaletteDescriptor}, stroke::{StrokeLayer, StrokeLayerDescriptor}
+        palette::{Palette, PaletteDescriptor},
+        stroke::{StrokeLayer, StrokeLayerDescriptor},
     },
-    interface::PainterDescriptor,
+    render::canvas::{Canvas, CanvasDescriptor},
     world::World,
 };
 
 #[derive(Debug, Default, bincode::Encode, bincode::Decode)]
 struct SaveFile {
     palettes: Vec<PaletteDescriptor>,
-    images: Vec<PainterDescriptor>,
+    images: Vec<CanvasDescriptor>,
     stroke: Option<StrokeLayerDescriptor>,
 }
 
@@ -20,7 +21,7 @@ pub fn save_into_file(world: &World) {
         save.palettes.push(palette.to_descriptor());
     });
 
-    world.foreach_fetch::<Image>(|_, image| {
+    world.foreach_fetch::<Canvas>(|_, image| {
         save.images.push(image.to_descriptor());
     });
 
@@ -62,7 +63,7 @@ pub fn read_from_file(world: &World) {
     }
 
     for image in save.images {
-        world.insert(Image::new(image, &mut world.single_fetch_mut().unwrap()));
+        world.insert(world.build(image));
     }
 
     if let Some(stroke) = save.stroke {

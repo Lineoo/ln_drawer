@@ -15,27 +15,28 @@ fn viewport_convert(world_space: vec2i) -> vec2f {
     return screen_space;
 }
 
+struct Rectangle {
+    origin: vec2i,
+    extend: vec2i,
+}
+
 struct VertexOutput {
     @builtin(position) pos: vec4f,
     @location(0) uv: vec2f,
 }
 
-@group(0) @binding(0) var texture: texture_2d<f32>;
-@group(0) @binding(1) var texture_sampler: sampler;
-
-@group(1) @binding(0) var<uniform> viewport: Viewport;
+@group(0) @binding(0) var<uniform> viewport: Viewport;
+@group(1) @binding(0) var<uniform> rectangle: Rectangle;
 
 @vertex
-fn vs_main(@location(0) world_space: vec2i, @location(1) uv: vec2f) -> VertexOutput {
-    var output: VertexOutput;
+fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
+    let world_space = vec2i(
+        rectangle.origin.x + rectangle.extend.x * (i32(index) / 2),
+        rectangle.origin.y + rectangle.extend.y * (i32(index) % 2)
+    );
 
-    output.pos = vec4f(viewport_convert(world_space), 0.0, 1.0);
-    output.uv = uv;
-
-    return output;
-}
-
-@fragment
-fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-    return textureSample(texture, texture_sampler, uv);
+    var ret: VertexOutput;
+    ret.pos = vec4f(viewport_convert(world_space), 0.0, 1.0);
+    ret.uv = vec2f(vec2i(i32(index) / 2, 1 ^ i32(index) % 2));
+    return ret;
 }

@@ -1,8 +1,8 @@
 use crate::{
     elements::menu::{MenuDescriptor, MenuEntryDescriptor},
-    interface::Wireframe,
     lnwin::PointerEvent,
     measures::{Delta, Position, Rectangle, ZOrder},
+    render::wireframe::{Wireframe, WireframeDescriptor},
     tools::pointer::{PointerCollider, PointerHit, PointerMenu},
     world::{Element, Handle, World},
 };
@@ -54,11 +54,10 @@ impl Element for TransformTool {
                 let mut fetched_transform = world.fetch_mut(transform).unwrap();
                 match (event, &mut fetched_tool.active) {
                     (PointerEvent::Pressed(position), None) => {
-                        let frame = Wireframe::new(
-                            fetched_transform.rect,
-                            [1.0, 1.0, 1.0, 1.0],
-                            &mut world.single_fetch_mut().unwrap(),
-                        );
+                        let frame = world.build(WireframeDescriptor {
+                            rect: fetched_transform.rect,
+                            ..Default::default()
+                        });
 
                         let resizing = if fetched_transform.resizable {
                             Some(new_knobs(tool, world, &mut fetched_transform))
@@ -95,7 +94,9 @@ impl Element for TransformTool {
                             let delta = *position - dragging.pointer_base;
                             fetched_transform.rect.origin = dragging.element_base + delta;
 
-                            active.frame.set_rect(fetched_transform.rect);
+                            active.frame.rect = fetched_transform.rect;
+                            active.frame.upload();
+
                             if let Some(resizing) = &mut active.resizing {
                                 update_knobs(resizing, &fetched_transform);
                             }
@@ -223,11 +224,10 @@ fn new_knobs(
     ];
 
     for (i, ((rect, fetch), set)) in rect.into_iter().zip(fetch).zip(set).enumerate() {
-        let wireframe = Wireframe::new(
+        let wireframe = world.build(WireframeDescriptor {
             rect,
-            [1.0, 1.0, 1.0, 1.0],
-            &mut world.single_fetch_mut().unwrap(),
-        );
+            ..Default::default()
+        });
 
         let collider = world.insert(PointerCollider {
             rect,
@@ -263,7 +263,9 @@ fn new_knobs(
                         let delta = *position - dragging.pointer_base;
                         set(&mut transform, dragging.element_base + delta);
 
-                        active.frame.set_rect(transform.rect);
+                        active.frame.rect = transform.rect;
+                        active.frame.upload();
+
                         update_knobs(resizing, &transform);
                         world.trigger(active.target, TransformUpdate);
                     }
@@ -313,6 +315,7 @@ fn update_knobs(resizing: &mut [ResizeKnob], fetched_transform: &Transform) {
             return;
         };
 
-        knob.wireframe.set_rect(rect);
+        knob.wireframe.rect = rect;
+        knob.wireframe.upload();
     }
 }

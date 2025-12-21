@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use winit::{
     application::ApplicationHandler,
-    dpi::PhysicalPosition,
     event::{ElementState, Modifiers, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::ActiveEventLoop,
     window::{Window, WindowId},
@@ -10,9 +9,15 @@ use winit::{
 
 use crate::{
     elements::stroke::StrokeLayer,
-    interface::{Interface, Redraw},
-    measures::{DeltaFract, Fract, Position, PositionFract, Size},
-    text::TextManager,
+    measures::{Fract, Position, PositionFract},
+    render::{
+        Render,
+        canvas::CanvasManagerDescriptor,
+        rounded::RoundedRectManagerDescriptor,
+        text::TextManagerDescriptor,
+        viewport::{Viewport, ViewportDescriptor, ViewportManagerDescriptor},
+        wireframe::WireframeManagerDescriptor,
+    },
     tools::{focus::Focus, pointer::Pointer},
     world::{Element, Handle, World},
 };
@@ -53,7 +58,6 @@ impl ApplicationHandler for Lnwin {
 /// The main window.
 pub struct Lnwindow {
     window: Arc<Window>,
-    viewport: Viewport,
 
     // Screen-space
     cursor: [f64; 2],
@@ -69,7 +73,6 @@ impl Element for Lnwindow {
             lnwindow.window_event(event, world, this);
         });
 
-        world.insert(TextManager::default());
         world.insert(LnwinModifiers::default());
         world.insert(Focus::default());
         world.insert(StrokeLayer::default());
@@ -85,19 +88,26 @@ impl Lnwindow {
         let window = Arc::new(window);
 
         let size = window.inner_size();
-        let viewport = Viewport {
-            size: Size::new(size.width.max(1), size.height.max(1)),
-            center: PositionFract::new(0, 0, 0, 0),
-            zoom: Fract::new(0, 0),
-        };
+        world.insert(Render::new(window.clone()).await);
+        world.flush();
 
-        let interface = Interface::new(window.clone(), &viewport).await;
+        world.insert(world.build(ViewportManagerDescriptor));
+        world.flush();
 
-        world.insert(interface);
+        world.insert(world.build(ViewportDescriptor {
+            size: [size.width.max(1), size.height.max(1)],
+            ..Default::default()
+        }));
+        world.flush();
+
+        world.insert(world.build(CanvasManagerDescriptor));
+        world.insert(world.build(RoundedRectManagerDescriptor));
+        world.insert(world.build(TextManagerDescriptor));
+        world.insert(world.build(WireframeManagerDescriptor));
+        world.flush();
 
         Lnwindow {
             window,
-            viewport,
             cursor: [0.0, 0.0],
             camera_cursor_start: [0.0, 0.0],
             camera_origin: None,
@@ -107,18 +117,25 @@ impl Lnwindow {
     fn window_event(&mut self, event: &WindowEvent, world: &World, this: Handle<Lnwindow>) {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
+                let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
+
                 // The viewport needs to be updated before the viewport transform
-                self.cursor = self.viewport.cursor_to_screen(*position);
+                let size = self.window.inner_size();
+                let x = (position.x * 2.0) / size.width as f64 - 1.0;
+                let y = 1.0 - (position.y * 2.0) / size.height as f64;
+                self.cursor = [x, y];
+
                 if let Some(camera_orig) = &mut self.camera_origin {
                     let dx = self.camera_cursor_start[0] - self.cursor[0];
                     let dy = self.camera_cursor_start[1] - self.cursor[1];
-                    let delta = self.viewport.screen_to_world_relative([dx, dy]);
+                    let delta = viewport.screen_to_world_relative([dx, dy]);
 
-                    self.viewport.center = *camera_orig + delta;
+                    viewport.center = *camera_orig + delta;
+                    viewport.upload();
                     self.window.request_redraw();
                 }
 
-                let point = self.viewport.screen_to_world(self.cursor);
+                let point = viewport.screen_to_world_absolute(self.cursor);
                 world.trigger(this, PointerEvent::Moved(point.floor()));
 
                 self.window.request_redraw();
@@ -130,7 +147,8 @@ impl Lnwindow {
                 button: MouseButton::Left,
                 ..
             } => {
-                let point = self.viewport.screen_to_world(self.cursor);
+                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let point = viewport.screen_to_world_absolute(self.cursor);
                 world.trigger(this, PointerEvent::Pressed(point.floor()));
 
                 self.window.request_redraw();
@@ -141,7 +159,8 @@ impl Lnwindow {
                 button: MouseButton::Left,
                 ..
             } => {
-                let point = self.viewport.screen_to_world(self.cursor);
+                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let point = viewport.screen_to_world_absolute(self.cursor);
                 world.trigger(this, PointerEvent::Released(point.floor()));
 
                 self.window.request_redraw();
@@ -152,7 +171,8 @@ impl Lnwindow {
                 button: MouseButton::Right,
                 ..
             } => {
-                let point = self.viewport.screen_to_world(self.cursor);
+                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let point = viewport.screen_to_world_absolute(self.cursor);
                 world.trigger(this, PointerAltEvent(point.floor()));
 
                 self.window.request_redraw();
@@ -173,8 +193,9 @@ impl Lnwindow {
                 button: MouseButton::Middle,
                 ..
             } => {
+                let viewport = world.single_fetch::<Viewport>().unwrap();
                 self.camera_cursor_start = self.cursor;
-                self.camera_origin = Some(self.viewport.center);
+                self.camera_origin = Some(viewport.center);
             }
 
             WindowEvent::MouseInput {
@@ -191,35 +212,36 @@ impl Lnwindow {
                     MouseScrollDelta::PixelDelta(delta) => Fract::from_f64(delta.y / 16.0),
                 };
 
-                let cursor = self.viewport.screen_to_world(self.cursor);
-                self.viewport.center =
-                    cursor + (self.viewport.center - cursor) * (-zoom_delta.into_f32()).exp2();
+                let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
+                let cursor = viewport.screen_to_world_absolute(self.cursor);
+
+                let follow = (viewport.center - cursor) * (-zoom_delta.into_f32()).exp2();
+                viewport.center = cursor + follow;
+
                 if let Some(camera_origin) = &mut self.camera_origin {
-                    *camera_origin =
-                        cursor + (*camera_origin - cursor) * (-zoom_delta.into_f32()).exp2();
+                    let follow = (*camera_origin - cursor) * (-zoom_delta.into_f32()).exp2();
+                    *camera_origin = cursor + follow;
                 }
 
-                self.viewport.zoom += zoom_delta;
+                viewport.zoom += zoom_delta;
 
+                viewport.upload();
                 self.window.request_redraw();
             }
 
             // Render //
             WindowEvent::RedrawRequested => {
-                let interface = world.single::<Interface>().unwrap();
-                let mut fetched = world.fetch_mut(interface).unwrap();
-                fetched.resize(&self.viewport);
-                world.trigger(world.single::<Interface>().unwrap(), Redraw);
-                world.queue(move |world| {
-                    let mut fetched = world.fetch_mut(interface).unwrap();
-                    fetched.restructure();
-                    fetched.redraw();
-                });
+                let mut render = world.single_fetch_mut::<Render>().unwrap();
+                render.redraw(world);
             }
 
             WindowEvent::Resized(size) => {
-                self.viewport.size.w = size.width.max(1);
-                self.viewport.size.h = size.height.max(1);
+                let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
+
+                viewport.size[0] = size.width.max(1);
+                viewport.size[1] = size.height.max(1);
+
+                viewport.upload();
                 self.window.request_redraw();
             }
 
@@ -229,36 +251,6 @@ impl Lnwindow {
 
             _ => (),
         }
-    }
-}
-
-pub struct Viewport {
-    pub size: Size,
-    pub center: PositionFract,
-    pub zoom: Fract,
-}
-
-impl Viewport {
-    pub fn cursor_to_screen(&self, cursor: PhysicalPosition<f64>) -> [f64; 2] {
-        let x = (cursor.x * 2.0) / self.size.w as f64 - 1.0;
-        let y = 1.0 - (cursor.y * 2.0) / self.size.h as f64;
-        [x, y]
-    }
-
-    pub fn screen_to_world(&self, point: [f64; 2]) -> PositionFract {
-        self.center + self.screen_to_world_relative(point)
-    }
-
-    pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> DeltaFract {
-        let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
-        let x = delta[0] / scale * self.size.w as f64 / 2.0;
-        let y = delta[1] / scale * self.size.h as f64 / 2.0;
-        DeltaFract::new(
-            x.floor() as i32,
-            (((x - x.floor()) * 32f64.exp2()).floor()) as u32,
-            y.floor() as i32,
-            (((y - y.floor()) * 32f64.exp2()).floor()) as u32,
-        )
     }
 }
 

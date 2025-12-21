@@ -1,13 +1,13 @@
 use hashbrown::HashMap;
-use palette::Srgb;
+use palette::Srgba;
 
 use crate::{
     elements::{menu::Menu, palette::Palette},
-    interface::{Interface, Painter, PainterDescriptor},
     lnwin::{LnwinModifiers, PointerEvent},
     measures::{Delta, Position, Rectangle, ZOrder},
+    render::canvas::{Canvas, CanvasDescriptor},
     tools::pointer::{PointerCollider, PointerHit, PointerMenu},
-    world::{Element, ElementDescriptor, Handle, World},
+    world::{Descriptor, Element, Handle, World},
 };
 
 const CHUNK_SIZE: i32 = 512;
@@ -15,23 +15,23 @@ const CHUNK_SIZE: i32 = 512;
 #[derive(Default)]
 pub struct StrokeLayer {
     chunks: HashMap<(i32, i32), StrokeChunk>,
-    pub color: Srgb<u8>,
+    pub color: Srgba,
 }
 
 pub struct StrokeChunk {
-    painter: Painter,
+    canvas: Canvas,
 }
 
 #[derive(Debug, Default, bincode::Encode, bincode::Decode)]
 pub struct StrokeLayerDescriptor {
     pub chunks: Vec<StrokeChunkDescriptor>,
-    pub color: (u8, u8, u8),
+    pub color: (f32, f32, f32, f32),
 }
 
 #[derive(Debug, Default, bincode::Encode, bincode::Decode)]
 pub struct StrokeChunkDescriptor {
     pub key: (i32, i32),
-    pub data: Vec<u8>,
+    pub data: Option<Vec<u8>>,
 }
 
 impl Element for StrokeLayer {
@@ -67,33 +67,49 @@ impl Element for StrokeLayer {
     }
 }
 
-impl ElementDescriptor for StrokeLayerDescriptor {
+impl Descriptor for StrokeLayerDescriptor {
     type Target = StrokeLayer;
 
     fn build(self, world: &World) -> Self::Target {
-        StrokeLayer::new(self, &mut world.single_fetch_mut().unwrap())
-    }
-}
-
-impl StrokeLayer {
-    pub fn new(descriptor: StrokeLayerDescriptor, interface: &mut Interface) -> StrokeLayer {
         let mut layer = StrokeLayer {
             chunks: HashMap::new(),
-            color: Srgb::from_components(descriptor.color),
+            color: Srgba::from_components(self.color),
         };
 
-        for chunk in descriptor.chunks {
-            layer.create_chunk(chunk, interface);
+        for chunk in self.chunks {
+            layer.chunks.insert(chunk.key, world.build(chunk));
         }
 
         layer
     }
+}
 
+impl Descriptor for StrokeChunkDescriptor {
+    type Target = StrokeChunk;
+
+    fn build(self, world: &World) -> Self::Target {
+        StrokeChunk {
+            canvas: world.build(CanvasDescriptor {
+                rect: Rectangle {
+                    origin: Position::new(self.key.0 * CHUNK_SIZE, self.key.1 * CHUNK_SIZE),
+                    extend: Delta::splat(CHUNK_SIZE),
+                },
+                order: 0,
+                visible: true,
+                data: self.data,
+                width: CHUNK_SIZE as u32,
+                height: CHUNK_SIZE as u32,
+            }),
+        }
+    }
+}
+
+impl StrokeLayer {
     pub fn to_descriptor(&self) -> StrokeLayerDescriptor {
         let mut layer = StrokeLayerDescriptor::default();
 
         for (key, chunk) in &self.chunks {
-            let painter = chunk.painter.to_descriptor();
+            let painter = chunk.canvas.to_descriptor();
             layer.chunks.push(StrokeChunkDescriptor {
                 key: *key,
                 data: painter.data,
@@ -106,28 +122,20 @@ impl StrokeLayer {
     }
 
     pub fn draw(&mut self, point: Position, world: &World) {
-        let mut interface = world.single_fetch_mut::<Interface>().unwrap();
         let chunk_key = (
             point.x.div_euclid(CHUNK_SIZE),
             point.y.div_euclid(CHUNK_SIZE),
         );
 
-        let chunk = self.chunks.entry(chunk_key).or_insert_with(|| StrokeChunk {
-            painter: Painter::new_empty(
-                Rectangle {
-                    origin: Position::new(chunk_key.0 * CHUNK_SIZE, chunk_key.1 * CHUNK_SIZE),
-                    extend: Delta::new(CHUNK_SIZE, CHUNK_SIZE),
-                },
-                &mut interface,
-            ),
+        let chunk = self.chunks.entry(chunk_key).or_insert_with(|| {
+            world.build(StrokeChunkDescriptor {
+                key: chunk_key,
+                data: None,
+            })
         });
 
-        chunk.painter.set_z_order(ZOrder::new(-100));
-
-        chunk.painter.set_pixel(
-            point,
-            [self.color.red, self.color.green, self.color.blue, 255],
-        );
+        let (wx, wy) = StrokeLayer::world_to_texture(point, chunk.canvas.rect);
+        chunk.canvas.draw(wx, wy, self.color);
     }
 
     pub fn pick(&mut self, point: Position, world: &World) {
@@ -137,8 +145,8 @@ impl StrokeLayer {
         );
 
         if let Some(chunk) = self.chunks.get(&chunk_key) {
-            let color = chunk.painter.get_pixel(point);
-            self.color = Srgb::new(color[0], color[1], color[2]);
+            let (wx, wy) = StrokeLayer::world_to_texture(point, chunk.canvas.rect);
+            self.color = chunk.canvas.read(wx, wy);
 
             world.foreach_fetch_mut::<Palette>(|_, mut palette| {
                 palette.set_color(self.color);
@@ -146,27 +154,16 @@ impl StrokeLayer {
         }
     }
 
-    fn create_chunk(&mut self, descriptor: StrokeChunkDescriptor, interface: &mut Interface) {
-        self.chunks.insert(
-            descriptor.key,
-            StrokeChunk {
-                painter: Painter::new(
-                    PainterDescriptor {
-                        rect: Rectangle {
-                            origin: Position::new(
-                                descriptor.key.0 * CHUNK_SIZE,
-                                descriptor.key.1 * CHUNK_SIZE,
-                            ),
-                            extend: Delta::splat(CHUNK_SIZE),
-                        },
-                        z_order: ZOrder::new(0),
-                        width: CHUNK_SIZE as u32,
-                        height: CHUNK_SIZE as u32,
-                        data: descriptor.data,
-                    },
-                    interface,
-                ),
-            },
-        );
+    fn world_to_texture(point: Position, rect: Rectangle) -> (i32, i32) {
+        let relative_x = point.x - rect.origin.x;
+        let relative_y = point.y - rect.origin.y;
+
+        let width = rect.width();
+        let height = rect.height();
+
+        let wrapped_x = (relative_x).rem_euclid(width as i32);
+        let wrapped_y = (height as i32 - 1 - relative_y).rem_euclid(height as i32);
+
+        (wrapped_x, wrapped_y)
     }
 }
