@@ -4,7 +4,7 @@ use palette::Srgba;
 use crate::{
     elements::{menu::Menu, palette::Palette},
     lnwin::{LnwinModifiers, PointerEvent},
-    measures::{Delta, Position, Rectangle, ZOrder},
+    measures::{Delta, Position, Rectangle},
     render::canvas::{Canvas, CanvasDescriptor},
     tools::pointer::{PointerCollider, PointerHit, PointerMenu},
     world::{Descriptor, Element, Handle, World},
@@ -43,7 +43,7 @@ impl Element for StrokeLayer {
             }
         });
 
-        let collider = world.insert(PointerCollider::fullscreen(ZOrder::new(-100)));
+        let collider = world.insert(PointerCollider::fullscreen(-100));
 
         world.dependency(collider, this);
 

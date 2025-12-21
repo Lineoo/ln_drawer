@@ -1,7 +1,7 @@
 use crate::{
     elements::menu::{MenuDescriptor, MenuEntryDescriptor},
     lnwin::PointerEvent,
-    measures::{Delta, Position, Rectangle, ZOrder},
+    measures::{Delta, Position, Rectangle},
     render::wireframe::{Wireframe, WireframeDescriptor},
     tools::pointer::{PointerCollider, PointerHit, PointerMenu},
     world::{Element, Handle, World},
@@ -44,7 +44,7 @@ impl Element for TransformTool {
         world.foreach_fetch::<Transform>(|transform, fetched_transform| {
             let collider = world.insert(PointerCollider {
                 rect: fetched_transform.rect,
-                z_order: ZOrder::new(50),
+                order: 50,
             });
 
             world.dependency(collider, tool);
@@ -145,7 +145,7 @@ impl Element for TransformTool {
             world.dependency(track, collider);
         });
 
-        let main_collider = world.insert(PointerCollider::fullscreen(ZOrder::new(40)));
+        let main_collider = world.insert(PointerCollider::fullscreen(40));
 
         world.observer(main_collider, move |PointerHit(event), world, _| {
             let mut tool = world.fetch_mut(tool).unwrap();
@@ -231,7 +231,7 @@ fn new_knobs(
 
         let collider = world.insert(PointerCollider {
             rect,
-            z_order: ZOrder::new(55),
+            order: 55,
         });
 
         world.observer(collider, move |PointerHit(event), world, _| {

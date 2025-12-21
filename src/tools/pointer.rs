@@ -1,6 +1,6 @@
 use crate::{
     lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
-    measures::{Delta, Position, Rectangle, ZOrder},
+    measures::{Delta, Position, Rectangle},
     tools::focus::{Focus, RequestFocus},
     world::{Element, Handle, World},
 };
@@ -8,7 +8,7 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 pub struct PointerCollider {
     pub rect: Rectangle,
-    pub z_order: ZOrder,
+    pub order: isize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -26,13 +26,13 @@ pub struct PointerMenu(pub Position);
 impl Element for PointerCollider {}
 
 impl PointerCollider {
-    pub fn fullscreen(z_order: ZOrder) -> PointerCollider {
+    pub fn fullscreen(order: isize) -> PointerCollider {
         PointerCollider {
             rect: Rectangle {
                 origin: Position::splat(i32::MIN / 2),
                 extend: Delta::splat(i32::MAX),
             },
-            z_order,
+            order,
         }
     }
 }
@@ -94,10 +94,10 @@ impl Element for Pointer {
 impl Pointer {
     pub fn intersect(&self, world: &World, point: Position) -> Option<Handle<PointerCollider>> {
         let mut top_result = None;
-        let mut max_order = ZOrder::new(isize::MIN);
+        let mut max_order = isize::MIN;
         world.foreach_fetch::<PointerCollider>(|handle, intersection| {
-            if (intersection.z_order > max_order) && intersection.rect.contains(point) {
-                max_order = intersection.z_order;
+            if (intersection.order > max_order) && intersection.rect.contains(point) {
+                max_order = intersection.order;
                 top_result = Some(handle);
             }
         });

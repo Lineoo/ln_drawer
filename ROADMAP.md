@@ -36,7 +36,6 @@
     - [x] 使用世界元素来注册 Interface
 - [x] 文字的高精度渲染
     - [x] 编写专用的文本渲染管线
-- **LnDrawer v0.1.2-alpha1**
 - [ ] 删除 ZOrder
 - [ ] 分离相机移动逻辑
 - [ ] Rectangle 使用 Size
@@ -45,6 +44,7 @@
 - [ ] 修复变换工具的一系列问题
 - [ ] PointerEdgeCollider
 - [ ] 选择工具优化
+- **LnDrawer v0.1.2-alpha1**
 - [ ] 可修改的圆角大小
 - [ ] 圆角描边与阴影
 - [ ] 菜单分割线

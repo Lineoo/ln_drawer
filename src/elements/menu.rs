@@ -1,7 +1,7 @@
 use crate::{
     elements::palette::PaletteDescriptor,
     lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
-    measures::{Delta, Position, Rectangle, ZOrder},
+    measures::{Delta, Position, Rectangle},
     render::{
         canvas::CanvasDescriptor,
         rounded::{RoundedRect, RoundedRectDescriptor},
@@ -53,7 +53,7 @@ impl Default for MenuDescriptor {
 
 impl Element for Menu {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
-        let collider = world.insert(PointerCollider::fullscreen(ZOrder::new(80)));
+        let collider = world.insert(PointerCollider::fullscreen(80));
 
         world.dependency(collider, this);
 
@@ -80,7 +80,7 @@ impl Element for Menu {
         for (i, entry) in self.entries.iter().enumerate() {
             let collider = world.insert(PointerCollider {
                 rect: entry.frame.rect.expand(PAD),
-                z_order: ZOrder::new(110),
+                order: 110,
             });
 
             world.dependency(collider, this);

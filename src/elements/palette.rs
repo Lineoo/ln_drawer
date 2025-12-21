@@ -6,7 +6,7 @@ use crate::{
         stroke::StrokeLayer,
     },
     lnwin::PointerEvent,
-    measures::{Delta, Position, Rectangle, ZOrder},
+    measures::{Delta, Position, Rectangle},
     render::{
         RedrawPrepare, RenderControl,
         canvas::{Canvas, CanvasDescriptor},
@@ -47,7 +47,7 @@ impl Element for Palette {
 
         let main_collider = world.insert(PointerCollider {
             rect: self.main.rect,
-            z_order: ZOrder::new(0),
+            order: 0,
         });
 
         world.observer(
@@ -80,7 +80,7 @@ impl Element for Palette {
 
         let hue_collider = world.insert(PointerCollider {
             rect: self.hue.rect,
-            z_order: ZOrder::new(0),
+            order: 0,
         });
 
         world.observer(
