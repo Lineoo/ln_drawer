@@ -14,9 +14,10 @@ use wgpu::{
 };
 
 use crate::{
-    measures::{Delta, Position, Rectangle},
+    measures::{Position, Rectangle, Size},
     render::{
-        Redraw, Render, RenderActive, RenderControl,
+        Redraw, Render, RenderControl,
+        vertex::VertexUniform,
         viewport::{ViewportInstance, ViewportManager},
     },
     world::{Commander, Descriptor, Element, Handle, World},
@@ -56,13 +57,6 @@ pub struct CanvasInstance {
     uniform: Buffer,
     texture: Texture,
     sampler: Sampler,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct CanvasUniform {
-    origin: [i32; 2],
-    extend: [i32; 2],
 }
 
 impl Element for Canvas {}
@@ -181,7 +175,7 @@ impl Descriptor for CanvasDescriptor {
 
         let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("canvas_uniform"),
-            contents: bytemuck::bytes_of(&CanvasUniform {
+            contents: bytemuck::bytes_of(&VertexUniform {
                 origin: self.rect.origin.into_array(),
                 extend: self.rect.extend.into_array(),
             }),
@@ -309,7 +303,7 @@ impl CanvasDescriptor {
             height: image.height(),
             rect: Rectangle {
                 origin: position,
-                extend: Delta::new(image.width() as i32, image.height() as i32),
+                extend: Size::new(image.width(), image.height()),
             },
             order: 0,
             visible: true,
@@ -339,7 +333,7 @@ impl Canvas {
         let control = self.control;
         let visible = self.visible;
         let order = self.order;
-        let uniform = CanvasUniform {
+        let uniform = VertexUniform {
             origin: self.rect.origin.into_array(),
             extend: self.rect.extend.into_array(),
         };

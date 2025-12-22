@@ -1,6 +1,6 @@
 use crate::{
     lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
-    measures::{Delta, Position, Rectangle},
+    measures::{Delta, Position, Rectangle, Size},
     tools::focus::{Focus, RequestFocus},
     world::{Element, Handle, World},
 };
@@ -30,7 +30,7 @@ impl PointerCollider {
         PointerCollider {
             rect: Rectangle {
                 origin: Position::splat(i32::MIN / 2),
-                extend: Delta::splat(i32::MAX),
+                extend: Size::MAX,
             },
             order,
         }

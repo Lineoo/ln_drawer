@@ -6,7 +6,7 @@ use crate::{
         stroke::StrokeLayer,
     },
     lnwin::PointerEvent,
-    measures::{Delta, Position, Rectangle},
+    measures::{Position, Rectangle, Size},
     render::{
         RedrawPrepare, RenderControl,
         canvas::{Canvas, CanvasDescriptor},
@@ -19,9 +19,9 @@ use crate::{
     world::{Descriptor, Element, Handle, World},
 };
 
-const WIDTH: usize = 256;
-const HEIGHT: usize = 256;
-const HUE_HEIGHT: usize = 32;
+const WIDTH: u32 = 256;
+const HEIGHT: u32 = 256;
+const HUE_HEIGHT: u32 = 32;
 
 pub struct Palette {
     main: Canvas,
@@ -59,9 +59,9 @@ impl Element for Palette {
                     this.main_knob.rect = Rectangle {
                         origin: point.clamp(Rectangle {
                             origin: rect.origin,
-                            extend: rect.extend - Delta::splat(1),
+                            extend: rect.extend - Size::splat(1),
                         }),
-                        extend: Delta::splat(1),
+                        extend: Size::splat(1),
                     };
 
                     let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
@@ -94,7 +94,7 @@ impl Element for Palette {
                             point.x.clamp(rect.left(), rect.right() - 1),
                             rect.down(),
                         ),
-                        extend: Delta::new(1, HUE_HEIGHT as i32),
+                        extend: Size::new(1, HUE_HEIGHT),
                     };
 
                     let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
@@ -189,10 +189,10 @@ impl Descriptor for PaletteDescriptor {
         let main = world.build(CanvasDescriptor {
             rect: Rectangle {
                 origin: self.position,
-                extend: Delta::new(WIDTH as i32, HEIGHT as i32),
+                extend: Size::new(WIDTH, HEIGHT),
             },
-            width: WIDTH as u32,
-            height: HEIGHT as u32,
+            width: WIDTH,
+            height: HEIGHT,
             visible: true,
             ..Default::default()
         });
@@ -200,7 +200,7 @@ impl Descriptor for PaletteDescriptor {
         let main_knob = world.build(WireframeDescriptor {
             rect: Rectangle {
                 origin: self.position,
-                extend: Delta::splat(1),
+                extend: Size::splat(1),
             },
             order: 1,
             visible: true,
@@ -208,19 +208,25 @@ impl Descriptor for PaletteDescriptor {
 
         let hue = world.build(CanvasDescriptor {
             rect: Rectangle {
-                origin: self.position - Delta::new(0, HUE_HEIGHT as i32),
-                extend: Delta::new(WIDTH as i32, HUE_HEIGHT as i32),
+                origin: Position::new(
+                    self.position.x,
+                    self.position.y.wrapping_sub_unsigned(HUE_HEIGHT),
+                ),
+                extend: Size::new(WIDTH, HUE_HEIGHT),
             },
-            width: WIDTH as u32,
-            height: HUE_HEIGHT as u32,
+            width: WIDTH,
+            height: HUE_HEIGHT,
             visible: true,
             ..Default::default()
         });
 
         let hue_knob = world.build(WireframeDescriptor {
             rect: Rectangle {
-                origin: self.position - Delta::new(0, HUE_HEIGHT as i32),
-                extend: Delta::new(1, HUE_HEIGHT as i32),
+                origin: Position::new(
+                    self.position.x,
+                    self.position.y.wrapping_sub_unsigned(HUE_HEIGHT),
+                ),
+                extend: Size::new(1, HUE_HEIGHT),
             },
             order: 1,
             visible: true,

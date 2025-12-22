@@ -10,7 +10,8 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        Redraw, Render, RenderActive, RenderControl,
+        Redraw, Render, RenderControl,
+        vertex::VertexUniform,
         viewport::{ViewportInstance, ViewportManager},
     },
     world::{Commander, Descriptor, Element, Handle, World},
@@ -44,13 +45,6 @@ pub struct WireframeInstance {
     uniform: Buffer,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct WireframeUniform {
-    origin: [i32; 2],
-    extend: [i32; 2],
-}
-
 impl Element for Wireframe {}
 impl Element for WireframeManager {}
 impl Element for WireframeInstance {}
@@ -65,12 +59,7 @@ impl Descriptor for WireframeManagerDescriptor {
         let caps = render.surface.get_capabilities(&render.adapter);
         let format = *caps.formats.first().unwrap();
 
-        let shader_vs = render.device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("vertex_shader"),
-            source: ShaderSource::Wgsl(include_str!("vertex.wgsl").into()),
-        });
-
-        let shader_fs = render.device.create_shader_module(ShaderModuleDescriptor {
+        let shader = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("wireframe_shader"),
             source: ShaderSource::Wgsl(include_str!("wireframe.wgsl").into()),
         });
@@ -105,17 +94,17 @@ impl Descriptor for WireframeManagerDescriptor {
                 label: Some("wireframe_pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: VertexState {
-                    module: &shader_vs,
+                    module: &shader,
                     entry_point: Some("vs_main"),
                     compilation_options: Default::default(),
                     buffers: &[],
                 },
                 primitive: PrimitiveState {
-                    topology: PrimitiveTopology::TriangleStrip,
+                    topology: PrimitiveTopology::LineStrip,
                     ..Default::default()
                 },
                 fragment: Some(FragmentState {
-                    module: &shader_fs,
+                    module: &shader,
                     entry_point: Some("fs_main"),
                     compilation_options: Default::default(),
                     targets: &[Some(ColorTargetState {
@@ -149,7 +138,7 @@ impl Descriptor for WireframeDescriptor {
 
         let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("wireframe_uniform"),
-            contents: bytemuck::bytes_of(&WireframeUniform {
+            contents: bytemuck::bytes_of(&VertexUniform {
                 origin: self.rect.origin.into_array(),
                 extend: self.rect.extend.into_array(),
             }),
@@ -186,7 +175,7 @@ impl Descriptor for WireframeDescriptor {
             rpass.set_pipeline(&manager.pipeline);
             rpass.set_bind_group(0, &viewport.bind, &[]);
             rpass.set_bind_group(1, &instance.bind, &[]);
-            rpass.draw(0..4, 0..1);
+            rpass.draw(0..5, 0..1);
         });
 
         world.dependency(control, instance);
@@ -217,7 +206,7 @@ impl Wireframe {
         let control = self.control;
         let visible = self.visible;
         let order = self.order;
-        let uniform = WireframeUniform {
+        let uniform = VertexUniform {
             origin: self.rect.origin.into_array(),
             extend: self.rect.extend.into_array(),
         };

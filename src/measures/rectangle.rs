@@ -1,11 +1,11 @@
 use std::{fmt, ops};
 
-use crate::measures::{Delta, Position};
+use crate::measures::{Delta, Position, Size};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Rectangle {
     pub origin: Position,
-    pub extend: Delta,
+    pub extend: Size,
 }
 
 impl fmt::Debug for Rectangle {
@@ -65,19 +65,19 @@ impl ops::SubAssign<Delta> for Rectangle {
 impl Rectangle {
     pub fn new(left: i32, down: i32, right: i32, up: i32) -> Rectangle {
         Rectangle {
-            origin: Position::new(left, down),
-            extend: Position::new(right, up) - Position::new(left, down),
+            origin: Position::new(left.min(right), down.min(up)),
+            extend: Size::new((right - left).unsigned_abs(), (up - down).unsigned_abs()),
         }
     }
 
     #[inline]
     pub fn width(self) -> u32 {
-        self.extend.x as u32
+        self.extend.w
     }
 
     #[inline]
     pub fn height(self) -> u32 {
-        self.extend.y as u32
+        self.extend.h
     }
 
     #[inline]
@@ -92,12 +92,12 @@ impl Rectangle {
 
     #[inline]
     pub fn right(self) -> i32 {
-        self.origin.x + self.extend.x
+        self.origin.x.wrapping_add_unsigned(self.extend.w)
     }
 
     #[inline]
     pub fn up(self) -> i32 {
-        self.origin.y + self.extend.y
+        self.origin.y.wrapping_add_unsigned(self.extend.h)
     }
 
     #[inline]
@@ -107,17 +107,26 @@ impl Rectangle {
 
     #[inline]
     pub fn left_up(self) -> Position {
-        self.origin + Delta::new(0, self.extend.y)
+        Position::new(
+            self.origin.x,
+            self.origin.y.wrapping_add_unsigned(self.extend.h),
+        )
     }
 
     #[inline]
     pub fn right_down(self) -> Position {
-        self.origin + Delta::new(self.extend.x, 0)
+        Position::new(
+            self.origin.x.wrapping_add_unsigned(self.extend.w),
+            self.origin.y,
+        )
     }
 
     #[inline]
     pub fn right_up(self) -> Position {
-        self.origin + self.extend
+        Position::new(
+            self.origin.x.wrapping_add_unsigned(self.extend.w),
+            self.origin.y.wrapping_add_unsigned(self.extend.h),
+        )
     }
 
     #[inline]
@@ -141,40 +150,20 @@ impl Rectangle {
     }
 
     pub fn contains(self, position: Position) -> bool {
-        let normal = self.normalize();
-        let delta = position.wrapping_sub(normal.origin);
-        (delta.x as u32) < (normal.extend.x as u32) && (delta.y as u32) < (normal.extend.y as u32)
+        let delta = position.wrapping_sub(self.origin);
+        delta.w < self.extend.w && delta.h < self.extend.h
     }
 
     pub fn expand(self, val: i32) -> Rectangle {
-        Rectangle {
-            origin: self.origin - Delta::splat(val),
-            extend: self.extend + Delta::splat(val * 2),
-        }
-    }
-
-    pub fn normalize(self) -> Rectangle {
-        let left = i32::min(self.origin.x, self.origin.x + self.extend.x);
-        let down = i32::min(self.origin.y, self.origin.y + self.extend.y);
-        let right = i32::max(self.origin.x, self.origin.x + self.extend.x);
-        let up = i32::max(self.origin.y, self.origin.y + self.extend.y);
-        Rectangle::new(left, down, right, up)
-    }
-
-    pub fn into_array(self) -> [i32; 4] {
-        [self.left(), self.down(), self.right(), self.up()]
-    }
-
-    pub fn from_array(array: [i32; 4]) -> Rectangle {
-        Rectangle {
-            origin: Position {
-                x: array[0],
-                y: array[1],
-            },
-            extend: Delta {
-                x: array[2] - array[0],
-                y: array[3] - array[1],
-            },
-        }
+        Rectangle::new(
+            self.origin.x.wrapping_sub(val),
+            self.origin.y.wrapping_sub(val),
+            (self.origin.x)
+                .wrapping_add_unsigned(self.extend.w)
+                .wrapping_add(val),
+            (self.origin.y)
+                .wrapping_add_unsigned(self.extend.h)
+                .wrapping_add(val),
+        )
     }
 }

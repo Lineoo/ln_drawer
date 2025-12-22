@@ -9,7 +9,7 @@ use winit::{
 
 use crate::{
     elements::stroke::StrokeLayer,
-    measures::{Fract, Position, PositionFract},
+    measures::{Fract, Position, PositionFract, Size},
     render::{
         Render,
         canvas::CanvasManagerDescriptor,
@@ -82,20 +82,20 @@ impl Element for Lnwindow {
 
 impl Lnwindow {
     async fn new(event_loop: &ActiveEventLoop, world: &mut World) -> Lnwindow {
-        let win_attr = Window::default_attributes();
+        let win_attr = Window::default_attributes().with_transparent(true);
 
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::new(window);
 
-        let size = window.inner_size();
         world.insert(Render::new(window.clone()).await);
         world.flush();
 
         world.insert(world.build(ViewportManagerDescriptor));
         world.flush();
 
+        let size = window.inner_size();
         world.insert(world.build(ViewportDescriptor {
-            size: [size.width.max(1), size.height.max(1)],
+            size: Size::new(size.width, size.height),
             ..Default::default()
         }));
         world.flush();
@@ -238,10 +238,14 @@ impl Lnwindow {
             WindowEvent::Resized(size) => {
                 let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
 
-                viewport.size[0] = size.width.max(1);
-                viewport.size[1] = size.height.max(1);
+                viewport.size.w = size.width;
+                viewport.size.h = size.height;
 
                 viewport.upload();
+
+                let mut render = world.single_fetch_mut::<Render>().unwrap();
+                render.resize(*size);
+
                 self.window.request_redraw();
             }
 

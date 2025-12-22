@@ -1,12 +1,12 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::measures::{DeltaFract, Fract, PositionFract};
+use crate::measures::{DeltaFract, Fract, PositionFract, Size};
 use crate::render::Render;
 use crate::world::{Commander, Descriptor, Element, Handle, World};
 
 pub struct Viewport {
-    pub size: [u32; 2],
+    pub size: Size,
     pub center: PositionFract,
     pub zoom: Fract,
     instance: Handle<ViewportInstance>,
@@ -15,7 +15,7 @@ pub struct Viewport {
 
 #[derive(Debug, Default)]
 pub struct ViewportDescriptor {
-    pub size: [u32; 2],
+    pub size: Size,
     pub center: PositionFract,
     pub zoom: Fract,
 }
@@ -83,7 +83,7 @@ impl Descriptor for ViewportDescriptor {
         let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("viewport_uniform"),
             contents: bytemuck::bytes_of(&ViewportUniform {
-                size: self.size,
+                size: self.size.into_array(),
                 center: self.center.into_array(),
                 center_fract: self.center.into_arrayf(),
                 zoom: self.zoom.n,
@@ -107,12 +107,6 @@ impl Descriptor for ViewportDescriptor {
 
         let instance = world.insert(ViewportInstance { uniform, bind });
 
-        let config = render
-            .surface
-            .get_default_config(&render.adapter, self.size[0], self.size[1])
-            .unwrap();
-        render.surface.configure(&render.device, &config);
-
         Viewport {
             size: self.size,
             center: self.center,
@@ -130,8 +124,8 @@ impl Viewport {
 
     pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> DeltaFract {
         let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
-        let x = delta[0] / scale * self.size[0] as f64 / 2.0;
-        let y = delta[1] / scale * self.size[1] as f64 / 2.0;
+        let x = delta[0] / scale * self.size.w as f64 / 2.0;
+        let y = delta[1] / scale * self.size.h as f64 / 2.0;
         DeltaFract::new(
             x.floor() as i32,
             (((x - x.floor()) * 32f64.exp2()).floor()) as u32,
@@ -143,7 +137,7 @@ impl Viewport {
     pub fn upload(&self) {
         let instance = self.instance;
         let uniform = ViewportUniform {
-            size: self.size,
+            size: Size::new(self.size.w.max(1), self.size.h.max(1)).into_array(),
             center: self.center.into_array(),
             center_fract: self.center.into_arrayf(),
             zoom: self.zoom.n,

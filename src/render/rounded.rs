@@ -3,7 +3,7 @@ use wgpu::*;
 
 use crate::measures::Rectangle;
 use crate::render::viewport::{ViewportInstance, ViewportManager};
-use crate::render::{Redraw, Render, RenderActive, RenderControl};
+use crate::render::{Redraw, Render, RenderControl};
 use crate::world::{Commander, Descriptor, Element, Handle, World};
 
 pub struct RoundedRect {
@@ -41,7 +41,7 @@ pub struct RoundedRectInstance {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct RoundedRectUniform {
     origin: [i32; 2],
-    extend: [i32; 2],
+    extend: [u32; 2],
     color: [f32; 4],
 }
 

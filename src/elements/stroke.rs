@@ -4,13 +4,13 @@ use palette::Srgba;
 use crate::{
     elements::{menu::Menu, palette::Palette},
     lnwin::{LnwinModifiers, PointerEvent},
-    measures::{Delta, Position, Rectangle},
+    measures::{Position, Rectangle, Size},
     render::canvas::{Canvas, CanvasDescriptor},
     tools::pointer::{PointerCollider, PointerHit, PointerMenu},
     world::{Descriptor, Element, Handle, World},
 };
 
-const CHUNK_SIZE: i32 = 512;
+const CHUNK_SIZE: u32 = 512;
 
 #[derive(Default)]
 pub struct StrokeLayer {
@@ -91,14 +91,17 @@ impl Descriptor for StrokeChunkDescriptor {
         StrokeChunk {
             canvas: world.build(CanvasDescriptor {
                 rect: Rectangle {
-                    origin: Position::new(self.key.0 * CHUNK_SIZE, self.key.1 * CHUNK_SIZE),
-                    extend: Delta::splat(CHUNK_SIZE),
+                    origin: Position::new(
+                        self.key.0 * CHUNK_SIZE as i32,
+                        self.key.1 * CHUNK_SIZE as i32,
+                    ),
+                    extend: Size::splat(CHUNK_SIZE),
                 },
                 order: 0,
                 visible: true,
                 data: self.data,
-                width: CHUNK_SIZE as u32,
-                height: CHUNK_SIZE as u32,
+                width: CHUNK_SIZE,
+                height: CHUNK_SIZE,
             }),
         }
     }
@@ -123,8 +126,8 @@ impl StrokeLayer {
 
     pub fn draw(&mut self, point: Position, world: &World) {
         let chunk_key = (
-            point.x.div_euclid(CHUNK_SIZE),
-            point.y.div_euclid(CHUNK_SIZE),
+            point.x.div_euclid(CHUNK_SIZE as i32),
+            point.y.div_euclid(CHUNK_SIZE as i32),
         );
 
         let chunk = self.chunks.entry(chunk_key).or_insert_with(|| {
@@ -140,8 +143,8 @@ impl StrokeLayer {
 
     pub fn pick(&mut self, point: Position, world: &World) {
         let chunk_key = (
-            point.x.div_euclid(CHUNK_SIZE),
-            point.y.div_euclid(CHUNK_SIZE),
+            point.x.div_euclid(CHUNK_SIZE as i32),
+            point.y.div_euclid(CHUNK_SIZE as i32),
         );
 
         if let Some(chunk) = self.chunks.get(&chunk_key) {

@@ -17,7 +17,7 @@ fn viewport_convert(world_space: vec2i) -> vec2f {
 
 struct Rectangle {
     origin: vec2i,
-    extend: vec2i,
+    extend: vec2u,
     color: vec4f,
 }
 
@@ -34,8 +34,8 @@ const edge = 10;
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
     let world_space = vec2i(
-        rectangle.origin.x + rectangle.extend.x * (i32(index) / 2),
-        rectangle.origin.y + rectangle.extend.y * (i32(index) % 2)
+        rectangle.origin.x + i32(rectangle.extend.x) * (i32(index) / 2),
+        rectangle.origin.y + i32(rectangle.extend.y) * (i32(index) % 2)
     );
 
     // extend 10 pixels to render shadow

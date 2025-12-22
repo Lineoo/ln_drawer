@@ -1,7 +1,7 @@
 use crate::{
     elements::palette::PaletteDescriptor,
     lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
-    measures::{Delta, Position, Rectangle},
+    measures::{Delta, Position, Rectangle, Size},
     render::{
         canvas::CanvasDescriptor,
         rounded::{RoundedRect, RoundedRectDescriptor},
@@ -14,8 +14,8 @@ use crate::{
     world::{Descriptor, Element, Handle, World},
 };
 
-const PAD: i32 = 10;
-const PAD_TEXT: i32 = 8;
+const PAD: u32 = 10;
+const PAD_TEXT: u32 = 8;
 
 pub struct Menu {
     frame: RoundedRect,
@@ -30,8 +30,8 @@ struct MenuEntry {
 
 pub struct MenuDescriptor {
     pub position: Position,
-    pub entry_width: i32,
-    pub entry_height: i32,
+    pub entry_width: u32,
+    pub entry_height: u32,
     pub entries: Vec<MenuEntryDescriptor>,
 }
 
@@ -79,7 +79,7 @@ impl Element for Menu {
 
         for (i, entry) in self.entries.iter().enumerate() {
             let collider = world.insert(PointerCollider {
-                rect: entry.frame.rect.expand(PAD),
+                rect: entry.frame.rect.expand(PAD as i32 / 2),
                 order: 110,
             });
 
@@ -116,9 +116,9 @@ impl Descriptor for MenuDescriptor {
     fn build(self, world: &World) -> Self::Target {
         let rect = Rectangle {
             origin: self.position,
-            extend: Delta::new(
+            extend: Size::new(
                 PAD + (self.entry_width + PAD),
-                PAD + (self.entry_height + PAD) * self.entries.len() as i32,
+                PAD + (self.entry_height + PAD) * self.entries.len() as u32,
             ),
         };
 
@@ -131,10 +131,10 @@ impl Descriptor for MenuDescriptor {
 
         let mut entries = Vec::with_capacity(self.entries.len());
         for entry in self.entries {
-            let prev = (self.entry_height + PAD) * entries.len() as i32;
+            let prev = (self.entry_height + PAD) * entries.len() as u32;
             let rect = Rectangle {
-                origin: rect.origin + Delta::new(PAD, PAD + prev),
-                extend: Delta::new(self.entry_width, self.entry_height),
+                origin: rect.origin.wrapping_add(Size::new(PAD, PAD + prev)),
+                extend: Size::new(self.entry_width, self.entry_height),
             };
 
             let frame = world.build(RoundedRectDescriptor {
@@ -146,7 +146,7 @@ impl Descriptor for MenuDescriptor {
 
             let text = world.build(TextDescriptor {
                 text: &entry.label,
-                rect: rect.expand(-PAD_TEXT),
+                rect: rect.expand(-PAD_TEXT.cast_signed()),
                 order: 140,
                 ..Default::default()
             });
@@ -175,7 +175,7 @@ impl Menu {
                         world.insert(world.build(TextDescriptor {
                             rect: Rectangle {
                                 origin: Position::default(),
-                                extend: Delta::new(100, 100),
+                                extend: Size::splat(100),
                             },
                             text: "New Label",
                             ..Default::default()

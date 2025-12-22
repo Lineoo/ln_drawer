@@ -1,7 +1,5 @@
 use std::{fmt, ops};
 
-use glam::Vec2;
-
 use crate::measures::Fract;
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]

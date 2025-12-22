@@ -1,15 +1,18 @@
 pub mod canvas;
 pub mod rounded;
 pub mod text;
+pub mod vertex;
 pub mod viewport;
 pub mod wireframe;
 
 use wgpu::{
-    Adapter, Color, CommandEncoder, CommandEncoderDescriptor, Device, DeviceDescriptor, Features,
-    Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference, Queue, RenderPass,
-    RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface,
-    SurfaceConfiguration, SurfaceTarget, TextureViewDescriptor, Trace,
+    Adapter, Color, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device,
+    DeviceDescriptor, Features, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference,
+    Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions,
+    StoreOp, Surface, SurfaceConfiguration, SurfaceTarget, TextureFormat, TextureUsages,
+    TextureViewDescriptor, Trace,
 };
+use winit::dpi::PhysicalSize;
 
 use crate::world::{Element, World};
 
@@ -73,9 +76,41 @@ impl Render {
         }
     }
 
-    pub fn redraw(&mut self, world: &World) {
-        let texture = self.surface.get_current_texture().unwrap();
+    pub fn resize(&mut self, size: PhysicalSize<u32>) {
+        let caps = self.surface.get_capabilities(&self.adapter);
+        let config = SurfaceConfiguration {
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            format: {
+                let caps = &caps.formats;
+                if caps.contains(&TextureFormat::Bgra8UnormSrgb) {
+                    TextureFormat::Bgra8UnormSrgb
+                } else {
+                    *caps.first().unwrap()
+                }
+            },
+            width: size.width.max(1),
+            height: size.height.max(1),
+            desired_maximum_frame_latency: 2,
+            present_mode: *caps.present_modes.first().unwrap(),
+            alpha_mode: {
+                let caps = &caps.alpha_modes;
+                if caps.contains(&CompositeAlphaMode::PreMultiplied) {
+                    CompositeAlphaMode::PreMultiplied
+                } else if caps.contains(&CompositeAlphaMode::PostMultiplied) {
+                    CompositeAlphaMode::PostMultiplied
+                } else if caps.contains(&CompositeAlphaMode::Inherit) {
+                    CompositeAlphaMode::Inherit
+                } else {
+                    *caps.first().unwrap()
+                }
+            },
+            view_formats: vec![],
+        };
 
+        self.surface.configure(&self.device, &config);
+    }
+
+    pub fn redraw(&mut self, world: &World) {
         let mut buf = Vec::with_capacity(world.len::<RenderControl>());
         world.foreach_fetch::<RenderControl>(|control, fetched| {
             if fetched.visible {
@@ -89,6 +124,7 @@ impl Render {
             world.trigger(*control, RedrawPrepare);
         }
 
+        let texture = self.surface.get_current_texture().unwrap();
         let view = texture
             .texture
             .create_view(&TextureViewDescriptor::default());
@@ -105,7 +141,7 @@ impl Render {
                     view: &view,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(Color::BLACK),
+                        load: LoadOp::Clear(Color::TRANSPARENT),
                         store: StoreOp::Store,
                     },
                     depth_slice: None,

@@ -1,5 +1,7 @@
 use std::{fmt, ops};
 
+use crate::measures::Delta;
+
 #[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Size {
     pub w: u32,
@@ -8,10 +10,7 @@ pub struct Size {
 
 impl fmt::Debug for Size {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Size")
-            .field(&self.w)
-            .field(&self.h)
-            .finish()
+        f.debug_tuple("Size").field(&self.w).field(&self.h).finish()
     }
 }
 
@@ -50,12 +49,21 @@ impl ops::SubAssign for Size {
 }
 
 impl Size {
+    pub const MAX: Size = Size {
+        w: u32::MAX,
+        h: u32::MAX,
+    };
+
     pub fn new(w: u32, h: u32) -> Size {
         Size { w, h }
     }
 
     pub fn splat(n: u32) -> Size {
         Size { w: n, h: n }
+    }
+
+    pub fn into_delta(self) -> Delta {
+        Delta::new(self.w as i32, self.h as i32)
     }
 
     pub fn into_array(self) -> [u32; 2] {

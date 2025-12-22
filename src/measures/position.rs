@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-use crate::measures::{Delta, Rectangle};
+use crate::measures::{Delta, Rectangle, Size};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Position {
@@ -88,10 +88,10 @@ impl Position {
     }
 
     pub fn clamp(self, rect: Rectangle) -> Position {
-        Position::new(
-            self.x.clamp(rect.origin.x, rect.origin.x + rect.extend.x),
-            self.y.clamp(rect.origin.y, rect.origin.y + rect.extend.y),
-        )
+        let mut delta = self.wrapping_sub(rect.origin);
+        delta.w = delta.w.min(rect.extend.w);
+        delta.h = delta.h.min(rect.extend.h);
+        rect.origin.wrapping_add(delta)
     }
 
     pub fn wrap(self, rect: Rectangle) -> Position {
@@ -103,10 +103,17 @@ impl Position {
         rect.origin + Delta::new(w, h)
     }
 
-    pub fn wrapping_sub(self, rhs: Self) -> Delta {
-        Delta {
-            x: self.x.wrapping_sub(rhs.x),
-            y: self.y.wrapping_sub(rhs.y),
+    pub fn wrapping_add(self, rhs: Size) -> Self {
+        Position {
+            x: self.x.wrapping_add_unsigned(rhs.w),
+            y: self.y.wrapping_add_unsigned(rhs.h),
+        }
+    }
+
+    pub fn wrapping_sub(self, rhs: Self) -> Size {
+        Size {
+            w: self.x.wrapping_sub(rhs.x) as u32,
+            h: self.y.wrapping_sub(rhs.y) as u32,
         }
     }
 }

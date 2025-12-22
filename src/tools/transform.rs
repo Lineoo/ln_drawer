@@ -1,7 +1,7 @@
 use crate::{
     elements::menu::{MenuDescriptor, MenuEntryDescriptor},
     lnwin::PointerEvent,
-    measures::{Delta, Position, Rectangle},
+    measures::{Position, Rectangle},
     render::wireframe::{Wireframe, WireframeDescriptor},
     tools::pointer::{PointerCollider, PointerHit, PointerMenu},
     world::{Element, Handle, World},
@@ -59,12 +59,6 @@ impl Element for TransformTool {
                             ..Default::default()
                         });
 
-                        let resizing = if fetched_transform.resizable {
-                            Some(new_knobs(tool, world, &mut fetched_transform))
-                        } else {
-                            None
-                        };
-
                         let old = fetched_tool.active.replace(Active {
                             target: transform,
                             frame,
@@ -72,7 +66,7 @@ impl Element for TransformTool {
                                 element_base: fetched_transform.rect.origin,
                                 pointer_base: *position,
                             }),
-                            resizing,
+                            resizing: None,
                         });
 
                         if let Some(old) = old
@@ -96,10 +90,6 @@ impl Element for TransformTool {
 
                             active.frame.rect = fetched_transform.rect;
                             active.frame.upload();
-
-                            if let Some(resizing) = &mut active.resizing {
-                                update_knobs(resizing, &fetched_transform);
-                            }
 
                             world.trigger(transform, TransformUpdate);
                         }
@@ -168,154 +158,5 @@ impl Element for TransformTool {
         });
 
         world.dependency(main_collider, tool);
-    }
-}
-
-fn new_knobs(
-    tool: Handle<TransformTool>,
-    world: &World,
-    fetched_transform: &mut Transform,
-) -> Vec<ResizeKnob> {
-    let mut knobs = Vec::new();
-
-    let rect = [
-        Rectangle {
-            origin: fetched_transform.rect.left_down(),
-            extend: Delta::new(-5, -5),
-        }
-        .normalize(),
-        Rectangle {
-            origin: fetched_transform.rect.left_up(),
-            extend: Delta::new(-5, 5),
-        }
-        .normalize(),
-        Rectangle {
-            origin: fetched_transform.rect.right_up(),
-            extend: Delta::new(5, 5),
-        }
-        .normalize(),
-        Rectangle {
-            origin: fetched_transform.rect.right_down(),
-            extend: Delta::new(5, -5),
-        }
-        .normalize(),
-    ];
-
-    let fetch = [
-        |transform: &Transform| transform.rect.left_down(),
-        |transform: &Transform| transform.rect.left_up(),
-        |transform: &Transform| transform.rect.right_up(),
-        |transform: &Transform| transform.rect.right_down(),
-    ];
-
-    let set = [
-        |transform: &mut Transform, target: Position| {
-            transform.rect = transform.rect.with_left_down(target);
-        },
-        |transform: &mut Transform, target: Position| {
-            transform.rect = transform.rect.with_left_up(target);
-        },
-        |transform: &mut Transform, target: Position| {
-            transform.rect = transform.rect.with_right_up(target);
-        },
-        |transform: &mut Transform, target: Position| {
-            transform.rect = transform.rect.with_right_down(target);
-        },
-    ];
-
-    for (i, ((rect, fetch), set)) in rect.into_iter().zip(fetch).zip(set).enumerate() {
-        let wireframe = world.build(WireframeDescriptor {
-            rect,
-            ..Default::default()
-        });
-
-        let collider = world.insert(PointerCollider {
-            rect,
-            order: 55,
-        });
-
-        world.observer(collider, move |PointerHit(event), world, _| {
-            let mut tool = world.fetch_mut(tool).unwrap();
-
-            let Some(active) = &mut tool.active else {
-                return;
-            };
-
-            let mut transform = world.fetch_mut(active.target).unwrap();
-
-            let Some(resizing) = &mut active.resizing else {
-                return;
-            };
-
-            let Some(knob) = resizing.get_mut(i) else {
-                return;
-            };
-
-            match event {
-                PointerEvent::Pressed(position) => {
-                    knob.dragging.replace(Dragging {
-                        element_base: fetch(&transform),
-                        pointer_base: *position,
-                    });
-                }
-                PointerEvent::Moved(position) => {
-                    if let Some(dragging) = &knob.dragging {
-                        let delta = *position - dragging.pointer_base;
-                        set(&mut transform, dragging.element_base + delta);
-
-                        active.frame.rect = transform.rect;
-                        active.frame.upload();
-
-                        update_knobs(resizing, &transform);
-                        world.trigger(active.target, TransformUpdate);
-                    }
-                }
-                PointerEvent::Released(_) => {
-                    knob.dragging = None;
-                }
-            }
-        });
-
-        knobs.push(ResizeKnob {
-            wireframe,
-            collider,
-            dragging: None,
-        });
-    }
-
-    knobs
-}
-
-fn update_knobs(resizing: &mut [ResizeKnob], fetched_transform: &Transform) {
-    let rect = [
-        Rectangle {
-            origin: fetched_transform.rect.left_down(),
-            extend: Delta::new(-5, -5),
-        }
-        .normalize(),
-        Rectangle {
-            origin: fetched_transform.rect.left_up(),
-            extend: Delta::new(-5, 5),
-        }
-        .normalize(),
-        Rectangle {
-            origin: fetched_transform.rect.right_up(),
-            extend: Delta::new(5, 5),
-        }
-        .normalize(),
-        Rectangle {
-            origin: fetched_transform.rect.right_down(),
-            extend: Delta::new(5, -5),
-        }
-        .normalize(),
-    ];
-
-    for (i, rect) in rect.into_iter().enumerate() {
-        let Some(knob) = resizing.get_mut(i) else {
-            return;
-        };
-
-        knob.wireframe.rect = rect;
-        knob.wireframe.upload();
     }
 }
