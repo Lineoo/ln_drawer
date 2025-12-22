@@ -2,7 +2,7 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
 use crate::measures::Rectangle;
-use crate::render::viewport::{ViewportInstance, ViewportManager};
+use crate::render::viewport::Viewport;
 use crate::render::{Redraw, Render, RenderControl};
 use crate::world::{Commander, Descriptor, Element, Handle, World};
 
@@ -54,7 +54,7 @@ impl Descriptor for RoundedRectManagerDescriptor {
 
     fn build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<ViewportManager>().unwrap();
+        let viewport = world.single_fetch::<Viewport>().unwrap();
 
         let caps = render.surface.get_capabilities(&render.adapter);
         let format = *caps.formats.first().unwrap();
@@ -131,7 +131,7 @@ impl Descriptor for RoundedRectDescriptor {
 
     fn build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single::<ViewportInstance>().unwrap();
+        let viewport = world.single::<Viewport>().unwrap();
         let manager = world.single_fetch::<RoundedRectManager>().unwrap();
 
         // instance //

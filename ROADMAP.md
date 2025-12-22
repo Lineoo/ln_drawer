@@ -40,11 +40,11 @@
 - [x] Rectangle 使用 Size
 - [x] 清理 viewport 逻辑
 - [x] 支持透明窗口
-- [ ] 把窗口事件转交给各个模块
+- [x] 把窗口事件转交给各个模块
     - [x] 分离指针交互
     - [x] 分离相机移动逻辑 `tool/camera.rs`
     - [x] ModifiersTool
-- [ ] viewport 改成元素
+- [x] viewport 改成元素
 - [ ] menu 创建跟随
 - [ ] `trigger` 改为立即触发并返回观察者数量
 - [ ] 删除 Delta

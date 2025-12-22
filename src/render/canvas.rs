@@ -15,11 +15,7 @@ use wgpu::{
 
 use crate::{
     measures::{Position, Rectangle, Size},
-    render::{
-        Redraw, Render, RenderControl,
-        vertex::VertexUniform,
-        viewport::{ViewportInstance, ViewportManager},
-    },
+    render::{Redraw, Render, RenderControl, vertex::VertexUniform, viewport::Viewport},
     world::{Commander, Descriptor, Element, Handle, World},
 };
 
@@ -68,7 +64,7 @@ impl Descriptor for CanvasManagerDescriptor {
 
     fn build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<ViewportManager>().unwrap();
+        let viewport = world.single_fetch::<Viewport>().unwrap();
 
         let caps = render.surface.get_capabilities(&render.adapter);
         let format = *caps.formats.first().unwrap();
@@ -168,7 +164,7 @@ impl Descriptor for CanvasDescriptor {
 
     fn build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single::<ViewportInstance>().unwrap();
+        let viewport = world.single::<Viewport>().unwrap();
         let manager = &mut *world.single_fetch_mut::<CanvasManager>().unwrap();
 
         // instance //

@@ -12,11 +12,8 @@ use crate::{
     elements::stroke::StrokeLayer,
     measures::Size,
     render::{
-        Render,
-        canvas::CanvasManagerDescriptor,
-        rounded::RoundedRectManagerDescriptor,
-        text::TextManagerDescriptor,
-        viewport::{ViewportDescriptor, ViewportManagerDescriptor},
+        Render, canvas::CanvasManagerDescriptor, rounded::RoundedRectManagerDescriptor,
+        text::TextManagerDescriptor, viewport::ViewportDescriptor,
         wireframe::WireframeManagerDescriptor,
     },
     tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
@@ -72,10 +69,6 @@ impl Element for Lnwindow {
         world.queue(move |world| {
             let lnwindow = world.fetch_mut(this).unwrap();
             world.insert(pollster::block_on(Render::new(lnwindow.window.clone())));
-        });
-
-        world.queue(|world| {
-            world.insert(world.build(ViewportManagerDescriptor));
         });
 
         world.queue(move |world| {

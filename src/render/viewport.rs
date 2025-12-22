@@ -5,14 +5,18 @@ use winit::event::WindowEvent;
 use crate::lnwin::Lnwindow;
 use crate::measures::{DeltaFract, Fract, PositionFract, Size};
 use crate::render::Render;
-use crate::world::{Commander, Descriptor, Element, Handle, World};
+use crate::world::{Descriptor, Element, Handle, World};
 
 pub struct Viewport {
     pub size: Size,
     pub center: PositionFract,
     pub zoom: Fract,
-    instance: Handle<ViewportInstance>,
-    cmd: Commander,
+
+    pub bind: BindGroup,
+    pub uniform: Buffer,
+    pub layout: BindGroupLayout,
+
+    queue: Queue,
 }
 
 #[derive(Debug, Default)]
@@ -20,17 +24,6 @@ pub struct ViewportDescriptor {
     pub size: Size,
     pub center: PositionFract,
     pub zoom: Fract,
-}
-
-pub struct ViewportManager {
-    pub layout: BindGroupLayout,
-}
-
-pub struct ViewportManagerDescriptor;
-
-pub struct ViewportInstance {
-    pub bind: BindGroup,
-    pub uniform: Buffer,
 }
 
 #[repr(C)]
@@ -42,9 +35,6 @@ struct ViewportUniform {
     zoom: i32,
     zoom_fract: u32,
 }
-
-impl Element for ViewportManager {}
-impl Element for ViewportInstance {}
 
 impl Element for Viewport {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
@@ -65,8 +55,8 @@ impl Element for Viewport {
     }
 }
 
-impl Descriptor for ViewportManagerDescriptor {
-    type Target = ViewportManager;
+impl Descriptor for ViewportDescriptor {
+    type Target = Viewport;
 
     fn build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
@@ -87,19 +77,6 @@ impl Descriptor for ViewportManagerDescriptor {
                 }],
             });
 
-        ViewportManager { layout }
-    }
-}
-
-impl Descriptor for ViewportDescriptor {
-    type Target = Viewport;
-
-    fn build(self, world: &World) -> Self::Target {
-        let render = world.single_fetch::<Render>().unwrap();
-        let manager = world.single_fetch::<ViewportManager>().unwrap();
-
-        // instance //
-
         let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("viewport_uniform"),
             contents: bytemuck::bytes_of(&ViewportUniform {
@@ -114,7 +91,7 @@ impl Descriptor for ViewportDescriptor {
 
         let bind = render.device.create_bind_group(&BindGroupDescriptor {
             label: Some("viewport_bind"),
-            layout: &manager.layout,
+            layout: &layout,
             entries: &[BindGroupEntry {
                 binding: 0,
                 resource: BindingResource::Buffer(BufferBinding {
@@ -125,14 +102,14 @@ impl Descriptor for ViewportDescriptor {
             }],
         });
 
-        let instance = world.insert(ViewportInstance { uniform, bind });
-
         Viewport {
             size: self.size,
             center: self.center,
             zoom: self.zoom,
-            instance,
-            cmd: world.commander(),
+            uniform,
+            bind,
+            layout,
+            queue: render.queue.clone(),
         }
     }
 }
@@ -156,29 +133,16 @@ impl Viewport {
     }
 
     pub fn upload(&self) {
-        let instance = self.instance;
-        let uniform = ViewportUniform {
-            size: Size::new(self.size.w.max(1), self.size.h.max(1)).into_array(),
-            center: self.center.into_array(),
-            center_fract: self.center.into_arrayf(),
-            zoom: self.zoom.n,
-            zoom_fract: self.zoom.nf,
-        };
-
-        self.cmd.queue(move |world| {
-            let instance = world.fetch(instance).unwrap();
-            let render = world.single_fetch::<Render>().unwrap();
-            let bytes = bytemuck::bytes_of(&uniform);
-            render.queue.write_buffer(&instance.uniform, 0, bytes);
-        });
-    }
-}
-
-impl Drop for Viewport {
-    fn drop(&mut self) {
-        let instance = self.instance;
-        self.cmd.queue(move |world| {
-            world.remove(instance);
-        });
+        self.queue.write_buffer(
+            &self.uniform,
+            0,
+            bytemuck::bytes_of(&ViewportUniform {
+                size: Size::new(self.size.w.max(1), self.size.h.max(1)).into_array(),
+                center: self.center.into_array(),
+                center_fract: self.center.into_arrayf(),
+                zoom: self.zoom.n,
+                zoom_fract: self.zoom.nf,
+            }),
+        );
     }
 }
