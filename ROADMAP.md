@@ -45,8 +45,8 @@
     - [x] 分离相机移动逻辑 `tool/camera.rs`
     - [x] ModifiersTool
 - [x] viewport 改成元素
-- [ ] menu 创建跟随
-- [ ] `trigger` 改为立即触发并返回观察者数量
+- [x] menu 创建跟随
+- [ ] ~~`trigger` 改为立即触发并返回观察者数量~~
 - [ ] 删除 Delta
 - [ ] 修复 Rectangle 的 clamp
 - [ ] PointerEdgeCollider

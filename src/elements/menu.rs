@@ -79,8 +79,10 @@ impl Element for Menu {
         world.observer(collider, move |&PointerMenu(position), world, _| {
             world.remove(this);
 
-            let pointer = world.single::<PointerTool>().unwrap();
-            world.trigger(pointer, PointerMenu(position));
+            world.queue(move |world| {
+                let pointer = world.single::<PointerTool>().unwrap();
+                world.trigger(pointer, PointerMenu(position));
+            });
         });
 
         for (i, entry) in self.entries.iter().enumerate() {

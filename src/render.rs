@@ -47,13 +47,99 @@ impl Element for Render {
         let lnwindow = world.single::<Lnwindow>().unwrap();
         world.observer(lnwindow, move |event: &WindowEvent, world, _| match event {
             WindowEvent::Resized(size) => {
-                let mut render = world.fetch_mut(this).unwrap();
-                render.resize(*size);
+                let render = world.fetch(this).unwrap();
+                let caps = render.surface.get_capabilities(&render.adapter);
+                let config = SurfaceConfiguration {
+                    usage: TextureUsages::RENDER_ATTACHMENT,
+                    format: *caps.formats.first().unwrap(),
+                    width: size.width.max(1),
+                    height: size.height.max(1),
+                    desired_maximum_frame_latency: 2,
+                    present_mode: *caps.present_modes.first().unwrap(),
+                    alpha_mode: {
+                        let caps = &caps.alpha_modes;
+                        if caps.contains(&CompositeAlphaMode::PreMultiplied) {
+                            CompositeAlphaMode::PreMultiplied
+                        } else if caps.contains(&CompositeAlphaMode::PostMultiplied) {
+                            CompositeAlphaMode::PostMultiplied
+                        } else if caps.contains(&CompositeAlphaMode::Inherit) {
+                            CompositeAlphaMode::Inherit
+                        } else {
+                            *caps.first().unwrap()
+                        }
+                    },
+                    view_formats: vec![],
+                };
+
+                render.surface.configure(&render.device, &config);
             }
 
             WindowEvent::RedrawRequested => {
+                // redraw prepare
+
+                let mut buf = Vec::with_capacity(world.len::<RenderControl>());
+                world.foreach_fetch::<RenderControl>(|control, fetched| {
+                    if fetched.visible {
+                        buf.push((control, fetched.order));
+                    }
+                });
+
+                buf.sort_by(|(_, a), (_, b)| a.cmp(b));
+
+                for (control, _) in &buf {
+                    world.trigger(*control, RedrawPrepare);
+                }
+
+                // setup render pass
+
                 let mut render = world.fetch_mut(this).unwrap();
-                render.redraw(world);
+
+                let texture = render.surface.get_current_texture().unwrap();
+                let view = texture
+                    .texture
+                    .create_view(&TextureViewDescriptor::default());
+
+                let mut encoder = render
+                    .device
+                    .create_command_encoder(&CommandEncoderDescriptor {
+                        label: Some("main_encoder"),
+                    });
+
+                let rpass = encoder
+                    .begin_render_pass(&RenderPassDescriptor {
+                        color_attachments: &[Some(RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            ops: Operations {
+                                load: LoadOp::Clear(render.clear_color),
+                                store: StoreOp::Store,
+                            },
+                            depth_slice: None,
+                        })],
+                        ..Default::default()
+                    })
+                    .forget_lifetime();
+
+                render.active.replace(RenderActive { encoder, rpass });
+
+                drop(render);
+
+                // call everyone to draw
+
+                for (control, _) in &buf {
+                    world.trigger(*control, Redraw);
+                }
+
+                // submit to GPU
+
+                let mut render = world.single_fetch_mut::<Render>().unwrap();
+                let active = render.active.take().unwrap();
+
+                drop(active.rpass);
+
+                render.queue.submit([active.encoder.finish()]);
+
+                texture.present();
             }
 
             _ => (),
@@ -97,90 +183,5 @@ impl Render {
             active: None,
             clear_color: Color::BLACK,
         }
-    }
-
-    pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        let caps = self.surface.get_capabilities(&self.adapter);
-        let config = SurfaceConfiguration {
-            usage: TextureUsages::RENDER_ATTACHMENT,
-            format: *caps.formats.first().unwrap(),
-            width: size.width.max(1),
-            height: size.height.max(1),
-            desired_maximum_frame_latency: 2,
-            present_mode: *caps.present_modes.first().unwrap(),
-            alpha_mode: {
-                let caps = &caps.alpha_modes;
-                if caps.contains(&CompositeAlphaMode::PreMultiplied) {
-                    CompositeAlphaMode::PreMultiplied
-                } else if caps.contains(&CompositeAlphaMode::PostMultiplied) {
-                    CompositeAlphaMode::PostMultiplied
-                } else if caps.contains(&CompositeAlphaMode::Inherit) {
-                    CompositeAlphaMode::Inherit
-                } else {
-                    *caps.first().unwrap()
-                }
-            },
-            view_formats: vec![],
-        };
-
-        self.surface.configure(&self.device, &config);
-    }
-
-    pub fn redraw(&mut self, world: &World) {
-        let mut buf = Vec::with_capacity(world.len::<RenderControl>());
-        world.foreach_fetch::<RenderControl>(|control, fetched| {
-            if fetched.visible {
-                buf.push((control, fetched.order));
-            }
-        });
-
-        buf.sort_by(|(_, a), (_, b)| a.cmp(b));
-
-        for (control, _) in &buf {
-            world.trigger(*control, RedrawPrepare);
-        }
-
-        let texture = self.surface.get_current_texture().unwrap();
-        let view = texture
-            .texture
-            .create_view(&TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("main_encoder"),
-            });
-
-        let rpass = encoder
-            .begin_render_pass(&RenderPassDescriptor {
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(self.clear_color),
-                        store: StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                ..Default::default()
-            })
-            .forget_lifetime();
-
-        self.active.replace(RenderActive { encoder, rpass });
-
-        for (control, _) in &buf {
-            world.trigger(*control, Redraw);
-        }
-
-        world.queue(move |world| {
-            let mut render = world.single_fetch_mut::<Render>().unwrap();
-            let active = render.active.take().unwrap();
-
-            drop(active.rpass);
-
-            render.queue.submit([active.encoder.finish()]);
-
-            texture.present();
-        });
     }
 }

@@ -384,7 +384,7 @@ impl World {
     pub fn observer<T: ?Sized + 'static, E: 'static>(
         &self,
         target: Handle<T>,
-        mut action: impl FnMut(&E, &World, Handle<T>) + 'static,
+        action: impl Fn(&E, &World, Handle<T>) + 'static,
     ) -> Handle {
         let handle = self.insert(Observer {
             action: Box::new(move |event, world| {
@@ -396,16 +396,19 @@ impl World {
         handle.cast()
     }
 
-    pub fn trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: E) {
-        self.queue(move |world| {
-            if let Some(observers) = world.single_fetch::<Observers<E>>()
-                && let Some(observers) = observers.members.get(&target.cast())
-            {
-                for mut observer in observers.iter().filter_map(|x| world.fetch_mut(*x)) {
-                    (observer.action)(&event, world);
-                }
+    /// Will immediately triggered and acquire mutable access to `target`.
+    pub fn trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: E) -> usize {
+        let mut cnt = 0;
+        if let Some(observers) = self.single_fetch::<Observers<E>>()
+            && let Some(observers) = observers.members.get(&target.cast())
+        {
+            for observer in observers.iter().filter_map(|x| self.fetch_mut(*x)) {
+                (observer.action)(&event, self);
+                cnt += 1;
             }
-        })
+        }
+
+        cnt
     }
 
     // dependency //
@@ -534,7 +537,7 @@ struct Observers<E> {
 
 #[expect(clippy::type_complexity)]
 struct Observer<E> {
-    action: Box<dyn FnMut(&E, &World)>,
+    action: Box<dyn Fn(&E, &World)>,
     target: Handle,
 }
 

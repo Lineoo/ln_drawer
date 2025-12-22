@@ -41,11 +41,12 @@ impl ApplicationHandler for Lnwin {
         event: WindowEvent,
     ) {
         match self.world.single::<Lnwindow>() {
-            Some(window) => self.world.trigger(window, event),
+            Some(window) => {
+                self.world.trigger(window, event);
+                self.world.flush();
+            }
             None => event_loop.exit(),
         }
-
-        self.world.flush();
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
