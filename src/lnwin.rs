@@ -3,7 +3,7 @@ use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
-    event::{Modifiers, WindowEvent},
+    event::WindowEvent,
     event_loop::ActiveEventLoop,
     window::{Window, WindowId},
 };
@@ -55,7 +55,7 @@ impl ApplicationHandler for Lnwin {
 
 /// The main window.
 pub struct Lnwindow {
-    window: Arc<Window>,
+    pub window: Arc<Window>,
 }
 
 impl Element for Lnwindow {
@@ -99,7 +99,9 @@ impl Element for Lnwindow {
 
 impl Lnwindow {
     fn new(event_loop: &ActiveEventLoop) -> Lnwindow {
-        let win_attr = Window::default_attributes().with_transparent(true);
+        let win_attr = Window::default_attributes()
+            .with_transparent(true)
+            .with_title("LnDrawer");
 
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::new(window);

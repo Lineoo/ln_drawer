@@ -1,7 +1,9 @@
 use wgpu::Color;
+use winit::window::WindowLevel;
 
 use crate::{
     elements::palette::PaletteDescriptor,
+    lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
         Render,
@@ -232,6 +234,28 @@ impl Menu {
                         } else if render.clear_color == Color::BLACK {
                             render.clear_color = Color::TRANSPARENT;
                         }
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "Switch Title Bar".into(),
+                    action: Box::new(move |world, _| {
+                        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                        let decorated = lnwindow.window.is_decorated();
+                        lnwindow.window.set_decorations(!decorated);
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "Always On Top".into(),
+                    action: Box::new(move |world, _| {
+                        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                        lnwindow.window.set_window_level(WindowLevel::AlwaysOnTop);
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "Cancel Always On Top".into(),
+                    action: Box::new(move |world, _| {
+                        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                        lnwindow.window.set_window_level(WindowLevel::Normal);
                     }),
                 },
             ],
