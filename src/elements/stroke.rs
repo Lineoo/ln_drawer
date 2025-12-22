@@ -3,10 +3,12 @@ use palette::Srgba;
 
 use crate::{
     elements::{menu::Menu, palette::Palette},
-    lnwin::LnwinModifiers,
     measures::{Position, Rectangle, Size},
     render::canvas::{Canvas, CanvasDescriptor},
-    tools::pointer::{PointerCollider, PointerHit, PointerMenu},
+    tools::{
+        modifiers::ModifiersTool,
+        pointer::{PointerCollider, PointerHit, PointerMenu},
+    },
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -51,8 +53,8 @@ impl Element for StrokeLayer {
             &PointerHit::Moving(position) | &PointerHit::Pressed(position) => {
                 let mut stroke = world.fetch_mut(this).unwrap();
 
-                let modifiers = world.single_fetch::<LnwinModifiers>().unwrap();
-                if modifiers.0.state().alt_key() {
+                let tool = world.single_fetch::<ModifiersTool>().unwrap();
+                if tool.modifiers.state().alt_key() {
                     stroke.pick(position, world);
                 } else {
                     stroke.draw(position, world);

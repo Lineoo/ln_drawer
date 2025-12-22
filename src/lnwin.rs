@@ -19,7 +19,7 @@ use crate::{
         viewport::{ViewportDescriptor, ViewportManagerDescriptor},
         wireframe::WireframeManagerDescriptor,
     },
-    tools::{camera::CameraTool, focus::Focus, pointer::PointerTool},
+    tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
     world::{Element, Handle, World},
 };
 
@@ -64,8 +64,9 @@ pub struct Lnwindow {
 impl Element for Lnwindow {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
         world.observer(this, |event: &WindowEvent, world, this| {
-            let mut lnwindow = world.fetch_mut(this).unwrap();
-            lnwindow.window_event(event, world, this);
+            if let WindowEvent::CloseRequested = event {
+                world.remove(this);
+            }
         });
 
         world.queue(move |world| {
@@ -94,11 +95,11 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            world.insert(LnwinModifiers::default());
             world.insert(Focus::default());
             world.insert(StrokeLayer::default());
             world.insert(PointerTool::default());
             world.insert(CameraTool::default());
+            world.insert(ModifiersTool::default());
         });
     }
 }
@@ -123,29 +124,4 @@ impl Lnwindow {
     pub fn request_redraw(&self) {
         self.window.request_redraw();
     }
-
-    #[deprecated]
-    fn window_event(&mut self, event: &WindowEvent, world: &World, this: Handle<Lnwindow>) {
-        match event {
-            WindowEvent::ModifiersChanged(modifiers) => {
-                let mut fetched = world.single_fetch_mut::<LnwinModifiers>().unwrap();
-                fetched.0 = *modifiers;
-            }
-
-            WindowEvent::KeyboardInput { .. } => {
-                self.window.request_redraw();
-            }
-
-            WindowEvent::CloseRequested => {
-                world.remove(this);
-            }
-
-            _ => (),
-        }
-    }
 }
-
-#[derive(Default)]
-#[deprecated]
-pub struct LnwinModifiers(pub Modifiers);
-impl Element for LnwinModifiers {}

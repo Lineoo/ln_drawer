@@ -43,19 +43,18 @@
 - [ ] 把窗口事件转交给各个模块
     - [x] 分离指针交互
     - [x] 分离相机移动逻辑 `tool/camera.rs`
-    - [ ] ModifiersTool
+    - [x] ModifiersTool
 - [ ] viewport 改成元素
 - [ ] menu 创建跟随
 - [ ] `trigger` 改为立即触发并返回观察者数量
 - [ ] 删除 Delta
 - [ ] 修复 Rectangle 的 clamp
-- [ ] Aabb 与渲染剔除
+- [ ] PointerEdgeCollider
 - [ ] 修复首帧未定义的表面
 - [ ] TextEdit 重新制作
     - [ ] Focus 由元素自己主动请求
 - [ ] 修复"无限大矩形"精度问题
 - [ ] 修复变换工具的一系列问题
-- [ ] PointerEdgeCollider
 - [ ] 选择工具优化
 - **LnDrawer v0.1.2-alpha1**
 - [ ] 可修改的圆角大小
@@ -80,6 +79,7 @@
 - [ ] 基于生命周期的缓冲
     - [ ] 相交缓冲
     - [ ] 渲染缓冲
+    - [ ] Aabb 与渲染剔除
 - [ ] 曲率连续圆角
 - [ ] 用于数位板/笔的代替控制按键
 - [ ] 超级传送门
