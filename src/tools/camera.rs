@@ -84,11 +84,11 @@ impl Element for CameraTool {
 
                     let cursor = viewport.screen_to_world_absolute(this.cursor);
 
-                    let follow = (viewport.center - cursor) * (-zoom_delta.into_f32()).exp2();
+                    let follow = (viewport.center - cursor) * -zoom_delta.exp2();
                     viewport.center = cursor + follow;
 
                     if let Some(start) = &mut this.start {
-                        let follow = (start.center - cursor) * (-zoom_delta.into_f32()).exp2();
+                        let follow = (start.center - cursor) * -zoom_delta.exp2();
                         start.center = cursor + follow;
                     }
 

@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-use crate::measures::Delta;
+use crate::measures::Position;
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Size {
@@ -24,13 +24,6 @@ impl ops::Add for Size {
     }
 }
 
-impl ops::AddAssign for Size {
-    fn add_assign(&mut self, rhs: Self) {
-        self.w += rhs.w;
-        self.h += rhs.h;
-    }
-}
-
 impl ops::Sub for Size {
     type Output = Size;
     fn sub(self, rhs: Self) -> Self::Output {
@@ -41,10 +34,15 @@ impl ops::Sub for Size {
     }
 }
 
+impl ops::AddAssign for Size {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
 impl ops::SubAssign for Size {
     fn sub_assign(&mut self, rhs: Self) {
-        self.w -= rhs.w;
-        self.h -= rhs.h;
+        *self = *self - rhs;
     }
 }
 
@@ -54,16 +52,12 @@ impl Size {
         h: u32::MAX,
     };
 
-    pub fn new(w: u32, h: u32) -> Size {
+    pub const fn new(w: u32, h: u32) -> Size {
         Size { w, h }
     }
 
-    pub fn splat(n: u32) -> Size {
+    pub const fn splat(n: u32) -> Size {
         Size { w: n, h: n }
-    }
-
-    pub fn into_delta(self) -> Delta {
-        Delta::new(self.w as i32, self.h as i32)
     }
 
     pub fn into_array(self) -> [u32; 2] {

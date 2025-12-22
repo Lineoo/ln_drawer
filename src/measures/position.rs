@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-use crate::measures::{Delta, Rectangle, Size};
+use crate::measures::{Rectangle, Size};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Position {
@@ -23,56 +23,49 @@ impl fmt::Display for Position {
     }
 }
 
-impl ops::Add<Delta> for Position {
+impl ops::Add for Position {
     type Output = Position;
-    fn add(self, rhs: Delta) -> Self::Output {
+    fn add(self, rhs: Position) -> Self::Output {
         Position {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
+            x: self.x.wrapping_add(rhs.x),
+            y: self.y.wrapping_add(rhs.y),
         }
-    }
-}
-
-impl ops::AddAssign<Delta> for Position {
-    fn add_assign(&mut self, rhs: Delta) {
-        self.x += rhs.x;
-        self.y += rhs.y;
-    }
-}
-
-impl ops::Sub<Delta> for Position {
-    type Output = Position;
-    fn sub(self, rhs: Delta) -> Self::Output {
-        Position {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
-        }
-    }
-}
-
-impl ops::SubAssign<Delta> for Position {
-    fn sub_assign(&mut self, rhs: Delta) {
-        self.x -= rhs.x;
-        self.y -= rhs.y;
     }
 }
 
 impl ops::Sub for Position {
-    type Output = Delta;
+    type Output = Position;
     fn sub(self, rhs: Self) -> Self::Output {
-        Delta {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
+        Position {
+            x: self.x.wrapping_sub(rhs.x),
+            y: self.y.wrapping_sub(rhs.y),
         }
     }
 }
 
+impl ops::AddAssign for Position {
+    fn add_assign(&mut self, rhs: Position) {
+        *self = *self + rhs
+    }
+}
+
+impl ops::SubAssign for Position {
+    fn sub_assign(&mut self, rhs: Position) {
+        *self = *self - rhs
+    }
+}
+
 impl Position {
-    pub fn new(x: i32, y: i32) -> Position {
+    pub const MIN: Position = Position {
+        x: i32::MIN,
+        y: i32::MIN,
+    };
+
+    pub const fn new(x: i32, y: i32) -> Position {
         Position { x, y }
     }
 
-    pub fn splat(n: i32) -> Position {
+    pub const fn splat(n: i32) -> Position {
         Position { x: n, y: n }
     }
 
@@ -88,19 +81,15 @@ impl Position {
     }
 
     pub fn clamp(self, rect: Rectangle) -> Position {
-        let mut delta = self.wrapping_sub(rect.origin);
-        delta.w = delta.w.min(rect.extend.w);
-        delta.h = delta.h.min(rect.extend.h);
-        rect.origin.wrapping_add(delta)
+        Position {
+            x: self.x.clamp(rect.left(), rect.right()),
+            y: self.y.clamp(rect.down(), rect.up()),
+        }
     }
 
-    pub fn wrap(self, rect: Rectangle) -> Position {
-        let delta = self - rect.origin;
-
-        let w = (delta.x).rem_euclid(rect.width() as i32);
-        let h = (delta.y).rem_euclid(rect.height() as i32);
-
-        rect.origin + Delta::new(w, h)
+    pub fn within(self, rect: Rectangle) -> bool {
+        let delta = self.wrapping_sub(rect.origin);
+        delta.w < rect.extend.w && delta.h < rect.extend.h
     }
 
     pub fn wrapping_add(self, rhs: Size) -> Self {
@@ -112,8 +101,19 @@ impl Position {
 
     pub fn wrapping_sub(self, rhs: Self) -> Size {
         Size {
-            w: self.x.wrapping_sub(rhs.x) as u32,
-            h: self.y.wrapping_sub(rhs.y) as u32,
+            w: self.x.wrapping_sub(rhs.x).cast_unsigned(),
+            h: self.y.wrapping_sub(rhs.y).cast_unsigned(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::measures::{Position, Rectangle};
+
+    #[test]
+    fn clamp() {
+        let rect = Rectangle::new(-103, -100, 25, 76);
+        assert_eq!(Position::new(-256, 2).clamp(rect), Position::new(-103, 2));
     }
 }

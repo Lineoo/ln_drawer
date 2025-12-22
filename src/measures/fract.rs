@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Fract {
     pub n: i32,
     pub nf: u32,
@@ -12,6 +12,16 @@ impl fmt::Debug for Fract {
             .field(&self.n)
             .field(&self.nf)
             .finish()
+    }
+}
+
+impl ops::Neg for Fract {
+    type Output = Fract;
+    fn neg(self) -> Self::Output {
+        Fract {
+            n: -self.n,
+            nf: self.nf.reverse_bits().wrapping_add(1),
+        }
     }
 }
 
@@ -29,28 +39,6 @@ impl ops::Add for Fract {
     }
 }
 
-impl ops::Add<i32> for Fract {
-    type Output = Fract;
-    fn add(self, rhs: i32) -> Self::Output {
-        Fract {
-            n: self.n + rhs,
-            nf: self.nf,
-        }
-    }
-}
-
-impl ops::AddAssign for Fract {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = *self + rhs;
-    }
-}
-
-impl ops::AddAssign<i32> for Fract {
-    fn add_assign(&mut self, rhs: i32) {
-        self.n += rhs;
-    }
-}
-
 impl ops::Sub for Fract {
     type Output = Fract;
     fn sub(self, rhs: Self) -> Self::Output {
@@ -65,13 +53,19 @@ impl ops::Sub for Fract {
     }
 }
 
-impl ops::Sub<i32> for Fract {
+impl ops::Mul for Fract {
     type Output = Fract;
-    fn sub(self, rhs: i32) -> Self::Output {
-        Fract {
-            n: self.n - rhs,
-            nf: self.nf,
-        }
+    fn mul(self, rhs: Fract) -> Self::Output {
+        let (nf, carry) = self.nf.carrying_mul(rhs.nf, 0);
+        let (n, _) = self.n.unsigned_abs().carrying_mul(rhs.nf, carry);
+        let n = n.cast_signed() * self.n.signum();
+        Fract { n, nf }
+    }
+}
+
+impl ops::AddAssign for Fract {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
     }
 }
 
@@ -81,15 +75,23 @@ impl ops::SubAssign for Fract {
     }
 }
 
-impl ops::SubAssign<i32> for Fract {
-    fn sub_assign(&mut self, rhs: i32) {
-        self.n -= rhs;
+impl ops::MulAssign for Fract {
+    fn mul_assign(&mut self, rhs: Fract) {
+        *self = *self * rhs;
     }
 }
 
 impl Fract {
-    pub fn new(n: i32, nf: u32) -> Fract {
+    pub const fn new(n: i32, nf: u32) -> Fract {
         Fract { n, nf }
+    }
+
+    pub fn floor(self) -> i32 {
+        self.n
+    }
+
+    pub fn exp2(self) -> Fract {
+        Fract::from_f64(self.into_f64().exp2())
     }
 
     pub fn from_f32(f: f32) -> Fract {
@@ -108,5 +110,9 @@ impl Fract {
 
     pub fn into_f32(self) -> f32 {
         self.n as f32 + self.nf as f32 * (-32f32).exp2()
+    }
+
+    pub fn into_f64(self) -> f64 {
+        self.n as f64 + self.nf as f64 * (-32f64).exp2()
     }
 }

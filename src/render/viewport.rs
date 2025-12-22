@@ -3,7 +3,7 @@ use wgpu::*;
 use winit::event::WindowEvent;
 
 use crate::lnwin::Lnwindow;
-use crate::measures::{DeltaFract, Fract, PositionFract, Size};
+use crate::measures::{Fract, PositionFract, Size};
 use crate::render::Render;
 use crate::world::{Descriptor, Element, Handle, World};
 
@@ -120,16 +120,11 @@ impl Viewport {
         self.center + self.screen_to_world_relative(point)
     }
 
-    pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> DeltaFract {
+    pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> PositionFract {
         let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
         let x = delta[0] / scale * self.size.w as f64 / 2.0;
         let y = delta[1] / scale * self.size.h as f64 / 2.0;
-        DeltaFract::new(
-            x.floor() as i32,
-            (((x - x.floor()) * 32f64.exp2()).floor()) as u32,
-            y.floor() as i32,
-            (((y - y.floor()) * 32f64.exp2()).floor()) as u32,
-        )
+        PositionFract::new(Fract::from_f64(x), Fract::from_f64(y))
     }
 
     pub fn upload(&self) {

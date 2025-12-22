@@ -46,15 +46,15 @@
     - [x] ModifiersTool
 - [x] viewport 改成元素
 - [x] menu 创建跟随
-- [ ] ~~`trigger` 改为立即触发并返回观察者数量~~
-- [ ] 删除 Delta
-- [ ] 修复 Rectangle 的 clamp
+- [x] `trigger` 改为立即触发并返回观察者数量
+- [x] 删除 Delta
+- [x] 修复 Rectangle 的 clamp
 - [ ] PointerEdgeCollider
+    - [ ] 修复变换工具的一系列问题
 - [ ] 修复首帧未定义的表面
 - [ ] TextEdit 重新制作
     - [ ] Focus 由元素自己主动请求
 - [ ] 修复"无限大矩形"精度问题
-- [ ] 修复变换工具的一系列问题
 - [ ] 选择工具优化
 - **LnDrawer v0.1.2-alpha1**
 - [ ] 可修改的圆角大小
@@ -93,6 +93,7 @@
 - [ ] 使用 `Attaches` 简化元素对应
 - [ ] Palette & TextEdit 纹理更新时占用太大 - 缓冲鼠标输入
 - [ ] Palette 单独着色
+- [ ] Palette 更多设置
 - [ ] 拖放图片
 - [ ] 有限-无限工具包
     - [ ] 转换器

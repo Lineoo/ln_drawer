@@ -71,7 +71,7 @@ impl Element for Menu {
             let fetched = world.fetch(this).unwrap();
             let frame = fetched.frame.rect;
 
-            if !frame.contains(point) {
+            if !point.within(frame) {
                 world.remove(this);
             }
         });

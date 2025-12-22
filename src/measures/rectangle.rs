@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-use crate::measures::{Delta, Position, Size};
+use crate::measures::{Position, Size};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct Rectangle {
@@ -30,9 +30,9 @@ impl fmt::Display for Rectangle {
     }
 }
 
-impl ops::Add<Delta> for Rectangle {
+impl ops::Add<Position> for Rectangle {
     type Output = Rectangle;
-    fn add(self, rhs: Delta) -> Self::Output {
+    fn add(self, rhs: Position) -> Self::Output {
         Rectangle {
             origin: self.origin + rhs,
             extend: self.extend,
@@ -40,15 +40,9 @@ impl ops::Add<Delta> for Rectangle {
     }
 }
 
-impl ops::AddAssign<Delta> for Rectangle {
-    fn add_assign(&mut self, rhs: Delta) {
-        self.origin += rhs;
-    }
-}
-
-impl ops::Sub<Delta> for Rectangle {
+impl ops::Sub<Position> for Rectangle {
     type Output = Rectangle;
-    fn sub(self, rhs: Delta) -> Self::Output {
+    fn sub(self, rhs: Position) -> Self::Output {
         Rectangle {
             origin: self.origin - rhs,
             extend: self.extend,
@@ -56,8 +50,14 @@ impl ops::Sub<Delta> for Rectangle {
     }
 }
 
-impl ops::SubAssign<Delta> for Rectangle {
-    fn sub_assign(&mut self, rhs: Delta) {
+impl ops::AddAssign<Position> for Rectangle {
+    fn add_assign(&mut self, rhs: Position) {
+        self.origin += rhs;
+    }
+}
+
+impl ops::SubAssign<Position> for Rectangle {
+    fn sub_assign(&mut self, rhs: Position) {
         self.origin -= rhs;
     }
 }
@@ -147,11 +147,6 @@ impl Rectangle {
     #[inline]
     pub fn with_right_up(self, corner: Position) -> Rectangle {
         Rectangle::new(self.left(), self.down(), corner.x, corner.y)
-    }
-
-    pub fn contains(self, position: Position) -> bool {
-        let delta = position.wrapping_sub(self.origin);
-        delta.w < self.extend.w && delta.h < self.extend.h
     }
 
     pub fn expand(self, val: i32) -> Rectangle {

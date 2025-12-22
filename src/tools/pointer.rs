@@ -35,7 +35,7 @@ impl PointerCollider {
     pub fn fullscreen(order: isize) -> PointerCollider {
         PointerCollider {
             rect: Rectangle {
-                origin: Position::splat(i32::MIN / 2),
+                origin: Position::MIN,
                 extend: Size::MAX,
             },
             order,
@@ -156,7 +156,7 @@ impl PointerTool {
         let mut top_result = None;
         let mut max_order = isize::MIN;
         world.foreach_fetch::<PointerCollider>(|handle, intersection| {
-            if (intersection.order > max_order) && intersection.rect.contains(point) {
+            if (intersection.order > max_order) && point.within(intersection.rect) {
                 max_order = intersection.order;
                 top_result = Some(handle);
             }
