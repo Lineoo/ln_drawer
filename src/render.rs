@@ -9,12 +9,15 @@ use wgpu::{
     Adapter, Color, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device,
     DeviceDescriptor, Features, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference,
     Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions,
-    StoreOp, Surface, SurfaceConfiguration, SurfaceTarget, TextureFormat, TextureUsages,
-    TextureViewDescriptor, Trace,
+    StoreOp, Surface, SurfaceConfiguration, SurfaceTarget, TextureUsages, TextureViewDescriptor,
+    Trace,
 };
-use winit::dpi::PhysicalSize;
+use winit::{dpi::PhysicalSize, event::WindowEvent};
 
-use crate::world::{Element, World};
+use crate::{
+    lnwin::Lnwindow,
+    world::{Element, Handle, World},
+};
 
 pub struct Render {
     surface: Surface<'static>,
@@ -36,11 +39,29 @@ pub struct RenderControl {
     pub order: isize,
 }
 
-impl Element for Render {}
-impl Element for RenderControl {}
-
 pub struct RedrawPrepare;
 pub struct Redraw;
+
+impl Element for Render {
+    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+        let lnwindow = world.single::<Lnwindow>().unwrap();
+        world.observer(lnwindow, move |event: &WindowEvent, world, _| match event {
+            WindowEvent::Resized(size) => {
+                let mut render = world.fetch_mut(this).unwrap();
+                render.resize(*size);
+            }
+
+            WindowEvent::RedrawRequested => {
+                let mut render = world.fetch_mut(this).unwrap();
+                render.redraw(world);
+            }
+
+            _ => (),
+        });
+    }
+}
+
+impl Element for RenderControl {}
 
 impl Render {
     pub async fn new(window: impl Into<SurfaceTarget<'static>>) -> Render {

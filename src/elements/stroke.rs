@@ -3,7 +3,7 @@ use palette::Srgba;
 
 use crate::{
     elements::{menu::Menu, palette::Palette},
-    lnwin::{LnwinModifiers, PointerEvent},
+    lnwin::LnwinModifiers,
     measures::{Position, Rectangle, Size},
     render::canvas::{Canvas, CanvasDescriptor},
     tools::pointer::{PointerCollider, PointerHit, PointerMenu},
@@ -47,8 +47,8 @@ impl Element for StrokeLayer {
 
         world.dependency(collider, this);
 
-        world.observer(collider, move |&PointerHit(event), world, _| match event {
-            PointerEvent::Moved(position) | PointerEvent::Pressed(position) => {
+        world.observer(collider, move |event: &PointerHit, world, _| match event {
+            &PointerHit::Moving(position) | &PointerHit::Pressed(position) => {
                 let mut stroke = world.fetch_mut(this).unwrap();
 
                 let modifiers = world.single_fetch::<LnwinModifiers>().unwrap();
@@ -58,7 +58,7 @@ impl Element for StrokeLayer {
                     stroke.draw(position, world);
                 }
             }
-            _ => (),
+            _ => {}
         });
 
         world.observer(collider, move |&PointerMenu(position), world, _| {

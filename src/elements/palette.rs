@@ -5,7 +5,6 @@ use crate::{
         menu::{MenuDescriptor, MenuEntryDescriptor},
         stroke::StrokeLayer,
     },
-    lnwin::PointerEvent,
     measures::{Position, Rectangle, Size},
     render::{
         RedrawPrepare, RenderControl,
@@ -52,8 +51,8 @@ impl Element for Palette {
 
         world.observer(
             main_collider,
-            move |&PointerHit(event), world, _| match event {
-                PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
+            move |event: &PointerHit, world, _| match event {
+                PointerHit::Moving(point) | PointerHit::Pressed(point) => {
                     let mut this = world.fetch_mut(this).unwrap();
                     let rect = this.main.rect;
                     this.main_knob.rect = Rectangle {
@@ -85,8 +84,8 @@ impl Element for Palette {
 
         world.observer(
             hue_collider,
-            move |&PointerHit(event), world, _| match event {
-                PointerEvent::Moved(point) | PointerEvent::Pressed(point) => {
+            move |event: &PointerHit, world, _| match event {
+                PointerHit::Moving(point) | PointerHit::Pressed(point) => {
                     let mut this = world.fetch_mut(this).unwrap();
                     let rect = this.hue.rect;
                     this.hue_knob.rect = Rectangle {

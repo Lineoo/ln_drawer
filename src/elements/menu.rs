@@ -1,9 +1,7 @@
 use wgpu::Color;
-use winit::window::Window;
 
 use crate::{
     elements::palette::PaletteDescriptor,
-    lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
     measures::{Position, Rectangle, Size},
     render::{
         Render,
@@ -12,7 +10,7 @@ use crate::{
         text::{Text, TextDescriptor},
     },
     tools::{
-        pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu},
+        pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu, PointerTool},
         transform::TransformTool,
     },
     world::{Descriptor, Element, Handle, World},
@@ -61,8 +59,8 @@ impl Element for Menu {
 
         world.dependency(collider, this);
 
-        world.observer(collider, move |&PointerHit(event), world, _| {
-            let PointerEvent::Pressed(point) = event else {
+        world.observer(collider, move |event: &PointerHit, world, _| {
+            let &PointerHit::Pressed(point) = event else {
                 return;
             };
 
@@ -77,8 +75,8 @@ impl Element for Menu {
         world.observer(collider, move |&PointerMenu(position), world, _| {
             world.remove(this);
 
-            let lnwindow = world.single::<Lnwindow>().unwrap();
-            world.trigger(lnwindow, PointerAltEvent(position));
+            let pointer = world.single::<PointerTool>().unwrap();
+            world.trigger(pointer, PointerMenu(position));
         });
 
         for (i, entry) in self.entries.iter().enumerate() {
@@ -89,8 +87,8 @@ impl Element for Menu {
 
             world.dependency(collider, this);
 
-            world.observer(collider, move |&PointerHit(event), world, _| {
-                let PointerEvent::Pressed(_) = event else {
+            world.observer(collider, move |event: &PointerHit, world, _| {
+                let PointerHit::Pressed(_) = event else {
                     return;
                 };
 

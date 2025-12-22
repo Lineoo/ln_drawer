@@ -1,7 +1,9 @@
+use winit::event::{ElementState, MouseButton, WindowEvent};
+
 use crate::{
-    lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
-    measures::{Delta, Position, Rectangle, Size},
-    tools::focus::{Focus, RequestFocus},
+    lnwin::Lnwindow,
+    measures::{Position, PositionFract, Rectangle, Size},
+    render::viewport::Viewport,
     world::{Element, Handle, World},
 };
 
@@ -12,16 +14,20 @@ pub struct PointerCollider {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PointerHit(pub PointerEvent);
+pub enum PointerHit {
+    Pressed(Position),
+    Moving(Position),
+    Released(Position),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PointerMenu(pub Position);
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerEnter;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerLeave;
-
-#[derive(Debug, Clone, Copy)]
-pub struct PointerMenu(pub Position);
 
 impl Element for PointerCollider {}
 
@@ -37,61 +43,115 @@ impl PointerCollider {
     }
 }
 
-#[derive(Default)]
-pub struct Pointer;
-impl Element for Pointer {
+#[derive(Debug, Default)]
+pub struct PointerTool {
+    position: PositionFract,
+    hovering: Option<Handle<PointerCollider>>,
+    pressed: bool,
+}
+
+impl Element for PointerTool {
     fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
-        let mut pressed = false;
-        let mut pointer_on = None;
+        world.observer(
+            world.single::<Lnwindow>().unwrap(),
+            move |event: &WindowEvent, world, lnwindow| {
+                let mut pointer = world.fetch_mut(this).unwrap();
+                let lnwindow = world.fetch(lnwindow).unwrap();
+                lnwindow.request_redraw();
 
-        let lnwindow = world.single::<Lnwindow>().unwrap();
-        world.observer(lnwindow, move |&event, world, _| {
-            let pointer = world.fetch(this).unwrap();
+                match event {
+                    WindowEvent::CursorMoved { position, .. } => {
+                        let viewport = world.single_fetch::<Viewport>().unwrap();
+                        let position = lnwindow.cursor_to_screen(*position);
+                        let position = viewport.screen_to_world_absolute(position);
 
-            let (PointerEvent::Moved(point)
-            | PointerEvent::Pressed(point)
-            | PointerEvent::Released(point)) = event;
+                        if !pointer.pressed {
+                            // pointer transmit
+                            let landing = pointer.intersect(world, position.floor());
 
-            if !pressed {
-                let pointer_onto = pointer.intersect(world, point);
-                if pointer_on != pointer_onto {
-                    if let Some(pointer_on) = pointer_on {
-                        world.trigger(pointer_on, PointerLeave);
+                            if pointer.hovering != landing {
+                                if let Some(hovering) = pointer.hovering {
+                                    world.trigger(hovering, PointerLeave);
+                                }
+
+                                if let Some(landing) = landing {
+                                    world.trigger(landing, PointerEnter);
+                                }
+
+                                pointer.hovering = landing;
+                            }
+                        } else if let Some(hovering) = pointer.hovering {
+                            world.trigger(hovering, PointerHit::Moving(position.floor()));
+                        }
+
+                        pointer.position = position;
                     }
 
-                    if let Some(pointer_onto) = pointer_onto {
-                        world.trigger(pointer_onto, PointerEnter);
+                    WindowEvent::MouseInput {
+                        button: MouseButton::Left,
+                        state: ElementState::Pressed,
+                        ..
+                    } => {
+                        if let Some(hovering) = pointer.hovering {
+                            world.trigger(hovering, PointerHit::Pressed(pointer.position.floor()));
+                        }
+
+                        pointer.pressed = true;
                     }
+
+                    WindowEvent::MouseInput {
+                        button: MouseButton::Left,
+                        state: ElementState::Released,
+                        ..
+                    } => {
+                        if let Some(hovering) = pointer.hovering {
+                            world.trigger(hovering, PointerHit::Released(pointer.position.floor()));
+                        }
+
+                        pointer.pressed = false;
+                    }
+
+                    WindowEvent::MouseInput {
+                        button: MouseButton::Right,
+                        state: ElementState::Pressed,
+                        ..
+                    } => {
+                        if let Some(target) = pointer.intersect(world, pointer.position.floor()) {
+                            world.trigger(target, PointerMenu(pointer.position.floor()));
+                        }
+                    }
+
+                    _ => {}
                 }
+            },
+        );
 
-                pointer_on = pointer.intersect(world, point);
-            }
+        // reproduce events
+        // personally not flavor, but no better idea tbh
+        // may figure out how the time i got click-through
 
-            if let PointerEvent::Pressed(_) = event {
-                pressed = true;
-                let focus = world.single::<Focus>().unwrap();
-                world.trigger(focus, RequestFocus(Some(this.untyped())));
-            }
+        world.observer(this, |event: &PointerHit, world, pointer| {
+            let (PointerHit::Moving(position)
+            | PointerHit::Pressed(position)
+            | PointerHit::Released(position)) = *event;
 
-            if pressed && let Some(pointer_on) = pointer_on {
-                world.trigger(pointer_on, PointerHit(event));
-            }
-
-            if let PointerEvent::Released(_) = event {
-                pressed = false;
+            let pointer = world.fetch(pointer).unwrap();
+            if let Some(hovering) = pointer.intersect(world, position) {
+                world.trigger(hovering, *event);
             }
         });
 
-        world.observer(lnwindow, move |&PointerAltEvent(point), world, _| {
-            let fetched = world.fetch(this).unwrap();
+        world.observer(this, |event: &PointerMenu, world, pointer| {
+            let PointerMenu(position) = *event;
 
-            if let Some(pointer_on) = fetched.intersect(world, point) {
-                world.trigger(pointer_on, PointerMenu(point));
+            let pointer = world.fetch(pointer).unwrap();
+            if let Some(hovering) = pointer.intersect(world, position) {
+                world.trigger(hovering, *event);
             }
         });
     }
 }
-impl Pointer {
+impl PointerTool {
     pub fn intersect(&self, world: &World, point: Position) -> Option<Handle<PointerCollider>> {
         let mut top_result = None;
         let mut max_order = isize::MIN;

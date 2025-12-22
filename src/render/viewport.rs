@@ -1,6 +1,8 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
+use winit::event::WindowEvent;
 
+use crate::lnwin::Lnwindow;
 use crate::measures::{DeltaFract, Fract, PositionFract, Size};
 use crate::render::Render;
 use crate::world::{Commander, Descriptor, Element, Handle, World};
@@ -41,9 +43,27 @@ struct ViewportUniform {
     zoom_fract: u32,
 }
 
-impl Element for Viewport {}
 impl Element for ViewportManager {}
 impl Element for ViewportInstance {}
+
+impl Element for Viewport {
+    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+        let lnwindow = world.single::<Lnwindow>().unwrap();
+        world.observer(lnwindow, move |event: &WindowEvent, world, lnwindow| {
+            if let WindowEvent::Resized(size) = event {
+                let mut viewport = world.fetch_mut(this).unwrap();
+                let lnwindow = world.fetch(lnwindow).unwrap();
+
+                viewport.size.w = size.width;
+                viewport.size.h = size.height;
+
+                viewport.upload();
+
+                lnwindow.request_redraw();
+            }
+        });
+    }
+}
 
 impl Descriptor for ViewportManagerDescriptor {
     type Target = ViewportManager;
@@ -118,6 +138,7 @@ impl Descriptor for ViewportDescriptor {
 }
 
 impl Viewport {
+    #[inline]
     pub fn screen_to_world_absolute(&self, point: [f64; 2]) -> PositionFract {
         self.center + self.screen_to_world_relative(point)
     }

@@ -41,10 +41,18 @@
 - [x] 清理 viewport 逻辑
 - [x] 支持透明窗口
 - [ ] 把窗口事件转交给各个模块
-    - [ ] 分离指针交互
-    - [ ] 分离相机移动逻辑 `tool/camera.rs`
+    - [x] 分离指针交互
+    - [x] 分离相机移动逻辑 `tool/camera.rs`
+    - [ ] ModifiersTool
+- [ ] viewport 改成元素
+- [ ] menu 创建跟随
+- [ ] `trigger` 改为立即触发并返回观察者数量
+- [ ] 删除 Delta
+- [ ] 修复 Rectangle 的 clamp
 - [ ] Aabb 与渲染剔除
 - [ ] 修复首帧未定义的表面
+- [ ] TextEdit 重新制作
+    - [ ] Focus 由元素自己主动请求
 - [ ] 修复"无限大矩形"精度问题
 - [ ] 修复变换工具的一系列问题
 - [ ] PointerEdgeCollider
@@ -57,6 +65,10 @@
 - [ ] 动画系统
 - **LnDrawer v0.1.2-alpha2**
 - [ ] 设置界面
+- [ ] 调试系统
+    - [ ] 观察者与事件流显示
+    - [ ] 依赖关系显示
+    - [ ] 自定义属性显示
 - [ ] 简单噪音播放器
     - [ ] 开关按键
     - [ ] 音频库
@@ -64,11 +76,16 @@
 - [ ] 音乐播放器
     - [ ] 用户界面
 - **LnDrawer v0.1.2**
+- [ ] 完整生命周期管理
+- [ ] 基于生命周期的缓冲
+    - [ ] 相交缓冲
+    - [ ] 渲染缓冲
 - [ ] 曲率连续圆角
 - [ ] 用于数位板/笔的代替控制按键
 - [ ] 超级传送门
 - [ ] 几个单位的分数进位 & 整数环绕
 - [ ] Dependency 和 Observer 一样使用并返回 Handle
+    - [ ] `coexist` 方法循环绑定组（并返回 `Handle<Coexist>` ）
     - [ ] 公开 Dependency 和 Observer 类型
 - [ ] Observer & Dependency 清理
     - [ ] Element 的 `when_remove` 动作
@@ -107,7 +124,9 @@
 
 # 技术细节 #
 
-## 为什么 interface 成为了一个 Element 而 lnwin 没有成为 Element？
+## 为什么呢 ##
+
+### 为什么 interface 成为了一个 Element 而 lnwin 没有成为 Element？
 
 这个主要是由于——事件循环。虽然窗口和事件循环并不是一一对应的，但是就对于 ln_drawer 而言，目前窗口和事件循环还是绑定在一块儿的。
 
@@ -117,13 +136,19 @@
 
 而且虽然现在窗口仍然保留为一个直隶于事件循环的成员，到时候或许我们也会把它作为一个元素。刚好其实我们实际上也区分了 Lnwin（外层控制） 和 Lnwindow（真窗口），改起来就更方便了不是嘛。所以可能以后还是会把 Lnwindow 变成 Element ，留下那个 Lnwin 负责事件循环。
 
-## 循环数位和相对的尺度
+### 为什么 trigger 要改成即时的？
+
+不占用队列。大部分请求是不需要关照 `insert` 和 `remove` 的延迟执行的。
+
+同时若真的有需要，也只需要 `world.queue(|world| { world.trigger(event); });` 即可。
+
+## 循环数位和相对的尺度 ##
 
 我们实现了无限画布——好吧其实不是无限的，毕竟受到 32 位整数限制。但是我们希望即使真的哪个神经病到达了地图边缘我们仍然能够愉快的处理这种现象，我的答案是——循环。
 
 因为循环其实从计算机的角度来看相当合理嘛，是一种很自然的处理方式。不过目前的 rect 在处理溢出回绕时会导致负尺寸并且无法正常显示（实际上会导致三角形完全炸掉），所以为了处理循环顺便防止负尺寸，rect 我们使用左下角点的位置 + 相对的宽度高度尺寸来处理。
 
-## Commit 格式
+## Commit 格式 ##
 
 用中文写，模块开头，优化、修复等用点号分隔，最后标题。
 
@@ -136,7 +161,7 @@
 - `proj.ROADMAP`
 - `ver: v0.1.0-alpha4`
 
-## Observer & Trigger 系统综述
+## Observer & Trigger 系统综述 ##
 
 我们推荐 observer 的正统用法。这意味着以下写法是不推荐的：
 ```rust
@@ -153,7 +178,7 @@ let obv = that.observe::<ElementUpdate>(/* .. I need to send it back to the list
 that.trigger(ElementUpdate);
 ```
 
-## Element, non-Element 和 Descriptor 模式
+## Element, non-Element 和 Descriptor 模式 ##
 
 推荐简单、解耦的写法：
 ```rust
@@ -208,7 +233,7 @@ impl ElementDescriptor for BazDescriptor {
 }
 ```
 
-## Element 重构
+## Element 重构 ##
 
 既然 interface 也是 Element，是不是应该把 interface 也放进 elements 里面？
 
@@ -221,7 +246,7 @@ impl ElementDescriptor for BazDescriptor {
 - tools: 有关用户输入处理
 - widgets: 预设的用户组件
 
-## 元素编组
+## 元素编组 ##
 
 元素编组主要是为了解决管理多元素交互，可见性，权限管理与元素分层等需求。
 

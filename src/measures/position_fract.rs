@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-use crate::measures::{DeltaFract, Position};
+use crate::measures::{DeltaFract, Fract, Position};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct PositionFract {
@@ -118,6 +118,22 @@ impl PositionFract {
             x: self.x,
             y: self.y,
         }
+    }
+
+    pub fn x_fract(self) -> Fract {
+        Fract::new(self.x, self.xf)
+    }
+
+    pub fn y_fract(self) -> Fract {
+        Fract::new(self.y, self.yf)
+    }
+
+    pub fn x_into_f32(self) -> f32 {
+        self.x as f32 + self.xf as f32 * (-32f32).exp2()
+    }
+
+    pub fn y_into_f32(self) -> f32 {
+        self.y as f32 + self.yf as f32 * (-32f32).exp2()
     }
 
     pub fn into_array(self) -> [i32; 2] {
