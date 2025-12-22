@@ -1,8 +1,12 @@
+use wgpu::Color;
+use winit::window::Window;
+
 use crate::{
     elements::palette::PaletteDescriptor,
     lnwin::{Lnwindow, PointerAltEvent, PointerEvent},
-    measures::{Delta, Position, Rectangle, Size},
+    measures::{Position, Rectangle, Size},
     render::{
+        Render,
         canvas::CanvasDescriptor,
         rounded::{RoundedRect, RoundedRectDescriptor},
         text::{Text, TextDescriptor},
@@ -214,6 +218,17 @@ impl Menu {
                     label: "World Load".into(),
                     action: Box::new(move |world| {
                         crate::save::read_from_file(world);
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "Switch Transparency".into(),
+                    action: Box::new(move |world| {
+                        let mut render = world.single_fetch_mut::<Render>().unwrap();
+                        if render.clear_color == Color::TRANSPARENT {
+                            render.clear_color = Color::BLACK;
+                        } else if render.clear_color == Color::BLACK {
+                            render.clear_color = Color::TRANSPARENT;
+                        }
                     }),
                 },
             ],

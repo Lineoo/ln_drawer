@@ -22,6 +22,7 @@ pub struct Render {
     device: Device,
     queue: Queue,
     pub active: Option<RenderActive>,
+    pub clear_color: Color,
 }
 
 pub struct RenderActive {
@@ -73,6 +74,7 @@ impl Render {
             device,
             queue,
             active: None,
+            clear_color: Color::BLACK,
         }
     }
 
@@ -80,14 +82,7 @@ impl Render {
         let caps = self.surface.get_capabilities(&self.adapter);
         let config = SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
-            format: {
-                let caps = &caps.formats;
-                if caps.contains(&TextureFormat::Bgra8UnormSrgb) {
-                    TextureFormat::Bgra8UnormSrgb
-                } else {
-                    *caps.first().unwrap()
-                }
-            },
+            format: *caps.formats.first().unwrap(),
             width: size.width.max(1),
             height: size.height.max(1),
             desired_maximum_frame_latency: 2,
@@ -141,7 +136,7 @@ impl Render {
                     view: &view,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(Color::TRANSPARENT),
+                        load: LoadOp::Clear(self.clear_color),
                         store: StoreOp::Store,
                     },
                     depth_slice: None,

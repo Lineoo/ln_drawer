@@ -149,12 +149,6 @@ impl Viewport {
             let render = world.single_fetch::<Render>().unwrap();
             let bytes = bytemuck::bytes_of(&uniform);
             render.queue.write_buffer(&instance.uniform, 0, bytes);
-
-            let config = render
-                .surface
-                .get_default_config(&render.adapter, uniform.size[0], uniform.size[1])
-                .unwrap();
-            render.surface.configure(&render.device, &config);
         });
     }
 }
