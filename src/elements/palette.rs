@@ -34,10 +34,10 @@ pub struct Palette {
 
 #[derive(Debug, Default, bincode::Encode, bincode::Decode)]
 pub struct PaletteDescriptor {
-    position: Position,
-    hue: f32,
-    saturation: f32,
-    lightness: f32,
+    pub position: Position,
+    pub hue: f32,
+    pub saturation: f32,
+    pub lightness: f32,
 }
 
 impl Element for Palette {
@@ -115,7 +115,7 @@ impl Element for Palette {
                 position,
                 entries: vec![MenuEntryDescriptor {
                     label: "Remove".into(),
-                    action: Box::new(move |world| {
+                    action: Box::new(move |world, _| {
                         world.remove(this);
                     }),
                 }],
@@ -128,7 +128,7 @@ impl Element for Palette {
                 position,
                 entries: vec![MenuEntryDescriptor {
                     label: "Remove".into(),
-                    action: Box::new(move |world| {
+                    action: Box::new(move |world, _| {
                         world.remove(this);
                     }),
                 }],
@@ -288,13 +288,13 @@ impl Palette {
         let (hue, saturation, lightness) = hsl.into_components();
 
         let hue = (hue.into_degrees() / 360.0 * WIDTH as f32).floor() as i32;
-        let hx = (self.hue.rect.left() + hue).rem_euclid(WIDTH as i32);
+        let hx = self.hue.rect.left() + hue;
 
         let saturation = (saturation * WIDTH as f32).floor() as i32;
-        let mx = (self.main.rect.left() + saturation).rem_euclid(WIDTH as i32);
+        let mx = self.main.rect.left() + saturation;
 
         let lightness = (lightness * HEIGHT as f32).floor() as i32;
-        let my = (self.main.rect.down() + lightness).rem_euclid(HEIGHT as i32);
+        let my = self.main.rect.down() + lightness;
 
         let hr = self.hue_knob.rect;
         let mr = self.main_knob.rect;

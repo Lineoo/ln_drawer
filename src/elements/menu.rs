@@ -10,7 +10,9 @@ use crate::{
         text::{Text, TextDescriptor},
     },
     tools::{
-        pointer::{PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu, PointerTool},
+        pointer::{
+            PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu, PointerTool,
+        },
         transform::TransformTool,
     },
     world::{Descriptor, Element, Handle, World},
@@ -27,7 +29,7 @@ pub struct Menu {
 struct MenuEntry {
     frame: RoundedRect,
     text: Text,
-    action: Box<dyn Fn(&World)>,
+    action: Box<dyn Fn(&World, Position)>,
 }
 
 pub struct MenuDescriptor {
@@ -39,7 +41,7 @@ pub struct MenuDescriptor {
 
 pub struct MenuEntryDescriptor {
     pub label: String,
-    pub action: Box<dyn Fn(&World)>,
+    pub action: Box<dyn Fn(&World, Position)>,
 }
 
 impl Default for MenuDescriptor {
@@ -93,7 +95,7 @@ impl Element for Menu {
                 };
 
                 let fetched = world.fetch(this).unwrap();
-                (fetched.entries[i].action)(world);
+                (fetched.entries[i].action)(world, fetched.frame.rect.origin);
                 world.remove(this);
             });
 
@@ -173,10 +175,10 @@ impl Menu {
             entries: vec![
                 MenuEntryDescriptor {
                     label: "New Label".into(),
-                    action: Box::new(move |world| {
+                    action: Box::new(move |world, position| {
                         world.insert(world.build(TextDescriptor {
                             rect: Rectangle {
-                                origin: Position::default(),
+                                origin: position,
                                 extend: Size::splat(100),
                             },
                             text: "New Label",
@@ -186,15 +188,18 @@ impl Menu {
                 },
                 MenuEntryDescriptor {
                     label: "New Palette".into(),
-                    action: Box::new(move |world| {
-                        world.insert(world.build(PaletteDescriptor::default()));
+                    action: Box::new(move |world, position| {
+                        world.insert(world.build(PaletteDescriptor {
+                            position,
+                            ..Default::default()
+                        }));
                     }),
                 },
                 MenuEntryDescriptor {
                     label: "LnDrawer".into(),
-                    action: Box::new(move |world| {
+                    action: Box::new(move |world, position| {
                         let image = CanvasDescriptor::from_bytes(
-                            Position::default(),
+                            position,
                             include_bytes!("../../res/iconv2.png"),
                         );
                         world.insert(world.build(image.unwrap()));
@@ -202,25 +207,25 @@ impl Menu {
                 },
                 MenuEntryDescriptor {
                     label: "Transform Tool".into(),
-                    action: Box::new(move |world| {
+                    action: Box::new(move |world, _| {
                         world.insert(TransformTool::default());
                     }),
                 },
                 MenuEntryDescriptor {
                     label: "World Save".into(),
-                    action: Box::new(move |world| {
+                    action: Box::new(move |world, _| {
                         crate::save::save_into_file(world);
                     }),
                 },
                 MenuEntryDescriptor {
                     label: "World Load".into(),
-                    action: Box::new(move |world| {
+                    action: Box::new(move |world, _| {
                         crate::save::read_from_file(world);
                     }),
                 },
                 MenuEntryDescriptor {
                     label: "Switch Transparency".into(),
-                    action: Box::new(move |world| {
+                    action: Box::new(move |world, _| {
                         let mut render = world.single_fetch_mut::<Render>().unwrap();
                         if render.clear_color == Color::TRANSPARENT {
                             render.clear_color = Color::BLACK;
