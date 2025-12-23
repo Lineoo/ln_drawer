@@ -58,7 +58,7 @@ impl Default for MenuDescriptor {
 }
 
 impl Element for Menu {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let collider = world.insert(PointerCollider::fullscreen(80));
 
         world.dependency(collider, this);

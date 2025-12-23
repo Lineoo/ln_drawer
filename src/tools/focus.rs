@@ -11,7 +11,7 @@ pub struct Focus {
 }
 
 impl Element for Focus {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
 
         world.observer(lnwindow, move |event: &WindowEvent, world, _| {

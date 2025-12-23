@@ -38,5 +38,5 @@ struct Dragging {
 }
 
 impl Element for TransformTool {
-    fn when_inserted(&mut self, world: &World, tool: Handle<Self>) {}
+    fn when_insert(&mut self, world: &World, tool: Handle<Self>) {}
 }

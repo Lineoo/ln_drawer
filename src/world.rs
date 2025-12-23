@@ -14,9 +14,11 @@ use smallvec::SmallVec;
 // Definition //
 
 /// A shared form of objects in the [`World`].
+#[expect(unused_variables)]
 pub trait Element: Any {
-    #[expect(unused_variables)]
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {}
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {}
+    fn when_modify(&mut self, world: &World, this: Handle<Self>) {}
+    fn when_remove(&mut self, world: &World, this: Handle<Self>) {}
 }
 
 /// A way to setup in the [`World`].
@@ -84,42 +86,38 @@ impl<T: ?Sized> Handle<T> {
 
 // Center of multiple accesses in world, which also prevents constructional changes
 pub struct World {
-    storage: WorldStorage,
-    occupied: RefCell<HashMap<Handle, isize>>,
     cell_idx: RefCell<Handle>,
+
+    members: HashMap<Handle, Box<dyn Any>>,
+    typehint: HashMap<TypeId, WorldType>,
+
+    occupied: RefCell<HashMap<Handle, isize>>,
     inserted: RefCell<HashSet<Handle>>,
     removed: RefCell<HashSet<Handle>>,
+
     queue: Receiver<WorldCommand>,
     commander: Sender<WorldCommand>,
 }
 
-pub struct WorldStorage {
-    curr_idx: Handle,
-    elements: HashMap<Handle, Box<dyn Any>>,
-    cache: HashMap<TypeId, HashSet<Handle>>,
+struct WorldType {
+    cache: HashSet<Handle>,
+    when_insert: fn(&mut dyn Any, &World, Handle),
+    when_modify: fn(&mut dyn Any, &World, Handle),
+    when_remove: fn(&mut dyn Any, &World, Handle),
 }
 
 impl Default for World {
     fn default() -> Self {
         let (commander, queue) = channel();
         World {
-            storage: WorldStorage::default(),
-            occupied: RefCell::new(HashMap::new()),
             cell_idx: RefCell::new(Handle(0, PhantomData)),
+            members: HashMap::default(),
+            typehint: HashMap::default(),
+            occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
             queue,
             commander,
-        }
-    }
-}
-
-impl Default for WorldStorage {
-    fn default() -> Self {
-        WorldStorage {
-            curr_idx: Handle(0, PhantomData),
-            elements: HashMap::new(),
-            cache: HashMap::new(),
         }
     }
 }
@@ -133,40 +131,53 @@ impl World {
     }
 
     /// Due to limit of cell, the inserted element cannot be fetched until `flush` is called.
-    /// One exception is entry, which can still be used normally.
+    /// Meanwhile, handle-based ops, like `observer` or `dependency`, can still be used normally.
     pub fn insert<T: Element>(&self, element: T) -> Handle<T> {
-        // get estimate_handle
-        // cell-mode insertion depends on *retained* handle
+        // assign estimate handle
         let mut cell_idx = self.cell_idx.borrow_mut();
-        let estimate_handle = cell_idx.cast::<T>();
+        let handle = cell_idx.cast::<T>();
         cell_idx.0 += 1;
-        log::trace!("insert: {:?}", estimate_handle);
 
+        // write immediate record
         let mut inserted = self.inserted.borrow_mut();
-        inserted.insert(estimate_handle.cast());
+        inserted.insert(handle.cast());
 
+        // delay execution
         self.queue(move |world| {
-            world
-                .storage
-                .elements
-                .insert(estimate_handle.cast(), Box::new(element));
+            // get type table ready
+            let typehint = world.typehint.entry(TypeId::of::<T>()).or_insert_with(|| {
+                log::debug!("register elements: {}", type_name::<T>());
+                WorldType {
+                    cache: HashSet::new(),
+                    when_insert: |elem, world, handle| {
+                        T::when_insert(elem.downcast_mut().unwrap(), world, handle.cast());
+                    },
+                    when_modify: |elem, world, handle| {
+                        T::when_modify(elem.downcast_mut().unwrap(), world, handle.cast());
+                    },
+                    when_remove: |elem, world, handle| {
+                        T::when_remove(elem.downcast_mut().unwrap(), world, handle.cast());
+                    },
+                }
+            });
+
+            // push into storage
+            world.members.insert(handle.cast(), Box::new(element));
 
             // update cache
-            let cache = world.storage.cache.entry(TypeId::of::<T>()).or_default();
-            cache.insert(estimate_handle.cast());
+            typehint.cache.insert(handle.cast());
 
-            // when_inserted
-            let mut element = world.fetch_mut(estimate_handle).unwrap();
-            element.when_inserted(world, estimate_handle);
-            drop(element);
+            // when_insert
+            let mut element = world.fetch_mut(handle).unwrap();
+            element.when_insert(world, handle);
+
+            log::trace!("insert: {:?}", handle);
         });
 
-        estimate_handle
+        handle
     }
 
     /// Cell-mode removal cannot access the element immediately so we can't return the owned value of removed element.
-    /// Notice that this removal actually ignore the borrow check so you can still preserve the reference if you have
-    /// fetched it before invoking remove.
     pub fn remove<T: ?Sized>(&self, handle: Handle<T>) -> usize {
         let handle = handle.cast();
 
@@ -174,12 +185,13 @@ impl World {
             return 0;
         }
 
-        let type_id = (**self.storage.elements.get(&handle).unwrap()).type_id();
-        log::trace!("remove {:?}", handle);
-
-        let mut cnt = 1;
+        // write immediate record
+        let mut removed = self.removed.borrow_mut();
+        removed.insert(handle);
+        drop(removed);
 
         // maintain dependency
+        let mut cnt = 1;
         if let Some(mut dependencies) = self.single_fetch_mut::<Dependencies>()
             && let Some(this) = dependencies.0.remove(&handle)
         {
@@ -205,20 +217,24 @@ impl World {
             }
         }
 
-        // prevent element from being fetch again
-        let mut removed = self.removed.borrow_mut();
-        removed.insert(handle);
-        drop(removed);
-
-        // trigger lifecycle events
-        self.trigger(handle, &Destroy);
-
         self.queue(move |world| {
-            // update cache
-            let cache = world.storage.cache.entry(type_id).or_default();
-            cache.remove(&handle);
+            let type_id = world.members.get(&handle).unwrap().as_ref().type_id();
 
-            world.storage.elements.remove(&handle);
+            // when_remove
+            // SAFETY: because of remove table, callers cannot access it anyway
+            let when_remove = world.typehint.get(&type_id).unwrap().when_remove;
+            let element = world.members.get(&handle).unwrap().as_ref();
+            let element = element as *const dyn Any as *mut dyn Any;
+            when_remove(unsafe { element.as_mut().unwrap() }, world, handle);
+
+            // update cache
+            let typehint = world.typehint.get_mut(&type_id).unwrap();
+            typehint.cache.remove(&handle);
+
+            // pop out storage
+            world.members.remove(&handle);
+
+            log::trace!("remove {:?}", handle);
         });
 
         cnt
@@ -234,7 +250,7 @@ impl World {
             return true;
         }
 
-        self.storage.elements.contains_key(&handle.cast())
+        self.members.contains_key(&handle.cast())
     }
 
     // cell-mode ops //
@@ -265,8 +281,6 @@ impl World {
     }
 
     pub fn flush(&mut self) {
-        self.storage.curr_idx = *self.cell_idx.get_mut();
-
         let buf = self.queue.try_iter().collect::<Vec<_>>();
         for cmd in buf {
             cmd(self);
@@ -291,7 +305,7 @@ impl World {
         }
 
         *cnt += 1;
-        let element = self.storage.elements.get(&handle)?.downcast_ref()?;
+        let element = self.members.get(&handle)?.downcast_ref()?;
 
         Some(Ref {
             ptr: element as *const T,
@@ -315,7 +329,7 @@ impl World {
         }
 
         *cnt -= 1;
-        let element = self.storage.elements.get(&handle)?.downcast_ref()?;
+        let element = self.members.get(&handle)?.downcast_ref()?;
 
         Some(RefMut {
             ptr: element as *const T as *mut T,
@@ -328,8 +342,8 @@ impl World {
 
     pub fn single<T: Element>(&self) -> Option<Handle<T>> {
         let removed = self.removed.borrow();
-        let cache = self.storage.cache.get(&TypeId::of::<T>())?;
-        let mut iter = cache.iter().filter(|&x| !removed.contains(x));
+        let cache = self.typehint.get(&TypeId::of::<T>())?;
+        let mut iter = cache.cache.iter().filter(|&x| !removed.contains(x));
         let ret = iter.next()?;
         if iter.next().is_some() {
             return None;
@@ -348,17 +362,17 @@ impl World {
     // iteration //
 
     pub fn len<T: Element>(&self) -> usize {
-        (self.storage.cache.get(&TypeId::of::<T>()))
-            .map(|x| x.len())
+        (self.typehint.get(&TypeId::of::<T>()))
+            .map(|x| x.cache.len())
             .unwrap_or_default()
     }
 
     pub fn foreach<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {
-        let Some(cache) = self.storage.cache.get(&TypeId::of::<T>()) else {
+        let Some(cache) = self.typehint.get(&TypeId::of::<T>()) else {
             return;
         };
 
-        for handle in cache.iter() {
+        for handle in cache.cache.iter() {
             let removed = self.removed.borrow();
             if removed.contains(handle) {
                 continue;
@@ -543,7 +557,7 @@ struct Observer<E> {
 impl<E: 'static> Element for Observers<E> {}
 
 impl<E: 'static> Element for Observer<E> {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         match world.single_fetch_mut::<Observers<E>>() {
             Some(mut observers) => {
                 let observers = observers.members.entry(self.target).or_default();
@@ -578,10 +592,6 @@ struct Dependency {
 }
 
 impl Element for Dependencies {}
-
-// Lifecycle Events //
-
-pub struct Destroy;
 
 #[cfg(test)]
 mod test {

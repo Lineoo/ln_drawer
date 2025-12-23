@@ -41,7 +41,7 @@ pub struct PaletteDescriptor {
 }
 
 impl Element for Palette {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         // main collider //
 
         let main_collider = world.insert(PointerCollider {

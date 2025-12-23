@@ -60,7 +60,7 @@ pub struct Lnwindow {
 }
 
 impl Element for Lnwindow {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(this, |event: &WindowEvent, world, this| {
             if let WindowEvent::CloseRequested = event {
                 world.remove(this);

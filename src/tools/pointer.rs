@@ -112,7 +112,7 @@ impl Element for PointerCollider {}
 impl Element for PointerEdgeCollider {}
 
 impl Element for PointerTool {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(
             world.single::<Lnwindow>().unwrap(),
             move |event: &WindowEvent, world, lnwindow| {

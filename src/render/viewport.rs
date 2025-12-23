@@ -37,7 +37,7 @@ struct ViewportUniform {
 }
 
 impl Element for Viewport {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
         world.observer(lnwindow, move |event: &WindowEvent, world, lnwindow| {
             if let WindowEvent::Resized(size) = event {

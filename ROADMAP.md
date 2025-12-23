@@ -50,10 +50,13 @@
 - [x] 删除 Delta
 - [x] 修复"无限大矩形"精度问题
 - [x] 修复 Rectangle 的 clamp
+- [ ] 完整生命周期管理
+    - [x] Descriptor 更好的模式
+    - [ ] `when_modify` & `when_remove`
+- [ ] Menu 自动缩放
+- [ ] Palette 在加载的时候还是有点位置问题
 - [ ] PointerEdgeCollider
     - [ ] 重做变换工具
-- [ ] 完整生命周期管理
-    - [ ] Descriptor 更好的模式
 - [ ] 修复首帧未定义的表面
 - [ ] TextEdit 重新制作
     - [ ] Focus 由元素自己主动请求
@@ -88,13 +91,11 @@
 - [ ] Dependency 和 Observer 一样使用并返回 Handle
     - [ ] `coexist` 方法循环绑定组（并返回 `Handle<Coexist>` ）
     - [ ] 公开 Dependency 和 Observer 类型
-- [ ] Observer & Dependency 清理
-    - [ ] Element 的 `when_remove` 动作
+    - [ ] Observer & Dependency 清理
 - [ ] Any 观察者
-- [ ] 使用 `Attaches` 简化元素对应
 - [ ] Palette & TextEdit 纹理更新时占用太大 - 缓冲鼠标输入
 - [ ] Palette 单独着色
-- [ ] Palette 更多设置
+- [ ] Palette 更多设置 色彩空间支持
 - [ ] 拖放图片
 - [ ] 有限-无限工具包
     - [ ] 转换器

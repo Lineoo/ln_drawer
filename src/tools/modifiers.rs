@@ -11,7 +11,7 @@ pub struct ModifiersTool {
 }
 
 impl Element for ModifiersTool {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(
             world.single::<Lnwindow>().unwrap(),
             move |event: &WindowEvent, world, lnwindow| {

@@ -37,7 +37,7 @@ pub struct StrokeChunkDescriptor {
 }
 
 impl Element for StrokeLayer {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.foreach::<StrokeLayer>(|stroke| {
             // need to keep it singleton
             if stroke != this {
