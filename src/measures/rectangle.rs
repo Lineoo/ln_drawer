@@ -100,6 +100,7 @@ impl Rectangle {
         self.origin.y.wrapping_add_unsigned(self.extend.h)
     }
 
+
     #[inline]
     pub fn left_down(self) -> Position {
         self.origin
@@ -127,6 +128,26 @@ impl Rectangle {
             self.origin.x.wrapping_add_unsigned(self.extend.w),
             self.origin.y.wrapping_add_unsigned(self.extend.h),
         )
+    }
+    
+    #[inline]
+    pub fn with_left(self, left: i32) -> Rectangle {
+        Rectangle::new(left, self.down(), self.right(), self.up())
+    }
+
+    #[inline]
+    pub fn with_up(self, up: i32) -> Rectangle {
+        Rectangle::new(self.left(), self.down(), self.right(), up)
+    }
+
+    #[inline]
+    pub fn with_right(self, right: i32) -> Rectangle {
+        Rectangle::new(self.left(), self.down(), right, self.up())
+    }
+
+    #[inline]
+    pub fn with_down(self, down: i32) -> Rectangle {
+        Rectangle::new(self.left(), down, self.right(), self.up())
     }
 
     #[inline]

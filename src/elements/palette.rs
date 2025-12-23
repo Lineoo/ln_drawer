@@ -11,10 +11,7 @@ use crate::{
         canvas::{Canvas, CanvasDescriptor},
         wireframe::{Wireframe, WireframeDescriptor},
     },
-    tools::{
-        pointer::{PointerCollider, PointerHit, PointerMenu},
-        transform::{Transform, TransformUpdate},
-    },
+    tools::pointer::{PointerCollider, PointerHit, PointerMenu},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -49,29 +46,23 @@ impl Element for Palette {
             order: 0,
         });
 
-        world.observer(
-            main_collider,
-            move |event: &PointerHit, world, _| match event {
-                PointerHit::Moving(point) | PointerHit::Pressed(point) => {
-                    let mut this = world.fetch_mut(this).unwrap();
-                    let rect = this.main.rect;
-                    this.main_knob.rect = Rectangle {
-                        origin: point.clamp(Rectangle {
-                            origin: rect.origin,
-                            extend: rect.extend - Size::splat(1),
-                        }),
-                        extend: Size::splat(1),
-                    };
+        world.observer(main_collider, move |event: &PointerHit, world, _| {
+            let mut this = world.fetch_mut(this).unwrap();
+            let rect = this.main.rect;
+            this.main_knob.rect = Rectangle {
+                origin: event.position().clamp(Rectangle {
+                    origin: rect.origin,
+                    extend: rect.extend - Size::splat(1),
+                }),
+                extend: Size::splat(1),
+            };
 
-                    let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
-                    layer.color = this.get_color();
+            let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
+            layer.color = this.get_color();
 
-                    this.main_knob.upload();
-                    this.redraw = true;
-                }
-                _ => {}
-            },
-        );
+            this.main_knob.upload();
+            this.redraw = true;
+        });
 
         world.dependency(main_collider, this);
 
@@ -82,29 +73,23 @@ impl Element for Palette {
             order: 0,
         });
 
-        world.observer(
-            hue_collider,
-            move |event: &PointerHit, world, _| match event {
-                PointerHit::Moving(point) | PointerHit::Pressed(point) => {
-                    let mut this = world.fetch_mut(this).unwrap();
-                    let rect = this.hue.rect;
-                    this.hue_knob.rect = Rectangle {
-                        origin: Position::new(
-                            point.x.clamp(rect.left(), rect.right() - 1),
-                            rect.down(),
-                        ),
-                        extend: Size::new(1, HUE_HEIGHT),
-                    };
+        world.observer(hue_collider, move |event: &PointerHit, world, _| {
+            let mut this = world.fetch_mut(this).unwrap();
+            let rect = this.hue.rect;
+            this.hue_knob.rect = Rectangle {
+                origin: Position::new(
+                    event.position().x.clamp(rect.left(), rect.right() - 1),
+                    rect.down(),
+                ),
+                extend: Size::new(1, HUE_HEIGHT),
+            };
 
-                    let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
-                    layer.color = this.get_color();
+            let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
+            layer.color = this.get_color();
 
-                    this.hue_knob.upload();
-                    this.redraw = true;
-                }
-                _ => {}
-            },
-        );
+            this.hue_knob.upload();
+            this.redraw = true;
+        });
 
         world.dependency(hue_collider, this);
 
@@ -152,32 +137,6 @@ impl Element for Palette {
         });
 
         world.dependency(control, this);
-
-        // transform //
-
-        let transform = world.insert(Transform {
-            rect: self.main.rect,
-            resizable: false,
-        });
-
-        world.observer(transform, move |TransformUpdate, world, transform| {
-            let mut fetched = world.fetch_mut(this).unwrap();
-            let mut main_collider = world.fetch_mut(main_collider).unwrap();
-            let mut hue_collider = world.fetch_mut(hue_collider).unwrap();
-            let transform = world.fetch(transform).unwrap();
-
-            let delta = transform.rect.left_down() - fetched.main.rect.left_down();
-
-            fetched.main.rect += delta;
-            fetched.main_knob.rect += delta;
-            fetched.hue.rect += delta;
-            fetched.hue_knob.rect += delta;
-
-            main_collider.rect += delta;
-            hue_collider.rect += delta;
-        });
-
-        world.dependency(transform, this);
     }
 }
 

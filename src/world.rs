@@ -301,7 +301,7 @@ impl World {
 
         let cnt = occupied.entry(handle).or_default();
         if *cnt < 0 {
-            panic!("{handle:?} is mutably borrowed");
+            panic!("{:?} is mutably borrowed", handle.cast::<T>());
         }
 
         *cnt += 1;
@@ -325,7 +325,7 @@ impl World {
 
         let cnt = occupied.entry(handle).or_default();
         if *cnt != 0 {
-            panic!("{handle:?} is borrowed");
+            panic!("{:?} is borrowed", handle.cast::<T>());
         }
 
         *cnt -= 1;
@@ -532,6 +532,18 @@ impl<T: Element> Drop for RefMut<'_, T> {
             })
             .unwrap();
         *cnt += 1;
+    }
+}
+
+impl<T: Element> Ref<'_, T> {
+    pub fn handle(&self) -> Handle<T> {
+        self.handle
+    }
+}
+
+impl<T: Element> RefMut<'_, T> {
+    pub fn handle(&self) -> Handle<T> {
+        self.handle
     }
 }
 

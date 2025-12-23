@@ -17,7 +17,7 @@ pub struct RoundedRect {
     cmd: Commander,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct RoundedRectDescriptor {
     pub rect: Rectangle,
     pub color: palette::Srgba,

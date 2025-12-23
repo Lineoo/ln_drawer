@@ -53,13 +53,15 @@
 - [x] 完整生命周期管理
     - [x] Descriptor 更好的模式
     - [x] `when_modify` & `when_remove`
-- [ ] Palette 在加载的时候还是有点位置问题
-- [ ] PointerEdgeCollider
-    - [ ] 重做变换工具
+- [x] Palette 在加载的时候还是有点位置问题
+- [x] PointerEdgeCollider
+    - [x] 重做变换工具
+- [ ] `when_build` 重命名
+- [ ]
 - [ ] 修复首帧未定义的表面
 - [ ] TextEdit 重新制作
     - [ ] Focus 由元素自己主动请求
-- [ ] 选择工具优化
+- [ ] 渲染组件默认值优化
 - **LnDrawer v0.1.2-alpha1**
 - [ ] 可修改的圆角大小
 - [ ] 圆角描边与阴影
@@ -454,3 +456,19 @@ Viewport 在这个语境下其实是两个东西：
 ## Descriptor 模式 ##
 
 Descriptor 模式**不暗示世界外使用**，真正暗示世界外使用的是 **Descriptor 不返回 `Handle<T>` 而直接返回 `T`**。
+
+## `Ref` 与 `RefMut` 的 `.handle()` 函数 ##
+
+觉得样子有点奇怪，不过实现上不困难。
+
+```rust
+let fetched = world.fetch(this).unwrap();
+fetched.perform();
+world.observer(this, |/* */| { /* .. */ });
+```
+
+```rust
+let this = world.fetch(this).unwrap();
+this.perform();
+world.observer(this.handle(), |/* */| { /* .. */ });
+```

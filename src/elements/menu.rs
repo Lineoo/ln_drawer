@@ -2,7 +2,10 @@ use wgpu::Color;
 use winit::window::WindowLevel;
 
 use crate::{
-    elements::palette::PaletteDescriptor,
+    elements::{
+        palette::PaletteDescriptor,
+        panel::{Panel, PanelDescriptor},
+    },
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
@@ -11,11 +14,8 @@ use crate::{
         rounded::{RoundedRect, RoundedRectDescriptor},
         text::{Text, TextDescriptor},
     },
-    tools::{
-        pointer::{
-            PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu, PointerTool,
-        },
-        transform::TransformTool,
+    tools::pointer::{
+        PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu, PointerTool,
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -210,12 +210,6 @@ impl Menu {
                     }),
                 },
                 MenuEntryDescriptor {
-                    label: "Transform Tool".into(),
-                    action: Box::new(move |world, _| {
-                        world.insert(TransformTool::default());
-                    }),
-                },
-                MenuEntryDescriptor {
                     label: "World Save".into(),
                     action: Box::new(move |world, _| {
                         crate::save::save_into_file(world);
@@ -258,6 +252,22 @@ impl Menu {
                     action: Box::new(move |world, _| {
                         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                         lnwindow.window.set_window_level(WindowLevel::Normal);
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "[ex] Panel".into(),
+                    action: Box::new(move |world, position| {
+                        world.build(PanelDescriptor {
+                            rounded: RoundedRectDescriptor {
+                                rect: Rectangle {
+                                    origin: position,
+                                    extend: Size::splat(100),
+                                },
+                                color: palette::Srgba::new(0.82, 0.87, 1.00, 0.60),
+                                visible: true,
+                                ..Default::default()
+                            },
+                        });
                     }),
                 },
             ],

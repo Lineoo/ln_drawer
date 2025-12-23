@@ -16,6 +16,16 @@ pub struct PointerCollider {
     pub order: isize,
 }
 
+/// Similar to [`PointerCollider`], but will react when mouse hover on
+/// its edge and provide detailed information on which edge it hit.
+///
+/// **Event associated**: [`PointerHitEdge`]
+#[derive(Debug, Clone, Copy)]
+pub struct PointerEdgeCollider {
+    pub rect: Rectangle,
+    pub order: isize,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum PointerHit {
     Pressed(Position),
@@ -32,39 +42,10 @@ pub struct PointerEnter;
 #[derive(Debug, Clone, Copy)]
 pub struct PointerLeave;
 
-/// Similar to [`PointerCollider`], but will react when mouse hover on
-/// its edge and provide detailed information on which edge it hit.
-///
-/// **Event associated**: [`PointerHitEdge`]
 #[derive(Debug, Clone, Copy)]
-pub struct PointerEdgeCollider {
-    pub rect: Rectangle,
-    pub order: isize,
-    pub kind: PointerEdgeColliderType,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PointerEdgeColliderType {
-    corner: bool,
-    body: bool,
-    edge: FrameKind,
-}
-
-/// Define the behavior when the mouse hit edge.
-#[derive(Debug, Clone, Copy)]
-pub enum FrameKind {
-    /// Will trigger [`PointerEdge::Frame`]
-    Frame,
-
-    /// Will trigger relative [`PointerEdge`].
-    Edge,
-
-    /// Will trigger relative [`PointerEdge`] if the mouse hit the middle point, but trigger
-    /// [`PointerEdge::Frame`] if not.
-    Both,
-
-    // Will not be triggered.
-    Nope,
+pub struct PointerHitEdge {
+    pub hit: PointerHit,
+    pub edge: PointerEdge,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -79,14 +60,12 @@ pub enum PointerEdge {
     Right,
     Up,
 
-    Frame,
     Body,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct PointerHitEdge {
-    pub hit: PointerHit,
-    pub edge: PointerEdge,
+struct ColliderUpdate;
+struct ColliderEdgeLock {
+    edge: Option<PointerEdge>,
 }
 
 impl PointerCollider {
@@ -101,15 +80,117 @@ impl PointerCollider {
     }
 }
 
+impl PointerHit {
+    pub fn position(&self) -> Position {
+        let (PointerHit::Pressed(position)
+        | PointerHit::Moving(position)
+        | PointerHit::Released(position)) = *self;
+        position
+    }
+}
+
+impl PointerHitEdge {
+    #[inline]
+    pub fn position(&self) -> Position {
+        self.hit.position()
+    }
+}
+
+impl Element for PointerCollider {}
+
+impl Element for ColliderEdgeLock {}
+
+impl Element for PointerEdgeCollider {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        const EXPAND: i32 = 5;
+
+        let collider = world.insert(PointerCollider {
+            rect: self.rect.expand(EXPAND),
+            order: self.order,
+        });
+
+        let lock = world.insert(ColliderEdgeLock { edge: None });
+
+        world.observer(collider, move |event: &PointerHit, world, _| {
+            let this = world.fetch(this).unwrap();
+            let mut lock = world.fetch_mut(lock).unwrap();
+
+            match (event, lock.edge) {
+                (PointerHit::Pressed(position), None) => {
+                    let mut idx = 0;
+
+                    let shrink = this.rect.expand(-EXPAND);
+
+                    if position.x < shrink.left() {
+                        idx += 0;
+                    } else if position.x < shrink.right() {
+                        idx += 1;
+                    } else {
+                        idx += 2;
+                    }
+
+                    if position.y < shrink.down() {
+                        idx += 0;
+                    } else if position.y < shrink.up() {
+                        idx += 3;
+                    } else {
+                        idx += 6;
+                    }
+
+                    let edge = match idx {
+                        0 => PointerEdge::Leftdown,
+                        1 => PointerEdge::Down,
+                        2 => PointerEdge::Rightdown,
+                        3 => PointerEdge::Left,
+                        4 => PointerEdge::Body,
+                        5 => PointerEdge::Right,
+                        6 => PointerEdge::Leftup,
+                        7 => PointerEdge::Up,
+                        8 => PointerEdge::Rightup,
+                        _ => unreachable!(),
+                    };
+
+                    lock.edge = Some(edge);
+                    world.trigger(this.handle(), PointerHitEdge { hit: *event, edge });
+                }
+
+                (PointerHit::Moving(_), Some(edge)) => {
+                    world.trigger(this.handle(), PointerHitEdge { hit: *event, edge });
+                }
+
+                (PointerHit::Released(_), Some(edge)) => {
+                    lock.edge = None;
+                    world.trigger(this.handle(), PointerHitEdge { hit: *event, edge });
+                }
+
+                _ => unreachable!(),
+            }
+        });
+
+        world.observer(this, move |ColliderUpdate, world, this| {
+            let this = world.fetch(this).unwrap();
+            let mut collider = world.fetch_mut(collider).unwrap();
+            collider.rect = this.rect.expand(EXPAND);
+        });
+
+        world.dependency(collider, this);
+        world.dependency(lock, this);
+    }
+
+    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
+        // will flow to the raw PointerCollider
+        world.queue(move |world| {
+            world.trigger(this, ColliderUpdate);
+        });
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct PointerTool {
     position: PositionFract,
     hovering: Option<Handle<PointerCollider>>,
     pressed: bool,
 }
-
-impl Element for PointerCollider {}
-impl Element for PointerEdgeCollider {}
 
 impl Element for PointerTool {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
@@ -192,11 +273,7 @@ impl Element for PointerTool {
         // may figure out how the time i got click-through
 
         world.observer(this, |event: &PointerHit, world, _| {
-            let (PointerHit::Moving(position)
-            | PointerHit::Pressed(position)
-            | PointerHit::Released(position)) = *event;
-
-            if let Some(hovering) = intersect(world, position) {
+            if let Some(hovering) = intersect(world, event.position()) {
                 world.trigger(hovering, *event);
             }
         });
