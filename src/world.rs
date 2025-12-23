@@ -310,7 +310,7 @@ impl World {
         Some(Ref {
             ptr: element as *const T,
             world: self,
-            handle,
+            handle: handle.cast(),
         })
     }
 
@@ -334,7 +334,8 @@ impl World {
         Some(RefMut {
             ptr: element as *const T as *mut T,
             world: self,
-            handle,
+            handle: handle.cast(),
+            modified: false,
         })
     }
 
@@ -460,20 +461,21 @@ impl World {
 }
 
 /// A world's immutable element reference.
-pub struct Ref<'world, T: ?Sized = dyn Any> {
+pub struct Ref<'world, T: Element> {
     ptr: *const T,
     world: &'world World,
-    handle: Handle,
+    handle: Handle<T>,
 }
 
 /// A world's limitedly mutable element reference.
-pub struct RefMut<'world, T: ?Sized = dyn Any> {
+pub struct RefMut<'world, T: Element> {
     ptr: *mut T,
     world: &'world World,
-    handle: Handle,
+    handle: Handle<T>,
+    modified: bool,
 }
 
-impl<T: ?Sized> Deref for Ref<'_, T> {
+impl<T: Element> Deref for Ref<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         // SAFETY: guaranteed by World's cell_occupied
@@ -481,7 +483,7 @@ impl<T: ?Sized> Deref for Ref<'_, T> {
     }
 }
 
-impl<T: ?Sized> Deref for RefMut<'_, T> {
+impl<T: Element> Deref for RefMut<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         // SAFETY: guaranteed by World's cell_occupied
@@ -489,14 +491,16 @@ impl<T: ?Sized> Deref for RefMut<'_, T> {
     }
 }
 
-impl<T: ?Sized> DerefMut for RefMut<'_, T> {
+impl<T: Element> DerefMut for RefMut<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        self.modified = true;
+
         // SAFETY: guaranteed by World's cell_occupied
         unsafe { self.ptr.as_mut().unwrap() }
     }
 }
 
-impl<T: ?Sized> Drop for Ref<'_, T> {
+impl<T: Element> Drop for Ref<'_, T> {
     fn drop(&mut self) {
         let mut occupied = self.world.occupied.borrow_mut();
         let cnt = occupied
@@ -509,8 +513,17 @@ impl<T: ?Sized> Drop for Ref<'_, T> {
     }
 }
 
-impl<T: ?Sized> Drop for RefMut<'_, T> {
+impl<T: Element> Drop for RefMut<'_, T> {
     fn drop(&mut self) {
+        if self.modified {
+            T::when_modify(
+                // SAFETY: still inside the RefMut's guarantee
+                unsafe { self.ptr.as_mut().unwrap() },
+                self.world,
+                self.handle,
+            );
+        }
+
         let mut occupied = self.world.occupied.borrow_mut();
         let cnt = occupied
             .get_mut(&{
