@@ -8,10 +8,7 @@ pub struct Fract {
 
 impl fmt::Debug for Fract {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Fract")
-            .field(&self.n)
-            .field(&self.nf)
-            .finish()
+        f.debug_tuple("Fract").field(&self.into_f64()).finish()
     }
 }
 
@@ -32,7 +29,7 @@ impl ops::Add for Fract {
         let mut n = self.n.wrapping_add(rhs.n);
 
         if on {
-            n += 1;
+            n = n.wrapping_add(1);
         }
 
         Fract { n, nf }
@@ -46,7 +43,7 @@ impl ops::Sub for Fract {
         let mut n = self.n.wrapping_sub(rhs.n);
 
         if on {
-            n -= 1;
+            n = n.wrapping_sub(1);
         }
 
         Fract { n, nf }
@@ -56,10 +53,7 @@ impl ops::Sub for Fract {
 impl ops::Mul for Fract {
     type Output = Fract;
     fn mul(self, rhs: Fract) -> Self::Output {
-        let (nf, carry) = self.nf.carrying_mul(rhs.nf, 0);
-        let (n, _) = self.n.unsigned_abs().carrying_mul(rhs.nf, carry);
-        let n = n.cast_signed() * self.n.signum();
-        Fract { n, nf }
+        Fract::from_f64(self.into_f64() * rhs.into_f64())
     }
 }
 
@@ -82,6 +76,8 @@ impl ops::MulAssign for Fract {
 }
 
 impl Fract {
+    pub const ONE: Fract = Fract { n: 1, nf: 0 };
+
     pub const fn new(n: i32, nf: u32) -> Fract {
         Fract { n, nf }
     }
