@@ -59,14 +59,14 @@ pub fn read_from_file(world: &World) {
     };
 
     for palette in save.palettes {
-        world.insert(world.build(palette));
+        world.build(palette);
     }
 
     for image in save.images {
-        world.insert(world.build(image));
+        world.build(image);
     }
 
     if let Some(stroke) = save.stroke {
-        world.insert(world.build(stroke));
+        world.build(stroke);
     }
 }

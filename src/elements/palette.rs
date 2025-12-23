@@ -111,7 +111,7 @@ impl Element for Palette {
         // menu //
 
         world.observer(main_collider, move |&PointerMenu(position), world, _| {
-            world.insert(world.build(MenuDescriptor {
+            world.build(MenuDescriptor {
                 position,
                 entries: vec![MenuEntryDescriptor {
                     label: "Remove".into(),
@@ -120,11 +120,11 @@ impl Element for Palette {
                     }),
                 }],
                 ..Default::default()
-            }));
+            });
         });
 
         world.observer(hue_collider, move |&PointerMenu(position), world, _| {
-            world.insert(world.build(MenuDescriptor {
+            world.build(MenuDescriptor {
                 position,
                 entries: vec![MenuEntryDescriptor {
                     label: "Remove".into(),
@@ -133,7 +133,7 @@ impl Element for Palette {
                     }),
                 }],
                 ..Default::default()
-            }));
+            });
         });
 
         // redraw //
@@ -182,7 +182,7 @@ impl Element for Palette {
 }
 
 impl Descriptor for PaletteDescriptor {
-    type Target = Palette;
+    type Target = Handle<Palette>;
 
     fn build(self, world: &World) -> Self::Target {
         let main = world.build(CanvasDescriptor {
@@ -242,7 +242,7 @@ impl Descriptor for PaletteDescriptor {
         palette.set_hsl(Hsl::new(self.hue, self.saturation, self.lightness));
         palette.redraw();
 
-        palette
+        world.insert(palette)
     }
 }
 

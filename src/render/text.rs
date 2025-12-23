@@ -68,7 +68,7 @@ impl Element for TextManager {}
 impl Element for TextInstance {}
 
 impl Descriptor for TextManagerDescriptor {
-    type Target = TextManager;
+    type Target = Handle<TextManager>;
 
     fn build(self, world: &World) -> Self::Target {
         let mut font_system = FontSystem::new();
@@ -171,12 +171,12 @@ impl Descriptor for TextManagerDescriptor {
                 cache: None,
             });
 
-        TextManager {
+        world.insert(TextManager {
             font_system,
             swash_cache,
             pipeline,
             bind_layout,
-        }
+        })
     }
 }
 

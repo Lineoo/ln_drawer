@@ -49,7 +49,7 @@ impl Element for WireframeManager {}
 impl Element for WireframeInstance {}
 
 impl Descriptor for WireframeManagerDescriptor {
-    type Target = WireframeManager;
+    type Target = Handle<WireframeManager>;
 
     fn build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
@@ -118,10 +118,10 @@ impl Descriptor for WireframeManagerDescriptor {
                 cache: None,
             });
 
-        WireframeManager {
+        world.insert(WireframeManager {
             pipeline,
             bind_layout,
-        }
+        })
     }
 }
 

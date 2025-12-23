@@ -64,13 +64,13 @@ impl Element for StrokeLayer {
         });
 
         world.observer(collider, move |&PointerMenu(position), world, _| {
-            world.insert(world.build(Menu::test_descriptor(position)));
+            world.build(Menu::test_descriptor(position));
         });
     }
 }
 
 impl Descriptor for StrokeLayerDescriptor {
-    type Target = StrokeLayer;
+    type Target = Handle<StrokeLayer>;
 
     fn build(self, world: &World) -> Self::Target {
         let mut layer = StrokeLayer {
@@ -82,7 +82,7 @@ impl Descriptor for StrokeLayerDescriptor {
             layer.chunks.insert(chunk.key, world.build(chunk));
         }
 
-        layer
+        world.insert(layer)
     }
 }
 

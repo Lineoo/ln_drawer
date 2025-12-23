@@ -119,7 +119,7 @@ impl Element for Menu {
 }
 
 impl Descriptor for MenuDescriptor {
-    type Target = Menu;
+    type Target = Handle<Menu>;
 
     fn build(self, world: &World) -> Self::Target {
         let rect = Rectangle {
@@ -166,7 +166,7 @@ impl Descriptor for MenuDescriptor {
             });
         }
 
-        Menu { frame, entries }
+        world.insert(Menu { frame, entries })
     }
 }
 
@@ -193,10 +193,10 @@ impl Menu {
                 MenuEntryDescriptor {
                     label: "New Palette".into(),
                     action: Box::new(move |world, position| {
-                        world.insert(world.build(PaletteDescriptor {
+                        world.build(PaletteDescriptor {
                             position,
                             ..Default::default()
-                        }));
+                        });
                     }),
                 },
                 MenuEntryDescriptor {

@@ -60,7 +60,7 @@ impl Element for CanvasManager {}
 impl Element for CanvasInstance {}
 
 impl Descriptor for CanvasManagerDescriptor {
-    type Target = CanvasManager;
+    type Target = Handle<CanvasManager>;
 
     fn build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
@@ -152,10 +152,10 @@ impl Descriptor for CanvasManagerDescriptor {
                 cache: None,
             });
 
-        CanvasManager {
+        world.insert(CanvasManager {
             pipeline,
             bind_layout,
-        }
+        })
     }
 }
 

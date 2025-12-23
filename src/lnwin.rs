@@ -75,17 +75,17 @@ impl Element for Lnwindow {
         world.queue(move |world| {
             let lnwindow = world.fetch_mut(this).unwrap();
             let size = lnwindow.window.inner_size();
-            world.insert(world.build(ViewportDescriptor {
+            world.build(ViewportDescriptor {
                 size: Size::new(size.width, size.height),
                 ..Default::default()
-            }));
+            });
         });
 
         world.queue(|world| {
-            world.insert(world.build(CanvasManagerDescriptor));
-            world.insert(world.build(RoundedRectManagerDescriptor));
-            world.insert(world.build(TextManagerDescriptor));
-            world.insert(world.build(WireframeManagerDescriptor));
+            world.build(CanvasManagerDescriptor);
+            world.build(RoundedRectManagerDescriptor);
+            world.build(TextManagerDescriptor);
+            world.build(WireframeManagerDescriptor);
         });
 
         world.queue(|world| {

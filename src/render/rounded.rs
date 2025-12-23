@@ -50,7 +50,7 @@ impl Element for RoundedRectManager {}
 impl Element for RoundedRectInstance {}
 
 impl Descriptor for RoundedRectManagerDescriptor {
-    type Target = RoundedRectManager;
+    type Target = Handle<RoundedRectManager>;
 
     fn build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
@@ -119,10 +119,10 @@ impl Descriptor for RoundedRectManagerDescriptor {
                 cache: None,
             });
 
-        RoundedRectManager {
+        world.insert(RoundedRectManager {
             pipeline,
             bind_layout,
-        }
+        })
     }
 }
 

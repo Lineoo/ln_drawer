@@ -56,7 +56,7 @@ impl Element for Viewport {
 }
 
 impl Descriptor for ViewportDescriptor {
-    type Target = Viewport;
+    type Target = Handle<Viewport>;
 
     fn build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
@@ -102,7 +102,7 @@ impl Descriptor for ViewportDescriptor {
             }],
         });
 
-        Viewport {
+        world.insert(Viewport {
             size: self.size,
             center: self.center,
             zoom: self.zoom,
@@ -110,7 +110,7 @@ impl Descriptor for ViewportDescriptor {
             bind,
             layout,
             queue: render.queue.clone(),
-        }
+        })
     }
 }
 

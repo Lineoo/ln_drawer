@@ -128,7 +128,6 @@ impl World {
     // lifecycle //
 
     /// Will access data from world to build target object.
-    #[must_use = "built architects are supposed to be consumed properly"]
     pub fn build<B: Descriptor>(&self, descriptor: B) -> B::Target {
         descriptor.build(self)
     }
