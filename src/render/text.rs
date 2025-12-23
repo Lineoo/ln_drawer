@@ -70,7 +70,7 @@ impl Element for TextInstance {}
 impl Descriptor for TextManagerDescriptor {
     type Target = Handle<TextManager>;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let mut font_system = FontSystem::new();
         let database = font_system.db_mut();
 
@@ -183,7 +183,7 @@ impl Descriptor for TextManagerDescriptor {
 impl Descriptor for TextDescriptor<'_> {
     type Target = Text;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
         let viewport = world.single::<Viewport>().unwrap();
         let manager = &mut *world.single_fetch_mut::<TextManager>().unwrap();

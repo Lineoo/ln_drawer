@@ -58,7 +58,7 @@ impl Element for Viewport {
 impl Descriptor for ViewportDescriptor {
     type Target = Handle<Viewport>;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
 
         let layout = render

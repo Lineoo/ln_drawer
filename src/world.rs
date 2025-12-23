@@ -24,7 +24,7 @@ pub trait Element: Any {
 /// A way to setup in the [`World`].
 pub trait Descriptor {
     type Target;
-    fn build(self, world: &World) -> Self::Target;
+    fn when_build(self, world: &World) -> Self::Target;
 }
 
 /// Represent an element in the [`World`]. It may not be valid.
@@ -127,7 +127,7 @@ impl World {
 
     /// Will access data from world to build target object.
     pub fn build<B: Descriptor>(&self, descriptor: B) -> B::Target {
-        descriptor.build(self)
+        descriptor.when_build(self)
     }
 
     /// Due to limit of cell, the inserted element cannot be fetched until `flush` is called.

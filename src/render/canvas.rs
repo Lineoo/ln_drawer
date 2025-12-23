@@ -62,7 +62,7 @@ impl Element for CanvasInstance {}
 impl Descriptor for CanvasManagerDescriptor {
     type Target = Handle<CanvasManager>;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
         let viewport = world.single_fetch::<Viewport>().unwrap();
 
@@ -162,7 +162,7 @@ impl Descriptor for CanvasManagerDescriptor {
 impl Descriptor for CanvasDescriptor {
     type Target = Canvas;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
         let viewport = world.single::<Viewport>().unwrap();
         let manager = &mut *world.single_fetch_mut::<CanvasManager>().unwrap();

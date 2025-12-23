@@ -51,7 +51,7 @@ impl Element for WireframeInstance {}
 impl Descriptor for WireframeManagerDescriptor {
     type Target = Handle<WireframeManager>;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
         let viewport = world.single_fetch::<Viewport>().unwrap();
 
@@ -128,7 +128,7 @@ impl Descriptor for WireframeManagerDescriptor {
 impl Descriptor for WireframeDescriptor {
     type Target = Wireframe;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
         let viewport = world.single::<Viewport>().unwrap();
         let manager = &mut *world.single_fetch_mut::<WireframeManager>().unwrap();

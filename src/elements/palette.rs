@@ -143,7 +143,7 @@ impl Element for Palette {
 impl Descriptor for PaletteDescriptor {
     type Target = Handle<Palette>;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let hx = (self.hue / 360.0 * WIDTH as f32).floor() as i32;
         let mx = (self.saturation * (WIDTH - 1) as f32).floor() as i32;
         let my = (self.lightness * (HEIGHT - 1) as f32).floor() as i32;

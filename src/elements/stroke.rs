@@ -72,7 +72,7 @@ impl Element for StrokeLayer {
 impl Descriptor for StrokeLayerDescriptor {
     type Target = Handle<StrokeLayer>;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let mut layer = StrokeLayer {
             chunks: HashMap::new(),
             color: Srgba::from_components(self.color),
@@ -89,7 +89,7 @@ impl Descriptor for StrokeLayerDescriptor {
 impl Descriptor for StrokeChunkDescriptor {
     type Target = StrokeChunk;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         StrokeChunk {
             canvas: world.build(CanvasDescriptor {
                 rect: Rectangle {

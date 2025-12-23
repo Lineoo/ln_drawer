@@ -121,7 +121,7 @@ impl Element for Menu {
 impl Descriptor for MenuDescriptor {
     type Target = Handle<Menu>;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let rect = Rectangle {
             origin: self.position,
             extend: Size::new(

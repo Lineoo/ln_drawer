@@ -25,7 +25,7 @@ pub struct PanelDescriptor {
 impl Descriptor for PanelDescriptor {
     type Target = Handle<Panel>;
 
-    fn build(self, world: &World) -> Self::Target {
+    fn when_build(self, world: &World) -> Self::Target {
         let rounded = world.build(self.rounded);
         let collider = world.insert(PointerEdgeCollider {
             rect: self.rounded.rect,
