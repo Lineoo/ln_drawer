@@ -50,10 +50,9 @@
 - [x] 删除 Delta
 - [x] 修复"无限大矩形"精度问题
 - [x] 修复 Rectangle 的 clamp
-- [ ] 完整生命周期管理
+- [x] 完整生命周期管理
     - [x] Descriptor 更好的模式
-    - [ ] `when_modify` & `when_remove`
-- [ ] Menu 自动缩放
+    - [x] `when_modify` & `when_remove`
 - [ ] Palette 在加载的时候还是有点位置问题
 - [ ] PointerEdgeCollider
     - [ ] 重做变换工具

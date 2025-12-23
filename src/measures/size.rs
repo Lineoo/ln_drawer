@@ -34,6 +34,16 @@ impl ops::Sub for Size {
     }
 }
 
+impl ops::Mul<u32> for Size {
+    type Output = Size;
+    fn mul(self, rhs: u32) -> Self::Output {
+        Size {
+            w: self.w.saturating_mul(rhs),
+            h: self.h.saturating_mul(rhs),
+        }
+    }
+}
+
 impl ops::AddAssign for Size {
     fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs;
@@ -45,6 +55,13 @@ impl ops::SubAssign for Size {
         *self = *self - rhs;
     }
 }
+
+impl ops::MulAssign<u32> for Size {
+    fn mul_assign(&mut self, rhs: u32) {
+        *self = *self * rhs;
+    }
+}
+
 
 impl Size {
     pub const MAX: Size = Size {

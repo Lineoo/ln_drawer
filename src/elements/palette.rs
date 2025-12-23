@@ -185,6 +185,10 @@ impl Descriptor for PaletteDescriptor {
     type Target = Handle<Palette>;
 
     fn build(self, world: &World) -> Self::Target {
+        let hx = (self.hue / 360.0 * WIDTH as f32).floor() as i32;
+        let mx = (self.saturation * (WIDTH - 1) as f32).floor() as i32;
+        let my = (self.lightness * (HEIGHT - 1) as f32).floor() as i32;
+
         let main = world.build(CanvasDescriptor {
             rect: Rectangle {
                 origin: self.position,
@@ -198,7 +202,7 @@ impl Descriptor for PaletteDescriptor {
 
         let main_knob = world.build(WireframeDescriptor {
             rect: Rectangle {
-                origin: self.position,
+                origin: self.position + Position::new(mx, my),
                 extend: Size::splat(1),
             },
             order: 1,
@@ -207,10 +211,7 @@ impl Descriptor for PaletteDescriptor {
 
         let hue = world.build(CanvasDescriptor {
             rect: Rectangle {
-                origin: Position::new(
-                    self.position.x,
-                    self.position.y.wrapping_sub_unsigned(HUE_HEIGHT),
-                ),
+                origin: self.position + Position::new(0, -(HUE_HEIGHT as i32)),
                 extend: Size::new(WIDTH, HUE_HEIGHT),
             },
             width: WIDTH,
@@ -221,10 +222,7 @@ impl Descriptor for PaletteDescriptor {
 
         let hue_knob = world.build(WireframeDescriptor {
             rect: Rectangle {
-                origin: Position::new(
-                    self.position.x,
-                    self.position.y.wrapping_sub_unsigned(HUE_HEIGHT),
-                ),
+                origin: self.position + Position::new(hx, -(HUE_HEIGHT as i32)),
                 extend: Size::new(1, HUE_HEIGHT),
             },
             order: 1,
@@ -239,7 +237,6 @@ impl Descriptor for PaletteDescriptor {
             redraw: false,
         };
 
-        palette.set_hsl(Hsl::new(self.hue, self.saturation, self.lightness));
         palette.redraw();
 
         world.insert(palette)
@@ -251,7 +248,7 @@ impl Palette {
         let hsl = self.get_hsl();
         PaletteDescriptor {
             position: self.main.rect.left_down(),
-            hue: hsl.hue.into_degrees(),
+            hue: hsl.hue.into_positive_degrees(),
             saturation: hsl.saturation,
             lightness: hsl.lightness,
         }
@@ -274,12 +271,12 @@ impl Palette {
         let base_position = self.main.rect.left();
         let knob_position = self.main_knob.rect.left();
         let saturation = (knob_position - base_position).rem_euclid(WIDTH as i32);
-        let saturation = saturation as f32 / WIDTH as f32;
+        let saturation = saturation as f32 / (WIDTH - 1) as f32;
 
         let base_position = self.main.rect.down();
         let knob_position = self.main_knob.rect.down();
         let lightness = (knob_position - base_position).rem_euclid(WIDTH as i32);
-        let lightness = lightness as f32 / HEIGHT as f32;
+        let lightness = lightness as f32 / (HEIGHT - 1) as f32;
 
         Hsl::new(hue, saturation, lightness)
     }
@@ -287,13 +284,13 @@ impl Palette {
     fn set_hsl(&mut self, hsl: Hsl) {
         let (hue, saturation, lightness) = hsl.into_components();
 
-        let hue = (hue.into_degrees() / 360.0 * WIDTH as f32).floor() as i32;
+        let hue = (hue.into_positive_degrees() / 360.0 * WIDTH as f32).floor() as i32;
         let hx = self.hue.rect.left() + hue;
 
-        let saturation = (saturation * WIDTH as f32).floor() as i32;
+        let saturation = (saturation * (WIDTH - 1) as f32).floor() as i32;
         let mx = self.main.rect.left() + saturation;
 
-        let lightness = (lightness * HEIGHT as f32).floor() as i32;
+        let lightness = (lightness * (HEIGHT - 1) as f32).floor() as i32;
         let my = self.main.rect.down() + lightness;
 
         let hr = self.hue_knob.rect;
