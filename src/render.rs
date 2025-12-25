@@ -5,12 +5,14 @@ pub mod vertex;
 pub mod viewport;
 pub mod wireframe;
 
+use std::time::Instant;
+
 use wgpu::{
     Adapter, Color, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device,
     DeviceDescriptor, Features, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference,
-    Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions,
-    StoreOp, Surface, SurfaceConfiguration, SurfaceTarget, TextureUsages, TextureViewDescriptor,
-    Trace,
+    PresentMode, Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor,
+    RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration, SurfaceTarget, TextureUsages,
+    TextureViewDescriptor, Trace,
 };
 use winit::event::WindowEvent;
 
@@ -26,6 +28,7 @@ pub struct Render {
     queue: Queue,
     pub active: Option<RenderActive>,
     pub clear_color: Color,
+    pub last_redraw: Instant,
 }
 
 pub struct RenderActive {
@@ -75,6 +78,7 @@ impl Render {
             queue,
             active: None,
             clear_color: Color::BLACK,
+            last_redraw: Instant::now(),
         }
     }
 }
@@ -92,7 +96,16 @@ impl Element for Render {
                     width: size.width.max(1),
                     height: size.height.max(1),
                     desired_maximum_frame_latency: 2,
-                    present_mode: *caps.present_modes.first().unwrap(),
+                    present_mode: {
+                        let caps = &caps.present_modes;
+                        if caps.contains(&PresentMode::FifoRelaxed) {
+                            PresentMode::FifoRelaxed
+                        } else if caps.contains(&PresentMode::Fifo) {
+                            PresentMode::Fifo
+                        } else {
+                            *caps.first().unwrap()
+                        }
+                    },
                     alpha_mode: {
                         let caps = &caps.alpha_modes;
                         if caps.contains(&CompositeAlphaMode::PreMultiplied) {
@@ -107,6 +120,9 @@ impl Element for Render {
                     },
                     view_formats: vec![],
                 };
+
+                log::debug!("present mode {:?} is selected", config.present_mode);
+                log::debug!("alpha mode {:?} is selected", config.alpha_mode);
 
                 render.surface.configure(&render.device, &config);
             }
@@ -177,6 +193,17 @@ impl Element for Render {
                 render.queue.submit([active.encoder.finish()]);
 
                 texture.present();
+
+                // record time
+
+                let now = Instant::now();
+                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                lnwindow.window.set_title(&format!(
+                    "frame time: {:.4}",
+                    (now - render.last_redraw).as_secs_f32()
+                ));
+
+                render.last_redraw = now;
             }
 
             _ => (),

@@ -48,8 +48,6 @@ impl Element for Viewport {
                 viewport.size.h = size.height;
 
                 viewport.upload();
-
-                lnwindow.request_redraw();
             }
         });
     }

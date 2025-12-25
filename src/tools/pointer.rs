@@ -211,8 +211,6 @@ impl Element for PointerTool {
             move |event: &WindowEvent, world, lnwindow| {
                 let mut pointer = world.fetch_mut(this).unwrap();
                 let lnwindow = world.fetch(lnwindow).unwrap();
-                lnwindow.request_redraw();
-
                 match event {
                     WindowEvent::CursorMoved { position, .. } => {
                         let viewport = world.single_fetch::<Viewport>().unwrap();
@@ -245,6 +243,7 @@ impl Element for PointerTool {
                         }
 
                         pointer.position = position;
+                        lnwindow.request_redraw();
                     }
 
                     WindowEvent::MouseInput {
@@ -263,6 +262,7 @@ impl Element for PointerTool {
                         }
 
                         pointer.pressed = true;
+                        lnwindow.request_redraw();
                     }
 
                     WindowEvent::MouseInput {
@@ -281,6 +281,7 @@ impl Element for PointerTool {
                         }
 
                         pointer.pressed = false;
+                        lnwindow.request_redraw();
                     }
 
                     WindowEvent::MouseInput {
@@ -291,6 +292,8 @@ impl Element for PointerTool {
                         if let Some(target) = intersect(world, pointer.position.floor()) {
                             world.trigger(target, PointerMenu(pointer.position.floor()));
                         }
+
+                        lnwindow.request_redraw();
                     }
 
                     _ => {}

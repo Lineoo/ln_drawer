@@ -14,11 +14,18 @@ use smallvec::SmallVec;
 // Definition //
 
 /// A shared form of objects in the [`World`].
-#[expect(unused_variables)]
 pub trait Element: Any {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {}
-    fn when_modify(&mut self, world: &World, this: Handle<Self>) {}
-    fn when_remove(&mut self, world: &World, this: Handle<Self>) {}
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let _ = (world, this);
+    }
+
+    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
+        let _ = (world, this);
+    }
+    
+    fn when_remove(&mut self, world: &World, this: Handle<Self>) {
+        let _ = (world, this);
+    }
 }
 
 /// A way to setup in the [`World`].

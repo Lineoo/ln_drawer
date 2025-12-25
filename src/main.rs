@@ -10,10 +10,7 @@ mod tools;
 mod widgets;
 mod world;
 
-use winit::{
-    error::EventLoopError,
-    event_loop::{ControlFlow, EventLoop},
-};
+use winit::{error::EventLoopError, event_loop::EventLoop};
 
 fn main() -> Result<(), EventLoopError> {
     env_logger::init();
@@ -21,7 +18,6 @@ fn main() -> Result<(), EventLoopError> {
     log::info!("This is LnDrawer. Welcome!");
 
     let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(ControlFlow::Wait);
     let mut app = lnwin::Lnwin::default();
     event_loop.run_app(&mut app)?;
     Ok(())
