@@ -59,6 +59,11 @@
 - [x] `when_build` 重命名
 - **LnDrawer v0.1.2-alpha1**
 - [ ] 可修改的圆角大小
+- [ ] 无头组件库
+    - [ ] 按钮
+    - [ ] 滑条
+    - [ ] 
+- [ ] 渲染组件默认值优化
 - [ ] 圆角描边与阴影
 - [ ] 菜单分割线
 - [ ] 浮动信息框 Toast
@@ -66,7 +71,6 @@
 - **LnDrawer v0.1.2-alpha2**
 - [ ] TextEdit 重新制作
     - [ ] Focus 由元素自己主动请求
-- [ ] 渲染组件默认值优化
 - [ ] 设置界面
 - [ ] 调试系统
     - [ ] 观察者与事件流显示
@@ -126,23 +130,15 @@
 
 # 技术细节 #
 
-## 为什么呢 ##
+## 世界 `world` 模块 ##
 
-### 为什么 interface 成为了一个 Element 而 lnwin 没有成为 Element？
+世界模块提供**多元素响应**能力，这包括同时访问多个元素，用事件串联多个元素，以及多元素依赖处理。
 
-这个主要是由于——事件循环。虽然窗口和事件循环并不是一一对应的，但是就对于 ln_drawer 而言，目前窗口和事件循环还是绑定在一块儿的。
+### 为什么 trigger 要是即时的？
 
-但是 interface 渲染不一样，它不负责事件循环，但他需要和新生成的元素交互（创建渲染组件），这部分而言其实和我们未来要做的相交检测等功能是并列的，即元素之间的互动、更新，将 interface 也作为一个 Element 使用可以更方便我们使用。
-
-比如说，现在 interface 保存在 lnwin 里面，我们只能在 lnwin 里面直接创建 (`self.interface.create_*`) 但是对于以后的功能，我们可能希望从 World 中的一个普通元素进行生成（想象一下按下一个按钮生成一个组件），这就要求我们能够从 World 里访问到目前的 interface 实例。且不说用 singleton 写这个有多方便，如果我们不把 interface 作为 element 实现，那我们就只能使用一个命令队列 element 把操作发送给 lnwin ，到头来还是要加一个 Element，代码逻辑也不减反增，这就完全没必要了。
-
-而且虽然现在窗口仍然保留为一个直隶于事件循环的成员，到时候或许我们也会把它作为一个元素。刚好其实我们实际上也区分了 Lnwin（外层控制） 和 Lnwindow（真窗口），改起来就更方便了不是嘛。所以可能以后还是会把 Lnwindow 变成 Element ，留下那个 Lnwin 负责事件循环。
-
-### 为什么 trigger 要改成即时的？
-
-不占用队列。大部分请求是不需要关照 `insert` 和 `remove` 的延迟执行的。
-
-同时若真的有需要，也只需要 `world.queue(|world| { world.trigger(event); });` 即可。
+减少队列的侵占，因为其设计**不符合人体工程学**。同时，大部分请求是不需要关照 `insert` 和 `remove` 的延迟执行的。
+> 若确实需要*处理延迟执行*或*避免循环访问*，请使用：
+> ` world.queue(|world| { world.trigger(event); }); `
 
 ## 循环数位和相对的尺度 ##
 
@@ -234,19 +230,6 @@ impl ElementDescriptor for BazDescriptor {
     }
 }
 ```
-
-## Element 重构 ##
-
-既然 interface 也是 Element，是不是应该把 interface 也放进 elements 里面？
-
-啊当然不是。其实如果 interface 也放在里面的话，我甚至觉得整个程序放在 elements 里也没问题（
-
-所以我们会慢慢地把 elements 里面的东西，相反的，挪*出来*。
-
-- interface: 所有跟 wgpu 有关的代码
-- text: 所有跟 cosmic-text 有关
-- tools: 有关用户输入处理
-- widgets: 预设的用户组件
 
 ## 元素编组 ##
 
@@ -410,8 +393,79 @@ Viewport 在这个语境下其实是两个东西：
 
 **无头组件 Headless Widget** 是解耦很重要的一步。而 `ln_drawer` 原生的事件系统让这变得相当自然。
 
-- 事件
-- 属性
+### 1. "无头组件" 概述
+
+无头组件库定义了：
+- 触发的**事件**
+- 拥有的**属性**
+- 捕获对应输入事件并**转换**成对应组件事件
+
+无头组件库*不提供*：
+- 如何**渲染**组件
+- 如何**响应**事件（不过会提供默认响应）
+
+### 2. 有哪些无头组件？
+
+**第一类**包括简单逻辑组件。
+1. 按钮 `Button`
+    - 点击 `Click` 
+2. 复选框 `CheckButton`
+    - 点击 `Click`
+    - 切换 `Switch`
+3. 滑条 `Slider`
+    - 滑动 `Slide`
+4. 宽滑条 `WideSlider`
+    - 滑动 `Slide`
+
+**第二类**包括多种逻辑组件：
+1. 数字选择器 `NumberScroll`
+    - 增加/减少 `Scroll`
+2. 颜色选择器 `ColorPicker`
+    - 选择 `Pick<Color>`
+3. 文本编辑 `TextEdit`
+    - 鼠标输入 `CursorEdit`
+    - 触摸输入 `TouchEdit`
+    - 键盘输入 `KeyboardEdit`
+
+**第三类**包括了*可嵌套*、*复合用例*的组件。
+1. 单选框 `RadioButton`
+2. 表格 `Table`
+3. 日历
+
+### 3. 渲染实现
+
+```rust
+pub enum Interact {
+    HoverEnter,
+    HoverLeave,
+    ButtonPress,
+    ButtonRelease,
+    WidgetEnabled,
+    WidgetDisabled,
+}
+```
+
+**渲染实现**主要关注 `Interact` 和 `Change` 事件，基本每个无头组件都会生成。
+
+同时我们的渲染实现包裹在 `Lnui<T>` 这个结构中，针对不同的 `T` 跟踪不同的属性。
+
+- `Interact` 事件用于追踪用户交互（制作动画反馈等）
+- `Change` 事件时跟踪无头组件的属性并更新渲染
+
+### 4. 最终实现
+
+创建一个完成功能的界面元素需要：
+1. 创建无头组件
+2. 为无头组件绑定渲染实现
+3. 为无头组件绑定响应逻辑
+
+```rust
+let widget = world.build(CheckButtonDescriptor::default());
+let ui = world.insert(Lnui::new(widget));
+world.observer(widget, |Switch, world, widget| {
+    widget.enabled = !widget.enabled;
+});
+```
 
 ## 原则 & 规范 ##
 

@@ -43,6 +43,11 @@ struct RoundedRectUniform {
     origin: [i32; 2],
     extend: [u32; 2],
     color: [f32; 4],
+    vertex_extend: i32,
+    shrink: f32,
+    value: f32,
+
+    _pad: i32,
 }
 
 impl Element for RoundedRect {}
@@ -147,6 +152,10 @@ impl Descriptor for RoundedRectDescriptor {
                     self.color.blue,
                     self.color.alpha,
                 ],
+                vertex_extend: 10,
+                shrink: 5.0,
+                value: 5.0,
+                _pad: 0,
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -213,6 +222,10 @@ impl RoundedRect {
                 self.color.blue,
                 self.color.alpha,
             ],
+            vertex_extend: 10,
+            shrink: 5.0,
+            value: 5.0,
+            _pad: 0,
         };
 
         self.cmd.queue(move |world| {

@@ -15,21 +15,22 @@ fn viewport_convert(world_space: vec2i) -> vec2f {
     return screen_space;
 }
 
-struct Rectangle {
+struct RoundedRect {
     origin: vec2i,
     extend: vec2u,
     color: vec4f,
+    vertex_extend: i32,
+    shrink: f32,
+    value: f32,
 }
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
-    @location(0) world_space: vec2f,
+    @location(0) relative: vec2f,
 }
 
 @group(0) @binding(0) var<uniform> viewport: Viewport;
-@group(1) @binding(0) var<uniform> rectangle: Rectangle;
-
-const edge = 10;
+@group(1) @binding(0) var<uniform> rectangle: RoundedRect;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
@@ -40,29 +41,25 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
     // extend 10 pixels to render shadow
     let world_space_extend = world_space + vec2i(
-        ((i32(index) / 2) * 2 - 1) * edge,
-        ((i32(index) % 2) * 2 - 1) * edge,
+        ((i32(index) / 2) * 2 - 1) * rectangle.vertex_extend,
+        ((i32(index) % 2) * 2 - 1) * rectangle.vertex_extend,
     );
 
     var ret: VertexOutput;
     ret.position = vec4f(viewport_convert(world_space_extend), 0.0, 1.0);
-    ret.world_space = vec2f(world_space_extend);
+    ret.relative = vec2f(world_space_extend - rectangle.origin);
     return ret;
 }
 
-const shrink = 5.0;
-const step_value = 5.0;
-
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
-    let relative = vertex.world_space - vec2f(rectangle.origin);
-    
     // use SDF to calculate rectangle
-    let point = abs(relative - vec2f(rectangle.extend) / 2.0);
-    let corner = vec2f(rectangle.extend) / 2.0 - shrink;
+    let point = abs(vertex.relative - vec2f(rectangle.extend) / 2.0);
+    let corner = vec2f(rectangle.extend) / 2.0 - rectangle.shrink;
 
     let delta = point - corner;
     let distance = length(max(delta, vec2f(0.0))) + min(max(delta.x, delta.y), 0.0);
 
-    return vec4f(step(distance, step_value)) * rectangle.color;
+    return vec4f(step(distance, rectangle.value)) * rectangle.color;
+    // return vec4f(normalize(vec3f(0.5, 0.5, distance)), fract(distance)) * rectangle.color;
 }
