@@ -9,15 +9,11 @@ use winit::{
 };
 
 use crate::{
-    elements::stroke::StrokeLayer,
-    measures::Size,
-    render::{
+    elements::stroke::StrokeLayer, measures::Size, render::{
         Render, canvas::CanvasManagerDescriptor, rounded::RoundedRectManagerDescriptor,
         text::TextManagerDescriptor, viewport::ViewportDescriptor,
         wireframe::WireframeManagerDescriptor,
-    },
-    tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
-    world::{Element, Handle, World},
+    }, theme::Luni, tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool}, world::{Element, Handle, World}
 };
 
 #[derive(Default)]
@@ -94,6 +90,7 @@ impl Element for Lnwindow {
             world.insert(PointerTool::default());
             world.insert(CameraTool::default());
             world.insert(ModifiersTool::default());
+            world.insert(Luni::default());
         });
     }
 }

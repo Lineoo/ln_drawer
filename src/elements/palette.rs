@@ -50,7 +50,7 @@ impl Element for Palette {
             let mut this = world.fetch_mut(this).unwrap();
             let rect = this.main.rect;
             this.main_knob.rect = Rectangle {
-                origin: event.position().clamp(Rectangle {
+                origin: event.position.clamp(Rectangle {
                     origin: rect.origin,
                     extend: rect.extend - Size::splat(1),
                 }),
@@ -78,7 +78,7 @@ impl Element for Palette {
             let rect = this.hue.rect;
             this.hue_knob.rect = Rectangle {
                 origin: Position::new(
-                    event.position().x.clamp(rect.left(), rect.right() - 1),
+                    event.position.x.clamp(rect.left(), rect.right() - 1),
                     rect.down(),
                 ),
                 extend: Size::new(1, HUE_HEIGHT),

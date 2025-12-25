@@ -7,7 +7,7 @@ use crate::{
     render::canvas::{Canvas, CanvasDescriptor},
     tools::{
         modifiers::ModifiersTool,
-        pointer::{PointerCollider, PointerHit, PointerMenu},
+        pointer::{PointerCollider, PointerHit, PointerMenu, PointerStatus},
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -49,18 +49,17 @@ impl Element for StrokeLayer {
 
         world.dependency(collider, this);
 
-        world.observer(collider, move |event: &PointerHit, world, _| match event {
-            &PointerHit::Moving(position) | &PointerHit::Pressed(position) => {
+        world.observer(collider, move |event: &PointerHit, world, _| {
+            if let PointerStatus::Moving | PointerStatus::Press = event.status {
                 let mut stroke = world.fetch_mut(this).unwrap();
 
                 let tool = world.single_fetch::<ModifiersTool>().unwrap();
                 if tool.modifiers.state().alt_key() {
-                    stroke.pick(position, world);
+                    stroke.pick(event.position, world);
                 } else {
-                    stroke.draw(position, world);
+                    stroke.draw(event.position, world);
                 }
             }
-            _ => {}
         });
 
         world.observer(collider, move |&PointerMenu(position), world, _| {

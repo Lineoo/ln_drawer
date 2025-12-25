@@ -1,7 +1,7 @@
 use crate::{
     measures::{Position, Rectangle},
     render::rounded::{RoundedRect, RoundedRectDescriptor},
-    tools::pointer::{PointerEdge, PointerEdgeCollider, PointerHit, PointerHitEdge},
+    tools::pointer::{PointerEdge, PointerEdgeCollider, PointerHitEdge, PointerStatus},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -47,16 +47,16 @@ impl Element for Panel {
             move |hit: &PointerHitEdge, world, collider| {
                 let mut this = world.fetch_mut(this).unwrap();
 
-                match (hit.hit, this.start) {
-                    (PointerHit::Pressed(position), None) => {
+                match (hit.status, this.start) {
+                    (PointerStatus::Press, None) => {
                         this.start = Some(Start {
-                            cursor: position,
+                            cursor: hit.position,
                             rect: this.rounded.rect,
                         })
                     }
 
-                    (PointerHit::Moving(position), Some(start)) => {
-                        let delta = position - start.cursor;
+                    (PointerStatus::Moving, Some(start)) => {
+                        let delta = hit.position - start.cursor;
                         match hit.edge {
                             PointerEdge::Leftdown => {
                                 this.rounded.rect =
@@ -95,7 +95,7 @@ impl Element for Panel {
                         }
                     }
 
-                    (PointerHit::Released(_), Some(_)) => {
+                    (PointerStatus::Release, Some(_)) => {
                         this.start = None;
                     }
 

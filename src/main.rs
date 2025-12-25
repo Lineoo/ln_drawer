@@ -5,7 +5,9 @@ mod lnwin;
 mod measures;
 mod render;
 mod save;
+mod theme;
 mod tools;
+mod widgets;
 mod world;
 
 use winit::{

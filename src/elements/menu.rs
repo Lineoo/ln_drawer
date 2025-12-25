@@ -2,10 +2,7 @@ use wgpu::Color;
 use winit::window::WindowLevel;
 
 use crate::{
-    elements::{
-        palette::PaletteDescriptor,
-        panel::{Panel, PanelDescriptor},
-    },
+    elements::{palette::PaletteDescriptor, panel::PanelDescriptor},
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
@@ -14,9 +11,11 @@ use crate::{
         rounded::{RoundedRect, RoundedRectDescriptor},
         text::{Text, TextDescriptor},
     },
+    theme::{Attach, Luni},
     tools::pointer::{
-        PointerCollider, PointerEnter, PointerHit, PointerLeave, PointerMenu, PointerTool,
+        PointerCollider, PointerHit, PointerHover, PointerMenu, PointerStatus, PointerTool,
     },
+    widgets::{button::ButtonDescriptor, events::Click},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -64,14 +63,14 @@ impl Element for Menu {
         world.dependency(collider, this);
 
         world.observer(collider, move |event: &PointerHit, world, _| {
-            let &PointerHit::Pressed(point) = event else {
+            if let PointerStatus::Press = event.status {
                 return;
             };
 
             let fetched = world.fetch(this).unwrap();
             let frame = fetched.frame.rect;
 
-            if !point.within(frame) {
+            if !event.position.within(frame) {
                 world.remove(this);
             }
         });
@@ -94,7 +93,7 @@ impl Element for Menu {
             world.dependency(collider, this);
 
             world.observer(collider, move |event: &PointerHit, world, _| {
-                let PointerHit::Pressed(_) = event else {
+                if let PointerStatus::Press = event.status {
                     return;
                 };
 
@@ -103,15 +102,13 @@ impl Element for Menu {
                 world.remove(this);
             });
 
-            world.observer(collider, move |&PointerEnter, world, _| {
+            world.observer(collider, move |event: &PointerHover, world, _| {
                 let mut fetched = world.fetch_mut(this).unwrap();
-                fetched.entries[i].frame.visible = true;
-                fetched.entries[i].frame.upload();
-            });
+                fetched.entries[i].frame.visible = match event {
+                    PointerHover::Enter => true,
+                    PointerHover::Leave => false,
+                };
 
-            world.observer(collider, move |&PointerLeave, world, _| {
-                let mut fetched = world.fetch_mut(this).unwrap();
-                fetched.entries[i].frame.visible = false;
                 fetched.entries[i].frame.upload();
             });
         }
@@ -252,6 +249,32 @@ impl Menu {
                     action: Box::new(move |world, _| {
                         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                         lnwindow.window.set_window_level(WindowLevel::Normal);
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "A Button With Luni".into(),
+                    action: Box::new(move |world, position| {
+                        let luni = world.single::<Luni>().unwrap();
+                        let button = world.build(ButtonDescriptor {
+                            rect: Rectangle {
+                                origin: position,
+                                extend: Size::splat(100),
+                            },
+                            order: 20,
+                        });
+
+                        world.queue(move |world| {
+                            world.trigger(luni, Attach(button));
+                        });
+
+                        world.observer(button, |Click, world, _| {
+                            let mut render = world.single_fetch_mut::<Render>().unwrap();
+                            if render.clear_color == Color::TRANSPARENT {
+                                render.clear_color = Color::BLACK;
+                            } else if render.clear_color == Color::BLACK {
+                                render.clear_color = Color::TRANSPARENT;
+                            }
+                        });
                     }),
                 },
                 MenuEntryDescriptor {

@@ -58,17 +58,19 @@
     - [x] 重做变换工具
 - [x] `when_build` 重命名
 - **LnDrawer v0.1.2-alpha1**
-- [ ] 可修改的圆角大小
-- [ ] 无头组件库
-    - [ ] 按钮
-    - [ ] 滑条
-    - [ ] 
+- [x] 可修改的圆角大小
+- [x] 无头组件库
+- [ ] 修复首帧渲染
+- [ ] 渲染库简化
 - [ ] 渲染组件默认值优化
 - [ ] 圆角描边与阴影
 - [ ] 菜单分割线
 - [ ] 浮动信息框 Toast
 - [ ] 动画系统
 - **LnDrawer v0.1.2-alpha2**
+- [ ] world ops 简化
+    - [ ] singleton 自动插入
+    - [ ] trigger 自动后延
 - [ ] TextEdit 重新制作
     - [ ] Focus 由元素自己主动请求
 - [ ] 设置界面
@@ -139,6 +141,14 @@
 减少队列的侵占，因为其设计**不符合人体工程学**。同时，大部分请求是不需要关照 `insert` 和 `remove` 的延迟执行的。
 > 若确实需要*处理延迟执行*或*避免循环访问*，请使用：
 > ` world.queue(|world| { world.trigger(event); }); `
+
+### 生命周期事件
+
+之前是有一个 `Destroy` 事件的，但是被 `when_remove` 代替了。
+
+完全取消生命周期事件的原因很简单——**减少隐式逻辑**。
+- 提供一个统一的生命周期事件会导致任何元素都会能够读取同种生命周期事件而不加区分，往往会导致难以分离的循环调用问题
+- 使用 hook 模式可以将事件触发下降到高级逻辑层面，这可以限定其作用范围，缩小调试范围并提供更稳定的代码
 
 ## 循环数位和相对的尺度 ##
 
@@ -306,12 +316,11 @@ view.fetch(foo);
 
 ### 2. 初始化
 
-管线相关初始化此处省略。此章重点规范**独立渲染组件的初始化**。
-> 独立渲染组件是**不直接被插入世界的渲染组件**，它们依赖*描述构建模式*来注册进渲染控制。
+管线相关初始化此处省略。此章重点规范**渲染组件的初始化**。
 
 ```rust
 struct Panel {
-    rectangle: RoundedRectangle,
+    rectangle: Handle<RoundedRectangle>,
 }
 
 world.insert(Panel {
@@ -324,13 +333,13 @@ world.insert(Panel {
 
 渲染组件首选**描述构建模式**来初始化渲染实例。过程：
 1. 初始化并获取**对应的渲染管线**
-2. 注册对应的 **GPU 实例节点**，如需要的 Buffer 等
+2. 注册对应的 **GPU 指针数据**，如需要的 Buffer 等
 3. 在世界中生成**渲染控制节点**并完成注册
 4. 在世界中完成**生命周期追踪**，主要是观察者和对象依赖
 
-也就是说，插入了三种元素：
+将插入了三种元素：
 - 核心元素 `Panel`
-- GPU 实例节点 `RoundedRectangleBuffer`
+- 渲染元素 `RoundedRectangle`
 - 渲染控制节点 `RenderControl`
 
 ### 3. 渲染绘制
@@ -460,8 +469,14 @@ pub enum Interact {
 3. 为无头组件绑定响应逻辑
 
 ```rust
+// 默认主题 Theme 会自动转发
+let theme = world.single::<Theme>().unwrap();
+
+// 指定主题
+let theme = world.single::<Luni>().unwrap();
+
 let widget = world.build(CheckButtonDescriptor::default());
-let ui = world.insert(Lnui::new(widget));
+world.trigger(theme, Attach(widget));
 world.observer(widget, |Switch, world, widget| {
     widget.enabled = !widget.enabled;
 });

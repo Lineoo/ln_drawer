@@ -27,25 +27,23 @@ pub struct PointerEdgeCollider {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum PointerHit {
-    Pressed(Position),
-    Moving(Position),
-    Released(Position),
+pub struct PointerHit {
+    pub position: Position,
+    pub status: PointerStatus,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PointerMenu(pub Position);
-
-#[derive(Debug, Clone, Copy)]
-pub struct PointerEnter;
-
-#[derive(Debug, Clone, Copy)]
-pub struct PointerLeave;
-
-#[derive(Debug, Clone, Copy)]
 pub struct PointerHitEdge {
-    pub hit: PointerHit,
+    pub position: Position,
+    pub status: PointerStatus,
     pub edge: PointerEdge,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum PointerStatus {
+    Press,
+    Moving,
+    Release,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -63,6 +61,15 @@ pub enum PointerEdge {
     Body,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct PointerMenu(pub Position);
+
+#[derive(Debug, Clone, Copy)]
+pub enum PointerHover {
+    Enter,
+    Leave,
+}
+
 struct ColliderUpdate;
 struct ColliderEdgeLock {
     edge: Option<PointerEdge>,
@@ -77,22 +84,6 @@ impl PointerCollider {
             },
             order,
         }
-    }
-}
-
-impl PointerHit {
-    pub fn position(&self) -> Position {
-        let (PointerHit::Pressed(position)
-        | PointerHit::Moving(position)
-        | PointerHit::Released(position)) = *self;
-        position
-    }
-}
-
-impl PointerHitEdge {
-    #[inline]
-    pub fn position(&self) -> Position {
-        self.hit.position()
     }
 }
 
@@ -115,23 +106,23 @@ impl Element for PointerEdgeCollider {
             let this = world.fetch(this).unwrap();
             let mut lock = world.fetch_mut(lock).unwrap();
 
-            match (event, lock.edge) {
-                (PointerHit::Pressed(position), None) => {
+            match (event.status, lock.edge) {
+                (PointerStatus::Press, None) => {
                     let mut idx = 0;
 
                     let shrink = this.rect.expand(-EXPAND);
 
-                    if position.x < shrink.left() {
+                    if event.position.x < shrink.left() {
                         idx += 0;
-                    } else if position.x < shrink.right() {
+                    } else if event.position.x < shrink.right() {
                         idx += 1;
                     } else {
                         idx += 2;
                     }
 
-                    if position.y < shrink.down() {
+                    if event.position.y < shrink.down() {
                         idx += 0;
-                    } else if position.y < shrink.up() {
+                    } else if event.position.y < shrink.up() {
                         idx += 3;
                     } else {
                         idx += 6;
@@ -151,16 +142,37 @@ impl Element for PointerEdgeCollider {
                     };
 
                     lock.edge = Some(edge);
-                    world.trigger(this.handle(), PointerHitEdge { hit: *event, edge });
+                    world.trigger(
+                        this.handle(),
+                        PointerHitEdge {
+                            position: event.position,
+                            status: event.status,
+                            edge,
+                        },
+                    );
                 }
 
-                (PointerHit::Moving(_), Some(edge)) => {
-                    world.trigger(this.handle(), PointerHitEdge { hit: *event, edge });
+                (PointerStatus::Moving, Some(edge)) => {
+                    world.trigger(
+                        this.handle(),
+                        PointerHitEdge {
+                            position: event.position,
+                            status: event.status,
+                            edge,
+                        },
+                    );
                 }
 
-                (PointerHit::Released(_), Some(edge)) => {
+                (PointerStatus::Release, Some(edge)) => {
                     lock.edge = None;
-                    world.trigger(this.handle(), PointerHitEdge { hit: *event, edge });
+                    world.trigger(
+                        this.handle(),
+                        PointerHitEdge {
+                            position: event.position,
+                            status: event.status,
+                            edge,
+                        },
+                    );
                 }
 
                 _ => unreachable!(),
@@ -213,17 +225,23 @@ impl Element for PointerTool {
 
                             if pointer.hovering != landing {
                                 if let Some(hovering) = pointer.hovering {
-                                    world.trigger(hovering, PointerLeave);
+                                    world.trigger(hovering, PointerHover::Leave);
                                 }
 
                                 if let Some(landing) = landing {
-                                    world.trigger(landing, PointerEnter);
+                                    world.trigger(landing, PointerHover::Enter);
                                 }
 
                                 pointer.hovering = landing;
                             }
                         } else if let Some(hovering) = pointer.hovering {
-                            world.trigger(hovering, PointerHit::Moving(position.floor()));
+                            world.trigger(
+                                hovering,
+                                PointerHit {
+                                    position: position.floor(),
+                                    status: PointerStatus::Moving,
+                                },
+                            );
                         }
 
                         pointer.position = position;
@@ -235,7 +253,13 @@ impl Element for PointerTool {
                         ..
                     } => {
                         if let Some(hovering) = pointer.hovering {
-                            world.trigger(hovering, PointerHit::Pressed(pointer.position.floor()));
+                            world.trigger(
+                                hovering,
+                                PointerHit {
+                                    position: pointer.position.floor(),
+                                    status: PointerStatus::Press,
+                                },
+                            );
                         }
 
                         pointer.pressed = true;
@@ -247,7 +271,13 @@ impl Element for PointerTool {
                         ..
                     } => {
                         if let Some(hovering) = pointer.hovering {
-                            world.trigger(hovering, PointerHit::Released(pointer.position.floor()));
+                            world.trigger(
+                                hovering,
+                                PointerHit {
+                                    position: pointer.position.floor(),
+                                    status: PointerStatus::Release,
+                                },
+                            );
                         }
 
                         pointer.pressed = false;
@@ -273,7 +303,7 @@ impl Element for PointerTool {
         // may figure out how the time i got click-through
 
         world.observer(this, |event: &PointerHit, world, _| {
-            if let Some(hovering) = intersect(world, event.position()) {
+            if let Some(hovering) = intersect(world, event.position) {
                 world.trigger(hovering, *event);
             }
         });
