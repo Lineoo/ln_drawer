@@ -14,6 +14,7 @@ pub struct Luni {
     back_color: Srgba,
     front_color: Srgba,
     press_color: Srgba,
+    roundness: f32,
     pad: i32,
 }
 
@@ -23,6 +24,7 @@ impl Default for Luni {
             back_color: Srgba::new(0.1, 0.1, 0.1, 0.9),
             front_color: Srgba::new(0.3, 0.3, 0.3, 1.0),
             press_color: Srgba::new(0.5, 0.5, 0.5, 1.0),
+            roundness: 15.0,
             pad: 5,
         }
     }
@@ -34,19 +36,23 @@ impl Element for Luni {
             let button = world.fetch(button).unwrap();
             let this = world.fetch(this).unwrap();
 
-            let back_frame = world.insert(world.build(RoundedRectDescriptor {
+            let back_frame = world.build(RoundedRectDescriptor {
                 rect: button.rect,
                 order: button.order,
                 color: this.back_color,
-                visible: true,
-            }));
+                shrink: this.roundness,
+                value: this.roundness,
+                ..Default::default()
+            });
 
-            let front_frame = world.insert(world.build(RoundedRectDescriptor {
+            let front_frame = world.build(RoundedRectDescriptor {
                 rect: button.rect.expand(-this.pad),
                 order: button.order + 1,
                 color: this.front_color,
+                shrink: this.roundness - this.pad as f32,
+                value: this.roundness - this.pad as f32,
                 visible: false,
-            }));
+            });
 
             world.dependency(back_frame, button.handle());
             world.dependency(front_frame, button.handle());
@@ -60,21 +66,21 @@ impl Element for Luni {
                 match interact {
                     Interact::HoverEnter => {
                         front_frame.visible = true;
-                        front_frame.upload();
                     }
                     Interact::HoverLeave => {
                         front_frame.visible = false;
-                        front_frame.upload();
                     }
                     Interact::ButtonPress => {
                         front_frame.rect = back_frame.rect;
                         front_frame.color = this.press_color;
-                        front_frame.upload();
+                        front_frame.shrink = back_frame.shrink;
+                        front_frame.value = back_frame.value;
                     }
                     Interact::ButtonRelease => {
                         front_frame.rect = back_frame.rect.expand(-this.pad);
                         front_frame.color = this.front_color;
-                        front_frame.upload();
+                        front_frame.shrink = back_frame.shrink - this.pad as f32;
+                        front_frame.value = back_frame.value - this.pad as f32;
                     }
                     Interact::WidgetEnabled => todo!(),
                     Interact::WidgetDisabled => todo!(),

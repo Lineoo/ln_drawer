@@ -23,13 +23,13 @@ const PAD: u32 = 10;
 const PAD_TEXT: u32 = 8;
 
 pub struct Menu {
-    frame: RoundedRect,
+    frame: Handle<RoundedRect>,
     entries: Vec<MenuEntry>,
 }
 
 struct MenuEntry {
-    frame: RoundedRect,
     text: Text,
+    frame: Handle<RoundedRect>,
     action: Box<dyn Fn(&World, Position)>,
 }
 
@@ -56,65 +56,6 @@ impl Default for MenuDescriptor {
     }
 }
 
-impl Element for Menu {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let collider = world.insert(PointerCollider::fullscreen(80));
-
-        world.dependency(collider, this);
-
-        world.observer(collider, move |event: &PointerHit, world, _| {
-            if let PointerStatus::Press = event.status {
-                return;
-            };
-
-            let fetched = world.fetch(this).unwrap();
-            let frame = fetched.frame.rect;
-
-            if !event.position.within(frame) {
-                world.remove(this);
-            }
-        });
-
-        world.observer(collider, move |&PointerMenu(position), world, _| {
-            world.remove(this);
-
-            world.queue(move |world| {
-                let pointer = world.single::<PointerTool>().unwrap();
-                world.trigger(pointer, PointerMenu(position));
-            });
-        });
-
-        for (i, entry) in self.entries.iter().enumerate() {
-            let collider = world.insert(PointerCollider {
-                rect: entry.frame.rect.expand(PAD as i32 / 2),
-                order: 110,
-            });
-
-            world.dependency(collider, this);
-
-            world.observer(collider, move |event: &PointerHit, world, _| {
-                if let PointerStatus::Press = event.status {
-                    return;
-                };
-
-                let fetched = world.fetch(this).unwrap();
-                (fetched.entries[i].action)(world, fetched.frame.rect.origin);
-                world.remove(this);
-            });
-
-            world.observer(collider, move |event: &PointerHover, world, _| {
-                let mut fetched = world.fetch_mut(this).unwrap();
-                fetched.entries[i].frame.visible = match event {
-                    PointerHover::Enter => true,
-                    PointerHover::Leave => false,
-                };
-
-                fetched.entries[i].frame.upload();
-            });
-        }
-    }
-}
-
 impl Descriptor for MenuDescriptor {
     type Target = Handle<Menu>;
 
@@ -131,7 +72,7 @@ impl Descriptor for MenuDescriptor {
             rect,
             color: palette::Srgba::new(0.1, 0.1, 0.1, 0.9),
             order: 90,
-            visible: true,
+            ..Default::default()
         });
 
         let mut entries = Vec::with_capacity(self.entries.len());
@@ -147,6 +88,7 @@ impl Descriptor for MenuDescriptor {
                 color: palette::Srgba::new(0.3, 0.3, 0.3, 1.0),
                 order: 120,
                 visible: false,
+                ..Default::default()
             });
 
             let text = world.build(TextDescriptor {
@@ -164,6 +106,71 @@ impl Descriptor for MenuDescriptor {
         }
 
         world.insert(Menu { frame, entries })
+    }
+}
+
+impl Element for Menu {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let collider = world.insert(PointerCollider::fullscreen(80));
+
+        world.dependency(collider, this);
+
+        world.observer(collider, move |event: &PointerHit, world, _| {
+            if let PointerStatus::Press = event.status {
+                return;
+            };
+
+            let fetched = world.fetch(this).unwrap();
+            let frame = world.fetch(fetched.frame).unwrap();
+            let frame = frame.rect;
+
+            if !event.position.within(frame) {
+                world.remove(this);
+            }
+        });
+
+        world.observer(collider, move |&PointerMenu(position), world, _| {
+            world.remove(this);
+
+            world.queue(move |world| {
+                let pointer = world.single::<PointerTool>().unwrap();
+                world.trigger(pointer, PointerMenu(position));
+            });
+        });
+
+        world.dependency(self.frame, this);
+
+        for (i, entry) in self.entries.iter().enumerate() {
+            let frame = world.fetch(entry.frame).unwrap();
+            let collider = world.insert(PointerCollider {
+                rect: frame.rect.expand(PAD as i32 / 2),
+                order: 110,
+            });
+
+            world.dependency(collider, this);
+
+            world.observer(collider, move |event: &PointerHit, world, _| {
+                if let PointerStatus::Press = event.status {
+                    return;
+                };
+
+                let fetched = world.fetch(this).unwrap();
+                let frame = world.fetch(fetched.entries[i].frame).unwrap();
+                (fetched.entries[i].action)(world, frame.rect.origin);
+                world.remove(this);
+            });
+
+            world.observer(collider, move |event: &PointerHover, world, _| {
+                let fetched = world.fetch(this).unwrap();
+                let mut frame = world.fetch_mut(fetched.entries[i].frame).unwrap();
+                frame.visible = match event {
+                    PointerHover::Enter => true,
+                    PointerHover::Leave => false,
+                };
+            });
+
+            world.dependency(entry.frame, this);
+        }
     }
 }
 

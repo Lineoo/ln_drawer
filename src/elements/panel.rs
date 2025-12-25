@@ -7,7 +7,7 @@ use crate::{
 
 /// !! EXPERIMENT ONLY !!
 pub struct Panel {
-    rounded: RoundedRect,
+    rounded: Handle<RoundedRect>,
     collider: Handle<PointerEdgeCollider>,
     start: Option<Start>,
 }
@@ -46,12 +46,13 @@ impl Element for Panel {
             self.collider,
             move |hit: &PointerHitEdge, world, collider| {
                 let mut this = world.fetch_mut(this).unwrap();
+                let mut rounded = world.fetch_mut(this.rounded).unwrap();
 
                 match (hit.status, this.start) {
                     (PointerStatus::Press, None) => {
                         this.start = Some(Start {
                             cursor: hit.position,
-                            rect: this.rounded.rect,
+                            rect: rounded.rect,
                         })
                     }
 
@@ -59,38 +60,35 @@ impl Element for Panel {
                         let delta = hit.position - start.cursor;
                         match hit.edge {
                             PointerEdge::Leftdown => {
-                                this.rounded.rect =
+                                rounded.rect =
                                     start.rect.with_left_down(start.rect.left_down() + delta);
                             }
                             PointerEdge::Leftup => {
-                                this.rounded.rect =
+                                rounded.rect =
                                     start.rect.with_left_up(start.rect.left_up() + delta);
                             }
                             PointerEdge::Rightdown => {
-                                this.rounded.rect =
+                                rounded.rect =
                                     start.rect.with_right_down(start.rect.right_down() + delta);
                             }
                             PointerEdge::Rightup => {
-                                this.rounded.rect =
+                                rounded.rect =
                                     start.rect.with_right_up(start.rect.right_up() + delta);
                             }
                             PointerEdge::Left => {
-                                this.rounded.rect =
-                                    start.rect.with_left(start.rect.left() + delta.x);
+                                rounded.rect = start.rect.with_left(start.rect.left() + delta.x);
                             }
                             PointerEdge::Down => {
-                                this.rounded.rect =
-                                    start.rect.with_down(start.rect.down() + delta.y);
+                                rounded.rect = start.rect.with_down(start.rect.down() + delta.y);
                             }
                             PointerEdge::Right => {
-                                this.rounded.rect =
-                                    start.rect.with_right(start.rect.right() + delta.x);
+                                rounded.rect = start.rect.with_right(start.rect.right() + delta.x);
                             }
                             PointerEdge::Up => {
-                                this.rounded.rect = start.rect.with_up(start.rect.up() + delta.y);
+                                rounded.rect = start.rect.with_up(start.rect.up() + delta.y);
                             }
                             PointerEdge::Body => {
-                                this.rounded.rect = start.rect + delta;
+                                rounded.rect = start.rect + delta;
                             }
                         }
                     }
@@ -102,9 +100,7 @@ impl Element for Panel {
                     _ => unreachable!(),
                 }
 
-                this.rounded.upload();
-
-                let rect = this.rounded.rect;
+                let rect = rounded.rect;
                 world.queue(move |world| {
                     let mut collider = world.fetch_mut(collider).unwrap();
                     collider.rect = rect;

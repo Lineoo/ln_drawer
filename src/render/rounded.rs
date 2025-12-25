@@ -6,23 +6,16 @@ use crate::render::viewport::Viewport;
 use crate::render::{Redraw, Render, RenderControl};
 use crate::world::{Commander, Descriptor, Element, Handle, World};
 
-pub struct RoundedRect {
-    pub rect: Rectangle,
-    pub color: palette::Srgba,
-    pub order: isize,
-    pub visible: bool,
+pub struct RoundedRectManagerDescriptor;
 
-    instance: Handle<RoundedRectInstance>,
-    control: Handle<RenderControl>,
-    cmd: Commander,
-}
-
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct RoundedRectDescriptor {
     pub rect: Rectangle,
     pub color: palette::Srgba,
-    pub order: isize,
+    pub shrink: f32,
+    pub value: f32,
     pub visible: bool,
+    pub order: isize,
 }
 
 pub struct RoundedRectManager {
@@ -30,11 +23,19 @@ pub struct RoundedRectManager {
     bind_layout: BindGroupLayout,
 }
 
-pub struct RoundedRectManagerDescriptor;
+pub struct RoundedRect {
+    pub rect: Rectangle,
+    pub color: palette::Srgba,
+    pub shrink: f32,
+    pub value: f32,
+    pub visible: bool,
+    pub order: isize,
 
-pub struct RoundedRectInstance {
     bind: BindGroup,
     uniform: Buffer,
+    queue: Queue,
+
+    control: Handle<RenderControl>,
 }
 
 #[repr(C)]
@@ -49,10 +50,6 @@ struct RoundedRectUniform {
 
     _pad: i32,
 }
-
-impl Element for RoundedRect {}
-impl Element for RoundedRectManager {}
-impl Element for RoundedRectInstance {}
 
 impl Descriptor for RoundedRectManagerDescriptor {
     type Target = Handle<RoundedRectManager>;
@@ -131,15 +128,27 @@ impl Descriptor for RoundedRectManagerDescriptor {
     }
 }
 
+impl Element for RoundedRectManager {}
+
+impl Default for RoundedRectDescriptor {
+    fn default() -> Self {
+        Self {
+            rect: Rectangle::new(0, 0, 100, 100),
+            color: palette::Srgba::new(1.0, 1.0, 1.0, 1.0),
+            shrink: 5.0,
+            value: 5.0,
+            order: 0,
+            visible: true,
+        }
+    }
+}
+
 impl Descriptor for RoundedRectDescriptor {
-    type Target = RoundedRect;
+    type Target = Handle<RoundedRect>;
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single::<Viewport>().unwrap();
         let manager = world.single_fetch::<RoundedRectManager>().unwrap();
-
-        // instance //
 
         let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("rounded_buffer"),
@@ -153,8 +162,8 @@ impl Descriptor for RoundedRectDescriptor {
                     self.color.alpha,
                 ],
                 vertex_extend: 10,
-                shrink: 5.0,
-                value: 5.0,
+                shrink: self.shrink,
+                value: self.value,
                 _pad: 0,
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
@@ -173,46 +182,45 @@ impl Descriptor for RoundedRectDescriptor {
             }],
         });
 
-        let instance = world.insert(RoundedRectInstance { bind, uniform });
-
         let control = world.insert(RenderControl {
             visible: self.visible,
             order: self.order,
         });
 
-        world.observer(control, move |Redraw, world, _| {
+        world.insert(RoundedRect {
+            rect: self.rect,
+            color: self.color,
+            shrink: self.shrink,
+            value: self.value,
+            order: self.order,
+            visible: self.visible,
+            bind,
+            uniform,
+            queue: render.queue.clone(),
+            control,
+        })
+    }
+}
+
+impl Element for RoundedRect {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(self.control, move |Redraw, world, _| {
             let manager = world.single_fetch::<RoundedRectManager>().unwrap();
-            let viewport = world.fetch(viewport).unwrap();
-            let instance = world.fetch(instance).unwrap();
+            let viewport = world.single_fetch::<Viewport>().unwrap();
+            let this = world.fetch(this).unwrap();
 
             let mut render = world.single_fetch_mut::<Render>().unwrap();
             let rpass = &mut render.active.as_mut().unwrap().rpass;
             rpass.set_pipeline(&manager.pipeline);
             rpass.set_bind_group(0, &viewport.bind, &[]);
-            rpass.set_bind_group(1, &instance.bind, &[]);
+            rpass.set_bind_group(1, &this.bind, &[]);
             rpass.draw(0..4, 0..1);
         });
 
-        world.dependency(control, instance);
-
-        RoundedRect {
-            rect: self.rect,
-            color: self.color,
-            order: self.order,
-            visible: self.visible,
-            instance,
-            control,
-            cmd: world.commander(),
-        }
+        world.dependency(self.control, this);
     }
-}
 
-impl RoundedRect {
-    pub fn upload(&self) {
-        let instance = self.instance;
-        let control = self.control;
-        let visible = self.visible;
-        let order = self.order;
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         let uniform = RoundedRectUniform {
             origin: self.rect.origin.into_array(),
             extend: self.rect.extend.into_array(),
@@ -223,29 +231,20 @@ impl RoundedRect {
                 self.color.alpha,
             ],
             vertex_extend: 10,
-            shrink: 5.0,
-            value: 5.0,
+            shrink: self.shrink,
+            value: self.value,
             _pad: 0,
         };
 
-        self.cmd.queue(move |world| {
-            let instance = world.fetch(instance).unwrap();
-            let render = world.single_fetch::<Render>().unwrap();
-            let bytes = bytemuck::bytes_of(&uniform);
-            render.queue.write_buffer(&instance.uniform, 0, bytes);
+        let bytes = bytemuck::bytes_of(&uniform);
+        self.queue.write_buffer(&self.uniform, 0, bytes);
 
-            let mut control = world.fetch_mut(control).unwrap();
-            control.order = order;
-            control.visible = visible;
-        });
-    }
-}
+        let control = self.control;
+        let order = self.order;
+        let visible = self.visible;
 
-impl Drop for RoundedRect {
-    fn drop(&mut self) {
-        let instance = self.instance;
-        self.cmd.queue(move |world| {
-            world.remove(instance);
-        });
+        let mut control = world.fetch_mut(control).unwrap();
+        control.order = order;
+        control.visible = visible;
     }
 }
