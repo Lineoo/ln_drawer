@@ -40,6 +40,7 @@ pub struct RenderActive {
 pub struct RenderControl {
     pub visible: bool,
     pub order: isize,
+    pub refreshing: bool,
 }
 
 pub struct RedrawPrepare;
@@ -128,16 +129,24 @@ impl Element for Render {
             }
 
             WindowEvent::RedrawRequested => {
-                // redraw prepare
+                // sorting phrase
+
+                let mut refreshing = false;
 
                 let mut buf = Vec::with_capacity(world.len::<RenderControl>());
                 world.foreach_fetch::<RenderControl>(|control, fetched| {
                     if fetched.visible {
                         buf.push((control, fetched.order));
                     }
+
+                    if fetched.refreshing {
+                        refreshing = true;
+                    }
                 });
 
                 buf.sort_by(|(_, a), (_, b)| a.cmp(b));
+
+                // redraw prepare
 
                 for (control, _) in &buf {
                     world.trigger(*control, RedrawPrepare);
@@ -194,13 +203,23 @@ impl Element for Render {
 
                 texture.present();
 
+                // active refreshing
+
+                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                if refreshing {
+                    lnwindow.request_redraw();
+                }
+
                 // record time
 
                 let now = Instant::now();
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 lnwindow.window.set_title(&format!(
-                    "frame time: {:.4}",
-                    (now - render.last_redraw).as_secs_f32()
+                    "frame time: {:.4} | {}",
+                    (now - render.last_redraw).as_secs_f32(),
+                    match refreshing {
+                        true => "ACTIVE",
+                        false => "INACTIVE",
+                    }
                 ));
 
                 render.last_redraw = now;

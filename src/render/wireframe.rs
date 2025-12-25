@@ -162,6 +162,7 @@ impl Descriptor for WireframeDescriptor {
         let control = world.insert(RenderControl {
             visible: self.visible,
             order: self.order,
+            refreshing: false,
         });
 
         world.observer(control, move |Redraw, world, _| {

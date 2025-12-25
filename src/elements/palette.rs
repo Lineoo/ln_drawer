@@ -126,6 +126,7 @@ impl Element for Palette {
         let control = world.insert(RenderControl {
             visible: true,
             order: 1,
+            refreshing: false,
         });
 
         world.observer(control, move |RedrawPrepare, world, _| {

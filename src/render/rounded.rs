@@ -4,7 +4,7 @@ use wgpu::*;
 use crate::measures::Rectangle;
 use crate::render::viewport::Viewport;
 use crate::render::{Redraw, Render, RenderControl};
-use crate::world::{Commander, Descriptor, Element, Handle, World};
+use crate::world::{Descriptor, Element, Handle, World};
 
 pub struct RoundedRectManagerDescriptor;
 
@@ -185,6 +185,7 @@ impl Descriptor for RoundedRectDescriptor {
         let control = world.insert(RenderControl {
             visible: self.visible,
             order: self.order,
+            refreshing: false,
         });
 
         world.insert(RoundedRect {
