@@ -9,11 +9,16 @@ use winit::{
 };
 
 use crate::{
-    elements::stroke::StrokeLayer, measures::Size, render::{
+    elements::stroke::StrokeLayer,
+    measures::Size,
+    render::{
         Render, canvas::CanvasManagerDescriptor, rounded::RoundedRectManagerDescriptor,
         text::TextManagerDescriptor, viewport::ViewportDescriptor,
         wireframe::WireframeManagerDescriptor,
-    }, theme::Luni, tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool}, world::{Element, Handle, World}
+    },
+    theme::Luni,
+    tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
+    world::{Element, Handle, World},
 };
 
 #[derive(Default)]
@@ -25,6 +30,8 @@ impl ApplicationHandler for Lnwin {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.world.single::<Lnwindow>().is_none() {
             let lnwindow = Lnwindow::new(event_loop);
+            lnwindow.window.request_redraw();
+
             self.world.insert(lnwindow);
             self.world.flush();
         }

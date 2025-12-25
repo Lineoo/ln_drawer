@@ -12,7 +12,7 @@ use wgpu::{
     StoreOp, Surface, SurfaceConfiguration, SurfaceTarget, TextureUsages, TextureViewDescriptor,
     Trace,
 };
-use winit::{dpi::PhysicalSize, event::WindowEvent};
+use winit::event::WindowEvent;
 
 use crate::{
     lnwin::Lnwindow,
@@ -41,6 +41,43 @@ pub struct RenderControl {
 
 pub struct RedrawPrepare;
 pub struct Redraw;
+
+impl Render {
+    pub async fn new(window: impl Into<SurfaceTarget<'static>>) -> Render {
+        let instance = Instance::default();
+
+        let surface = instance.create_surface(window).unwrap();
+
+        let adapter = instance
+            .request_adapter(&RequestAdapterOptions {
+                power_preference: PowerPreference::LowPower,
+                force_fallback_adapter: false,
+                compatible_surface: Some(&surface),
+            })
+            .await
+            .unwrap();
+
+        let (device, queue) = adapter
+            .request_device(&DeviceDescriptor {
+                label: None,
+                required_features: Features::empty(),
+                required_limits: Limits::defaults(),
+                memory_hints: MemoryHints::MemoryUsage,
+                trace: Trace::Off,
+            })
+            .await
+            .unwrap();
+
+        Render {
+            surface,
+            adapter,
+            device,
+            queue,
+            active: None,
+            clear_color: Color::BLACK,
+        }
+    }
+}
 
 impl Element for Render {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
@@ -148,40 +185,3 @@ impl Element for Render {
 }
 
 impl Element for RenderControl {}
-
-impl Render {
-    pub async fn new(window: impl Into<SurfaceTarget<'static>>) -> Render {
-        let instance = Instance::default();
-
-        let surface = instance.create_surface(window).unwrap();
-
-        let adapter = instance
-            .request_adapter(&RequestAdapterOptions {
-                power_preference: PowerPreference::LowPower,
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
-            .await
-            .unwrap();
-
-        let (device, queue) = adapter
-            .request_device(&DeviceDescriptor {
-                label: None,
-                required_features: Features::empty(),
-                required_limits: Limits::defaults(),
-                memory_hints: MemoryHints::MemoryUsage,
-                trace: Trace::Off,
-            })
-            .await
-            .unwrap();
-
-        Render {
-            surface,
-            adapter,
-            device,
-            queue,
-            active: None,
-            clear_color: Color::BLACK,
-        }
-    }
-}
