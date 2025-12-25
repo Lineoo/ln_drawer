@@ -24,7 +24,7 @@ impl Default for Luni {
             back_color: Srgba::new(0.1, 0.1, 0.1, 0.9),
             front_color: Srgba::new(0.3, 0.3, 0.3, 1.0),
             press_color: Srgba::new(0.5, 0.5, 0.5, 1.0),
-            roundness: 15.0,
+            roundness: 5.0,
             pad: 5,
         }
     }
@@ -49,8 +49,8 @@ impl Element for Luni {
                 rect: button.rect.expand(-this.pad),
                 order: button.order + 1,
                 color: this.front_color,
-                shrink: this.roundness - this.pad as f32,
-                value: this.roundness - this.pad as f32,
+                shrink: this.roundness,
+                value: this.roundness,
                 visible: false,
             });
 
@@ -79,8 +79,8 @@ impl Element for Luni {
                     Interact::ButtonRelease => {
                         front_frame.rect = back_frame.rect.expand(-this.pad);
                         front_frame.color = this.front_color;
-                        front_frame.shrink = back_frame.shrink - this.pad as f32;
-                        front_frame.value = back_frame.value - this.pad as f32;
+                        front_frame.shrink = back_frame.shrink;
+                        front_frame.value = back_frame.value;
                     }
                     Interact::WidgetEnabled => todo!(),
                     Interact::WidgetDisabled => todo!(),

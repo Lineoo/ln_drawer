@@ -155,7 +155,7 @@ impl Element for Menu {
                 };
 
                 let fetched = world.fetch(this).unwrap();
-                let frame = world.fetch(fetched.entries[i].frame).unwrap();
+                let frame = world.fetch(fetched.frame).unwrap();
                 (fetched.entries[i].action)(world, frame.rect.origin);
                 world.remove(this);
             });
