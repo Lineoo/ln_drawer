@@ -24,13 +24,13 @@ pub struct StrokeChunk {
     canvas: Handle<Canvas>,
 }
 
-#[derive(Debug, Default, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct StrokeLayerDescriptor {
     pub chunks: Vec<StrokeChunkDescriptor>,
     pub color: (f32, f32, f32, f32),
 }
 
-#[derive(Debug, Default, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct StrokeChunkDescriptor {
     pub key: (i32, i32),
     pub data: Option<Vec<u8>>,

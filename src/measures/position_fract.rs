@@ -2,7 +2,7 @@ use std::{fmt, ops};
 
 use crate::measures::{Fract, Position};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PositionFract {
     pub x: Fract,
     pub y: Fract,

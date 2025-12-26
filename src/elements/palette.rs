@@ -35,7 +35,7 @@ pub struct Palette {
     control: Handle<RenderControl>,
 }
 
-#[derive(Debug, Default, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct PaletteDescriptor {
     pub position: Position,
     pub hue: f32,

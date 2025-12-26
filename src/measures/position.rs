@@ -2,7 +2,7 @@ use std::{fmt, ops};
 
 use crate::measures::{Rectangle, Size};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Position {
     pub x: i32,
     pub y: i32,

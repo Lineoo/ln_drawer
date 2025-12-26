@@ -16,7 +16,9 @@ use wgpu::{
 use crate::{
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
-    render::{Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport},
+    render::{
+        Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport,
+    },
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -38,7 +40,7 @@ pub struct Canvas {
     control: Handle<RenderControl>,
 }
 
-#[derive(Debug, Default, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct CanvasDescriptor {
     pub data: Option<Vec<u8>>,
     pub width: u32,

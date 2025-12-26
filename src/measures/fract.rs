@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Fract {
     pub n: i32,
     pub nf: u32,

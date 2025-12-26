@@ -1,3 +1,5 @@
+use std::io::{Read, Write};
+
 use crate::{
     elements::{
         palette::{Palette, PaletteDescriptor},
@@ -7,7 +9,7 @@ use crate::{
     world::World,
 };
 
-#[derive(Debug, Default, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct SaveFile {
     palettes: Vec<PaletteDescriptor>,
     images: Vec<CanvasDescriptor>,
@@ -39,8 +41,13 @@ pub fn save_into_file(world: &World) {
         return;
     };
 
-    let Ok(_) = bincode::encode_into_std_write(save, &mut file, bincode::config::standard()) else {
-        log::warn!("failed to encode world file through bincode");
+    let Ok(bytes) = postcard::to_allocvec(&save) else {
+        log::warn!("failed to encode world file through postcard");
+        return;
+    };
+
+    let Ok(_) = file.write_all(&bytes) else {
+        log::warn!("failed to write world file");
         return;
     };
 }
@@ -51,9 +58,13 @@ pub fn read_from_file(world: &World) {
         return;
     };
 
-    let Ok(save): Result<SaveFile, _> =
-        bincode::decode_from_std_read(&mut file, bincode::config::standard())
-    else {
+    let mut bytes = Vec::new();
+    let Ok(_) = file.read_to_end(&mut bytes) else {
+        log::warn!("failed to read world file");
+        return;
+    };
+
+    let Ok(save): Result<SaveFile, _> = postcard::from_bytes(&bytes) else {
         log::warn!("failed to decode world file through bincode");
         return;
     };

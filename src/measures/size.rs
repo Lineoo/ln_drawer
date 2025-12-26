@@ -1,8 +1,6 @@
 use std::{fmt, ops};
 
-use crate::measures::Position;
-
-#[derive(Default, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Size {
     pub w: u32,
     pub h: u32,
@@ -61,7 +59,6 @@ impl ops::MulAssign<u32> for Size {
         *self = *self * rhs;
     }
 }
-
 
 impl Size {
     pub const MAX: Size = Size {
