@@ -1,9 +1,10 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
+use crate::lnwin::Lnwindow;
 use crate::measures::Rectangle;
 use crate::render::viewport::Viewport;
-use crate::render::{Redraw, Render, RenderControl};
+use crate::render::{Redraw, Render, RenderControl, RenderPortal};
 use crate::world::{Descriptor, Element, Handle, World};
 
 pub struct RoundedRectManagerDescriptor;
@@ -210,8 +211,8 @@ impl Element for RoundedRect {
             let viewport = world.single_fetch::<Viewport>().unwrap();
             let this = world.fetch(this).unwrap();
 
-            let mut render = world.single_fetch_mut::<Render>().unwrap();
-            let rpass = &mut render.active.as_mut().unwrap().rpass;
+            let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
+            let rpass = &mut rportal.active.as_mut().unwrap().rpass;
             rpass.set_pipeline(&manager.pipeline);
             rpass.set_bind_group(0, &viewport.bind, &[]);
             rpass.set_bind_group(1, &this.bind, &[]);
@@ -219,6 +220,8 @@ impl Element for RoundedRect {
         });
 
         world.dependency(self.control, this);
+
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
@@ -240,12 +243,14 @@ impl Element for RoundedRect {
         let bytes = bytemuck::bytes_of(&uniform);
         self.queue.write_buffer(&self.uniform, 0, bytes);
 
-        let control = self.control;
-        let order = self.order;
-        let visible = self.visible;
+        let mut control = world.fetch_mut(self.control).unwrap();
+        control.order = self.order;
+        control.visible = self.visible;
 
-        let mut control = world.fetch_mut(control).unwrap();
-        control.order = order;
-        control.visible = visible;
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+    }
+
+    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
     }
 }

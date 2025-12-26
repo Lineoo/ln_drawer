@@ -2,17 +2,15 @@ use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
     BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, FragmentState,
-    PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPipeline,
+    PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPipeline,
     RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
+    lnwin::Lnwindow,
     measures::Rectangle,
-    render::{
-        Redraw, Render, RenderControl,
-        vertex::VertexUniform, viewport::Viewport,
-    },
+    render::{Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport},
     world::{Commander, Descriptor, Element, Handle, World},
 };
 
@@ -20,9 +18,10 @@ pub struct Wireframe {
     pub rect: Rectangle,
     pub order: isize,
     pub visible: bool,
-    instance: Handle<WireframeInstance>,
+    bind: BindGroup,
+    uniform: Buffer,
+    queue: Queue,
     control: Handle<RenderControl>,
-    cmd: Commander,
 }
 
 #[derive(Debug, Default)]
@@ -38,15 +37,6 @@ pub struct WireframeManager {
 }
 
 pub struct WireframeManagerDescriptor;
-
-pub struct WireframeInstance {
-    bind: BindGroup,
-    uniform: Buffer,
-}
-
-impl Element for Wireframe {}
-impl Element for WireframeManager {}
-impl Element for WireframeInstance {}
 
 impl Descriptor for WireframeManagerDescriptor {
     type Target = Handle<WireframeManager>;
@@ -125,12 +115,13 @@ impl Descriptor for WireframeManagerDescriptor {
     }
 }
 
+impl Element for WireframeManager {}
+
 impl Descriptor for WireframeDescriptor {
-    type Target = Wireframe;
+    type Target = Handle<Wireframe>;
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single::<Viewport>().unwrap();
         let manager = &mut *world.single_fetch_mut::<WireframeManager>().unwrap();
 
         // instance //
@@ -157,37 +148,65 @@ impl Descriptor for WireframeDescriptor {
             }],
         });
 
-        let instance = world.insert(WireframeInstance { bind, uniform });
-
         let control = world.insert(RenderControl {
             visible: self.visible,
             order: self.order,
             refreshing: false,
         });
 
-        world.observer(control, move |Redraw, world, _| {
-            let manager = world.single_fetch::<WireframeManager>().unwrap();
-            let viewport = world.fetch(viewport).unwrap();
-            let instance = world.fetch(instance).unwrap();
-
-            let mut render = world.single_fetch_mut::<Render>().unwrap();
-            let rpass = &mut render.active.as_mut().unwrap().rpass;
-            rpass.set_pipeline(&manager.pipeline);
-            rpass.set_bind_group(0, &viewport.bind, &[]);
-            rpass.set_bind_group(1, &instance.bind, &[]);
-            rpass.draw(0..5, 0..1);
-        });
-
-        world.dependency(control, instance);
-
-        Wireframe {
+        world.insert(Wireframe {
             rect: self.rect,
             order: self.order,
             visible: self.visible,
-            instance,
+            bind,
+            uniform,
+            queue: render.queue.clone(),
             control,
-            cmd: world.commander(),
-        }
+        })
+    }
+}
+
+impl Element for Wireframe {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(self.control, move |Redraw, world, _| {
+            let manager = world.single_fetch::<WireframeManager>().unwrap();
+            let viewport = world.single_fetch::<Viewport>().unwrap();
+            let this = world.fetch(this).unwrap();
+
+            let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
+            let rpass = &mut rportal.active.as_mut().unwrap().rpass;
+            rpass.set_pipeline(&manager.pipeline);
+            rpass.set_bind_group(0, &viewport.bind, &[]);
+            rpass.set_bind_group(1, &this.bind, &[]);
+            rpass.draw(0..5, 0..1);
+        });
+
+        world.dependency(self.control, this);
+
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+    }
+
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+        let control = self.control;
+        let visible = self.visible;
+        let order = self.order;
+        let uniform = VertexUniform {
+            origin: self.rect.origin.into_array(),
+            extend: self.rect.extend.into_array(),
+        };
+
+        let bytes = bytemuck::bytes_of(&uniform);
+        self.queue.write_buffer(&self.uniform, 0, bytes);
+
+        let mut control = world.fetch_mut(control).unwrap();
+        control.order = order;
+        control.visible = visible;
+
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+    }
+
+    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
     }
 }
 
@@ -198,37 +217,5 @@ impl Wireframe {
             order: self.order,
             visible: self.visible,
         }
-    }
-
-    /// upload all public fields to GPU and corresponding control
-    pub fn upload(&self) {
-        let instance = self.instance;
-        let control = self.control;
-        let visible = self.visible;
-        let order = self.order;
-        let uniform = VertexUniform {
-            origin: self.rect.origin.into_array(),
-            extend: self.rect.extend.into_array(),
-        };
-
-        self.cmd.queue(move |world| {
-            let instance = world.fetch(instance).unwrap();
-            let render = world.single_fetch::<Render>().unwrap();
-            let bytes = bytemuck::bytes_of(&uniform);
-            render.queue.write_buffer(&instance.uniform, 0, bytes);
-
-            let mut control = world.fetch_mut(control).unwrap();
-            control.order = order;
-            control.visible = visible;
-        });
-    }
-}
-
-impl Drop for Wireframe {
-    fn drop(&mut self) {
-        let instance = self.instance;
-        self.cmd.queue(move |world| {
-            world.remove(instance);
-        });
     }
 }

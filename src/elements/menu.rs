@@ -6,7 +6,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
-        Render,
+        Render, RenderPortal,
         canvas::CanvasDescriptor,
         rounded::{RoundedRect, RoundedRectDescriptor},
         text::{Text, TextDescriptor},
@@ -28,7 +28,7 @@ pub struct Menu {
 }
 
 struct MenuEntry {
-    text: Text,
+    text: Handle<Text>,
     frame: Handle<RoundedRect>,
     action: Box<dyn Fn(&World, Position)>,
 }
@@ -170,6 +170,7 @@ impl Element for Menu {
             });
 
             world.dependency(entry.frame, this);
+            world.dependency(entry.text, this);
         }
     }
 }
@@ -184,14 +185,14 @@ impl Menu {
                 MenuEntryDescriptor {
                     label: "New Label".into(),
                     action: Box::new(move |world, position| {
-                        world.insert(world.build(TextDescriptor {
+                        world.build(TextDescriptor {
                             rect: Rectangle {
                                 origin: position,
                                 extend: Size::splat(100),
                             },
                             text: "New Label",
                             ..Default::default()
-                        }));
+                        });
                     }),
                 },
                 MenuEntryDescriptor {
@@ -210,7 +211,7 @@ impl Menu {
                             position,
                             include_bytes!("../../res/iconv2.png"),
                         );
-                        world.insert(world.build(image.unwrap()));
+                        world.build(image.unwrap());
                     }),
                 },
                 MenuEntryDescriptor {
@@ -228,11 +229,11 @@ impl Menu {
                 MenuEntryDescriptor {
                     label: "Switch Transparency".into(),
                     action: Box::new(move |world, _| {
-                        let mut render = world.single_fetch_mut::<Render>().unwrap();
-                        if render.clear_color == Color::TRANSPARENT {
-                            render.clear_color = Color::BLACK;
-                        } else if render.clear_color == Color::BLACK {
-                            render.clear_color = Color::TRANSPARENT;
+                        let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
+                        if rportal.clear_color == Color::TRANSPARENT {
+                            rportal.clear_color = Color::BLACK;
+                        } else if rportal.clear_color == Color::BLACK {
+                            rportal.clear_color = Color::TRANSPARENT;
                         }
                     }),
                 },
@@ -275,11 +276,11 @@ impl Menu {
                         });
 
                         world.observer(button, |Click, world, _| {
-                            let mut render = world.single_fetch_mut::<Render>().unwrap();
-                            if render.clear_color == Color::TRANSPARENT {
-                                render.clear_color = Color::BLACK;
-                            } else if render.clear_color == Color::BLACK {
-                                render.clear_color = Color::TRANSPARENT;
+                            let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
+                            if rportal.clear_color == Color::TRANSPARENT {
+                                rportal.clear_color = Color::BLACK;
+                            } else if rportal.clear_color == Color::BLACK {
+                                rportal.clear_color = Color::TRANSPARENT;
                             }
                         });
                     }),

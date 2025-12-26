@@ -36,23 +36,6 @@ struct ViewportUniform {
     zoom_fract: u32,
 }
 
-impl Element for Viewport {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
-        world.observer(lnwindow, move |event: &WindowEvent, world, lnwindow| {
-            if let WindowEvent::Resized(size) = event {
-                let mut viewport = world.fetch_mut(this).unwrap();
-                let lnwindow = world.fetch(lnwindow).unwrap();
-
-                viewport.size.w = size.width;
-                viewport.size.h = size.height;
-
-                viewport.upload();
-            }
-        });
-    }
-}
-
 impl Descriptor for ViewportDescriptor {
     type Target = Handle<Viewport>;
 
@@ -112,20 +95,22 @@ impl Descriptor for ViewportDescriptor {
     }
 }
 
-impl Viewport {
-    #[inline]
-    pub fn screen_to_world_absolute(&self, point: [f64; 2]) -> PositionFract {
-        self.center + self.screen_to_world_relative(point)
+impl Element for Viewport {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let lnwindow = world.single::<Lnwindow>().unwrap();
+        world.observer(lnwindow, move |event: &WindowEvent, world, _| {
+            if let WindowEvent::Resized(size) = event {
+                let mut viewport = world.fetch_mut(this).unwrap();
+
+                viewport.size.w = size.width;
+                viewport.size.h = size.height;
+            }
+        });
     }
 
-    pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> PositionFract {
-        let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
-        let x = delta[0] / scale * self.size.w as f64 / 2.0;
-        let y = delta[1] / scale * self.size.h as f64 / 2.0;
-        PositionFract::new(Fract::from_f64(x), Fract::from_f64(y))
-    }
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
 
-    pub fn upload(&self) {
         self.queue.write_buffer(
             &self.uniform,
             0,
@@ -137,5 +122,19 @@ impl Viewport {
                 zoom_fract: self.zoom.nf,
             }),
         );
+    }
+}
+
+impl Viewport {
+    #[inline]
+    pub fn screen_to_world_absolute(&self, point: [f64; 2]) -> PositionFract {
+        self.center + self.screen_to_world_relative(point)
+    }
+
+    pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> PositionFract {
+        let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
+        let x = delta[0] / scale * self.size.w as f64 / 2.0;
+        let y = delta[1] / scale * self.size.h as f64 / 2.0;
+        PositionFract::new(Fract::from_f64(x), Fract::from_f64(y))
     }
 }

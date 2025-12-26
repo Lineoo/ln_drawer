@@ -39,10 +39,7 @@ impl Element for CameraTool {
                         ]);
 
                         viewport.center = start.center + delta;
-                        viewport.upload();
                     }
-
-                    lnwindow.request_redraw();
                 }
 
                 WindowEvent::MouseInput {
@@ -56,9 +53,6 @@ impl Element for CameraTool {
                         cursor: this.cursor,
                         center: viewport.center,
                     });
-
-                    let lnwindow = world.fetch(lnwindow).unwrap();
-                    lnwindow.request_redraw();
                 }
 
                 WindowEvent::MouseInput {
@@ -68,9 +62,6 @@ impl Element for CameraTool {
                 } => {
                     let mut this = world.fetch_mut(this).unwrap();
                     this.start = None;
-
-                    let lnwindow = world.fetch(lnwindow).unwrap();
-                    lnwindow.request_redraw();
                 }
 
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -93,10 +84,6 @@ impl Element for CameraTool {
                     }
 
                     viewport.zoom += zoom_delta;
-                    viewport.upload();
-
-                    let lnwindow = world.fetch(lnwindow).unwrap();
-                    lnwindow.request_redraw();
                 }
 
                 _ => {}

@@ -3,7 +3,10 @@ use std::time::Instant;
 use palette::{Srgba, WithAlpha};
 
 use crate::{
-    lnwin::Lnwindow, render::{RedrawPrepare, RenderControl, rounded::RoundedRectDescriptor}, widgets::{button::Button, events::Interact}, world::{Element, Handle, World}
+    lnwin::Lnwindow,
+    render::{RedrawPrepare, RenderControl, rounded::RoundedRectDescriptor},
+    widgets::{button::Button, events::Interact},
+    world::{Element, Handle, World},
 };
 
 /// Trigger this to *try* to attach a headless widget to a specific theme
@@ -91,12 +94,16 @@ impl Element for Luni {
                 let mut control = world.fetch_mut(control).unwrap();
 
                 let factor = animation.update();
-                front_frame.color = this.front_color.with_alpha(factor);
-                front_frame.shrink = 5.0 + factor * 2.0;
-                front_frame.value = (1.0 - factor) * 5.0 + factor * 2.0;
-                front_frame.rect = back_frame.rect;
+                if factor != animation.target {
+                    front_frame.color = this.front_color.with_alpha(factor);
+                    front_frame.shrink = 5.0 + factor * 2.0;
+                    front_frame.value = (1.0 - factor) * 5.0 + factor * 2.0;
+                    front_frame.rect = back_frame.rect;
+                }
 
-                control.refreshing = factor != animation.target;
+                if control.refreshing {
+                    control.refreshing = factor != animation.target
+                }
             });
 
             world.dependency(back_frame, button.handle());

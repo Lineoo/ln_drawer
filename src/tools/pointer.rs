@@ -243,7 +243,6 @@ impl Element for PointerTool {
                         }
 
                         pointer.position = position;
-                        lnwindow.request_redraw();
                     }
 
                     WindowEvent::MouseInput {
@@ -262,7 +261,6 @@ impl Element for PointerTool {
                         }
 
                         pointer.pressed = true;
-                        lnwindow.request_redraw();
                     }
 
                     WindowEvent::MouseInput {
@@ -281,7 +279,6 @@ impl Element for PointerTool {
                         }
 
                         pointer.pressed = false;
-                        lnwindow.request_redraw();
                     }
 
                     WindowEvent::MouseInput {
@@ -292,8 +289,6 @@ impl Element for PointerTool {
                         if let Some(target) = intersect(world, pointer.position.floor()) {
                             world.trigger(target, PointerMenu(pointer.position.floor()));
                         }
-
-                        lnwindow.request_redraw();
                     }
 
                     _ => {}

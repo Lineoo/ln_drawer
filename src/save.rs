@@ -26,7 +26,7 @@ pub fn save_into_file(world: &World) {
     });
 
     if let Some(stroke) = world.single_fetch_mut::<StrokeLayer>() {
-        save.stroke.replace(stroke.to_descriptor());
+        save.stroke.replace(stroke.to_descriptor(world));
     }
 
     let Ok(()) = std::fs::create_dir_all("target") else {

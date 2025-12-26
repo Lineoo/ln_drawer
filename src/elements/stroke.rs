@@ -21,7 +21,7 @@ pub struct StrokeLayer {
 }
 
 pub struct StrokeChunk {
-    canvas: Canvas,
+    canvas: Handle<Canvas>,
 }
 
 #[derive(Debug, Default, bincode::Encode, bincode::Decode)]
@@ -109,11 +109,12 @@ impl Descriptor for StrokeChunkDescriptor {
 }
 
 impl StrokeLayer {
-    pub fn to_descriptor(&self) -> StrokeLayerDescriptor {
+    pub fn to_descriptor(&self, world: &World) -> StrokeLayerDescriptor {
         let mut layer = StrokeLayerDescriptor::default();
 
         for (key, chunk) in &self.chunks {
-            let painter = chunk.canvas.to_descriptor();
+            let canvas = world.fetch(chunk.canvas).unwrap();
+            let painter = canvas.to_descriptor();
             layer.chunks.push(StrokeChunkDescriptor {
                 key: *key,
                 data: painter.data,
@@ -138,8 +139,13 @@ impl StrokeLayer {
             })
         });
 
-        let (wx, wy) = StrokeLayer::world_to_texture(point, chunk.canvas.rect);
-        chunk.canvas.draw(wx, wy, self.color);
+        let canvas = chunk.canvas;
+        let color = self.color;
+        world.queue(move |world| {
+            let mut canvas = world.fetch_mut(canvas).unwrap();
+            let (wx, wy) = StrokeLayer::world_to_texture(point, canvas.rect);
+            canvas.draw(wx, wy, color);
+        });
     }
 
     pub fn pick(&mut self, point: Position, world: &World) {
@@ -149,8 +155,9 @@ impl StrokeLayer {
         );
 
         if let Some(chunk) = self.chunks.get(&chunk_key) {
-            let (wx, wy) = StrokeLayer::world_to_texture(point, chunk.canvas.rect);
-            self.color = chunk.canvas.read(wx, wy);
+            let canvas = world.fetch(chunk.canvas).unwrap();
+            let (wx, wy) = StrokeLayer::world_to_texture(point, canvas.rect);
+            self.color = canvas.read(wx, wy);
 
             world.foreach_fetch_mut::<Palette>(|_, mut palette| {
                 palette.set_color(self.color);

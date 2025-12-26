@@ -3,7 +3,7 @@ use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
     BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, Extent3d, FragmentState,
-    Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPipeline,
+    Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPipeline,
     RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
     ShaderModuleDescriptor, ShaderSource, ShaderStages, TexelCopyBufferLayout,
     TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension,
@@ -14,21 +14,28 @@ use wgpu::{
 };
 
 use crate::{
+    lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
-    render::{Redraw, Render, RenderControl, vertex::VertexUniform, viewport::Viewport},
-    world::{Commander, Descriptor, Element, Handle, World},
+    render::{Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport},
+    world::{Descriptor, Element, Handle, World},
 };
 
 pub struct Canvas {
     pub rect: Rectangle,
     pub order: isize,
     pub visible: bool,
+
     data: Vec<u8>,
     width: u32,
     height: u32,
-    instance: Handle<CanvasInstance>,
+
+    bind: BindGroup,
+    uniform: Buffer,
+    texture: Texture,
+    sampler: Sampler,
+    queue: Queue,
+
     control: Handle<RenderControl>,
-    cmd: Commander,
 }
 
 #[derive(Debug, Default, bincode::Encode, bincode::Decode)]
@@ -47,17 +54,6 @@ pub struct CanvasManager {
 }
 
 pub struct CanvasManagerDescriptor;
-
-pub struct CanvasInstance {
-    bind: BindGroup,
-    uniform: Buffer,
-    texture: Texture,
-    sampler: Sampler,
-}
-
-impl Element for Canvas {}
-impl Element for CanvasManager {}
-impl Element for CanvasInstance {}
 
 impl Descriptor for CanvasManagerDescriptor {
     type Target = Handle<CanvasManager>;
@@ -159,12 +155,13 @@ impl Descriptor for CanvasManagerDescriptor {
     }
 }
 
+impl Element for CanvasManager {}
+
 impl Descriptor for CanvasDescriptor {
-    type Target = Canvas;
+    type Target = Handle<Canvas>;
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single::<Viewport>().unwrap();
         let manager = &mut *world.single_fetch_mut::<CanvasManager>().unwrap();
 
         // instance //
@@ -243,35 +240,13 @@ impl Descriptor for CanvasDescriptor {
             ],
         });
 
-        let instance = world.insert(CanvasInstance {
-            bind,
-            uniform,
-            texture,
-            sampler,
-        });
-
         let control = world.insert(RenderControl {
             visible: self.visible,
             order: self.order,
             refreshing: false,
         });
 
-        world.observer(control, move |Redraw, world, _| {
-            let manager = world.single_fetch::<CanvasManager>().unwrap();
-            let viewport = world.fetch(viewport).unwrap();
-            let instance = world.fetch(instance).unwrap();
-
-            let mut render = world.single_fetch_mut::<Render>().unwrap();
-            let rpass = &mut render.active.as_mut().unwrap().rpass;
-            rpass.set_pipeline(&manager.pipeline);
-            rpass.set_bind_group(0, &viewport.bind, &[]);
-            rpass.set_bind_group(1, &instance.bind, &[]);
-            rpass.draw(0..4, 0..1);
-        });
-
-        world.dependency(control, instance);
-
-        Canvas {
+        world.insert(Canvas {
             data: match self.data {
                 Some(bytes) => bytes.to_vec(),
                 None => vec![0; (self.rect.width() * self.rect.height()) as usize * 4],
@@ -281,10 +256,54 @@ impl Descriptor for CanvasDescriptor {
             rect: self.rect,
             order: self.order,
             visible: self.visible,
-            instance,
+            bind,
+            uniform,
+            texture,
+            sampler,
+            queue: render.queue.clone(),
             control,
-            cmd: world.commander(),
-        }
+        })
+    }
+}
+
+impl Element for Canvas {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(self.control, move |Redraw, world, _| {
+            let manager = world.single_fetch::<CanvasManager>().unwrap();
+            let viewport = world.single_fetch::<Viewport>().unwrap();
+            let this = world.fetch(this).unwrap();
+
+            let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
+            let rpass = &mut rportal.active.as_mut().unwrap().rpass;
+            rpass.set_pipeline(&manager.pipeline);
+            rpass.set_bind_group(0, &viewport.bind, &[]);
+            rpass.set_bind_group(1, &this.bind, &[]);
+            rpass.draw(0..4, 0..1);
+        });
+
+        world.dependency(self.control, this);
+
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+    }
+
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+        let uniform = VertexUniform {
+            origin: self.rect.origin.into_array(),
+            extend: self.rect.extend.into_array(),
+        };
+
+        let bytes = bytemuck::bytes_of(&uniform);
+        self.queue.write_buffer(&self.uniform, 0, bytes);
+
+        let mut control = world.fetch_mut(self.control).unwrap();
+        control.order = self.order;
+        control.visible = self.visible;
+
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+    }
+
+    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
     }
 }
 
@@ -324,29 +343,6 @@ impl Canvas {
         CanvasWriter { canvas: self }
     }
 
-    /// upload all public fields to GPU and corresponding control
-    pub fn upload(&self) {
-        let instance = self.instance;
-        let control = self.control;
-        let visible = self.visible;
-        let order = self.order;
-        let uniform = VertexUniform {
-            origin: self.rect.origin.into_array(),
-            extend: self.rect.extend.into_array(),
-        };
-
-        self.cmd.queue(move |world| {
-            let instance = world.fetch(instance).unwrap();
-            let render = world.single_fetch::<Render>().unwrap();
-            let bytes = bytemuck::bytes_of(&uniform);
-            render.queue.write_buffer(&instance.uniform, 0, bytes);
-
-            let mut control = world.fetch_mut(control).unwrap();
-            control.order = order;
-            control.visible = visible;
-        });
-    }
-
     pub fn read(&self, x: i32, y: i32) -> Srgba {
         let x = x.rem_euclid(self.width as i32);
         let y = y.rem_euclid(self.height as i32);
@@ -376,51 +372,36 @@ impl Canvas {
         data[start + 2] = color.blue;
         data[start + 3] = color.alpha;
 
-        let instance = self.instance;
         let data = self.data[start..start + 4].to_vec();
-        self.cmd.queue(move |world| {
-            let render = world.single_fetch::<Render>().unwrap();
-            let instance = world.fetch(instance).unwrap();
-
-            render.queue.write_texture(
-                TexelCopyTextureInfo {
-                    texture: &instance.texture,
-                    mip_level: 0,
-                    origin: Origin3d {
-                        x: x as u32,
-                        y: y as u32,
-                        z: 0,
-                    },
-                    aspect: TextureAspect::All,
+        self.queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: Origin3d {
+                    x: x as u32,
+                    y: y as u32,
+                    z: 0,
                 },
-                &data,
-                TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(4),
-                    rows_per_image: Some(1),
-                },
-                Extent3d {
-                    width: 1,
-                    height: 1,
-                    depth_or_array_layers: 1,
-                },
-            );
-        });
+                aspect: TextureAspect::All,
+            },
+            &data,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     pub fn draw(&mut self, x: i32, y: i32, color: Srgba) {
         let prev = self.read(x, y);
         let next = color.over(prev);
         self.write(x, y, next);
-    }
-}
-
-impl Drop for Canvas {
-    fn drop(&mut self) {
-        let instance = self.instance;
-        self.cmd.queue(move |world| {
-            world.remove(instance);
-        });
     }
 }
 
@@ -469,32 +450,27 @@ impl CanvasWriter<'_> {
 
 impl Drop for CanvasWriter<'_> {
     fn drop(&mut self) {
-        let instance = self.canvas.instance;
         let rect = self.canvas.rect;
         let data = self.canvas.data.clone();
-        self.canvas.cmd.queue(move |world| {
-            let render = world.single_fetch::<Render>().unwrap();
-            let instance = world.fetch(instance).unwrap();
 
-            render.queue.write_texture(
-                TexelCopyTextureInfo {
-                    texture: &instance.texture,
-                    mip_level: 0,
-                    origin: Origin3d::ZERO,
-                    aspect: TextureAspect::All,
-                },
-                &data,
-                TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(rect.width() * 4),
-                    rows_per_image: Some(rect.height()),
-                },
-                Extent3d {
-                    width: rect.width(),
-                    height: rect.height(),
-                    depth_or_array_layers: 1,
-                },
-            );
-        });
+        self.canvas.queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &self.canvas.texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &data,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(rect.width() * 4),
+                rows_per_image: Some(rect.height()),
+            },
+            Extent3d {
+                width: rect.width(),
+                height: rect.height(),
+                depth_or_array_layers: 1,
+            },
+        );
     }
 }

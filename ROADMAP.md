@@ -61,16 +61,15 @@
 - [x] 可修改的圆角大小
 - [x] 无头组件库
 - [x] 修复首帧渲染
-- [ ] 动画系统
-- [ ] 渲染库简化
+- [x] 动画系统
+- [x] 渲染库简化
 - [ ] 渲染组件默认值优化
+- [ ] 从 bincode 迁移到 postcard
 - [ ] 圆角描边与阴影
+- [ ] 处理鼠标离开与进入的事件
 - [ ] 菜单分割线
 - [ ] 浮动信息框 Toast
 - **LnDrawer v0.1.2-alpha2**
-- [ ] world ops 简化
-    - [ ] singleton 自动插入
-    - [ ] trigger 自动后延
 - [ ] TextEdit 重新制作
     - [ ] Focus 由元素自己主动请求
 - [ ] 设置界面
@@ -127,6 +126,7 @@
         - [ ] 画笔按钮
     - [ ] 全 Alpha 区块垃圾清理
 - [ ] 世界锁模式 Panic, Block, Invisible
+- [ ] 元素“修改时间”与编组哈希
 - [ ] async 异步支持
 - **LnDrawer v0.2.0**
 
@@ -423,6 +423,7 @@ Viewport 在这个语境下其实是两个东西：
     - 切换 `Switch`
 3. 滑条 `Slider`
     - 滑动 `Slide`
+    - 跃动 `Leap`
 4. 宽滑条 `WideSlider`
     - 滑动 `Slide`
 
@@ -430,8 +431,12 @@ Viewport 在这个语境下其实是两个东西：
 1. 数字选择器 `NumberScroll`
     - 增加/减少 `Scroll`
 2. 颜色选择器 `ColorPicker`
+    - 点击 `Click`
     - 选择 `Pick<Color>`
-3. 文本编辑 `TextEdit`
+3. 枚举选择器 `VariantPicker<T>`
+    - 点击 `Click`
+    - 选择 `Pick<T>`
+4. 文本编辑 `TextEditor`
     - 鼠标输入 `CursorEdit`
     - 触摸输入 `TouchEdit`
     - 键盘输入 `KeyboardEdit`
@@ -439,7 +444,7 @@ Viewport 在这个语境下其实是两个东西：
 **第三类**包括了*可嵌套*、*复合用例*的组件。
 1. 单选框 `RadioButton`
 2. 表格 `Table`
-3. 日历
+3. 日历 `Calendar`
 
 ### 3. 渲染实现
 

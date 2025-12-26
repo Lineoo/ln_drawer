@@ -13,17 +13,20 @@ use wgpu::{
 };
 
 use crate::{
+    lnwin::Lnwindow,
     measures::Rectangle,
     render::{
-        Redraw, Render, RenderControl,
-        vertex::VertexUniform, viewport::Viewport,
+        Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport,
     },
     world::{Commander, Descriptor, Element, Handle, World},
 };
 
 pub struct Text {
-    instance: Handle<TextInstance>,
-    cmd: Commander,
+    bind: BindGroup,
+    uniform: wgpu::Buffer,
+    texture: Texture,
+    sampler: Sampler,
+    control: Handle<RenderControl>,
 }
 
 #[derive(Debug)]
@@ -43,29 +46,6 @@ pub struct TextManager {
 }
 
 pub struct TextManagerDescriptor;
-
-pub struct TextInstance {
-    bind: BindGroup,
-    uniform: wgpu::Buffer,
-    texture: Texture,
-    sampler: Sampler,
-}
-
-impl Default for TextDescriptor<'_> {
-    fn default() -> Self {
-        Self {
-            text: Default::default(),
-            rect: Rectangle::new(0, 0, 200, 24),
-            metrics: Metrics::new(24.0, 20.0),
-            order: 100,
-            visible: true,
-        }
-    }
-}
-
-impl Element for Text {}
-impl Element for TextManager {}
-impl Element for TextInstance {}
 
 impl Descriptor for TextManagerDescriptor {
     type Target = Handle<TextManager>;
@@ -180,12 +160,25 @@ impl Descriptor for TextManagerDescriptor {
     }
 }
 
+impl Element for TextManager {}
+
+impl Default for TextDescriptor<'_> {
+    fn default() -> Self {
+        Self {
+            text: Default::default(),
+            rect: Rectangle::new(0, 0, 200, 24),
+            metrics: Metrics::new(24.0, 20.0),
+            order: 100,
+            visible: true,
+        }
+    }
+}
+
 impl Descriptor for TextDescriptor<'_> {
-    type Target = Text;
+    type Target = Handle<Text>;
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single::<Viewport>().unwrap();
         let manager = &mut *world.single_fetch_mut::<TextManager>().unwrap();
 
         // instance //
@@ -283,47 +276,48 @@ impl Descriptor for TextDescriptor<'_> {
             ],
         });
 
-        let instance = world.insert(TextInstance {
-            bind,
-            uniform,
-            texture,
-            sampler,
-        });
-
         let control = world.insert(RenderControl {
             visible: self.visible,
             order: self.order,
             refreshing: false,
         });
 
-        world.observer(control, move |Redraw, world, _| {
-            let manager = world.single_fetch::<TextManager>().unwrap();
-            let viewport = world.fetch(viewport).unwrap();
-            let instance = world.fetch(instance).unwrap();
-
-            let mut render = world.single_fetch_mut::<Render>().unwrap();
-            let rpass = &mut render.active.as_mut().unwrap().rpass;
-            rpass.set_pipeline(&manager.pipeline);
-            rpass.set_bind_group(0, &viewport.bind, &[]);
-            rpass.set_bind_group(1, &instance.bind, &[]);
-            rpass.draw(0..4, 0..1);
-        });
-
-        world.dependency(control, instance);
-
-        Text {
-            instance,
-            cmd: world.commander(),
-        }
+        world.insert(Text {
+            bind,
+            uniform,
+            texture,
+            sampler,
+            control,
+        })
     }
 }
 
-impl Drop for Text {
-    fn drop(&mut self) {
-        let instance = self.instance;
-        self.cmd.queue(move |world| {
-            world.remove(instance);
+impl Element for Text {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(self.control, move |Redraw, world, _| {
+            let manager = world.single_fetch::<TextManager>().unwrap();
+            let viewport = world.single_fetch::<Viewport>().unwrap();
+            let this = world.fetch(this).unwrap();
+
+            let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
+            let rpass = &mut rportal.active.as_mut().unwrap().rpass;
+            rpass.set_pipeline(&manager.pipeline);
+            rpass.set_bind_group(0, &viewport.bind, &[]);
+            rpass.set_bind_group(1, &this.bind, &[]);
+            rpass.draw(0..4, 0..1);
         });
+
+        world.dependency(self.control, this);
+
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+    }
+
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+    }
+
+    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
     }
 }
 

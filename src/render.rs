@@ -5,7 +5,7 @@ pub mod vertex;
 pub mod viewport;
 pub mod wireframe;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use wgpu::{
     Adapter, Color, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device,
@@ -22,13 +22,25 @@ use crate::{
 };
 
 pub struct Render {
+    // wgpu interface
     surface: Surface<'static>,
     adapter: Adapter,
     device: Device,
     queue: Queue,
+
+    // render control
+    sequence: Vec<Handle<RenderControl>>,
+    refreshing: bool,
+
+    // time tracing
+    last_redraw: Option<Instant>,
+    last_control: Option<Instant>,
+    last_lossy: Option<Instant>,
+}
+
+pub struct RenderPortal {
     pub active: Option<RenderActive>,
     pub clear_color: Color,
-    pub last_redraw: Instant,
 }
 
 pub struct RenderActive {
@@ -42,6 +54,8 @@ pub struct RenderControl {
     pub order: isize,
     pub refreshing: bool,
 }
+
+pub struct LossyPrepare;
 
 pub struct RedrawPrepare;
 pub struct Redraw;
@@ -77,15 +91,22 @@ impl Render {
             adapter,
             device,
             queue,
-            active: None,
-            clear_color: Color::BLACK,
-            last_redraw: Instant::now(),
+            sequence: Vec::new(),
+            refreshing: false,
+            last_redraw: None,
+            last_control: None,
+            last_lossy: None,
         }
     }
 }
 
 impl Element for Render {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let portal = world.insert(RenderPortal {
+            active: None,
+            clear_color: Color::BLACK,
+        });
+
         let lnwindow = world.single::<Lnwindow>().unwrap();
         world.observer(lnwindow, move |event: &WindowEvent, world, _| match event {
             WindowEvent::Resized(size) => {
@@ -122,39 +143,70 @@ impl Element for Render {
                     view_formats: vec![],
                 };
 
-                log::debug!("present mode {:?} is selected", config.present_mode);
-                log::debug!("alpha mode {:?} is selected", config.alpha_mode);
+                log::trace!("resize in {}, {}", config.width, config.height);
+                log::trace!("present mode {:?} is selected", config.present_mode);
+                log::trace!("alpha mode {:?} is selected", config.alpha_mode);
 
                 render.surface.configure(&render.device, &config);
             }
 
             WindowEvent::RedrawRequested => {
-                // sorting phrase
+                let mut render = world.fetch_mut(this).unwrap();
+                let mut rportal = world.fetch_mut(portal).unwrap();
+                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let now = Instant::now();
 
-                let mut refreshing = false;
+                // render control
 
-                let mut buf = Vec::with_capacity(world.len::<RenderControl>());
-                world.foreach_fetch::<RenderControl>(|control, fetched| {
-                    if fetched.visible {
-                        buf.push((control, fetched.order));
+                if render
+                    .last_control
+                    .is_none_or(|last| now - last > Duration::from_millis(10))
+                {
+                    let mut refreshing = false;
+
+                    let mut buf = Vec::with_capacity(world.len::<RenderControl>());
+                    world.foreach_fetch::<RenderControl>(|control, fetched| {
+                        if fetched.visible {
+                            buf.push((control, fetched.order));
+                        }
+
+                        if fetched.refreshing {
+                            refreshing = true;
+                        }
+                    });
+
+                    buf.sort_by(|(_, a), (_, b)| a.cmp(b));
+
+                    render.sequence.clear();
+                    render.sequence.reserve(buf.len());
+                    for (control, _) in buf {
+                        render.sequence.push(control);
                     }
 
-                    if fetched.refreshing {
-                        refreshing = true;
-                    }
-                });
+                    render.refreshing = refreshing;
+                    render.last_control = Some(now);
+                }
 
-                buf.sort_by(|(_, a), (_, b)| a.cmp(b));
+                // lossy redraw prepare
+
+                if render
+                    .last_lossy
+                    .is_none_or(|last| now - last > Duration::from_millis(100))
+                {
+                    for control in &render.sequence {
+                        world.trigger(*control, LossyPrepare);
+                    }
+
+                    render.last_lossy = Some(now);
+                }
 
                 // redraw prepare
 
-                for (control, _) in &buf {
+                for control in &render.sequence {
                     world.trigger(*control, RedrawPrepare);
                 }
 
                 // setup render pass
-
-                let mut render = world.fetch_mut(this).unwrap();
 
                 let texture = render.surface.get_current_texture().unwrap();
                 let view = texture
@@ -173,7 +225,7 @@ impl Element for Render {
                             view: &view,
                             resolve_target: None,
                             ops: Operations {
-                                load: LoadOp::Clear(render.clear_color),
+                                load: LoadOp::Clear(rportal.clear_color),
                                 store: StoreOp::Store,
                             },
                             depth_slice: None,
@@ -182,47 +234,44 @@ impl Element for Render {
                     })
                     .forget_lifetime();
 
-                render.active.replace(RenderActive { encoder, rpass });
-
-                drop(render);
-
                 // call everyone to draw
 
-                for (control, _) in &buf {
+                rportal.active.replace(RenderActive { encoder, rpass });
+                drop(rportal);
+
+                for control in &render.sequence {
                     world.trigger(*control, Redraw);
                 }
 
+                let mut rportal = world.fetch_mut(portal).unwrap();
+                let active = rportal.active.take().unwrap();
+
                 // submit to GPU
 
-                let mut render = world.single_fetch_mut::<Render>().unwrap();
-                let active = render.active.take().unwrap();
-
                 drop(active.rpass);
-
                 render.queue.submit([active.encoder.finish()]);
-
                 texture.present();
 
                 // active refreshing
 
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                if refreshing {
+                if render.refreshing {
                     lnwindow.request_redraw();
                 }
 
                 // record time
 
-                let now = Instant::now();
-                lnwindow.window.set_title(&format!(
-                    "frame time: {:.4} | {}",
-                    (now - render.last_redraw).as_secs_f32(),
-                    match refreshing {
-                        true => "ACTIVE",
-                        false => "INACTIVE",
-                    }
-                ));
+                if let Some(last) = render.last_redraw {
+                    lnwindow.window.set_title(&format!(
+                        "frame time: {:.4} | {}",
+                        (now - last).as_secs_f32(),
+                        match render.refreshing {
+                            true => "ACTIVE",
+                            false => "INACTIVE",
+                        },
+                    ));
+                }
 
-                render.last_redraw = now;
+                render.last_redraw = Some(now);
             }
 
             _ => (),
@@ -230,4 +279,18 @@ impl Element for Render {
     }
 }
 
-impl Element for RenderControl {}
+impl Element for RenderPortal {}
+
+impl Element for RenderControl {
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+    }
+
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+    }
+
+    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
+        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+    }
+}
