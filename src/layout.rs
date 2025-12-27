@@ -1,4 +1,10 @@
+use crate::measures::Rectangle;
+
 pub mod resizable;
-pub mod events;
 pub mod transform;
 pub mod translatable;
+
+pub enum Layout {
+    Rectangle(Rectangle),
+    Alpha(f32),
+}

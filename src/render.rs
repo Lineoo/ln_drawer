@@ -317,8 +317,6 @@ fn determine_redraw(control: &RenderControl, world: &World) {
         return;
     }
 
-    if control.visible {
-        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-        lnwindow.window.request_redraw();
-    }
+    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+    lnwindow.window.request_redraw();
 }

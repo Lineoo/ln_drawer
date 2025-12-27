@@ -1,5 +1,5 @@
 use crate::{
-    layout::events::LayoutRect,
+    layout::Layout,
     measures::{Position, Rectangle},
     tools::pointer::{
         PointerEdge, PointerEdgeCollider, PointerHitEdge, PointerHitEdgeCheck, PointerStatus,
@@ -83,7 +83,7 @@ impl Element for Translatable {
                     _ => unreachable!(),
                 }
 
-                world.trigger(this.target, &LayoutRect(collider.rect));
+                world.trigger(this.target, &Layout::Rectangle(collider.rect));
             },
         );
     }

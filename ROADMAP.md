@@ -78,10 +78,14 @@
     - [x] 噪声生成
 - [x] 移动布局器
 - [x] Transform 变换树
-- [ ] 有限-无限工具包
+- [ ] 列表工具
     - [ ] 转换器
     - [ ] 可视时生成器
 - [ ] resize 限制
+- [ ] 新的获得性排列布局器 Layout
+    - [ ] 置于顶层
+    - [ ] 置于底层
+- [ ] 滑条、宽滑条
 - [ ] 音乐播放器
     - [ ] 统一音频接口
     - [ ] 用户界面
@@ -98,11 +102,11 @@
 - [ ] 鼠标样式
 - [ ] 菜单分割线
 - [ ] 浮动信息框 Toast
+- [ ] 调整发布编译配置
 - **LnDrawer v0.1.2**
-- [ ] 基于生命周期的缓冲
-    - [ ] 相交缓冲
-    - [ ] 渲染缓冲
-    - [ ] Aabb 与渲染剔除
+- [ ] Aabb 与剔除
+    - [ ] 相交分区
+    - [ ] 渲染分区
 - [ ] 迁移到 winit 0.31.0-beta2
 - [ ] 用于数位板/笔的代替控制按键
 - [ ] 超级传送门
@@ -560,8 +564,6 @@ world.observer(widget, |Switch, world, widget| {
 
 同时会在动画进行过程中通过 `Commander` **自动管理** `RenderControl`。
 
-为了减少这种情况，`update()` 返回的数值是 `Option<T>` 而非 `T`，鼓励尽可能少地改动组件。
-
 ## 布局器 ##
 
 这个是之前 Transform 系统的进化版。负责自动控制无头组件的位置排列与分布。
@@ -576,8 +578,16 @@ world.observer(widget, |Switch, world, widget| {
 
 1. `Transform` 从 `LayoutRectangle` 生成 `LayoutRectangle`，允许锚点，对齐等高级排版工具
 2. `Resizable` 从 `PointerColliderEdge` 生成 `LayoutRectangle` 来处理尺寸
+3. `Translatable` 从 `PointerColliderEdge` 生成 `LayoutRectangle` 来处理尺寸
+4. `List` 通过 `ListInsert` 来添加项目并通过 `Layout` 来自动排列
 
 ### 3. 布局事件
 
 1. `LayoutRectangle` 一个矩形
-2. `LayoutVisibility` 可见性指示
+2. `LayoutAlpha` 透明度指示
+
+## i18n 国际化 ##
+
+首先我们使用的文本库 `cosmic_text` 完整支持国际化字符串，那么接下来我的任务：
+- 让各种**布局器**支持 RTL 排版
+- 支持**字符串本地化**模式

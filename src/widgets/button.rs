@@ -1,5 +1,5 @@
 use crate::{
-    layout::events::LayoutRect,
+    layout::Layout,
     measures::Rectangle,
     tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerStatus},
     widgets::events::{Click, Interact},
@@ -73,9 +73,12 @@ impl Element for Button {
             },
         );
 
-        world.observer(this, |&LayoutRect(rect), world, this| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
+        world.observer(this, |layout: &Layout, world, this| match layout {
+            Layout::Rectangle(rect) => {
+                let mut this = world.fetch_mut(this).unwrap();
+                this.rect = *rect;
+            }
+            Layout::Alpha(alpha) => unimplemented!(),
         });
 
         world.dependency(self.collider, this);

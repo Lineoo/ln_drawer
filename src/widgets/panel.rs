@@ -1,5 +1,9 @@
 use crate::{
-    layout::events::LayoutRect, measures::Rectangle, tools::pointer::{PointerCollider, PointerHover}, widgets::events::Interact, world::{Descriptor, Element, Handle, World}
+    layout::Layout,
+    measures::Rectangle,
+    tools::pointer::{PointerCollider, PointerHover},
+    widgets::events::Interact,
+    world::{Descriptor, Element, Handle, World},
 };
 
 pub struct Panel {
@@ -53,9 +57,12 @@ impl Element for Panel {
             },
         );
 
-        world.observer(this, |&LayoutRect(rect), world, this| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
+        world.observer(this, |layout: &Layout, world, this| match layout {
+            Layout::Rectangle(rect) => {
+                let mut this = world.fetch_mut(this).unwrap();
+                this.rect = *rect;
+            }
+            Layout::Alpha(alpha) => unimplemented!(),
         });
 
         world.dependency(self.collider, this);
