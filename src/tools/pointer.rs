@@ -279,6 +279,22 @@ impl Element for PointerTool {
                         }
 
                         pointer.pressed = false;
+
+                        // update hovering immediately
+
+                        let landing = intersect(world, pointer.position.floor());
+
+                        if pointer.hovering != landing {
+                            if let Some(hovering) = pointer.hovering {
+                                world.trigger(hovering, PointerHover::Leave);
+                            }
+
+                            if let Some(landing) = landing {
+                                world.trigger(landing, PointerHover::Enter);
+                            }
+
+                            pointer.hovering = landing;
+                        }
                     }
 
                     WindowEvent::MouseInput {
@@ -289,6 +305,14 @@ impl Element for PointerTool {
                         if let Some(target) = intersect(world, pointer.position.floor()) {
                             world.trigger(target, PointerMenu(pointer.position.floor()));
                         }
+                    }
+
+                    WindowEvent::CursorLeft { .. } => {
+                        if let Some(hovering) = pointer.hovering {
+                            world.trigger(hovering, PointerHover::Leave);
+                        }
+
+                        pointer.hovering = None;
                     }
 
                     _ => {}
