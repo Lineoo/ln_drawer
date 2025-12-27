@@ -152,7 +152,6 @@ impl Element for Render {
 
             WindowEvent::RedrawRequested => {
                 let mut render = world.fetch_mut(this).unwrap();
-                let mut rportal = world.fetch_mut(portal).unwrap();
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let now = Instant::now();
 
@@ -208,6 +207,7 @@ impl Element for Render {
 
                 // setup render pass
 
+                let mut rportal = world.fetch_mut(portal).unwrap();
                 let texture = render.surface.get_current_texture().unwrap();
                 let view = texture
                     .texture
@@ -255,7 +255,7 @@ impl Element for Render {
                 // active refreshing
 
                 if render.refreshing {
-                    lnwindow.request_redraw();
+                    lnwindow.window.request_redraw();
                 }
 
                 // record time
@@ -283,14 +283,27 @@ impl Element for RenderPortal {}
 
 impl Element for RenderControl {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+        determine_redraw(self, world);
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+        determine_redraw(self, world);
     }
 
     fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
+        determine_redraw(self, world);
+    }
+}
+
+fn determine_redraw(control: &RenderControl, world: &World) {
+    let rportal = world.single_fetch::<RenderPortal>().unwrap();
+    if rportal.active.is_some() {
+        log::warn!("loop redraw detected");
+        return;
+    }
+
+    if control.visible {
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        lnwindow.window.request_redraw();
     }
 }

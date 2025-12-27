@@ -3,9 +3,9 @@ pub enum Interact {
     HoverLeave,
     ButtonPress,
     ButtonRelease,
-    WidgetEnabled,
-    WidgetDisabled,
-    Resized,
+    PropertyChange,
 }
 
 pub struct Click;
+
+pub struct Switch;

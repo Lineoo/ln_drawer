@@ -552,6 +552,10 @@ impl<T: Element> RefMut<'_, T> {
     pub fn handle(&self) -> Handle<T> {
         self.handle
     }
+
+    pub fn modified(&mut self) {
+        self.modified = true;
+    }
 }
 
 // Commander //

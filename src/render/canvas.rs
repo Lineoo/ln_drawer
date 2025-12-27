@@ -14,7 +14,6 @@ use wgpu::{
 };
 
 use crate::{
-    lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
         Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport,
@@ -284,8 +283,6 @@ impl Element for Canvas {
         });
 
         world.dependency(self.control, this);
-
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
@@ -300,12 +297,6 @@ impl Element for Canvas {
         let mut control = world.fetch_mut(self.control).unwrap();
         control.order = self.order;
         control.visible = self.visible;
-
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
-    }
-
-    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
     }
 }
 

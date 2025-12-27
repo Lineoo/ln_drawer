@@ -1,11 +1,11 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::lnwin::Lnwindow;
-use crate::measures::Rectangle;
-use crate::render::viewport::Viewport;
-use crate::render::{Redraw, Render, RenderControl, RenderPortal};
-use crate::world::{Descriptor, Element, Handle, World};
+use crate::{
+    measures::Rectangle,
+    render::{Redraw, Render, RenderControl, RenderPortal, viewport::Viewport},
+    world::{Descriptor, Element, Handle, World},
+};
 
 pub struct RoundedRectManagerDescriptor;
 
@@ -220,8 +220,6 @@ impl Element for RoundedRect {
         });
 
         world.dependency(self.control, this);
-
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
@@ -246,11 +244,5 @@ impl Element for RoundedRect {
         let mut control = world.fetch_mut(self.control).unwrap();
         control.order = self.order;
         control.visible = self.visible;
-
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
-    }
-
-    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
     }
 }

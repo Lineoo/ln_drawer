@@ -120,8 +120,4 @@ impl Lnwindow {
         let y = 1.0 - (position.y * 2.0) / size.height as f64;
         [x, y]
     }
-
-    pub fn request_redraw(&self) {
-        self.window.request_redraw();
-    }
 }

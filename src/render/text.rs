@@ -13,12 +13,11 @@ use wgpu::{
 };
 
 use crate::{
-    lnwin::Lnwindow,
     measures::Rectangle,
     render::{
         Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport,
     },
-    world::{Commander, Descriptor, Element, Handle, World},
+    world::{Descriptor, Element, Handle, World},
 };
 
 pub struct Text {
@@ -308,16 +307,6 @@ impl Element for Text {
         });
 
         world.dependency(self.control, this);
-
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
-    }
-
-    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
-    }
-
-    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
     }
 }
 

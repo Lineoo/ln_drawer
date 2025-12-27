@@ -15,7 +15,7 @@ use crate::{
     tools::pointer::{
         PointerCollider, PointerHit, PointerHover, PointerMenu, PointerStatus, PointerTool,
     },
-    widgets::{button::ButtonDescriptor, events::Click},
+    widgets::{button::ButtonDescriptor, check_button::CheckButtonDescriptor, events::{Click, Switch}},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -282,6 +282,29 @@ impl Menu {
                             } else if rportal.clear_color == Color::BLACK {
                                 rportal.clear_color = Color::TRANSPARENT;
                             }
+                        });
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "A Check Button With Luni".into(),
+                    action: Box::new(move |world, position| {
+                        let luni = world.single::<Luni>().unwrap();
+                        let button = world.build(CheckButtonDescriptor {
+                            rect: Rectangle {
+                                origin: position,
+                                extend: Size::splat(100),
+                            },
+                            checked: false,
+                            order: 20,
+                        });
+
+                        world.queue(move |world| {
+                            world.trigger(luni, Attach(button));
+                        });
+
+                        world.observer(button, |Switch, world, button| {
+                            let mut button = world.fetch_mut(button).unwrap();
+                            button.checked = !button.checked;
                         });
                     }),
                 },

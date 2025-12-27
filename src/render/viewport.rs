@@ -4,7 +4,7 @@ use winit::event::WindowEvent;
 
 use crate::lnwin::Lnwindow;
 use crate::measures::{Fract, PositionFract, Size};
-use crate::render::Render;
+use crate::render::{Render, RenderControl};
 use crate::world::{Descriptor, Element, Handle, World};
 
 pub struct Viewport {
@@ -17,6 +17,7 @@ pub struct Viewport {
     pub layout: BindGroupLayout,
 
     queue: Queue,
+    control: Handle<RenderControl>,
 }
 
 #[derive(Debug, Default)]
@@ -83,6 +84,12 @@ impl Descriptor for ViewportDescriptor {
             }],
         });
 
+        let control = world.insert(RenderControl {
+            visible: true,
+            order: 0,
+            refreshing: false,
+        });
+
         world.insert(Viewport {
             size: self.size,
             center: self.center,
@@ -91,6 +98,7 @@ impl Descriptor for ViewportDescriptor {
             bind,
             layout,
             queue: render.queue.clone(),
+            control,
         })
     }
 }
@@ -109,8 +117,6 @@ impl Element for Viewport {
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        world.single_fetch::<Lnwindow>().unwrap().request_redraw();
-
         self.queue.write_buffer(
             &self.uniform,
             0,
@@ -122,6 +128,8 @@ impl Element for Viewport {
                 zoom_fract: self.zoom.nf,
             }),
         );
+
+        world.fetch_mut(self.control).unwrap().modified();
     }
 }
 
