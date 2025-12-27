@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use winit::event::{ElementState, MouseButton, WindowEvent};
 
 use crate::{
@@ -6,6 +8,13 @@ use crate::{
     render::viewport::Viewport,
     world::{Element, Handle, World},
 };
+
+#[derive(Debug, Default)]
+pub struct PointerTool {
+    position: PositionFract,
+    hovering: Option<Handle<PointerCollider>>,
+    pressed: bool,
+}
 
 /// See [`PointerColliderEdge`] for a more specific version for frame ops.
 ///
@@ -26,6 +35,8 @@ pub struct PointerEdgeCollider {
     pub order: isize,
 }
 
+// Events //
+
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHit {
     pub position: Position,
@@ -37,6 +48,19 @@ pub struct PointerHitEdge {
     pub position: Position,
     pub status: PointerStatus,
     pub edge: PointerEdge,
+}
+
+#[derive(Debug)]
+pub struct PointerHitCheck {
+    pub position: Position,
+    pub occlude: Cell<bool>,
+}
+
+#[derive(Debug)]
+pub struct PointerHitEdgeCheck {
+    pub position: Position,
+    pub edge: PointerEdge,
+    pub occlude: Cell<bool>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -70,13 +94,19 @@ pub enum PointerHover {
     Leave,
 }
 
+// Inner Implements //
+
 struct ColliderUpdate;
 struct ColliderEdgeLock {
     edge: Option<PointerEdge>,
 }
 
+impl Element for ColliderEdgeLock {}
+
+// Functions //
+
 impl PointerCollider {
-    pub fn fullscreen(order: isize) -> PointerCollider {
+    pub const fn fullscreen(order: isize) -> PointerCollider {
         PointerCollider {
             rect: Rectangle {
                 origin: Position::MIN,
@@ -87,9 +117,9 @@ impl PointerCollider {
     }
 }
 
-impl Element for PointerCollider {}
+// Behaviors //
 
-impl Element for ColliderEdgeLock {}
+impl Element for PointerCollider {}
 
 impl Element for PointerEdgeCollider {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
@@ -145,7 +175,7 @@ impl Element for PointerEdgeCollider {
                     lock.edge = Some(edge);
                     world.trigger(
                         this,
-                        PointerHitEdge {
+                        &PointerHitEdge {
                             position: event.position,
                             status: event.status,
                             edge,
@@ -156,7 +186,7 @@ impl Element for PointerEdgeCollider {
                 (PointerStatus::Moving, Some(edge)) => {
                     world.trigger(
                         this,
-                        PointerHitEdge {
+                        &PointerHitEdge {
                             position: event.position,
                             status: event.status,
                             edge,
@@ -168,7 +198,7 @@ impl Element for PointerEdgeCollider {
                     lock.edge = None;
                     world.trigger(
                         this,
-                        PointerHitEdge {
+                        &PointerHitEdge {
                             position: event.position,
                             status: event.status,
                             edge,
@@ -193,16 +223,9 @@ impl Element for PointerEdgeCollider {
     fn when_modify(&mut self, world: &World, this: Handle<Self>) {
         // will flow to the raw PointerCollider
         world.queue(move |world| {
-            world.trigger(this, ColliderUpdate);
+            world.trigger(this, &ColliderUpdate);
         });
     }
-}
-
-#[derive(Debug, Default)]
-pub struct PointerTool {
-    position: PositionFract,
-    hovering: Option<Handle<PointerCollider>>,
-    pressed: bool,
 }
 
 impl Element for PointerTool {
@@ -219,16 +242,26 @@ impl Element for PointerTool {
                         let position = viewport.screen_to_world_absolute(position);
 
                         if !pointer.pressed {
-                            // pointer transmit
-                            let landing = intersect(world, position.floor());
+                            let mut landing = None;
+                            for each in intersect(world, position.floor()) {
+                                let check = PointerHitCheck {
+                                    position: position.floor(),
+                                    occlude: Cell::new(true),
+                                };
+                                world.trigger(each, &check);
+                                if check.occlude.get() {
+                                    landing = Some(each);
+                                    break;
+                                }
+                            }
 
                             if pointer.hovering != landing {
                                 if let Some(hovering) = pointer.hovering {
-                                    world.trigger(hovering, PointerHover::Leave);
+                                    world.trigger(hovering, &PointerHover::Leave);
                                 }
 
                                 if let Some(landing) = landing {
-                                    world.trigger(landing, PointerHover::Enter);
+                                    world.trigger(landing, &PointerHover::Enter);
                                 }
 
                                 pointer.hovering = landing;
@@ -236,7 +269,7 @@ impl Element for PointerTool {
                         } else if let Some(hovering) = pointer.hovering {
                             world.trigger(
                                 hovering,
-                                PointerHit {
+                                &PointerHit {
                                     position: position.floor(),
                                     status: PointerStatus::Moving,
                                 },
@@ -254,7 +287,7 @@ impl Element for PointerTool {
                         if let Some(hovering) = pointer.hovering {
                             world.trigger(
                                 hovering,
-                                PointerHit {
+                                &PointerHit {
                                     position: pointer.position.floor(),
                                     status: PointerStatus::Press,
                                 },
@@ -272,7 +305,7 @@ impl Element for PointerTool {
                         if let Some(hovering) = pointer.hovering {
                             world.trigger(
                                 hovering,
-                                PointerHit {
+                                &PointerHit {
                                     position: pointer.position.floor(),
                                     status: PointerStatus::Release,
                                 },
@@ -283,15 +316,26 @@ impl Element for PointerTool {
 
                         // update hovering immediately
 
-                        let landing = intersect(world, pointer.position.floor());
+                        let mut landing = None;
+                        for each in intersect(world, pointer.position.floor()) {
+                            let check = PointerHitCheck {
+                                position: pointer.position.floor(),
+                                occlude: Cell::new(true),
+                            };
+                            world.trigger(each, &check);
+                            if check.occlude.get() {
+                                landing = Some(each);
+                                break;
+                            }
+                        }
 
                         if pointer.hovering != landing {
                             if let Some(hovering) = pointer.hovering {
-                                world.trigger(hovering, PointerHover::Leave);
+                                world.trigger(hovering, &PointerHover::Leave);
                             }
 
                             if let Some(landing) = landing {
-                                world.trigger(landing, PointerHover::Enter);
+                                world.trigger(landing, &PointerHover::Enter);
                             }
 
                             pointer.hovering = landing;
@@ -303,14 +347,15 @@ impl Element for PointerTool {
                         state: ElementState::Pressed,
                         ..
                     } => {
-                        if let Some(target) = intersect(world, pointer.position.floor()) {
-                            world.trigger(target, PointerMenu(pointer.position.floor()));
+                        let target = intersect(world, pointer.position.floor()).first().copied();
+                        if let Some(target) = target {
+                            world.trigger(target, &PointerMenu(pointer.position.floor()));
                         }
                     }
 
                     WindowEvent::CursorLeft { .. } => {
                         if let Some(hovering) = pointer.hovering {
-                            world.trigger(hovering, PointerHover::Leave);
+                            world.trigger(hovering, &PointerHover::Leave);
                         }
 
                         pointer.hovering = None;
@@ -320,36 +365,19 @@ impl Element for PointerTool {
                 }
             },
         );
-
-        // reproduce events
-        // personally not flavor, but no better idea tbh
-        // may figure out how the time i got click-through
-
-        world.observer(this, |event: &PointerHit, world, _| {
-            if let Some(hovering) = intersect(world, event.position) {
-                world.trigger(hovering, *event);
-            }
-        });
-
-        world.observer(this, |event: &PointerMenu, world, _| {
-            let PointerMenu(position) = *event;
-
-            if let Some(hovering) = intersect(world, position) {
-                world.trigger(hovering, *event);
-            }
-        });
     }
 }
 
-fn intersect(world: &World, point: Position) -> Option<Handle<PointerCollider>> {
-    let mut top_result = None;
+fn intersect(world: &World, point: Position) -> Vec<Handle<PointerCollider>> {
+    let mut result = Vec::with_capacity(8);
     let mut max_order = isize::MIN;
     world.foreach_fetch::<PointerCollider>(|handle, intersection| {
         if (intersection.order > max_order) && point.within(intersection.rect) {
             max_order = intersection.order;
-            top_result = Some(handle);
+            result.push((handle, intersection.order));
         }
     });
 
-    top_result
+    result.sort_by(|(_, a), (_, b)| b.cmp(a));
+    result.iter().map(|x| x.0).collect::<Vec<_>>()
 }

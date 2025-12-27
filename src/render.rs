@@ -201,7 +201,7 @@ impl Element for Render {
                     .is_none_or(|last| now - last > Duration::from_millis(100))
                 {
                     for control in &render.sequence {
-                        world.trigger(*control, LossyPrepare);
+                        world.trigger(*control, &LossyPrepare);
                     }
 
                     render.last_lossy = Some(now);
@@ -210,7 +210,7 @@ impl Element for Render {
                 // redraw prepare
 
                 for control in &render.sequence {
-                    world.trigger(*control, RedrawPrepare);
+                    world.trigger(*control, &RedrawPrepare);
                 }
 
                 // setup render pass
@@ -248,7 +248,7 @@ impl Element for Render {
                 drop(rportal);
 
                 for control in &render.sequence {
-                    world.trigger(*control, Redraw);
+                    world.trigger(*control, &Redraw);
                 }
 
                 let mut rportal = world.fetch_mut(portal).unwrap();

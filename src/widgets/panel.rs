@@ -45,10 +45,10 @@ impl Element for Panel {
             self.collider,
             move |event: &PointerHover, world, _| match event {
                 PointerHover::Enter => {
-                    world.trigger(this, Interact::HoverEnter);
+                    world.trigger(this, &Interact::HoverEnter);
                 }
                 PointerHover::Leave => {
-                    world.trigger(this, Interact::HoverLeave);
+                    world.trigger(this, &Interact::HoverLeave);
                 }
             },
         );
@@ -67,7 +67,7 @@ impl Element for Panel {
         collider.rect = self.rect;
 
         world.queue(move |world| {
-            world.trigger(this, Interact::PropertyChange);
+            world.trigger(this, &Interact::PropertyChange);
         });
     }
 }

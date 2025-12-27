@@ -22,7 +22,7 @@ impl Element for Focus {
             let fetched = world.fetch(this).unwrap();
 
             if let Some(focus_on) = fetched.focus {
-                world.trigger(focus_on, FocusInput(event.clone()));
+                world.trigger(focus_on, &FocusInput(event.clone()));
             }
         });
 
@@ -34,11 +34,11 @@ impl Element for Focus {
 
             if off != on {
                 if let Some(off) = off {
-                    world.trigger(off, FocusLeave);
+                    world.trigger(off, &FocusLeave);
                 }
 
                 if let Some(on) = on {
-                    world.trigger(on, FocusEnter);
+                    world.trigger(on, &FocusEnter);
                 }
             }
         });

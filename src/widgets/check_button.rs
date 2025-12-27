@@ -50,15 +50,15 @@ impl Element for CheckButton {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(self.collider, move |event: &PointerHit, world, _| {
             if let PointerStatus::Release = event.status {
-                world.trigger(this, Switch);
+                world.trigger(this, &Switch);
             }
 
             match event.status {
                 PointerStatus::Press => {
-                    world.trigger(this, Interact::ButtonPress);
+                    world.trigger(this, &Interact::ButtonPress);
                 }
                 PointerStatus::Release => {
-                    world.trigger(this, Interact::ButtonRelease);
+                    world.trigger(this, &Interact::ButtonRelease);
                 }
                 _ => {}
             }
@@ -68,10 +68,10 @@ impl Element for CheckButton {
             self.collider,
             move |event: &PointerHover, world, _| match event {
                 PointerHover::Enter => {
-                    world.trigger(this, Interact::HoverEnter);
+                    world.trigger(this, &Interact::HoverEnter);
                 }
                 PointerHover::Leave => {
-                    world.trigger(this, Interact::HoverLeave);
+                    world.trigger(this, &Interact::HoverLeave);
                 }
             },
         );
@@ -85,7 +85,7 @@ impl Element for CheckButton {
         collider.rect = self.rect;
 
         world.queue(move |world| {
-            world.trigger(this, Interact::PropertyChange);
+            world.trigger(this, &Interact::PropertyChange);
         });
     }
 }

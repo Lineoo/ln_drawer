@@ -59,7 +59,7 @@ impl Element for Animation<f32> {
             }
 
             if changed {
-                world.trigger(this.handle(), AnimationValue(value));
+                world.trigger(this.handle(), &AnimationValue(value));
             }
         });
 

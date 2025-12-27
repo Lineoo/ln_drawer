@@ -140,7 +140,7 @@ impl Element for Menu {
 
             world.queue(move |world| {
                 let pointer = world.single::<PointerTool>().unwrap();
-                world.trigger(pointer, PointerMenu(position));
+                world.trigger(pointer, &PointerMenu(position));
             });
         });
 
@@ -278,7 +278,7 @@ impl Menu {
                         });
 
                         world.queue(move |world| {
-                            world.trigger(luni, Attach(button));
+                            world.trigger(luni, &Attach(button));
                         });
 
                         world.observer(button, |Click, world, _| {
@@ -305,7 +305,7 @@ impl Menu {
                         });
 
                         world.queue(move |world| {
-                            world.trigger(luni, Attach(button));
+                            world.trigger(luni, &Attach(button));
                         });
 
                         world.observer(button, |Switch, world, button| {
@@ -336,7 +336,7 @@ impl Menu {
 
                         world.queue(move |world| {
                             let luni = world.single::<Luni>().unwrap();
-                            world.trigger(luni, Attach(panel));
+                            world.trigger(luni, &Attach(panel));
                         });
                     }),
                 },

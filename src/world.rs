@@ -418,13 +418,13 @@ impl World {
     }
 
     /// Will immediately triggered and acquire mutable access to `target`.
-    pub fn trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: E) -> usize {
+    pub fn trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: &E) -> usize {
         let mut cnt = 0;
         if let Some(observers) = self.single_fetch::<Observers<E>>()
             && let Some(observers) = observers.members.get(&target.cast())
         {
             for observer in observers.iter().filter_map(|x| self.fetch_mut(*x)) {
-                (observer.action)(&event, self);
+                (observer.action)(event, self);
                 cnt += 1;
             }
         }
@@ -755,7 +755,7 @@ mod test {
 
         world.dependency(obs, right);
 
-        world.trigger(left, TestEvent(10));
+        world.trigger(left, &TestEvent(10));
 
         world.flush();
 

@@ -67,8 +67,12 @@
 - **LnDrawer v0.1.2-alpha2**
 - [ ] 简单噪音播放器
     - [x] 动画系统泛化
-    - [ ] Transform 变换树
     - [x] 复选按钮
+    - [x] Resizable
+    - [ ] 指针相交穿透
+        - [ ] 完整列表返回
+        - [ ] 穿透事件
+    - [ ] Anchor 变换树
     - [ ] 按钮上的图片
     - [ ] 音频库
     - [ ] 噪声生成
@@ -181,7 +185,7 @@ impl Baz {
 impl Element for Baz {
     fn when_inserted(&mut self, handle: ElementHandle, world: &WorldCell) {
         // 过度包揽了自己不该干的活儿
-        let interface = world.single_mut::<Interface>().unwrap();
+        let interface = world.single_fetch_mut::<Interface>().unwrap();
         let inner = interface.create_painter(/* .. */);
         // self.inner 为 None 的状态只在初始化时存在，很别扭
         self.inner = Some(inner);
@@ -200,7 +204,7 @@ impl ElementDescriptor for BazDescriptor {
     type Target = Baz;
     fn prepare(self, world: &WorldCell) -> Self::Target {
         // 描述器专门用于从世界中提取数据进行构建
-        let interface = world.single_mut::<Interface>().unwrap();
+        let interface = world.single_fetch_mut::<Interface>().unwrap();
         let inner = interface.create_painter(/* .. */);
         // 没有非法状态
         Baz { inner }
@@ -237,16 +241,15 @@ world.observer(this.handle(), |/* */| { /* .. */ });
 我们推荐 observer 的正统用法。这意味着以下写法是不推荐的：
 ```rust
 struct ElementUpdate(ElementHandle);
-listener.observe::<ElementUpdate>(/* .. is that thing updated? */);
-world.trigger(ElementUpdate(handle));
+world.observer(listener, |ElementUpdate| /* .. is that thing updated? */);
+world.trigger(listener, ElementUpdate(that));
 ```
 
 而以下是推荐的:
 ```rust
 struct ElementUpdate;
-let obv = that.observe::<ElementUpdate>(/* .. I need to send it back to the listener .. */)
-(world.entry(obv).unwrap()).depend(listener);
-that.trigger(ElementUpdate);
+world.observe(that, |ElementUpdate| /* .. send it back to the listener .. */)
+that.trigger(that, ElementUpdate);
 ```
 
 ### 为什么 trigger 要是即时的？

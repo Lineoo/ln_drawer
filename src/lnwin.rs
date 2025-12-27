@@ -45,7 +45,7 @@ impl ApplicationHandler for Lnwin {
     ) {
         match self.world.single::<Lnwindow>() {
             Some(window) => {
-                self.world.trigger(window, event);
+                self.world.trigger(window, &event);
                 self.world.flush();
             }
             None => event_loop.exit(),

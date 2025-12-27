@@ -100,7 +100,7 @@ impl Element for Resizable {
                     _ => unreachable!(),
                 }
 
-                world.trigger(this.target, LayoutRect(collider.rect));
+                world.trigger(this.target, &LayoutRect(collider.rect));
             },
         );
     }
