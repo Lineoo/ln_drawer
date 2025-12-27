@@ -292,7 +292,7 @@ impl Menu {
                     }),
                 },
                 MenuEntryDescriptor {
-                    label: "A Check Button With Luni".into(),
+                    label: "A Check Button With Luni and Resizable".into(),
                     action: Box::new(move |world, position| {
                         let luni = world.single::<Luni>().unwrap();
                         let button = world.build(CheckButtonDescriptor {
@@ -302,6 +302,16 @@ impl Menu {
                             },
                             checked: false,
                             order: 20,
+                        });
+
+                        world.build(ResizableDescriptor {
+                            rect: Rectangle {
+                                origin: position,
+                                extend: Size::splat(100),
+                            },
+                            order: 25,
+                            hollow: true,
+                            target: button.untyped(),
                         });
 
                         world.queue(move |world| {
@@ -331,6 +341,7 @@ impl Menu {
                                 extend: Size::splat(100),
                             },
                             order: 5,
+                            hollow: true,
                             target: panel.untyped(),
                         });
 

@@ -1,19 +1,23 @@
 use crate::{
     layout::events::LayoutRect,
     measures::{Position, Rectangle},
-    tools::pointer::{PointerEdge, PointerEdgeCollider, PointerHitEdge, PointerStatus},
+    tools::pointer::{
+        PointerEdge, PointerEdgeCollider, PointerHitEdge, PointerHitEdgeCheck, PointerStatus,
+    },
     world::{Descriptor, Element, Handle, World},
 };
 
 pub struct Resizable {
-    collider: Handle<PointerEdgeCollider>,
+    hollow: bool,
     target: Handle,
     start: Option<Start>,
+    collider: Handle<PointerEdgeCollider>,
 }
 
 pub struct ResizableDescriptor {
     pub rect: Rectangle,
     pub order: isize,
+    pub hollow: bool,
     pub target: Handle,
 }
 
@@ -33,15 +37,26 @@ impl Descriptor for ResizableDescriptor {
         });
 
         world.insert(Resizable {
-            collider,
+            hollow: self.hollow,
             target: self.target,
             start: None,
+            collider,
         })
     }
 }
 
 impl Element for Resizable {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(
+            self.collider,
+            move |check: &PointerHitEdgeCheck, world, _| {
+                let this = world.fetch(this).unwrap();
+                if this.hollow && check.edge == PointerEdge::Body {
+                    check.occlude.set(false);
+                }
+            },
+        );
+
         world.observer(
             self.collider,
             move |hit: &PointerHitEdge, world, collider| {

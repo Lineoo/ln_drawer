@@ -45,7 +45,7 @@ impl Element for Luni {
             });
 
             let front_frame = world.build(RoundedRectDescriptor {
-                rect: button.rect.expand(-this.pad),
+                rect: button.rect,
                 order: button.order + 1,
                 color: this.front_color.with_alpha(0.0),
                 shrink: this.roundness,
@@ -62,20 +62,19 @@ impl Element for Luni {
             world.observer(animation, move |&AnimationValue(value), world, _| {
                 let this = world.fetch(this).unwrap();
                 let mut front_frame = world.fetch_mut(front_frame).unwrap();
-                let back_frame = world.fetch(back_frame).unwrap();
 
                 front_frame.color = this.front_color.with_alpha(value);
                 front_frame.shrink = 5.0 + value * 2.0;
                 front_frame.value = (1.0 - value) * 5.0 + value * 2.0;
-                front_frame.rect = back_frame.rect;
             });
 
             world.dependency(back_frame, button.handle());
             world.dependency(front_frame, button.handle());
             world.dependency(animation, button.handle());
 
+            let button = button.handle();
             world.observer(
-                button.handle(),
+                button,
                 move |interact: &Interact, world, _| match interact {
                     Interact::HoverEnter => {
                         let mut animation = world.fetch_mut(animation).unwrap();
@@ -93,7 +92,16 @@ impl Element for Luni {
                         let mut animation = world.fetch_mut(animation).unwrap();
                         animation.target(1.0);
                     }
-                    Interact::PropertyChange => {}
+                    Interact::PropertyChange => {
+                        let button = world.fetch(button).unwrap();
+                        let mut front_frame = world.fetch_mut(front_frame).unwrap();
+                        let mut back_frame = world.fetch_mut(back_frame).unwrap();
+
+                        front_frame.rect = button.rect;
+                        front_frame.order = button.order + 1;
+                        back_frame.rect = button.rect;
+                        back_frame.order = button.order;
+                    }
                 },
             );
         });
@@ -112,7 +120,7 @@ impl Element for Luni {
             });
 
             let front_frame = world.build(RoundedRectDescriptor {
-                rect: button.rect.expand(-this.pad),
+                rect: button.rect,
                 order: button.order + 1,
                 color: this.front_color.with_alpha(0.0),
                 shrink: this.roundness,
@@ -134,12 +142,10 @@ impl Element for Luni {
             world.observer(front_anim, move |&AnimationValue(value), world, _| {
                 let this = world.fetch(this).unwrap();
                 let mut front_frame = world.fetch_mut(front_frame).unwrap();
-                let back_frame = world.fetch(back_frame).unwrap();
 
                 front_frame.color = this.front_color.with_alpha(value);
                 front_frame.shrink = 5.0 + value * 2.0;
                 front_frame.value = (1.0 - value) * 5.0 + value * 2.0;
-                front_frame.rect = back_frame.rect;
             });
 
             world.observer(back_anim, move |&AnimationValue(value), world, _| {
@@ -179,6 +185,14 @@ impl Element for Luni {
                             true => 0.5,
                             false => 0.0,
                         });
+
+                        let mut front_frame = world.fetch_mut(front_frame).unwrap();
+                        let mut back_frame = world.fetch_mut(back_frame).unwrap();
+
+                        front_frame.rect = button.rect;
+                        front_frame.order = button.order + 1;
+                        back_frame.rect = button.rect;
+                        back_frame.order = button.order;
                     }
                 },
             );

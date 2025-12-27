@@ -63,14 +63,14 @@ pub struct PointerHitEdgeCheck {
     pub occlude: Cell<bool>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PointerStatus {
     Press,
     Moving,
     Release,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PointerEdge {
     Leftdown,
     Leftup,
@@ -131,6 +131,53 @@ impl Element for PointerEdgeCollider {
         });
 
         let lock = world.insert(ColliderEdgeLock { edge: None });
+
+        world.observer(collider, move |event: &PointerHitCheck, world, _| {
+            let mut idx = 0;
+
+            let fetched = world.fetch(this).unwrap();
+            let shrink = fetched.rect.expand(-EXPAND);
+            drop(fetched);
+
+            if event.position.x < shrink.left() {
+                idx += 0;
+            } else if event.position.x < shrink.right() {
+                idx += 1;
+            } else {
+                idx += 2;
+            }
+
+            if event.position.y < shrink.down() {
+                idx += 0;
+            } else if event.position.y < shrink.up() {
+                idx += 3;
+            } else {
+                idx += 6;
+            }
+
+            let edge = match idx {
+                0 => PointerEdge::Leftdown,
+                1 => PointerEdge::Down,
+                2 => PointerEdge::Rightdown,
+                3 => PointerEdge::Left,
+                4 => PointerEdge::Body,
+                5 => PointerEdge::Right,
+                6 => PointerEdge::Leftup,
+                7 => PointerEdge::Up,
+                8 => PointerEdge::Rightup,
+                _ => unreachable!(),
+            };
+
+            let check = PointerHitEdgeCheck {
+                position: event.position,
+                edge,
+                occlude: event.occlude.clone(),
+            };
+
+            world.trigger(this, &check);
+
+            event.occlude.set(check.occlude.get());
+        });
 
         world.observer(collider, move |event: &PointerHit, world, _| {
             let mut lock = world.fetch_mut(lock).unwrap();

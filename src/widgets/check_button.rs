@@ -1,4 +1,5 @@
 use crate::{
+    layout::events::LayoutRect,
     measures::Rectangle,
     tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerStatus},
     widgets::events::{Click, Interact, Switch},
@@ -75,6 +76,11 @@ impl Element for CheckButton {
                 }
             },
         );
+
+        world.observer(this, |&LayoutRect(rect), world, this| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
+        });
 
         world.dependency(self.collider, this);
     }
