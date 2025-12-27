@@ -195,7 +195,7 @@ impl Descriptor for CanvasDescriptor {
             Some(data) => {
                 assert_eq!(
                     data.len(),
-                    (self.rect.width() * self.rect.height()) as usize * 4,
+                    (self.width * self.height) as usize * 4,
                     "data is not matched with its size"
                 );
                 render.device.create_texture_with_data(
@@ -302,7 +302,8 @@ impl Element for Canvas {
 
 impl CanvasDescriptor {
     pub fn from_bytes(
-        position: Position,
+        rect: Rectangle,
+        order: isize,
         bytes: &[u8],
     ) -> Result<CanvasDescriptor, Box<dyn std::error::Error>> {
         let image = image::load_from_memory(bytes)?;
@@ -310,11 +311,8 @@ impl CanvasDescriptor {
             data: Some(image.as_bytes().to_vec()),
             width: image.width(),
             height: image.height(),
-            rect: Rectangle {
-                origin: position,
-                extend: Size::new(image.width(), image.height()),
-            },
-            order: 0,
+            rect,
+            order,
             visible: true,
         })
     }

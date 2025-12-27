@@ -2,12 +2,12 @@ use wgpu::Color;
 use winit::window::WindowLevel;
 
 use crate::{
-    elements::{palette::PaletteDescriptor, panel::ExPanelDescriptor},
+    elements::{noise::SimpleNoiseDescriptor, palette::PaletteDescriptor},
     layout::resizable::ResizableDescriptor,
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
-        Render, RenderPortal,
+        RenderPortal,
         canvas::CanvasDescriptor,
         rounded::{RoundedRect, RoundedRectDescriptor},
         text::{Text, TextDescriptor},
@@ -156,14 +156,12 @@ impl Element for Menu {
             world.dependency(collider, this);
 
             world.observer(collider, move |event: &PointerHit, world, _| {
-                if let PointerStatus::Press = event.status {
-                    return;
+                if let PointerStatus::Release = event.status {
+                    let fetched = world.fetch(this).unwrap();
+                    let frame = world.fetch(fetched.frame).unwrap();
+                    (fetched.entries[i].action)(world, frame.rect.origin);
+                    world.remove(this);
                 };
-
-                let fetched = world.fetch(this).unwrap();
-                let frame = world.fetch(fetched.frame).unwrap();
-                (fetched.entries[i].action)(world, frame.rect.origin);
-                world.remove(this);
             });
 
             world.observer(collider, move |event: &PointerHover, world, _| {
@@ -214,7 +212,11 @@ impl Menu {
                     label: "LnDrawer".into(),
                     action: Box::new(move |world, position| {
                         let image = CanvasDescriptor::from_bytes(
-                            position,
+                            Rectangle {
+                                origin: position,
+                                extend: Size::splat(100),
+                            },
+                            0,
                             include_bytes!("../../res/iconv2.png"),
                         );
                         world.build(image.unwrap());
@@ -332,7 +334,7 @@ impl Menu {
                                 origin: position,
                                 extend: Size::splat(100),
                             },
-                            order: 0,
+                            order: 1,
                         });
 
                         world.build(ResizableDescriptor {
@@ -352,19 +354,9 @@ impl Menu {
                     }),
                 },
                 MenuEntryDescriptor {
-                    label: "[ex] Panel".into(),
+                    label: "Simple Noise".into(),
                     action: Box::new(move |world, position| {
-                        world.build(ExPanelDescriptor {
-                            rounded: RoundedRectDescriptor {
-                                rect: Rectangle {
-                                    origin: position,
-                                    extend: Size::splat(100),
-                                },
-                                color: palette::Srgba::new(0.82, 0.87, 1.00, 0.60),
-                                visible: true,
-                                ..Default::default()
-                            },
-                        });
+                        world.build(SimpleNoiseDescriptor { position });
                     }),
                 },
             ],

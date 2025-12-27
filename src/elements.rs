@@ -1,5 +1,4 @@
 pub mod menu;
+pub mod noise;
 pub mod palette;
 pub mod stroke;
-pub mod panel;
-pub mod noise;

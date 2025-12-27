@@ -51,15 +51,15 @@ impl Element for Animation<f32> {
             let mut this = world.fetch_mut(this).unwrap();
             let (value, changed) = this.update();
 
+            if changed {
+                world.trigger(this.handle(), &AnimationValue(value));
+            }
+
             if this.control_active != changed {
                 this.control_active = changed;
 
                 let mut control = world.fetch_mut(control).unwrap();
                 control.refreshing = changed;
-            }
-
-            if changed {
-                world.trigger(this.handle(), &AnimationValue(value));
             }
         });
 
@@ -69,6 +69,8 @@ impl Element for Animation<f32> {
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         if self.need_redraw {
             self.need_redraw = false;
+            self.control_active = true;
+            self.last_update = Instant::now();
             let mut control = world.fetch_mut(self.control).unwrap();
             control.refreshing = true;
         }
@@ -87,12 +89,9 @@ impl Animation<f32> {
 
         (clamped, changed)
     }
-}
 
-impl<T> Animation<T> {
-    pub fn target(&mut self, value: T) {
+    pub fn target(&mut self, value: f32) {
         self.target = value;
-        self.last_update = Instant::now();
-        self.need_redraw = true;
+        self.need_redraw = self.current != value;
     }
 }

@@ -417,10 +417,8 @@ impl Element for PointerTool {
 
 fn intersect(world: &World, point: Position) -> Vec<Handle<PointerCollider>> {
     let mut result = Vec::with_capacity(8);
-    let mut max_order = isize::MIN;
     world.foreach_fetch::<PointerCollider>(|handle, intersection| {
-        if (intersection.order > max_order) && point.within(intersection.rect) {
-            max_order = intersection.order;
+        if point.within(intersection.rect) {
             result.push((handle, intersection.order));
         }
     });
