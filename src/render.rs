@@ -40,6 +40,7 @@ pub struct Render {
 
 pub struct RenderPortal {
     pub active: Option<RenderActive>,
+    pub redrawing: bool,
     pub clear_color: Color,
 }
 
@@ -104,6 +105,7 @@ impl Element for Render {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let portal = world.insert(RenderPortal {
             active: None,
+            redrawing: false,
             clear_color: Color::BLACK,
         });
 
@@ -154,6 +156,12 @@ impl Element for Render {
                 let mut render = world.fetch_mut(this).unwrap();
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let now = Instant::now();
+
+                // start redrawing
+
+                let mut rportal = world.fetch_mut(portal).unwrap();
+                rportal.redrawing = true;
+                drop(rportal);
 
                 // render control
 
@@ -271,7 +279,10 @@ impl Element for Render {
                     ));
                 }
 
+                // stop redrawing
+
                 render.last_redraw = Some(now);
+                rportal.redrawing = false;
             }
 
             _ => (),
@@ -297,8 +308,12 @@ impl Element for RenderControl {
 
 fn determine_redraw(control: &RenderControl, world: &World) {
     let rportal = world.single_fetch::<RenderPortal>().unwrap();
-    if rportal.active.is_some() {
-        log::warn!("loop redraw detected");
+    if rportal.redrawing {
+        // warn if it's in Redraw phase, ignore if it's in Prepare phase
+        if rportal.active.is_some() {
+            log::warn!("loop redraw detected");
+        }
+
         return;
     }
 

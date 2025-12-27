@@ -554,3 +554,19 @@ world.observer(widget, |Switch, world, widget| {
 为了减少这种情况，`update()` 返回的数值是 `Option<T>` 而非 `T`，鼓励尽可能少地改动组件。
 
 ## 布局器 ##
+
+这个是之前 Transform 系统的进化版。负责自动控制无头组件的位置排列与分布。
+
+### 1. 概述
+
+布局器提供类似传统节点树的**树状更新能力**，会在合适的时候触发布局事件，并由无头组件以及子布局器读取。
+
+### 2. 布局器
+
+1. `Resizable` 维护一个矩形，并通过 PointerTool 来处理尺寸
+2. `Anchor` 简单地从一个矩形生成另一个矩形，允许锚点，对齐等高级排版工具
+
+### 3. 布局事件
+
+1. `LayoutRectangle` 一个矩形
+2. `LayoutVisibility` 可见性指示

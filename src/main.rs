@@ -9,6 +9,7 @@ mod theme;
 mod tools;
 mod widgets;
 mod world;
+mod animation;
 
 use winit::{error::EventLoopError, event_loop::EventLoop};
 
