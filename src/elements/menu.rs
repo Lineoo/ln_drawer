@@ -3,7 +3,7 @@ use winit::window::WindowLevel;
 
 use crate::{
     elements::{noise::SimpleNoiseDescriptor, palette::PaletteDescriptor},
-    layout::resizable::ResizableDescriptor,
+    layout::{resizable::ResizableDescriptor, transform::Transform},
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
@@ -13,9 +13,7 @@ use crate::{
         text::{Text, TextDescriptor},
     },
     theme::{Attach, Luni},
-    tools::pointer::{
-        PointerCollider, PointerHit, PointerHover, PointerMenu, PointerStatus, PointerTool,
-    },
+    tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMenu, PointerStatus},
     widgets::{
         button::ButtonDescriptor,
         check_button::CheckButtonDescriptor,
@@ -135,13 +133,8 @@ impl Element for Menu {
             }
         });
 
-        world.observer(collider, move |&PointerMenu(position), world, _| {
+        world.observer(collider, move |&PointerMenu(_), world, _| {
             world.remove(this);
-
-            world.queue(move |world| {
-                let pointer = world.single::<PointerTool>().unwrap();
-                world.trigger(pointer, &PointerMenu(position));
-            });
         });
 
         world.dependency(self.frame, this);
@@ -357,6 +350,42 @@ impl Menu {
                     label: "Simple Noise".into(),
                     action: Box::new(move |world, position| {
                         world.build(SimpleNoiseDescriptor { position });
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "A Panel and A Button".into(),
+                    action: Box::new(move |world, position| {
+                        let panel = world.build(PanelDescriptor {
+                            rect: Rectangle::new_half(position, Size::new(120, 70)),
+                            order: 5,
+                        });
+
+                        let button = world.build(ButtonDescriptor {
+                            rect: Rectangle::new_half(position, Size::new(30, 30))
+                                + Position::new(0, -20),
+                            order: 10,
+                        });
+
+                        world.build(ResizableDescriptor {
+                            rect: Rectangle::new_half(position, Size::new(120, 70)),
+                            order: 15,
+                            hollow: true,
+                            target: panel.untyped(),
+                        });
+
+                        world.insert(Transform::anchor(
+                            (0.5, 0.0),
+                            Rectangle::new_half(position, Size::new(30, 30)),
+                            Position::new(-30, 10),
+                            panel.untyped(),
+                            button.untyped(),
+                        ));
+
+                        world.queue(move |world| {
+                            let luni = world.single::<Luni>().unwrap();
+                            world.trigger(luni, &Attach(panel));
+                            world.trigger(luni, &Attach(button));
+                        });
                     }),
                 },
             ],

@@ -70,6 +70,13 @@ impl Rectangle {
         }
     }
 
+    pub fn new_half(center: Position, half: Size) -> Rectangle {
+        Rectangle {
+            origin: center - Position::new(half.w as i32, half.h as i32),
+            extend: half * 2,
+        }
+    }
+
     #[inline]
     pub fn width(self) -> u32 {
         self.extend.w
@@ -100,7 +107,6 @@ impl Rectangle {
         self.origin.y.wrapping_add_unsigned(self.extend.h)
     }
 
-
     #[inline]
     pub fn left_down(self) -> Position {
         self.origin
@@ -129,7 +135,7 @@ impl Rectangle {
             self.origin.y.wrapping_add_unsigned(self.extend.h),
         )
     }
-    
+
     #[inline]
     pub fn with_left(self, left: i32) -> Rectangle {
         Rectangle::new(left, self.down(), self.right(), self.up())
