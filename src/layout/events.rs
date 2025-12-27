@@ -1,5 +1,3 @@
 use crate::measures::Rectangle;
 
-pub struct LayoutRect {
-    pub rect: Rectangle,
-}
+pub struct LayoutRect(pub Rectangle);

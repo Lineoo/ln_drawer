@@ -3,6 +3,7 @@ use winit::window::WindowLevel;
 
 use crate::{
     elements::{palette::PaletteDescriptor, panel::ExPanelDescriptor},
+    layout::resizable::ResizableDescriptor,
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
@@ -322,6 +323,15 @@ impl Menu {
                                 extend: Size::splat(100),
                             },
                             order: 0,
+                        });
+
+                        world.build(ResizableDescriptor {
+                            rect: Rectangle {
+                                origin: position,
+                                extend: Size::splat(100),
+                            },
+                            order: 5,
+                            target: panel.untyped(),
                         });
 
                         world.queue(move |world| {

@@ -103,14 +103,15 @@ impl Element for PointerEdgeCollider {
         let lock = world.insert(ColliderEdgeLock { edge: None });
 
         world.observer(collider, move |event: &PointerHit, world, _| {
-            let this = world.fetch(this).unwrap();
             let mut lock = world.fetch_mut(lock).unwrap();
 
             match (event.status, lock.edge) {
                 (PointerStatus::Press, None) => {
                     let mut idx = 0;
 
-                    let shrink = this.rect.expand(-EXPAND);
+                    let fetched = world.fetch(this).unwrap();
+                    let shrink = fetched.rect.expand(-EXPAND);
+                    drop(fetched);
 
                     if event.position.x < shrink.left() {
                         idx += 0;
@@ -143,7 +144,7 @@ impl Element for PointerEdgeCollider {
 
                     lock.edge = Some(edge);
                     world.trigger(
-                        this.handle(),
+                        this,
                         PointerHitEdge {
                             position: event.position,
                             status: event.status,
@@ -154,7 +155,7 @@ impl Element for PointerEdgeCollider {
 
                 (PointerStatus::Moving, Some(edge)) => {
                     world.trigger(
-                        this.handle(),
+                        this,
                         PointerHitEdge {
                             position: event.position,
                             status: event.status,
@@ -166,7 +167,7 @@ impl Element for PointerEdgeCollider {
                 (PointerStatus::Release, Some(edge)) => {
                     lock.edge = None;
                     world.trigger(
-                        this.handle(),
+                        this,
                         PointerHitEdge {
                             position: event.position,
                             status: event.status,

@@ -212,22 +212,26 @@ impl Element for Luni {
             world.dependency(frame, panel.handle());
             world.dependency(anim, panel.handle());
 
-            world.observer(
-                panel.handle(),
-                move |interact: &Interact, world, _| match interact {
-                    Interact::HoverEnter => {
-                        let mut animation = world.fetch_mut(anim).unwrap();
-                        animation.target(1.0);
-                    }
-                    Interact::HoverLeave => {
-                        let mut animation = world.fetch_mut(anim).unwrap();
-                        animation.target(0.0);
-                    }
-                    Interact::ButtonPress => {}
-                    Interact::ButtonRelease => {}
-                    Interact::PropertyChange => {}
-                },
-            );
+            let panel = panel.handle();
+            world.observer(panel, move |interact: &Interact, world, _| match interact {
+                Interact::HoverEnter => {
+                    let mut animation = world.fetch_mut(anim).unwrap();
+                    animation.target(1.0);
+                }
+                Interact::HoverLeave => {
+                    let mut animation = world.fetch_mut(anim).unwrap();
+                    animation.target(0.0);
+                }
+                Interact::ButtonPress => {}
+                Interact::ButtonRelease => {}
+                Interact::PropertyChange => {
+                    let panel = world.fetch(panel).unwrap();
+                    let mut frame = world.fetch_mut(frame).unwrap();
+
+                    frame.rect = panel.rect;
+                    frame.order = panel.order;
+                }
+            });
         });
     }
 }

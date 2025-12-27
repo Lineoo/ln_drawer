@@ -560,12 +560,14 @@ world.observer(widget, |Switch, world, widget| {
 
 ### 1. 概述
 
-布局器提供类似传统节点树的**树状更新能力**，会在合适的时候触发布局事件，并由无头组件以及子布局器读取。
+布局器提供各种**更新逻辑**，会在合适的时候触发**布局事件**，并由无头组件以及子布局器读取。
+
+布局器的设计类似于一个 **Observer 包装**，通过指定源和目标来传递事件，而布局器本身不接受/触发布局事件。
 
 ### 2. 布局器
 
-1. `Resizable` 维护一个矩形，并通过 PointerTool 来处理尺寸
-2. `Anchor` 简单地从一个矩形生成另一个矩形，允许锚点，对齐等高级排版工具
+1. `Anchor` 从 `LayoutRectangle` 生成 `LayoutRectangle`，允许锚点，对齐等高级排版工具
+2. `Resizable` 从 `PointerColliderEdge` 生成 `LayoutRectangle` 来处理尺寸
 
 ### 3. 布局事件
 
