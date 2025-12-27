@@ -10,6 +10,7 @@ mod tools;
 mod widgets;
 mod world;
 mod animation;
+pub mod layout;
 
 use winit::{error::EventLoopError, event_loop::EventLoop};
 

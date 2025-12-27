@@ -2,7 +2,7 @@ use wgpu::Color;
 use winit::window::WindowLevel;
 
 use crate::{
-    elements::{palette::PaletteDescriptor, panel::PanelDescriptor},
+    elements::{palette::PaletteDescriptor, panel::ExPanelDescriptor},
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
@@ -15,7 +15,12 @@ use crate::{
     tools::pointer::{
         PointerCollider, PointerHit, PointerHover, PointerMenu, PointerStatus, PointerTool,
     },
-    widgets::{button::ButtonDescriptor, check_button::CheckButtonDescriptor, events::{Click, Switch}},
+    widgets::{
+        button::ButtonDescriptor,
+        check_button::CheckButtonDescriptor,
+        events::{Click, Switch},
+        panel::PanelDescriptor,
+    },
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -309,9 +314,26 @@ impl Menu {
                     }),
                 },
                 MenuEntryDescriptor {
+                    label: "A Panel With Luni and Resizable".into(),
+                    action: Box::new(move |world, position| {
+                        let panel = world.build(PanelDescriptor {
+                            rect: Rectangle {
+                                origin: position,
+                                extend: Size::splat(100),
+                            },
+                            order: 0,
+                        });
+
+                        world.queue(move |world| {
+                            let luni = world.single::<Luni>().unwrap();
+                            world.trigger(luni, Attach(panel));
+                        });
+                    }),
+                },
+                MenuEntryDescriptor {
                     label: "[ex] Panel".into(),
                     action: Box::new(move |world, position| {
-                        world.build(PanelDescriptor {
+                        world.build(ExPanelDescriptor {
                             rounded: RoundedRectDescriptor {
                                 rect: Rectangle {
                                     origin: position,

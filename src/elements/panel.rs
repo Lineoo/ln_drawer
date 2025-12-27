@@ -6,7 +6,7 @@ use crate::{
 };
 
 /// !! EXPERIMENT ONLY !!
-pub struct Panel {
+pub struct ExPanel {
     rounded: Handle<RoundedRect>,
     collider: Handle<PointerEdgeCollider>,
     start: Option<Start>,
@@ -18,12 +18,12 @@ struct Start {
     rect: Rectangle,
 }
 
-pub struct PanelDescriptor {
+pub struct ExPanelDescriptor {
     pub rounded: RoundedRectDescriptor,
 }
 
-impl Descriptor for PanelDescriptor {
-    type Target = Handle<Panel>;
+impl Descriptor for ExPanelDescriptor {
+    type Target = Handle<ExPanel>;
 
     fn when_build(self, world: &World) -> Self::Target {
         let rounded = world.build(self.rounded);
@@ -32,7 +32,7 @@ impl Descriptor for PanelDescriptor {
             order: self.rounded.order,
         });
 
-        world.insert(Panel {
+        world.insert(ExPanel {
             rounded,
             collider,
             start: None,
@@ -40,7 +40,7 @@ impl Descriptor for PanelDescriptor {
     }
 }
 
-impl Element for Panel {
+impl Element for ExPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(
             self.collider,

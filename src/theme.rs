@@ -3,7 +3,7 @@ use palette::{Mix, Srgba, WithAlpha};
 use crate::{
     animation::{AnimationDescriptor, AnimationValue},
     render::rounded::RoundedRectDescriptor,
-    widgets::{button::Button, check_button::CheckButton, events::Interact},
+    widgets::{button::Button, check_button::CheckButton, events::Interact, panel::Panel},
     world::{Element, Handle, World},
 };
 
@@ -180,6 +180,52 @@ impl Element for Luni {
                             false => 0.0,
                         });
                     }
+                },
+            );
+        });
+
+        world.observer(this, |&Attach::<Panel>(panel), world, this| {
+            let panel = world.fetch(panel).unwrap();
+            let this = world.fetch(this).unwrap();
+
+            let frame = world.build(RoundedRectDescriptor {
+                rect: panel.rect,
+                order: panel.order,
+                color: this.back_color,
+                shrink: this.roundness,
+                value: this.roundness,
+                ..Default::default()
+            });
+
+            let anim = world.build(AnimationDescriptor {
+                init: 0.0,
+                factor: 5.0,
+            });
+
+            let this = this.handle();
+            world.observer(anim, move |&AnimationValue(value), world, _| {
+                let this = world.fetch(this).unwrap();
+                let mut back_frame = world.fetch_mut(frame).unwrap();
+                back_frame.color = this.back_color.mix(this.front_color, value);
+            });
+
+            world.dependency(frame, panel.handle());
+            world.dependency(anim, panel.handle());
+
+            world.observer(
+                panel.handle(),
+                move |interact: &Interact, world, _| match interact {
+                    Interact::HoverEnter => {
+                        let mut animation = world.fetch_mut(anim).unwrap();
+                        animation.target(1.0);
+                    }
+                    Interact::HoverLeave => {
+                        let mut animation = world.fetch_mut(anim).unwrap();
+                        animation.target(0.0);
+                    }
+                    Interact::ButtonPress => {}
+                    Interact::ButtonRelease => {}
+                    Interact::PropertyChange => {}
                 },
             );
         });
