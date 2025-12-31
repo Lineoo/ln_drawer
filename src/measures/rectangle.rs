@@ -188,4 +188,24 @@ impl Rectangle {
                 .wrapping_add(val),
         )
     }
+
+    /// will cause precise loss
+    pub fn lerp(self, rhs: Rectangle, factor: f32) -> Rectangle {
+        let x = self.origin.x as f32 * (1.0 - factor) + rhs.origin.x as f32 * factor;
+        let y = self.origin.y as f32 * (1.0 - factor) + rhs.origin.y as f32 * factor;
+
+        let w = self.extend.w as f32 * (1.0 - factor) + rhs.extend.w as f32 * factor;
+        let h = self.extend.h as f32 * (1.0 - factor) + rhs.extend.h as f32 * factor;
+
+        Rectangle {
+            origin: Position {
+                x: x.floor() as i32,
+                y: y.floor() as i32,
+            },
+            extend: Size {
+                w: w.floor() as u32,
+                h: h.floor() as u32,
+            },
+        }
+    }
 }

@@ -1,9 +1,11 @@
+use std::time::Duration;
+
 use wgpu::Color;
 use winit::window::WindowLevel;
 
 use crate::{
     elements::{noise::SimpleNoiseDescriptor, palette::PaletteDescriptor},
-    layout::{resizable::ResizableDescriptor, transform::Transform},
+    layout::{animator::AnimatorDescriptor, resizable::ResizableDescriptor, transform::Transform},
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
@@ -385,6 +387,36 @@ impl Menu {
                             let luni = world.single::<Luni>().unwrap();
                             world.trigger(luni, &Attach(panel));
                             world.trigger(luni, &Attach(button));
+                        });
+                    }),
+                },
+                MenuEntryDescriptor {
+                    label: "Animated Panel".into(),
+                    action: Box::new(move |world, position| {
+                        let panel = world.build(PanelDescriptor {
+                            rect: Rectangle {
+                                origin: position,
+                                extend: Size::splat(100),
+                            },
+                            order: 1,
+                        });
+
+                        world.build(AnimatorDescriptor {
+                            src: Rectangle {
+                                origin: position,
+                                extend: Size::splat(100),
+                            },
+                            dst: Rectangle {
+                                origin: position,
+                                extend: Size::splat(100),
+                            } + Position::new(0, 500),
+                            time: Duration::from_secs(5),
+                            target: panel.untyped(),
+                        });
+
+                        world.queue(move |world| {
+                            let luni = world.single::<Luni>().unwrap();
+                            world.trigger(luni, &Attach(panel));
                         });
                     }),
                 },

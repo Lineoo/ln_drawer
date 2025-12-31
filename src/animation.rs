@@ -1,8 +1,8 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::{
     render::{RedrawPrepare, RenderControl},
-    world::{Commander, Descriptor, Element, Handle, World},
+    world::{Descriptor, Element, Handle, World},
 };
 
 pub struct Animation<T> {
@@ -13,39 +13,42 @@ pub struct Animation<T> {
 
     control: Handle<RenderControl>,
     control_active: bool,
-    need_redraw: bool,
 }
 
 pub struct AnimationDescriptor<T> {
     pub init: T,
+    pub target: T,
     pub factor: f32,
 }
 
 pub struct AnimationValue<T>(pub T);
 
-impl Descriptor for AnimationDescriptor<f32> {
-    type Target = Handle<Animation<f32>>;
+pub trait AnimationType: Copy + PartialEq + 'static {
+    fn step(anim: &mut Animation<Self>, delta: Duration) -> Self;
+}
+
+impl<T: AnimationType> Descriptor for AnimationDescriptor<T> {
+    type Target = Handle<Animation<T>>;
 
     fn when_build(self, world: &World) -> Self::Target {
         let control = world.insert(RenderControl {
             visible: true,
             order: 0,
-            refreshing: false,
+            refreshing: self.init != self.target,
         });
 
         world.insert(Animation {
             current: self.init,
-            target: self.init,
+            target: self.target,
             factor: self.factor,
             last_update: Instant::now(),
             control,
-            control_active: false,
-            need_redraw: false,
+            control_active: self.init != self.target,
         })
     }
 }
 
-impl Element for Animation<f32> {
+impl<T: AnimationType> Element for Animation<T> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(self.control, move |RedrawPrepare, world, control| {
             let mut this = world.fetch_mut(this).unwrap();
@@ -67,8 +70,7 @@ impl Element for Animation<f32> {
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        if self.need_redraw {
-            self.need_redraw = false;
+        if self.current != self.target {
             self.control_active = true;
             self.last_update = Instant::now();
             let mut control = world.fetch_mut(self.control).unwrap();
@@ -77,11 +79,9 @@ impl Element for Animation<f32> {
     }
 }
 
-impl Animation<f32> {
-    fn update(&mut self) -> (f32, bool) {
-        let delta = (Instant::now() - self.last_update).as_secs_f32();
-        let dest = self.current + (self.target - self.current).signum() * self.factor * delta;
-        let clamped = dest.clamp(self.current.min(self.target), self.current.max(self.target));
+impl<T: AnimationType> Animation<T> {
+    fn update(&mut self) -> (T, bool) {
+        let clamped = T::step(self, Instant::now() - self.last_update);
         let changed = self.current != clamped;
 
         self.current = clamped;
@@ -90,8 +90,19 @@ impl Animation<f32> {
         (clamped, changed)
     }
 
-    pub fn target(&mut self, value: f32) {
+    pub fn reset(&mut self, value: T) {
+        self.current = value;
+    }
+
+    pub fn target(&mut self, value: T) {
         self.target = value;
-        self.need_redraw = self.current != value;
+    }
+}
+
+impl AnimationType for f32 {
+    fn step(anim: &mut Animation<Self>, delta: Duration) -> Self {
+        let dest = anim.current
+            + (anim.target - anim.current).signum() * anim.factor * delta.as_secs_f32();
+        dest.clamp(anim.current.min(anim.target), anim.current.max(anim.target))
     }
 }

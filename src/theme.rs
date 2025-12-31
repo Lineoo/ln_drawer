@@ -55,6 +55,7 @@ impl Element for Luni {
 
             let animation = world.build(AnimationDescriptor {
                 init: 0.0,
+                target: 0.0,
                 factor: 5.0,
             });
 
@@ -130,11 +131,13 @@ impl Element for Luni {
 
             let front_anim = world.build(AnimationDescriptor {
                 init: 0.0,
+                target: 0.0,
                 factor: 5.0,
             });
 
             let back_anim = world.build(AnimationDescriptor {
                 init: 0.0,
+                target: 0.0,
                 factor: 5.0,
             });
 
@@ -213,6 +216,7 @@ impl Element for Luni {
 
             let anim = world.build(AnimationDescriptor {
                 init: 0.0,
+                target: 0.0,
                 factor: 5.0,
             });
 
