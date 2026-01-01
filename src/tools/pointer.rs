@@ -119,7 +119,31 @@ impl PointerCollider {
 
 // Behaviors //
 
-impl Element for PointerCollider {}
+impl Element for PointerCollider {
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+        world.queue(|world| {
+            if let Some(mut pointer) = world.single_fetch_mut::<PointerTool>() {
+                pointer.update_hovering(world);
+            }
+        });
+    }
+
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+        world.queue(|world| {
+            if let Some(mut pointer) = world.single_fetch_mut::<PointerTool>() {
+                pointer.update_hovering(world);
+            }
+        });
+    }
+
+    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
+        world.queue(|world| {
+            if let Some(mut pointer) = world.single_fetch_mut::<PointerTool>() {
+                pointer.update_hovering(world);
+            }
+        });
+    }
+}
 
 impl Element for PointerEdgeCollider {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
@@ -288,31 +312,10 @@ impl Element for PointerTool {
                         let position = lnwindow.cursor_to_screen(*position);
                         let position = viewport.screen_to_world_absolute(position);
 
+                        pointer.position = position;
+
                         if !pointer.pressed {
-                            let mut landing = None;
-                            for each in intersect(world, position.floor()) {
-                                let check = PointerHitCheck {
-                                    position: position.floor(),
-                                    occlude: Cell::new(true),
-                                };
-                                world.trigger(each, &check);
-                                if check.occlude.get() {
-                                    landing = Some(each);
-                                    break;
-                                }
-                            }
-
-                            if pointer.hovering != landing {
-                                if let Some(hovering) = pointer.hovering {
-                                    world.trigger(hovering, &PointerHover::Leave);
-                                }
-
-                                if let Some(landing) = landing {
-                                    world.trigger(landing, &PointerHover::Enter);
-                                }
-
-                                pointer.hovering = landing;
-                            }
+                            pointer.update_hovering(world);
                         } else if let Some(hovering) = pointer.hovering {
                             world.trigger(
                                 hovering,
@@ -322,8 +325,6 @@ impl Element for PointerTool {
                                 },
                             );
                         }
-
-                        pointer.position = position;
                     }
 
                     WindowEvent::MouseInput {
@@ -360,33 +361,7 @@ impl Element for PointerTool {
                         }
 
                         pointer.pressed = false;
-
-                        // update hovering immediately
-
-                        let mut landing = None;
-                        for each in intersect(world, pointer.position.floor()) {
-                            let check = PointerHitCheck {
-                                position: pointer.position.floor(),
-                                occlude: Cell::new(true),
-                            };
-                            world.trigger(each, &check);
-                            if check.occlude.get() {
-                                landing = Some(each);
-                                break;
-                            }
-                        }
-
-                        if pointer.hovering != landing {
-                            if let Some(hovering) = pointer.hovering {
-                                world.trigger(hovering, &PointerHover::Leave);
-                            }
-
-                            if let Some(landing) = landing {
-                                world.trigger(landing, &PointerHover::Enter);
-                            }
-
-                            pointer.hovering = landing;
-                        }
+                        pointer.update_hovering(world);
                     }
 
                     WindowEvent::MouseInput {
@@ -412,6 +387,37 @@ impl Element for PointerTool {
                 }
             },
         );
+    }
+}
+
+impl PointerTool {
+    fn update_hovering(&mut self, world: &World) {
+        let position = self.position;
+
+        let mut landing = None;
+        for each in intersect(world, position.floor()) {
+            let check = PointerHitCheck {
+                position: position.floor(),
+                occlude: Cell::new(true),
+            };
+            world.trigger(each, &check);
+            if check.occlude.get() {
+                landing = Some(each);
+                break;
+            }
+        }
+
+        if self.hovering != landing {
+            if let Some(hovering) = self.hovering {
+                world.trigger(hovering, &PointerHover::Leave);
+            }
+
+            if let Some(landing) = landing {
+                world.trigger(landing, &PointerHover::Enter);
+            }
+
+            self.hovering = landing;
+        }
     }
 }
 

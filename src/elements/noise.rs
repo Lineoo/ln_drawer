@@ -6,8 +6,8 @@ use crate::{
     render::canvas::CanvasDescriptor,
     theme::{Attach, Luni},
     widgets::{
-        check_button::CheckButtonDescriptor,
-        events::{Interact, Switch},
+        button::ButtonDescriptor,
+        events::{Click, Interact},
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -49,11 +49,7 @@ impl Element for SimpleNoise {
         };
 
         let luni = world.single::<Luni>().unwrap();
-        let button = world.build(CheckButtonDescriptor {
-            rect,
-            checked: false,
-            order: 20,
-        });
+        let button = world.build(ButtonDescriptor { rect, order: 20 });
 
         let icon = world.build(
             CanvasDescriptor::from_bytes(
@@ -75,15 +71,42 @@ impl Element for SimpleNoise {
             world.trigger(luni, &Attach(button));
         });
 
-        world.observer(button, move |Switch, world, button| {
-            let mut button = world.fetch_mut(button).unwrap();
-            button.checked = !button.checked;
+        world.observer(button, move |Click, world, button| {
+            let button = world.fetch(button).unwrap();
 
-            let this = world.fetch(this).unwrap();
-            match button.checked {
-                true => this.sink.play(),
-                false => this.sink.pause(),
-            }
+            let play = world.build(ButtonDescriptor {
+                rect: button.rect,
+                order: 30,
+            });
+
+            let pause = world.build(ButtonDescriptor {
+                rect: button.rect.pad_left(10, 1),
+                order: 30,
+            });
+
+            world.queue(move |world| {
+                let luni = world.single::<Luni>().unwrap();
+                world.trigger(luni, &Attach(play));
+                world.trigger(luni, &Attach(pause));
+            });
+
+            world.observer(play, move |Click, world, play| {
+                let this = world.fetch(this).unwrap();
+                this.sink.play();
+                world.remove(play);
+            });
+
+            world.observer(pause, move |Click, world, pause| {
+                let this = world.fetch(this).unwrap();
+                this.sink.pause();
+                world.remove(pause);
+            });
+
+            let button = button.handle();
+            world.dependency(play, pause);
+            world.dependency(pause, play);
+            world.dependency(play, button);
+            world.dependency(pause, button);
         });
 
         world.observer(button, move |interact: &Interact, world, button| {

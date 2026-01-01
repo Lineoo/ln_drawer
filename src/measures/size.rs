@@ -1,5 +1,7 @@
 use std::{fmt, ops};
 
+use crate::measures::Position;
+
 #[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Size {
     pub w: u32,
@@ -68,6 +70,10 @@ impl Size {
 
     pub const fn new(w: u32, h: u32) -> Size {
         Size { w, h }
+    }
+
+    pub const fn to_position(self) -> Position {
+        Position { x: self.w as i32, y: self.h as i32 }
     }
 
     pub const fn splat(n: u32) -> Size {

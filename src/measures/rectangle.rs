@@ -142,8 +142,8 @@ impl Rectangle {
     }
 
     #[inline]
-    pub fn with_up(self, up: i32) -> Rectangle {
-        Rectangle::new(self.left(), self.down(), self.right(), up)
+    pub fn with_down(self, down: i32) -> Rectangle {
+        Rectangle::new(self.left(), down, self.right(), self.up())
     }
 
     #[inline]
@@ -152,8 +152,8 @@ impl Rectangle {
     }
 
     #[inline]
-    pub fn with_down(self, down: i32) -> Rectangle {
-        Rectangle::new(self.left(), down, self.right(), self.up())
+    pub fn with_up(self, up: i32) -> Rectangle {
+        Rectangle::new(self.left(), self.down(), self.right(), up)
     }
 
     #[inline]
@@ -174,6 +174,38 @@ impl Rectangle {
     #[inline]
     pub fn with_right_up(self, corner: Position) -> Rectangle {
         Rectangle::new(self.left(), self.down(), corner.x, corner.y)
+    }
+
+    #[inline]
+    pub fn pad_left(self, left: i32, n: usize) -> Rectangle {
+        Rectangle {
+            origin: self.origin - Position::new(self.extend.w as i32 + left, 0) * n as i32,
+            extend: self.extend,
+        }
+    }
+
+    #[inline]
+    pub fn pad_down(self, down: i32, n: usize) -> Rectangle {
+        Rectangle {
+            origin: self.origin - Position::new(0, self.extend.h as i32 + down) * n as i32,
+            extend: self.extend,
+        }
+    }
+
+    #[inline]
+    pub fn pad_right(self, right: i32, n: usize) -> Rectangle {
+        Rectangle {
+            origin: self.origin + Position::new(self.extend.w as i32 + right, 0) * n as i32,
+            extend: self.extend,
+        }
+    }
+
+    #[inline]
+    pub fn pad_up(self, up: i32, n: usize) -> Rectangle {
+        Rectangle {
+            origin: self.origin + Position::new(0, self.extend.h as i32 + up) * n as i32,
+            extend: self.extend,
+        }
     }
 
     pub fn expand(self, val: i32) -> Rectangle {

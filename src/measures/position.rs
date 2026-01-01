@@ -43,6 +43,16 @@ impl ops::Sub for Position {
     }
 }
 
+impl ops::Mul<i32> for Position {
+    type Output = Position;
+    fn mul(self, rhs: i32) -> Self::Output {
+        Position {
+            x: self.x.saturating_mul(rhs),
+            y: self.y.saturating_mul(rhs),
+        }
+    }
+}
+
 impl ops::AddAssign for Position {
     fn add_assign(&mut self, rhs: Position) {
         *self = *self + rhs
