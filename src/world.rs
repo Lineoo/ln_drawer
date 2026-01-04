@@ -22,7 +22,7 @@ pub trait Element: Any {
     fn when_modify(&mut self, world: &World, this: Handle<Self>) {
         let _ = (world, this);
     }
-    
+
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {
         let _ = (world, this);
     }
@@ -130,8 +130,6 @@ impl Default for World {
 }
 
 impl World {
-    // lifecycle //
-
     /// Will access data from world to build target object.
     pub fn build<B: Descriptor>(&self, descriptor: B) -> B::Target {
         descriptor.when_build(self)
@@ -247,7 +245,9 @@ impl World {
         cnt
     }
 
-    /// Insertion without `flush` *will* be included
+    // cell-mode ops //
+
+    /// Check whether target element exists, insertion without `flush` *will* be included.
     pub fn validate<T: ?Sized>(&self, handle: Handle<T>) -> bool {
         if self.removed.borrow().contains(&handle.cast()) {
             return false;
@@ -260,18 +260,34 @@ impl World {
         self.members.contains_key(&handle.cast())
     }
 
-    // cell-mode ops //
+    /// Check whether target element can be borrowed immutably, insertion without
+    /// `flush` will *NOT* be included.
+    pub fn available<T: ?Sized>(&self, handle: Handle<T>) -> bool {
+        if self.removed.borrow().contains(&handle.cast()) {
+            return false;
+        }
 
-    /// Check whether target element can be borrowed immutably
-    pub fn occupied<T: ?Sized>(&self, handle: Handle<T>) -> bool {
+        if !self.members.contains_key(&handle.cast()) {
+            return false;
+        }
+
         let occupied = self.occupied.borrow();
-        occupied.get(&handle.cast()).is_some_and(|cnt| *cnt < 0)
+        occupied.get(&handle.cast()).is_none_or(|cnt| *cnt >= 0)
     }
 
-    /// Check whether target element can be borrowed mutably
-    pub fn occupied_mut<T: ?Sized>(&self, handle: Handle<T>) -> bool {
+    /// Check whether target element can be borrowed mutably, insertion without
+    /// `flush` will *NOT* be included.
+    pub fn available_mut<T: ?Sized>(&self, handle: Handle<T>) -> bool {
+        if self.removed.borrow().contains(&handle.cast()) {
+            return false;
+        }
+
+        if !self.members.contains_key(&handle.cast()) {
+            return false;
+        }
+
         let occupied = self.occupied.borrow();
-        occupied.get(&handle.cast()).is_some_and(|cnt| *cnt != 0)
+        occupied.get(&handle.cast()).is_none_or(|cnt| *cnt == 0)
     }
 
     pub fn commander(&self) -> Commander {
@@ -690,22 +706,22 @@ mod test {
         world.flush();
 
         {
-            assert!(!world.occupied(tester1h));
-            assert!(!world.occupied_mut(tester1h));
+            assert!(!world.available(tester1h));
+            assert!(!world.available_mut(tester1h));
         }
 
         {
             let _inserter1 = world.fetch_mut(tester1h).unwrap();
 
-            assert!(world.occupied(tester1h));
-            assert!(world.occupied_mut(tester1h));
+            assert!(world.available(tester1h));
+            assert!(world.available_mut(tester1h));
         }
 
         {
             let _inserter1 = world.fetch(tester1h).unwrap();
 
-            assert!(!world.occupied(tester1h));
-            assert!(world.occupied_mut(tester1h));
+            assert!(!world.available(tester1h));
+            assert!(world.available_mut(tester1h));
         }
     }
 

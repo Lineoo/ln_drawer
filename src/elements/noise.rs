@@ -4,7 +4,6 @@ use crate::{
     layout::translatable::TranslatableDescriptor,
     measures::{Position, Rectangle, Size},
     render::canvas::CanvasDescriptor,
-    theme::{Attach, Luni},
     widgets::{
         button::ButtonDescriptor,
         events::{Click, Interact},
@@ -48,8 +47,11 @@ impl Element for SimpleNoise {
             extend: Size::splat(70),
         };
 
-        let luni = world.single::<Luni>().unwrap();
-        let button = world.build(ButtonDescriptor { rect, order: 20 });
+        let button = world.build(ButtonDescriptor {
+            rect,
+            order: 20,
+            theme: None,
+        });
 
         let icon = world.build(
             CanvasDescriptor::from_bytes(
@@ -67,27 +69,19 @@ impl Element for SimpleNoise {
             target: button.untyped(),
         });
 
-        world.queue(move |world| {
-            world.trigger(luni, &Attach(button));
-        });
-
         world.observer(button, move |Click, world, button| {
             let button = world.fetch(button).unwrap();
 
             let play = world.build(ButtonDescriptor {
                 rect: button.rect,
                 order: 30,
+                theme: None,
             });
 
             let pause = world.build(ButtonDescriptor {
                 rect: button.rect.pad_left(10, 1),
                 order: 30,
-            });
-
-            world.queue(move |world| {
-                let luni = world.single::<Luni>().unwrap();
-                world.trigger(luni, &Attach(play));
-                world.trigger(luni, &Attach(pause));
+                theme: None,
             });
 
             world.observer(play, move |Click, world, play| {

@@ -14,7 +14,6 @@ use crate::{
         rounded::{RoundedRect, RoundedRectDescriptor},
         text::{Text, TextDescriptor},
     },
-    theme::{Attach, Luni},
     tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMenu, PointerStatus},
     widgets::{
         button::ButtonDescriptor,
@@ -265,17 +264,13 @@ impl Menu {
                 MenuEntryDescriptor {
                     label: "A Button With Luni".into(),
                     action: Box::new(move |world, position| {
-                        let luni = world.single::<Luni>().unwrap();
                         let button = world.build(ButtonDescriptor {
                             rect: Rectangle {
                                 origin: position,
                                 extend: Size::splat(100),
                             },
                             order: 20,
-                        });
-
-                        world.queue(move |world| {
-                            world.trigger(luni, &Attach(button));
+                            theme: None,
                         });
 
                         world.observer(button, |Click, world, _| {
@@ -291,7 +286,6 @@ impl Menu {
                 MenuEntryDescriptor {
                     label: "A Check Button With Luni and Resizable".into(),
                     action: Box::new(move |world, position| {
-                        let luni = world.single::<Luni>().unwrap();
                         let button = world.build(CheckButtonDescriptor {
                             rect: Rectangle {
                                 origin: position,
@@ -299,6 +293,7 @@ impl Menu {
                             },
                             checked: false,
                             order: 20,
+                            theme: None,
                         });
 
                         world.build(ResizableDescriptor {
@@ -309,10 +304,6 @@ impl Menu {
                             order: 25,
                             hollow: true,
                             target: button.untyped(),
-                        });
-
-                        world.queue(move |world| {
-                            world.trigger(luni, &Attach(button));
                         });
 
                         world.observer(button, |Switch, world, button| {
@@ -330,6 +321,7 @@ impl Menu {
                                 extend: Size::splat(100),
                             },
                             order: 1,
+                            theme: None,
                         });
 
                         world.build(ResizableDescriptor {
@@ -340,11 +332,6 @@ impl Menu {
                             order: 5,
                             hollow: true,
                             target: panel.untyped(),
-                        });
-
-                        world.queue(move |world| {
-                            let luni = world.single::<Luni>().unwrap();
-                            world.trigger(luni, &Attach(panel));
                         });
                     }),
                 },
@@ -360,12 +347,14 @@ impl Menu {
                         let panel = world.build(PanelDescriptor {
                             rect: Rectangle::new_half(position, Size::new(120, 70)),
                             order: 5,
+                            theme: None,
                         });
 
                         let button = world.build(ButtonDescriptor {
                             rect: Rectangle::new_half(position, Size::new(30, 30))
                                 + Position::new(0, -20),
                             order: 10,
+                            theme: None,
                         });
 
                         world.build(ResizableDescriptor {
@@ -382,12 +371,6 @@ impl Menu {
                             panel.untyped(),
                             button.untyped(),
                         ));
-
-                        world.queue(move |world| {
-                            let luni = world.single::<Luni>().unwrap();
-                            world.trigger(luni, &Attach(panel));
-                            world.trigger(luni, &Attach(button));
-                        });
                     }),
                 },
                 MenuEntryDescriptor {
@@ -399,6 +382,7 @@ impl Menu {
                                 extend: Size::splat(100),
                             },
                             order: 1,
+                            theme: None,
                         });
 
                         world.build(AnimatorDescriptor {
@@ -412,11 +396,6 @@ impl Menu {
                             } + Position::new(0, 500),
                             time: Duration::from_secs(5),
                             target: panel.untyped(),
-                        });
-
-                        world.queue(move |world| {
-                            let luni = world.single::<Luni>().unwrap();
-                            world.trigger(luni, &Attach(panel));
                         });
                     }),
                 },

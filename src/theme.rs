@@ -10,6 +10,28 @@ use crate::{
 /// Trigger this to *try* to attach a headless widget to a specific theme
 pub struct Attach<T>(pub Handle<T>);
 
+/// The default theme widgets will attach to.
+pub struct Theme(pub Handle);
+
+impl Element for Theme {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(this, |event: &Attach::<Button>, world, this| {
+            let this = world.fetch(this).unwrap();
+            world.trigger(this.0, event);
+        });
+
+        world.observer(this, |event: &Attach::<CheckButton>, world, this| {
+            let this = world.fetch(this).unwrap();
+            world.trigger(this.0, event);
+        });
+
+        world.observer(this, |event: &Attach::<Panel>, world, this| {
+            let this = world.fetch(this).unwrap();
+            world.trigger(this.0, event);
+        });
+    }
+}
+
 /// `Luni` stands for `ln_ui`. It's this basic widgets' render implementation of ln_drawer.
 pub struct Luni {
     back_color: Srgba,

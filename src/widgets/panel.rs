@@ -1,6 +1,7 @@
 use crate::{
     layout::Layout,
     measures::Rectangle,
+    theme::{Attach, Theme},
     tools::pointer::{PointerCollider, PointerHover},
     widgets::events::Interact,
     world::{Descriptor, Element, Handle, World},
@@ -15,6 +16,7 @@ pub struct Panel {
 pub struct PanelDescriptor {
     pub rect: Rectangle,
     pub order: isize,
+    pub theme: Option<Handle>,
 }
 
 impl Default for PanelDescriptor {
@@ -22,6 +24,7 @@ impl Default for PanelDescriptor {
         Self {
             rect: Rectangle::new(0, 0, 200, 200),
             order: -10,
+            theme: None,
         }
     }
 }
@@ -35,11 +38,23 @@ impl Descriptor for PanelDescriptor {
             order: self.order,
         });
 
-        world.insert(Panel {
+        let panel = world.insert(Panel {
             rect: self.rect,
             order: self.order,
             collider,
-        })
+        });
+
+        match self.theme {
+            Some(theme) => world.queue(move |world| {
+                world.trigger(theme, &Attach::<Panel>(panel));
+            }),
+            None => world.queue(move |world| {
+                let theme = world.single::<Theme>().unwrap();
+                world.trigger(theme, &Attach::<Panel>(panel));
+            }),
+        }
+
+        panel
     }
 }
 

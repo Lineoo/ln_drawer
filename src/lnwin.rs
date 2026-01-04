@@ -16,7 +16,7 @@ use crate::{
         text::TextManagerDescriptor, viewport::ViewportDescriptor,
         wireframe::WireframeManagerDescriptor,
     },
-    theme::Luni,
+    theme::{Luni, Theme},
     tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
     world::{Element, Handle, World},
 };
@@ -97,7 +97,9 @@ impl Element for Lnwindow {
             world.insert(PointerTool::default());
             world.insert(CameraTool::default());
             world.insert(ModifiersTool::default());
-            world.insert(Luni::default());
+
+            let luni = world.insert(Luni::default());
+            world.insert(Theme(luni.untyped()));
         });
     }
 }

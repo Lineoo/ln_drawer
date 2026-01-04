@@ -1,8 +1,9 @@
 use crate::{
     layout::Layout,
     measures::Rectangle,
+    theme::{Attach, Theme},
     tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerStatus},
-    widgets::events::{Click, Interact, Switch},
+    widgets::events::{Interact, Switch},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -17,6 +18,7 @@ pub struct CheckButtonDescriptor {
     pub rect: Rectangle,
     pub checked: bool,
     pub order: isize,
+    pub theme: Option<Handle>,
 }
 
 impl Default for CheckButtonDescriptor {
@@ -25,6 +27,7 @@ impl Default for CheckButtonDescriptor {
             rect: Rectangle::new(0, 0, 100, 100),
             checked: false,
             order: 10,
+            theme: None,
         }
     }
 }
@@ -38,12 +41,24 @@ impl Descriptor for CheckButtonDescriptor {
             order: self.order,
         });
 
-        world.insert(CheckButton {
+        let button = world.insert(CheckButton {
             rect: self.rect,
             order: self.order,
             checked: self.checked,
             collider,
-        })
+        });
+
+        match self.theme {
+            Some(theme) => world.queue(move |world| {
+                world.trigger(theme, &Attach::<CheckButton>(button));
+            }),
+            None => world.queue(move |world| {
+                let theme = world.single::<Theme>().unwrap();
+                world.trigger(theme, &Attach::<CheckButton>(button));
+            }),
+        }
+
+        button
     }
 }
 
@@ -82,7 +97,7 @@ impl Element for CheckButton {
                 let mut this = world.fetch_mut(this).unwrap();
                 this.rect = *rect;
             }
-            Layout::Alpha(alpha) => unimplemented!()
+            Layout::Alpha(alpha) => unimplemented!(),
         });
 
         world.dependency(self.collider, this);

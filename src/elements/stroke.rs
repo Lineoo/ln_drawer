@@ -5,13 +5,11 @@ use crate::{
     elements::{menu::Menu, palette::Palette},
     measures::{Position, Rectangle, Size},
     render::canvas::{Canvas, CanvasDescriptor},
-    theme::{Attach, Luni},
     tools::{
         modifiers::ModifiersTool,
         pointer::{PointerCollider, PointerHit, PointerMenu, PointerStatus},
     },
     widgets::{
-        button::{Button, ButtonDescriptor},
         check_button::{CheckButton, CheckButtonDescriptor},
         events::Click,
     },
@@ -206,11 +204,7 @@ impl Descriptor for StrokeToolboxDescriptor {
             rect,
             checked: false,
             order: 20,
-        });
-
-        world.queue(move |world| {
-            let luni = world.single::<Luni>().unwrap();
-            world.trigger(luni, &Attach(button));
+            theme: None,
         });
 
         world.observer(button, |Click, world, button| {});
