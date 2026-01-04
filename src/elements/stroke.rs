@@ -5,9 +5,15 @@ use crate::{
     elements::{menu::Menu, palette::Palette},
     measures::{Position, Rectangle, Size},
     render::canvas::{Canvas, CanvasDescriptor},
+    theme::{Attach, Luni},
     tools::{
         modifiers::ModifiersTool,
         pointer::{PointerCollider, PointerHit, PointerMenu, PointerStatus},
+    },
+    widgets::{
+        button::{Button, ButtonDescriptor},
+        check_button::{CheckButton, CheckButtonDescriptor},
+        events::Click,
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -176,5 +182,45 @@ impl StrokeLayer {
         let wrapped_y = (height as i32 - 1 - relative_y).rem_euclid(height as i32);
 
         (wrapped_x, wrapped_y)
+    }
+}
+
+pub struct StrokeToolbox {
+    button: Handle<CheckButton>,
+}
+
+pub struct StrokeToolboxDescriptor {
+    pub position: Position,
+}
+
+impl Descriptor for StrokeToolboxDescriptor {
+    type Target = Handle<StrokeToolbox>;
+
+    fn when_build(self, world: &World) -> Self::Target {
+        let rect = Rectangle {
+            origin: self.position,
+            extend: Size::splat(70),
+        };
+
+        let button = world.build(CheckButtonDescriptor {
+            rect,
+            checked: false,
+            order: 20,
+        });
+
+        world.queue(move |world| {
+            let luni = world.single::<Luni>().unwrap();
+            world.trigger(luni, &Attach(button));
+        });
+
+        world.observer(button, |Click, world, button| {});
+
+        world.insert(StrokeToolbox { button })
+    }
+}
+
+impl Element for StrokeToolbox {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.dependency(self.button, this);
     }
 }
