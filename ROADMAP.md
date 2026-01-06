@@ -324,6 +324,14 @@ let group = world.insert(Group::default());
 let view: GroupView<'_> = world.view(group);
 view.fetch(foo);
 ```
+
+### 新方案：flush 与交互组
+
+这个想法主要是来因为目前大部分控制流都是由 flush 为基础的（除了少数像插入分配这种操作依赖 `RefCell` ），所以 flush 的实际调用是比较少且完全取决于窗口事件循环的，如果在 flush 阶段声明**单次 flush 的交互组**那么就可以利用其特性实现类似子世界与多窗口循环等高级特性！
+- **安全性** World 的所有操作都是依赖 queue 和 flush 指令的
+- **局部性** 只在 flush 时生效，退出时可立刻清除
+- **复合性** 利用 queue 提供的可变世界操作我们可以非常简单地嵌套子世界
+
 ## 任意位置命令 Commander ##
 
 允许获取世界的命令队列，然后**从任何地方直接发送命令**到世界。

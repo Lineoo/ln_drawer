@@ -15,17 +15,17 @@ pub struct Theme(pub Handle);
 
 impl Element for Theme {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |event: &Attach::<Button>, world, this| {
+        world.observer(this, |event: &Attach<Button>, world, this| {
             let this = world.fetch(this).unwrap();
             world.trigger(this.0, event);
         });
 
-        world.observer(this, |event: &Attach::<CheckButton>, world, this| {
+        world.observer(this, |event: &Attach<CheckButton>, world, this| {
             let this = world.fetch(this).unwrap();
             world.trigger(this.0, event);
         });
 
-        world.observer(this, |event: &Attach::<Panel>, world, this| {
+        world.observer(this, |event: &Attach<Panel>, world, this| {
             let this = world.fetch(this).unwrap();
             world.trigger(this.0, event);
         });
@@ -91,9 +91,27 @@ impl Element for Luni {
                 front_frame.value = (1.0 - value) * 5.0 + value * 2.0;
             });
 
+            let start_anim = world.build(AnimationDescriptor {
+                init: 0.0,
+                target: 1.0,
+                factor: 5.0,
+            });
+
+            world.observer(start_anim, move |&AnimationValue::<f32>(value), world, _| {
+                let this = world.fetch(this).unwrap();
+                let mut back_frame = world.fetch_mut(back_frame).unwrap();
+
+                back_frame.color = this.back_color.with_alpha(this.back_color.alpha * value);
+
+                if value == 1.0 {
+                    world.remove(start_anim);
+                }
+            });
+
             world.dependency(back_frame, button.handle());
             world.dependency(front_frame, button.handle());
             world.dependency(animation, button.handle());
+            world.dependency(start_anim, button.handle());
 
             let button = button.handle();
             world.observer(
@@ -179,10 +197,28 @@ impl Element for Luni {
                 back_frame.color = this.back_color.mix(this.front_color, value);
             });
 
+            let start_anim = world.build(AnimationDescriptor {
+                init: 0.0,
+                target: 1.0,
+                factor: 5.0,
+            });
+
+            world.observer(start_anim, move |&AnimationValue::<f32>(value), world, _| {
+                let this = world.fetch(this).unwrap();
+                let mut back_frame = world.fetch_mut(back_frame).unwrap();
+
+                back_frame.color = this.back_color.with_alpha(this.back_color.alpha * value);
+
+                if value == 1.0 {
+                    world.remove(start_anim);
+                }
+            });
+
             world.dependency(back_frame, button.handle());
             world.dependency(front_frame, button.handle());
             world.dependency(front_anim, button.handle());
             world.dependency(back_anim, button.handle());
+            world.dependency(start_anim, button.handle());
 
             world.observer(
                 button.handle(),
@@ -249,8 +285,26 @@ impl Element for Luni {
                 back_frame.color = this.back_color.mix(this.front_color, value);
             });
 
+            let start_anim = world.build(AnimationDescriptor {
+                init: 0.0,
+                target: 1.0,
+                factor: 5.0,
+            });
+
+            world.observer(start_anim, move |&AnimationValue::<f32>(value), world, _| {
+                let this = world.fetch(this).unwrap();
+                let mut back_frame = world.fetch_mut(frame).unwrap();
+
+                back_frame.color = this.back_color.with_alpha(this.back_color.alpha * value);
+
+                if value == 1.0 {
+                    world.remove(start_anim);
+                }
+            });
+
             world.dependency(frame, panel.handle());
             world.dependency(anim, panel.handle());
+            world.dependency(frame, panel.handle());
 
             let panel = panel.handle();
             world.observer(panel, move |interact: &Interact, world, _| match interact {
