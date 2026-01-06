@@ -34,6 +34,7 @@ impl Descriptor for ResizableDescriptor {
         let collider = world.insert(PointerEdgeCollider {
             rect: self.rect,
             order: self.order,
+            enabled: true,
         });
 
         world.insert(Resizable {

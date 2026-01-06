@@ -36,6 +36,7 @@ impl Descriptor for ButtonDescriptor {
         let collider = world.insert(PointerCollider {
             rect: self.rect,
             order: self.order,
+            enabled: false,
         });
 
         let button = world.insert(Button {
@@ -53,6 +54,11 @@ impl Descriptor for ButtonDescriptor {
                 world.trigger(theme, &Attach::<Button>(button));
             }),
         }
+
+        world.queue(move |world| {
+            let mut collider = world.fetch_mut(collider).unwrap();
+            collider.enabled = true;
+        });
 
         button
     }

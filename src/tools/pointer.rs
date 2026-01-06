@@ -23,6 +23,7 @@ pub struct PointerTool {
 pub struct PointerCollider {
     pub rect: Rectangle,
     pub order: isize,
+    pub enabled: bool,
 }
 
 /// Similar to [`PointerCollider`], but will react when mouse hover on
@@ -33,6 +34,7 @@ pub struct PointerCollider {
 pub struct PointerEdgeCollider {
     pub rect: Rectangle,
     pub order: isize,
+    pub enabled: bool,
 }
 
 // Events //
@@ -113,6 +115,7 @@ impl PointerCollider {
                 extend: Size::MAX,
             },
             order,
+            enabled: true,
         }
     }
 }
@@ -152,6 +155,7 @@ impl Element for PointerEdgeCollider {
         let collider = world.insert(PointerCollider {
             rect: self.rect.expand(EXPAND),
             order: self.order,
+            enabled: true,
         });
 
         let lock = world.insert(ColliderEdgeLock { edge: None });
@@ -428,9 +432,9 @@ impl PointerTool {
 
 fn intersect(world: &World, point: Position) -> Vec<Handle<PointerCollider>> {
     let mut result = Vec::with_capacity(8);
-    world.foreach_fetch::<PointerCollider>(|handle, intersection| {
-        if point.within(intersection.rect) {
-            result.push((handle, intersection.order));
+    world.foreach_fetch::<PointerCollider>(|handle, collider| {
+        if collider.enabled && point.within(collider.rect) {
+            result.push((handle, collider.order));
         }
     });
 

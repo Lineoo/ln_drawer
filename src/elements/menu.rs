@@ -145,6 +145,7 @@ impl Element for Menu {
             let collider = world.insert(PointerCollider {
                 rect: frame.rect.expand(PAD as i32 / 2),
                 order: 110,
+                enabled: true,
             });
 
             world.dependency(collider, this);

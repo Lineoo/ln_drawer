@@ -36,6 +36,7 @@ impl Descriptor for PanelDescriptor {
         let collider = world.insert(PointerCollider {
             rect: self.rect,
             order: self.order,
+            enabled: false,
         });
 
         let panel = world.insert(Panel {
@@ -53,6 +54,11 @@ impl Descriptor for PanelDescriptor {
                 world.trigger(theme, &Attach::<Panel>(panel));
             }),
         }
+
+        world.queue(move |world| {
+            let mut collider = world.fetch_mut(collider).unwrap();
+            collider.enabled = true;
+        });
 
         panel
     }

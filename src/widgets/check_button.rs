@@ -39,6 +39,7 @@ impl Descriptor for CheckButtonDescriptor {
         let collider = world.insert(PointerCollider {
             rect: self.rect,
             order: self.order,
+            enabled: false,
         });
 
         let button = world.insert(CheckButton {
@@ -57,6 +58,11 @@ impl Descriptor for CheckButtonDescriptor {
                 world.trigger(theme, &Attach::<CheckButton>(button));
             }),
         }
+
+        world.queue(move |world| {
+            let mut collider = world.fetch_mut(collider).unwrap();
+            collider.enabled = true;
+        });
 
         button
     }

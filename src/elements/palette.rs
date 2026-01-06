@@ -78,6 +78,7 @@ impl Descriptor for PaletteDescriptor {
         let main_collider = world.insert(PointerCollider {
             rect: main_rect,
             order: 0,
+            enabled: true,
         });
 
         // hue //
@@ -107,6 +108,7 @@ impl Descriptor for PaletteDescriptor {
         let hue_collider = world.insert(PointerCollider {
             rect: hue_rect,
             order: 0,
+            enabled: true,
         });
 
         let control = world.insert(RenderControl {
