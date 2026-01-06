@@ -313,10 +313,11 @@ impl Element for PointerTool {
                         let position = viewport.screen_to_world_absolute(position);
 
                         pointer.position = position;
+                        pointer.update_hovering(world);
 
-                        if !pointer.pressed {
-                            pointer.update_hovering(world);
-                        } else if let Some(hovering) = pointer.hovering {
+                        if let Some(hovering) = pointer.hovering
+                            && pointer.pressed
+                        {
                             world.trigger(
                                 hovering,
                                 &PointerHit {
@@ -393,6 +394,10 @@ impl Element for PointerTool {
 impl PointerTool {
     fn update_hovering(&mut self, world: &World) {
         let position = self.position;
+
+        if self.pressed {
+            return;
+        }
 
         let mut landing = None;
         for each in intersect(world, position.floor()) {
