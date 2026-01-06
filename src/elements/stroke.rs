@@ -3,8 +3,12 @@ use palette::Srgba;
 
 use crate::{
     elements::{menu::Menu, palette::Palette},
+    layout::transform::Transform,
     measures::{Position, Rectangle, Size},
-    render::canvas::{Canvas, CanvasDescriptor},
+    render::{
+        canvas::{Canvas, CanvasDescriptor},
+        text::TextDescriptor,
+    },
     tools::{
         modifiers::ModifiersTool,
         pointer::{PointerCollider, PointerHit, PointerMenu, PointerStatus},
@@ -12,6 +16,7 @@ use crate::{
     widgets::{
         check_button::{CheckButton, CheckButtonDescriptor},
         events::Click,
+        menu::{MenuDescriptor, MenuEntryDescriptor},
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -67,7 +72,35 @@ impl Element for StrokeLayer {
         });
 
         world.observer(collider, move |&PointerMenu(position), world, _| {
-            world.build(Menu::test_descriptor(position));
+            let menu = world.build(MenuDescriptor {
+                position,
+                entry_width: 400,
+                entry_height: 50,
+                entry_pad: 5,
+                theme: None,
+            });
+
+            let entry0 = world.build(MenuEntryDescriptor { menu });
+
+            world.queue(move |world| {
+                let menu = world.fetch(menu).unwrap();
+                let text0 = world.build(TextDescriptor {
+                    text: "Entry 0",
+                    rect: menu.entry_rect(0.0).expand(-10),
+                    order: 121,
+                    ..Default::default()
+                });
+            });
+
+            world.observer(entry0, |Click, world, _| {
+                log::info!("Hi there");
+            });
+
+            let entry1 = world.build(MenuEntryDescriptor { menu });
+
+            world.queue(move |world| {
+                world.fetch_mut(menu).unwrap().modified();
+            });
         });
     }
 }

@@ -3,7 +3,13 @@ use palette::{Mix, Srgba, WithAlpha};
 use crate::{
     animation::{AnimationDescriptor, AnimationValue},
     render::rounded::RoundedRectDescriptor,
-    widgets::{button::Button, check_button::CheckButton, events::Interact, panel::Panel},
+    widgets::{
+        button::Button,
+        check_button::CheckButton,
+        events::{Interact, InteractSelect},
+        menu::Menu,
+        panel::Panel,
+    },
     world::{Element, Handle, World},
 };
 
@@ -26,6 +32,11 @@ impl Element for Theme {
         });
 
         world.observer(this, |event: &Attach<Panel>, world, this| {
+            let this = world.fetch(this).unwrap();
+            world.trigger(this.0, event);
+        });
+
+        world.observer(this, |event: &Attach<Menu>, world, this| {
             let this = world.fetch(this).unwrap();
             world.trigger(this.0, event);
         });
@@ -78,7 +89,7 @@ impl Element for Luni {
             let animation = world.build(AnimationDescriptor {
                 init: 0.0,
                 target: 0.0,
-                factor: 5.0,
+                rate: 5.0,
             });
 
             let this = this.handle();
@@ -94,19 +105,22 @@ impl Element for Luni {
             let start_anim = world.build(AnimationDescriptor {
                 init: 0.0,
                 target: 1.0,
-                factor: 5.0,
+                rate: 5.0,
             });
 
-            world.observer(start_anim, move |&AnimationValue::<f32>(value), world, _| {
-                let this = world.fetch(this).unwrap();
-                let mut back_frame = world.fetch_mut(back_frame).unwrap();
+            world.observer(
+                start_anim,
+                move |&AnimationValue::<f32>(value), world, _| {
+                    let this = world.fetch(this).unwrap();
+                    let mut back_frame = world.fetch_mut(back_frame).unwrap();
 
-                back_frame.color = this.back_color.with_alpha(this.back_color.alpha * value);
+                    back_frame.color = this.back_color.with_alpha(this.back_color.alpha * value);
 
-                if value == 1.0 {
-                    world.remove(start_anim);
-                }
-            });
+                    if value == 1.0 {
+                        world.remove(start_anim);
+                    }
+                },
+            );
 
             world.dependency(back_frame, button.handle());
             world.dependency(front_frame, button.handle());
@@ -172,13 +186,13 @@ impl Element for Luni {
             let front_anim = world.build(AnimationDescriptor {
                 init: 0.0,
                 target: 0.0,
-                factor: 5.0,
+                rate: 5.0,
             });
 
             let back_anim = world.build(AnimationDescriptor {
                 init: 0.0,
                 target: 0.0,
-                factor: 5.0,
+                rate: 5.0,
             });
 
             let this = this.handle();
@@ -200,19 +214,22 @@ impl Element for Luni {
             let start_anim = world.build(AnimationDescriptor {
                 init: 0.0,
                 target: 1.0,
-                factor: 5.0,
+                rate: 5.0,
             });
 
-            world.observer(start_anim, move |&AnimationValue::<f32>(value), world, _| {
-                let this = world.fetch(this).unwrap();
-                let mut back_frame = world.fetch_mut(back_frame).unwrap();
+            world.observer(
+                start_anim,
+                move |&AnimationValue::<f32>(value), world, _| {
+                    let this = world.fetch(this).unwrap();
+                    let mut back_frame = world.fetch_mut(back_frame).unwrap();
 
-                back_frame.color = this.back_color.with_alpha(this.back_color.alpha * value);
+                    back_frame.color = this.back_color.with_alpha(this.back_color.alpha * value);
 
-                if value == 1.0 {
-                    world.remove(start_anim);
-                }
-            });
+                    if value == 1.0 {
+                        world.remove(start_anim);
+                    }
+                },
+            );
 
             world.dependency(back_frame, button.handle());
             world.dependency(front_frame, button.handle());
@@ -275,7 +292,7 @@ impl Element for Luni {
             let anim = world.build(AnimationDescriptor {
                 init: 0.0,
                 target: 0.0,
-                factor: 5.0,
+                rate: 5.0,
             });
 
             let this = this.handle();
@@ -288,23 +305,26 @@ impl Element for Luni {
             let start_anim = world.build(AnimationDescriptor {
                 init: 0.0,
                 target: 1.0,
-                factor: 5.0,
+                rate: 5.0,
             });
 
-            world.observer(start_anim, move |&AnimationValue::<f32>(value), world, _| {
-                let this = world.fetch(this).unwrap();
-                let mut back_frame = world.fetch_mut(frame).unwrap();
+            world.observer(
+                start_anim,
+                move |&AnimationValue::<f32>(value), world, _| {
+                    let this = world.fetch(this).unwrap();
+                    let mut back_frame = world.fetch_mut(frame).unwrap();
 
-                back_frame.color = this.back_color.with_alpha(this.back_color.alpha * value);
+                    back_frame.color = this.back_color.with_alpha(this.back_color.alpha * value);
 
-                if value == 1.0 {
-                    world.remove(start_anim);
-                }
-            });
+                    if value == 1.0 {
+                        world.remove(start_anim);
+                    }
+                },
+            );
 
             world.dependency(frame, panel.handle());
             world.dependency(anim, panel.handle());
-            world.dependency(frame, panel.handle());
+            world.dependency(start_anim, panel.handle());
 
             let panel = panel.handle();
             world.observer(panel, move |interact: &Interact, world, _| match interact {
@@ -326,6 +346,109 @@ impl Element for Luni {
                     frame.order = panel.order;
                 }
             });
+        });
+
+        world.observer(this, |&Attach::<Menu>(menu), world, this| {
+            let menu = world.fetch(menu).unwrap();
+            let this = world.fetch(this).unwrap();
+
+            let frame = world.build(RoundedRectDescriptor {
+                rect: menu.menu_rect(),
+                order: 100,
+                color: this.back_color,
+                shrink: this.roundness,
+                value: this.roundness,
+                ..Default::default()
+            });
+
+            let select_frame = world.build(RoundedRectDescriptor {
+                rect: menu.menu_rect(),
+                order: 101,
+                color: this.front_color.with_alpha(0.0),
+                shrink: this.roundness,
+                value: this.roundness,
+                ..Default::default()
+            });
+
+            let menu = menu.handle();
+
+            let color_anim = world.build(AnimationDescriptor {
+                init: this.back_color.with_alpha(0.0),
+                target: this.back_color,
+                rate: 5.0,
+            });
+
+            let select_color_anim = world.build(AnimationDescriptor {
+                init: this.back_color.with_alpha(0.0),
+                target: this.back_color,
+                rate: 5.0,
+            });
+
+            let select_rect_anim = world.build(AnimationDescriptor {
+                init: 0.0,
+                target: 0.0,
+                rate: 20.0,
+            });
+
+            world.observer(color_anim, move |&AnimationValue(value), world, _| {
+                let mut frame = world.fetch_mut(frame).unwrap();
+                frame.color = value;
+            });
+
+            world.observer(
+                select_color_anim,
+                move |&AnimationValue(value), world, _| {
+                    let mut select_frame = world.fetch_mut(select_frame).unwrap();
+                    select_frame.color = value;
+                },
+            );
+
+            world.observer(
+                select_rect_anim,
+                move |&AnimationValue::<f32>(value), world, _| {
+                    let mut select_frame = world.fetch_mut(select_frame).unwrap();
+                    let menu = world.fetch(menu).unwrap();
+                    select_frame.rect = menu.entry_rect(value);
+                },
+            );
+
+            world.dependency(frame, menu);
+            world.dependency(color_anim, menu);
+            world.dependency(select_color_anim, menu);
+            world.dependency(select_rect_anim, menu);
+
+            world.observer(menu, move |interact: &Interact, world, _| match interact {
+                Interact::HoverEnter => {}
+                Interact::HoverLeave => {}
+                Interact::ButtonPress => {}
+                Interact::ButtonRelease => {}
+                Interact::PropertyChange => {
+                    let panel = world.fetch(menu).unwrap();
+                    let mut frame = world.fetch_mut(frame).unwrap();
+
+                    frame.rect = panel.menu_rect();
+                    frame.order = 100;
+                }
+            });
+
+            let this = this.handle();
+            world.observer(
+                menu,
+                move |interact: &InteractSelect, world, _| match interact {
+                    InteractSelect::Entry(Some(idx)) => {
+                        let this = world.fetch(this).unwrap();
+                        let mut select_color_anim = world.fetch_mut(select_color_anim).unwrap();
+                        let mut select_rect_anim = world.fetch_mut(select_rect_anim).unwrap();
+                        select_color_anim.target(this.front_color);
+                        select_rect_anim.target(*idx as f32);
+                    }
+                    InteractSelect::Entry(None) => {
+                        let this = world.fetch(this).unwrap();
+                        let mut select_color_anim = world.fetch_mut(select_color_anim).unwrap();
+                        select_color_anim.target(this.front_color.with_alpha(0.0));
+                    }
+                },
+            );
         });
     }
 }

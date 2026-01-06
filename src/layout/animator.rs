@@ -29,7 +29,7 @@ impl Descriptor for AnimatorDescriptor {
             animation: world.build(AnimationDescriptor {
                 init: 0.0,
                 target: 1.0,
-                factor: 1.0 / self.time.as_secs_f32(),
+                rate: 1.0 / self.time.as_secs_f32(),
             }),
             src: self.src,
             dst: self.dst,

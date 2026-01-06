@@ -1,5 +1,3 @@
-use crate::measures::Rectangle;
-
 pub enum Interact {
     HoverEnter,
     HoverLeave,
@@ -9,7 +7,7 @@ pub enum Interact {
 }
 
 pub enum InteractSelect {
-    HoverItem(Rectangle)
+    Entry(Option<i32>),
 }
 
 pub struct Click;

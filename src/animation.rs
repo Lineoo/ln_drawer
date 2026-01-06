@@ -1,4 +1,6 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
+
+use palette::{Mix, Srgba};
 
 use crate::{
     render::{RedrawPrepare, RenderControl},
@@ -6,9 +8,12 @@ use crate::{
 };
 
 pub struct Animation<T> {
-    current: T,
-    target: T,
+    src: T,
+    dst: T,
+
     factor: f32,
+    target: f32,
+    rate: f32,
     last_update: Instant,
 
     control: Handle<RenderControl>,
@@ -18,13 +23,14 @@ pub struct Animation<T> {
 pub struct AnimationDescriptor<T> {
     pub init: T,
     pub target: T,
-    pub factor: f32,
+    pub rate: f32,
 }
 
 pub struct AnimationValue<T>(pub T);
 
 pub trait AnimationType: Copy + PartialEq + 'static {
-    fn step(anim: &mut Animation<Self>, delta: Duration) -> Self;
+    fn lerp(self, rhs: Self, factor: f32) -> Self;
+    fn distance(self, rhs: Self) -> f32;
 }
 
 impl<T: AnimationType> Descriptor for AnimationDescriptor<T> {
@@ -38,9 +44,11 @@ impl<T: AnimationType> Descriptor for AnimationDescriptor<T> {
         });
 
         world.insert(Animation {
-            current: self.init,
-            target: self.target,
-            factor: self.factor,
+            src: self.init,
+            dst: self.target,
+            factor: 0.0,
+            target: T::distance(self.init, self.target),
+            rate: self.rate,
             last_update: Instant::now(),
             control,
             control_active: self.init != self.target,
@@ -52,10 +60,13 @@ impl<T: AnimationType> Element for Animation<T> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(self.control, move |RedrawPrepare, world, control| {
             let mut this = world.fetch_mut(this).unwrap();
-            let (value, changed) = this.update();
+            let stepped = this.step();
+            let changed = this.factor != stepped;
+            this.factor = stepped;
+            this.last_update = Instant::now();
 
             if changed {
-                world.trigger(this.handle(), &AnimationValue(value));
+                world.trigger(this.handle(), &AnimationValue(this.value()));
             }
 
             if this.control_active != changed {
@@ -70,7 +81,7 @@ impl<T: AnimationType> Element for Animation<T> {
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        if self.current != self.target {
+        if self.factor != self.target {
             self.control_active = true;
             self.last_update = Instant::now();
             let mut control = world.fetch_mut(self.control).unwrap();
@@ -80,29 +91,39 @@ impl<T: AnimationType> Element for Animation<T> {
 }
 
 impl<T: AnimationType> Animation<T> {
-    fn update(&mut self) -> (T, bool) {
-        let clamped = T::step(self, Instant::now() - self.last_update);
-        let changed = self.current != clamped;
-
-        self.current = clamped;
-        self.last_update = Instant::now();
-
-        (clamped, changed)
-    }
-
-    pub fn reset(&mut self, value: T) {
-        self.current = value;
-    }
-
     pub fn target(&mut self, value: T) {
-        self.target = value;
+        self.src = self.value();
+        self.dst = value;
+        self.factor = 0.0;
+        self.target = T::distance(self.src, value);
+    }
+
+    pub fn value(&self) -> T {
+        T::lerp(self.src, self.dst, self.factor / self.target)
+    }
+
+    fn step(&mut self) -> f32 {
+        let delta = Instant::now() - self.last_update;
+        (self.factor + self.rate * delta.as_secs_f32()).clamp(0.0, self.target)
     }
 }
 
 impl AnimationType for f32 {
-    fn step(anim: &mut Animation<Self>, delta: Duration) -> Self {
-        let dest = anim.current
-            + (anim.target - anim.current).signum() * anim.factor * delta.as_secs_f32();
-        dest.clamp(anim.current.min(anim.target), anim.current.max(anim.target))
+    fn lerp(self, rhs: Self, factor: f32) -> Self {
+        self * (1.0 - factor) + rhs * factor
+    }
+
+    fn distance(self, rhs: Self) -> f32 {
+        (self - rhs).abs().max(1e-6)
+    }
+}
+
+impl AnimationType for Srgba {
+    fn lerp(self, rhs: Self, factor: f32) -> Self {
+        self.mix(rhs, factor)
+    }
+
+    fn distance(self, _rhs: Self) -> f32 {
+        1.0
     }
 }

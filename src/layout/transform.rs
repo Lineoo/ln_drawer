@@ -20,6 +20,29 @@ pub struct TransformEdge {
 }
 
 impl Transform {
+    pub const fn copy(source: Handle, target: Handle) -> Transform {
+        Transform {
+            left: TransformEdge {
+                anchor: 0.0,
+                offset: 0,
+            },
+            down: TransformEdge {
+                anchor: 0.0,
+                offset: 0,
+            },
+            right: TransformEdge {
+                anchor: 1.0,
+                offset: 0,
+            },
+            up: TransformEdge {
+                anchor: 1.0,
+                offset: 0,
+            },
+            source,
+            target,
+        }
+    }
+
     pub fn anchor(
         anchor: (f32, f32),
         rect: Rectangle,
