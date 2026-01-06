@@ -79,11 +79,19 @@
 - [x] 移动布局器
 - [x] Transform 变换树
 - [x] 动画布局器
+- [ ] 列表按钮 menu
+    - [ ] InteractEntry 来声明多子项目的渲染相应
+- [ ] 重新调整主题动画
+    - [ ] 统一设计样式
+    - [ ] 添加 animation 对 position 的支持
+    - [ ] 添加 animation 对 srgb 的支持（内部使用线性色彩空间）
+    - [ ] theme 的动画分离各属性驱动
+    - [ ] theme 支持进入/退出动画
 - [ ] 网格布局器
 - [ ] resize 限制
-- [ ] 新的获得性排列布局器 Layout
-    - [ ] 置于顶层
-    - [ ] 置于底层
+- [ ] 新的获得性排列布局器 layer
+    - [ ] 置层事件 `Place`
+    - [ ] 使用
 - [x] 噪声种类选择
 - [ ] 调整发布编译配置
 - **LnDrawer v0.1.2-alpha3**
@@ -112,6 +120,7 @@
 - [ ] 迁移到 winit 0.31.0-beta2
 - [ ] 用于数位板/笔的代替控制按键
 - [ ] 超级传送门
+- [ ] 添加 scalar 并把 fract 重命名为 scalar_fract
 - [ ] 几个单位的分数进位 & 整数环绕
 - [ ] Dependency 和 Observer 一样使用并返回 Handle
     - [ ] `coexist` 方法循环绑定组（并返回 `Handle<Coexist>` ）
@@ -380,6 +389,31 @@ view.fetch(foo);
 - 只会在 `observer` 触发的时候运行。和 `trigger` 差不多，关键还要额外管理 hang 自己的生命周期。
 - 虽然解决了状态性问题，但是自由度受到明显限制（能且只能在事件系统里被使用）
 
+## 状态性与描述器 ##
+
+现在大部分元素都使用了 Descriptor 这种模式，非常清晰、直观，这也是它最大的优点。
+
+但它的缺点也很明显——每添加一种元素就会带有一个描述器和一个元素实例。
+
+这里的一个特例是 `PointerCollider`
+- 它的附属元素 `PointerEdgeCollider` 是保存了状态了的（指针锁定的控制边 `ColliderEdgeLock`）
+- 但是没有 Descriptor 参与 感觉写起来真是更简单了
+- 技巧在于，它使用了 Observer 系统的**闭包**保存了实例句柄 `Handle<ColliderEdgeLock>`（其实现了 Copy 便于传递）
+
+简单来说就是通过**一个数据元素和一个实例元素**代替了**一个描述器和一个元素**的模式。
+- 优点是简单。数据元素就是单纯的数据元素。
+- 缺点就是无法读出。特别是这个实例句柄无法在三个生命周期事件中传递，导致必须再额外设计一个事件并附着一个观察者来处理可变事件
+
+# 高性能与异步并发 #
+
+## 线程安全 ##
+
+我们希望 world 可以实现 Sync。
+
+## 基于类型的占用表 ##
+
+因为绝大部分占用查询负荷来自类型遍历，我们希望互斥锁是**类型独立**的。
+
 # 单位系统 #
 
 我们实现了无限画布——好吧其实不是无限的，毕竟受到 32 位整数限制。但是我们希望即使真的哪个神经病到达了地图边缘我们仍然能够愉快的处理这种现象，我的答案是——循环。
@@ -587,7 +621,7 @@ world.observer(widget, |Switch, world, widget| {
 动画系统旨在给**渲染实现**提供一个可用的动画工具。其核心类为 `Animation<T>`。
 
 1. 使用 `.target` 来设定动画目标
-2. 使用 `.update` 来更新状态并返回数值以及是否有实际更新
+2. 使用 observer & trigger 来通知外部逻辑
 
 ### 循环重绘
 
@@ -595,7 +629,7 @@ world.observer(widget, |Switch, world, widget| {
 
 `Animation<T>` **自带 `RenderControl` 管理能力**，能够自动生成 `RenderControl`。
 
-同时会在动画进行过程中通过 `Commander` **自动管理** `RenderControl`。
+同时会在动画进行过程中通过 `when_modify` **自动管理** `RenderControl`。
 
 ## 布局器 ##
 
@@ -607,15 +641,15 @@ world.observer(widget, |Switch, world, widget| {
 
 ### 2. 布局器
 
-1. `Transform` 从 `LayoutRectangle` 生成 `Layout::Rectangle`，允许锚点，对齐等高级排版工具
+1. `Transform` 从 `Layout::Rectangle` 生成 `Layout::Rectangle`，允许锚点，对齐等高级排版工具
     - `Transform` 类似于一个 **Observer 包装**，通过指定源和目标来传递事件，而本身不接受/触发布局事件。
 2. `Resizable` 从 `PointerColliderEdge` 生成 `Layout::Rectangle` 来处理尺寸
 3. `Translatable` 从 `PointerColliderEdge` 生成 `Layout::Rectangle` 来处理尺寸
 
 ### 3. 布局事件
 
-1. `LayoutRectangle` 一个矩形
-2. `LayoutAlpha` 透明度指示
+1. `Layout::Rectangle` 一个矩形
+2. `Layout::Alpha` 透明度指示
 
 ## i18n 国际化 ##
 
@@ -656,3 +690,111 @@ world.observer(widget, |Switch, world, widget| {
 但是围绕着展开这一个主题有多个可以辅助实现的工具/组件：
 - 动画布局器：允许简单地实现组件动画
 - 平铺布局器：允许按照**固定大小**按照索引分配对应的位置
+
+## 菜单 ##
+
+菜单是一个**多元素组件**，这意味着它包含了**不定数量**的子组件。这会带来几个需要额外考虑的问题。
+
+### 1. 逻辑绑定
+
+#### 1.1. 统一绑定
+
+```rust
+let menu = world.build(MenuDescriptor {
+    position: Position::default(),
+    entries: &[
+        MenuEntryDescriptor {
+            value: 100.0,
+        },
+        MenuEntryDescriptor {
+            value: 120.0,
+        },
+    ]
+});
+
+world.observer(menu, |ClickEntry(idx), world, _| {
+    foo(match idx {
+        0 => 100.0,
+        1 => 120.0,
+        _ => unreachable!(),
+    });
+});
+```
+
+#### 1.2. 分别绑定
+
+```rust
+let entry0 = world.build(MenuEntryDescriptor {
+    value: 100.0,
+});
+
+world.observer(entry0, |Click, world, _| {
+    foo(100.0);
+});
+
+let entry1 = world.build(MenuEntryDescriptor {
+    value: 120.0,
+});
+
+world.observer(entry1, |Click, world, _| {
+    foo(120.0);
+});
+
+let menu = world.build(MenuDescriptor {
+    position: Position::default(),
+    entries: &[entry0, entry1],
+});
+```
+
+考虑：如果用户没有把 `entry0` 和 `entry1` 真正 build 出来会发生什么？
+- 创建 observer 需要句柄，也就是说 entry 一定作为元素被插入了世界（并获取到了句柄）。
+- 由于没有 menu 提供具体初始化位置 `position`，条目根本无法创建指针碰撞体等具体逻辑，同时也无法使用主题（显然）进行渲染。
+- 也就是说，这会留下一些**垃圾元素**——没有具体逻辑，不可见，永远无法调用，最终造成**内存泄漏**。
+
+简单的解决解决方法——不要忘记构建菜单。
+
+复杂的解决方法：
+
+#### 1.3. 注册并绑定
+
+```rust
+let menu = world.build(MenuDescriptor {
+    position: Position::default(),
+});
+
+let entry0 = world.build(MenuEntryDescriptor {
+    value: 100.0,
+    menu,
+});
+
+world.observer(entry0, |Click, world, _| {
+    foo(100.0);
+});
+
+let entry1 = world.build(MenuEntryDescriptor {
+    value: 120.0,
+    menu,
+});
+
+world.observer(entry1, |Click, world, _| {
+    foo(120.0);
+});
+```
+
+### 2. 渲染系统
+
+Theme 系统直接监听子节点，初始的节点列表直接读取列表并挂上监听。
+
+#### 2.1 选择
+
+选择了某个元素会在主节点上使用 `Interact::Select(Rectangle)` 事件进行通知。
+
+#### 2.2. 子组件
+
+子组件不提供任何自带的渲染，theme 无需对子组件提供支持，菜单也不会在子节点发送任何 `Interact` 事件。
+
+相应的文字渲染请直接使用对应的渲染组件。
+
+### 3. 布局行为
+
+列表主元素子节点不包含数据（需要由菜单的数据计算得出），但列表在列表元素增删的时，会在**自身及子节点**触发合适的布局事件。

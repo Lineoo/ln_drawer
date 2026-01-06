@@ -52,14 +52,27 @@ pub struct PointerHitEdge {
     pub edge: PointerEdge,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct PointerHover {
+    pub position: Position,
+    pub motion: PointerMotion,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PointerHoverEdge {
+    pub position: Position,
+    pub motion: PointerMotion,
+    pub edge: PointerEdge,
+}
+
 #[derive(Debug)]
-pub struct PointerHitCheck {
+pub struct PointerCheck {
     pub position: Position,
     pub occlude: Cell<bool>,
 }
 
 #[derive(Debug)]
-pub struct PointerHitEdgeCheck {
+pub struct PointerEdgeCheck {
     pub position: Position,
     pub edge: PointerEdge,
     pub occlude: Cell<bool>,
@@ -70,6 +83,13 @@ pub enum PointerStatus {
     Press,
     Moving,
     Release,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerMotion {
+    Enter,
+    Moving,
+    Leave,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,12 +109,6 @@ pub enum PointerEdge {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerMenu(pub Position);
-
-#[derive(Debug, Clone, Copy)]
-pub enum PointerHover {
-    Enter,
-    Leave,
-}
 
 // Inner Implements //
 
@@ -160,7 +174,7 @@ impl Element for PointerEdgeCollider {
 
         let lock = world.insert(ColliderEdgeLock { edge: None });
 
-        world.observer(collider, move |event: &PointerHitCheck, world, _| {
+        world.observer(collider, move |event: &PointerCheck, world, _| {
             let mut idx = 0;
 
             let fetched = world.fetch(this).unwrap();
@@ -196,7 +210,7 @@ impl Element for PointerEdgeCollider {
                 _ => unreachable!(),
             };
 
-            let check = PointerHitEdgeCheck {
+            let check = PointerEdgeCheck {
                 position: event.position,
                 edge,
                 occlude: event.occlude.clone(),
@@ -319,16 +333,24 @@ impl Element for PointerTool {
                         pointer.position = position;
                         pointer.update_hovering(world);
 
-                        if let Some(hovering) = pointer.hovering
-                            && pointer.pressed
-                        {
-                            world.trigger(
-                                hovering,
-                                &PointerHit {
-                                    position: position.floor(),
-                                    status: PointerStatus::Moving,
-                                },
-                            );
+                        if let Some(hovering) = pointer.hovering {
+                            if pointer.pressed {
+                                world.trigger(
+                                    hovering,
+                                    &PointerHit {
+                                        position: position.floor(),
+                                        status: PointerStatus::Moving,
+                                    },
+                                );
+                            } else {
+                                world.trigger(
+                                    hovering,
+                                    &PointerHover {
+                                        position: position.floor(),
+                                        motion: PointerMotion::Moving,
+                                    },
+                                );
+                            }
                         }
                     }
 
@@ -382,7 +404,13 @@ impl Element for PointerTool {
 
                     WindowEvent::CursorLeft { .. } => {
                         if let Some(hovering) = pointer.hovering {
-                            world.trigger(hovering, &PointerHover::Leave);
+                            world.trigger(
+                                hovering,
+                                &PointerHover {
+                                    position: pointer.position.floor(),
+                                    motion: PointerMotion::Leave,
+                                },
+                            );
                         }
 
                         pointer.hovering = None;
@@ -405,7 +433,7 @@ impl PointerTool {
 
         let mut landing = None;
         for each in intersect(world, position.floor()) {
-            let check = PointerHitCheck {
+            let check = PointerCheck {
                 position: position.floor(),
                 occlude: Cell::new(true),
             };
@@ -418,11 +446,23 @@ impl PointerTool {
 
         if self.hovering != landing {
             if let Some(hovering) = self.hovering {
-                world.trigger(hovering, &PointerHover::Leave);
+                world.trigger(
+                    hovering,
+                    &PointerHover {
+                        position: position.floor(),
+                        motion: PointerMotion::Leave,
+                    },
+                );
             }
 
             if let Some(landing) = landing {
-                world.trigger(landing, &PointerHover::Enter);
+                world.trigger(
+                    landing,
+                    &PointerHover {
+                        position: position.floor(),
+                        motion: PointerMotion::Enter,
+                    },
+                );
             }
 
             self.hovering = landing;

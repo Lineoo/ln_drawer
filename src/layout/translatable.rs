@@ -2,7 +2,7 @@ use crate::{
     layout::Layout,
     measures::{Position, Rectangle},
     tools::pointer::{
-        PointerEdge, PointerEdgeCollider, PointerHitEdge, PointerHitEdgeCheck, PointerStatus,
+        PointerEdge, PointerEdgeCollider, PointerHitEdge, PointerEdgeCheck, PointerStatus,
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -50,7 +50,7 @@ impl Element for Translatable {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(
             self.collider,
-            move |check: &PointerHitEdgeCheck, world, _| {
+            move |check: &PointerEdgeCheck, world, _| {
                 let this = world.fetch(this).unwrap();
                 if this.hollow && check.edge == PointerEdge::Body {
                     check.occlude.set(false);

@@ -2,7 +2,7 @@ use crate::{
     layout::Layout,
     measures::Rectangle,
     theme::{Attach, Theme},
-    tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerStatus},
+    tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
     widgets::events::{Interact, Switch},
     world::{Descriptor, Element, Handle, World},
 };
@@ -88,11 +88,12 @@ impl Element for CheckButton {
 
         world.observer(
             self.collider,
-            move |event: &PointerHover, world, _| match event {
-                PointerHover::Enter => {
+            move |event: &PointerHover, world, _| match event.motion {
+                PointerMotion::Enter => {
                     world.trigger(this, &Interact::HoverEnter);
                 }
-                PointerHover::Leave => {
+                PointerMotion::Moving => {}
+                PointerMotion::Leave => {
                     world.trigger(this, &Interact::HoverLeave);
                 }
             },

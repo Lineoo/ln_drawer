@@ -2,7 +2,7 @@ use crate::{
     layout::Layout,
     measures::Rectangle,
     theme::{Attach, Theme},
-    tools::pointer::{PointerCollider, PointerHover},
+    tools::pointer::{PointerCollider, PointerHover, PointerMotion},
     widgets::events::Interact,
     world::{Descriptor, Element, Handle, World},
 };
@@ -68,11 +68,12 @@ impl Element for Panel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(
             self.collider,
-            move |event: &PointerHover, world, _| match event {
-                PointerHover::Enter => {
+            move |event: &PointerHover, world, _| match event.motion {
+                PointerMotion::Enter => {
                     world.trigger(this, &Interact::HoverEnter);
                 }
-                PointerHover::Leave => {
+                PointerMotion::Moving => {}
+                PointerMotion::Leave => {
                     world.trigger(this, &Interact::HoverLeave);
                 }
             },

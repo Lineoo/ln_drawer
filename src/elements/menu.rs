@@ -14,7 +14,9 @@ use crate::{
         rounded::{RoundedRect, RoundedRectDescriptor},
         text::{Text, TextDescriptor},
     },
-    tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMenu, PointerStatus},
+    tools::pointer::{
+        PointerCollider, PointerHit, PointerHover, PointerMenu, PointerMotion, PointerStatus,
+    },
     widgets::{
         button::ButtonDescriptor,
         check_button::CheckButtonDescriptor,
@@ -162,9 +164,10 @@ impl Element for Menu {
             world.observer(collider, move |event: &PointerHover, world, _| {
                 let fetched = world.fetch(this).unwrap();
                 let mut frame = world.fetch_mut(fetched.entries[i].frame).unwrap();
-                frame.visible = match event {
-                    PointerHover::Enter => true,
-                    PointerHover::Leave => false,
+                match event.motion {
+                    PointerMotion::Enter => frame.visible = true,
+                    PointerMotion::Leave => frame.visible = false,
+                    PointerMotion::Moving => {}
                 };
             });
 
