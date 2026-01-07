@@ -38,7 +38,7 @@ impl Default for MenuDescriptor {
         MenuDescriptor {
             position: Position::default(),
             entry_width: 400,
-            entry_height: 50,
+            entry_height: 40,
             entry_pad: 5,
             theme: None,
         }
@@ -94,6 +94,8 @@ impl Descriptor for MenuDescriptor {
 
 impl Element for Menu {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.dependency(self.collider, this);
+
         world.observer(
             self.collider,
             move |event: &PointerHover, world, _| match event.motion {

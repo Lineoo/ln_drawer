@@ -387,7 +387,7 @@ impl Element for Luni {
             let select_rect_anim = world.build(AnimationDescriptor {
                 init: 0.0,
                 target: 0.0,
-                rate: 20.0,
+                rate: 50.0,
             });
 
             world.observer(color_anim, move |&AnimationValue(value), world, _| {
@@ -413,6 +413,7 @@ impl Element for Luni {
             );
 
             world.dependency(frame, menu);
+            world.dependency(select_frame, menu);
             world.dependency(color_anim, menu);
             world.dependency(select_color_anim, menu);
             world.dependency(select_rect_anim, menu);

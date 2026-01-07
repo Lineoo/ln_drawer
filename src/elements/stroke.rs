@@ -1,11 +1,17 @@
+use cosmic_text::Metrics;
 use hashbrown::HashMap;
 use palette::Srgba;
+use wgpu::Color;
 
 use crate::{
-    elements::{menu::Menu, palette::Palette},
-    layout::transform::Transform,
+    elements::{
+        noise::SimpleNoiseDescriptor,
+        palette::{Palette, PaletteDescriptor},
+    },
+    lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
+        RenderPortal,
         canvas::{Canvas, CanvasDescriptor},
         text::TextDescriptor,
     },
@@ -75,32 +81,112 @@ impl Element for StrokeLayer {
             let menu = world.build(MenuDescriptor {
                 position,
                 entry_width: 400,
-                entry_height: 50,
+                entry_height: 40,
                 entry_pad: 5,
                 theme: None,
             });
 
-            let entry0 = world.build(MenuEntryDescriptor { menu });
+            let collider = world.insert(PointerCollider::fullscreen(80));
 
-            world.queue(move |world| {
+            world.dependency(collider, menu);
+
+            world.observer(collider, move |event: &PointerHit, world, _| {
+                if let PointerStatus::Press = event.status {
+                    return;
+                };
+
                 let menu = world.fetch(menu).unwrap();
-                let text0 = world.build(TextDescriptor {
-                    text: "Entry 0",
-                    rect: menu.entry_rect(0.0).expand(-10),
-                    order: 121,
-                    ..Default::default()
+
+                if !event.position.within(menu.menu_rect()) {
+                    world.remove(menu.handle());
+                }
+            });
+
+            world.observer(collider, move |&PointerMenu(_), world, _| {
+                world.remove(menu);
+            });
+
+            type Entries<const N: usize> = [(&'static str, for<'w> fn(&'w World, Position)); N];
+            let entries: Entries<_> = [
+                ("Label", |world: &World, position| {
+                    world.build(TextDescriptor {
+                        rect: Rectangle {
+                            origin: position,
+                            extend: Size::new(300, 40),
+                        },
+                        text: "LnDrawer",
+                        ..Default::default()
+                    });
+                }),
+                ("Palette", |world, position| {
+                    world.build(PaletteDescriptor {
+                        position,
+                        ..Default::default()
+                    });
+                }),
+                ("Logo", |world, position| {
+                    let rect = Rectangle {
+                        origin: position,
+                        extend: Size::splat(100),
+                    };
+
+                    let bytes = include_bytes!("../../res/iconv2.png");
+
+                    world.build(CanvasDescriptor::from_bytes(rect, 0, bytes).unwrap());
+                }),
+                ("Simple Noise", |world, position| {
+                    world.build(SimpleNoiseDescriptor { position });
+                }),
+                ("", |_, _| {}),
+                ("  World save", |world, _position| {
+                    crate::save::save_into_file(world);
+                }),
+                ("  World read", |world, _position| {
+                    crate::save::read_from_file(world);
+                }),
+                ("", |_, _| {}),
+                ("Switch transparency", |world, _| {
+                    let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
+                    if rportal.clear_color == Color::TRANSPARENT {
+                        rportal.clear_color = Color::BLACK;
+                    } else if rportal.clear_color == Color::BLACK {
+                        rportal.clear_color = Color::TRANSPARENT;
+                    }
+                }),
+                ("Switch title bar", |world, _| {
+                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                    let decorated = lnwindow.window.is_decorated();
+                    lnwindow.window.set_decorations(!decorated);
+                }),
+            ];
+
+            for (i, (desc, action)) in entries.into_iter().enumerate() {
+                let entry = world.build(MenuEntryDescriptor { menu });
+
+                world.queue(move |world| {
+                    let menu = world.fetch(menu).unwrap();
+                    let rect = menu.entry_rect(i as f32).expand(-5);
+                    let rect = rect.with_left(rect.left() + 30);
+
+                    let text = world.build(TextDescriptor {
+                        text: desc,
+                        rect,
+                        order: 120,
+                        metrics: Metrics::new(20.0, menu.entry_height as f32 - 10.0),
+                        ..Default::default()
+                    });
+
+                    world.dependency(text, menu.handle());
                 });
-            });
 
-            world.observer(entry0, |Click, world, _| {
-                log::info!("Hi there");
-            });
-
-            let entry1 = world.build(MenuEntryDescriptor { menu });
-
-            world.queue(move |world| {
-                world.fetch_mut(menu).unwrap().modified();
-            });
+                world.observer(entry, move |Click, world, _| {
+                    world.queue(move |world| {
+                        let menu = world.fetch(menu).unwrap();
+                        action(world, menu.position);
+                        world.remove(menu.handle());
+                    });
+                });
+            }
         });
     }
 }

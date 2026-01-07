@@ -1,17 +1,14 @@
 use palette::{FromColor, Hsl, SetHue, Srgba, WithAlpha};
 
 use crate::{
-    elements::{
-        menu::{MenuDescriptor, MenuEntryDescriptor},
-        stroke::StrokeLayer,
-    },
+    elements::stroke::StrokeLayer,
     measures::{Position, Rectangle, Size},
     render::{
         LossyPrepare, RenderControl,
         canvas::{Canvas, CanvasDescriptor},
         wireframe::{Wireframe, WireframeDescriptor},
     },
-    tools::pointer::{PointerCollider, PointerHit, PointerMenu},
+    tools::pointer::{PointerCollider, PointerHit},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -181,40 +178,6 @@ impl Element for Palette {
         world.dependency(self.hue, this);
         world.dependency(self.hue_knob, this);
         world.dependency(self.hue_collider, this);
-
-        // menu //
-
-        world.observer(
-            self.main_collider,
-            move |&PointerMenu(position), world, _| {
-                world.build(MenuDescriptor {
-                    position,
-                    entries: vec![MenuEntryDescriptor {
-                        label: "Remove".into(),
-                        action: Box::new(move |world, _| {
-                            world.remove(this);
-                        }),
-                    }],
-                    ..Default::default()
-                });
-            },
-        );
-
-        world.observer(
-            self.hue_collider,
-            move |&PointerMenu(position), world, _| {
-                world.build(MenuDescriptor {
-                    position,
-                    entries: vec![MenuEntryDescriptor {
-                        label: "Remove".into(),
-                        action: Box::new(move |world, _| {
-                            world.remove(this);
-                        }),
-                    }],
-                    ..Default::default()
-                });
-            },
-        );
 
         // redraw //
 
