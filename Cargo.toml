@@ -23,3 +23,8 @@ thiserror = "2.0.16"
 tokio = "1.47.1"
 wgpu = "26.0"
 winit = "0.30"
+
+[profile.release]
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
