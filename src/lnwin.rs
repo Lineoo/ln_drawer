@@ -10,10 +10,13 @@ use winit::{
 
 use crate::{
     elements::stroke::StrokeLayer,
-    measures::Size,
+    measures::{Position, Rectangle, Size},
     render::{
-        Render, canvas::CanvasManagerDescriptor, rounded::RoundedRectManagerDescriptor,
-        text::TextManagerDescriptor, viewport::ViewportDescriptor,
+        Render,
+        canvas::{CanvasDescriptor, CanvasManagerDescriptor},
+        rounded::RoundedRectManagerDescriptor,
+        text::TextManagerDescriptor,
+        viewport::ViewportDescriptor,
         wireframe::WireframeManagerDescriptor,
     },
     theme::{Luni, Theme},
@@ -30,8 +33,6 @@ impl ApplicationHandler for Lnwin {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.world.single::<Lnwindow>().is_none() {
             let lnwindow = Lnwindow::new(event_loop);
-            lnwindow.window.request_redraw();
-
             self.world.insert(lnwindow);
             self.world.flush();
         }
@@ -100,6 +101,17 @@ impl Element for Lnwindow {
 
             let luni = world.insert(Luni::default());
             world.insert(Theme(luni.untyped()));
+        });
+
+        world.queue(|world| {
+            let rect = Rectangle {
+                origin: Position::new(0, 0),
+                extend: Size::splat(100),
+            };
+
+            let bytes = include_bytes!("../res/iconv2.png");
+
+            world.build(CanvasDescriptor::from_bytes(rect, 0, bytes).unwrap());
         });
     }
 }
