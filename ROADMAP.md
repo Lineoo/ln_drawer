@@ -84,6 +84,9 @@
 - [x] 噪声种类选择
 - [x] 调整发布编译配置
 - **LnDrawer v0.1.2-alpha3**
+- [ ] 支持响应 suspended/resumed
+- [ ] 触摸支持
+- **android**
 - [ ] 重新调整主题动画
     - [ ] 统一设计样式
     - [ ] animation 重新设计（使用缓动）

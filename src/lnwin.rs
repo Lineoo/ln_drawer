@@ -10,17 +10,17 @@ use winit::{
 
 use crate::{
     elements::stroke::StrokeLayer,
-    measures::{Position, Rectangle, Size},
+    measures::Size,
     render::{
-        Render,
-        canvas::{CanvasDescriptor, CanvasManagerDescriptor},
-        rounded::RoundedRectManagerDescriptor,
-        text::TextManagerDescriptor,
-        viewport::ViewportDescriptor,
+        Render, canvas::CanvasManagerDescriptor, rounded::RoundedRectManagerDescriptor,
+        text::TextManagerDescriptor, viewport::ViewportDescriptor,
         wireframe::WireframeManagerDescriptor,
     },
     theme::{Luni, Theme},
-    tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
+    tools::{
+        camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool,
+        touch::TouchTool,
+    },
     world::{Element, Handle, World},
 };
 
@@ -96,22 +96,12 @@ impl Element for Lnwindow {
             world.insert(Focus::default());
             world.insert(StrokeLayer::default());
             world.insert(PointerTool::default());
+            world.insert(TouchTool::default());
             world.insert(CameraTool::default());
             world.insert(ModifiersTool::default());
 
             let luni = world.insert(Luni::default());
             world.insert(Theme(luni.untyped()));
-        });
-
-        world.queue(|world| {
-            let rect = Rectangle {
-                origin: Position::new(0, 0),
-                extend: Size::splat(100),
-            };
-
-            let bytes = include_bytes!("../res/iconv2.png");
-
-            world.build(CanvasDescriptor::from_bytes(rect, 0, bytes).unwrap());
         });
     }
 }
