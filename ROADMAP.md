@@ -94,6 +94,7 @@
     - [ ] theme 支持进入/退出动画
 - [ ] noise 组件改用 menu
 - [ ] menu 的进入退出矩形动画
+    - [ ] Interact 事件：Remove
 - [ ] 滑条、宽滑条
 - [ ] 新的获得性排列布局器 layer
     - [ ] 置层事件 `Place`

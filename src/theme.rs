@@ -48,6 +48,8 @@ pub struct Luni {
     back_color: Srgba,
     front_color: Srgba,
     roundness: f32,
+    anim_factor: f32,
+    anim_factor_menu: f32,
     pad: i32,
 }
 
@@ -57,6 +59,8 @@ impl Default for Luni {
             back_color: Srgba::new(0.1, 0.1, 0.1, 0.9),
             front_color: Srgba::new(0.3, 0.3, 0.3, 1.0),
             roundness: 5.0,
+            anim_factor: 30.0,
+            anim_factor_menu: 50.0,
             pad: 5,
         }
     }
@@ -87,9 +91,15 @@ impl Element for Luni {
             });
 
             let animation = world.build(AnimationDescriptor {
-                init: 0.0,
-                target: 0.0,
-                rate: 5.0,
+                src: 0.0,
+                dst: 0.0,
+                factor: this.anim_factor,
+            });
+
+            let start_anim = world.build(AnimationDescriptor {
+                src: 0.0,
+                dst: 1.0,
+                factor: this.anim_factor,
             });
 
             let this = this.handle();
@@ -100,12 +110,6 @@ impl Element for Luni {
                 front_frame.color = this.front_color.with_alpha(value);
                 front_frame.shrink = 5.0 + value * 2.0;
                 front_frame.value = (1.0 - value) * 5.0 + value * 2.0;
-            });
-
-            let start_anim = world.build(AnimationDescriptor {
-                init: 0.0,
-                target: 1.0,
-                rate: 5.0,
             });
 
             world.observer(
@@ -133,19 +137,19 @@ impl Element for Luni {
                 move |interact: &Interact, world, _| match interact {
                     Interact::HoverEnter => {
                         let mut animation = world.fetch_mut(animation).unwrap();
-                        animation.target(1.0);
+                        animation.dst = 1.0;
                     }
                     Interact::HoverLeave => {
                         let mut animation = world.fetch_mut(animation).unwrap();
-                        animation.target(0.0);
+                        animation.dst = 0.0;
                     }
                     Interact::ButtonPress => {
                         let mut animation = world.fetch_mut(animation).unwrap();
-                        animation.target(0.5);
+                        animation.dst = 0.5;
                     }
                     Interact::ButtonRelease => {
                         let mut animation = world.fetch_mut(animation).unwrap();
-                        animation.target(1.0);
+                        animation.dst = 1.0;
                     }
                     Interact::PropertyChange => {
                         let button = world.fetch(button).unwrap();
@@ -184,15 +188,21 @@ impl Element for Luni {
             });
 
             let front_anim = world.build(AnimationDescriptor {
-                init: 0.0,
-                target: 0.0,
-                rate: 5.0,
+                src: 0.0,
+                dst: 0.0,
+                factor: this.anim_factor,
             });
 
             let back_anim = world.build(AnimationDescriptor {
-                init: 0.0,
-                target: 0.0,
-                rate: 5.0,
+                src: 0.0,
+                dst: 0.0,
+                factor: this.anim_factor,
+            });
+
+            let start_anim = world.build(AnimationDescriptor {
+                src: 0.0,
+                dst: 1.0,
+                factor: this.anim_factor,
             });
 
             let this = this.handle();
@@ -210,13 +220,6 @@ impl Element for Luni {
                 let mut back_frame = world.fetch_mut(back_frame).unwrap();
                 back_frame.color = this.back_color.mix(this.front_color, value);
             });
-
-            let start_anim = world.build(AnimationDescriptor {
-                init: 0.0,
-                target: 1.0,
-                rate: 5.0,
-            });
-
             world.observer(
                 start_anim,
                 move |&AnimationValue::<f32>(value), world, _| {
@@ -242,27 +245,27 @@ impl Element for Luni {
                 move |interact: &Interact, world, button| match interact {
                     Interact::HoverEnter => {
                         let mut animation = world.fetch_mut(front_anim).unwrap();
-                        animation.target(1.0);
+                        animation.dst = 1.0;
                     }
                     Interact::HoverLeave => {
                         let mut animation = world.fetch_mut(front_anim).unwrap();
-                        animation.target(0.0);
+                        animation.dst = 0.0;
                     }
                     Interact::ButtonPress => {
                         let mut animation = world.fetch_mut(front_anim).unwrap();
-                        animation.target(0.5);
+                        animation.dst = 0.5;
                     }
                     Interact::ButtonRelease => {
                         let mut animation = world.fetch_mut(front_anim).unwrap();
-                        animation.target(1.0);
+                        animation.dst = 1.0;
                     }
                     Interact::PropertyChange => {
                         let button = world.fetch(button).unwrap();
                         let mut animation = world.fetch_mut(back_anim).unwrap();
-                        animation.target(match button.checked {
+                        animation.dst = match button.checked {
                             true => 0.5,
                             false => 0.0,
-                        });
+                        };
 
                         let mut front_frame = world.fetch_mut(front_frame).unwrap();
                         let mut back_frame = world.fetch_mut(back_frame).unwrap();
@@ -290,9 +293,15 @@ impl Element for Luni {
             });
 
             let anim = world.build(AnimationDescriptor {
-                init: 0.0,
-                target: 0.0,
-                rate: 5.0,
+                src: 0.0,
+                dst: 0.0,
+                factor: this.anim_factor,
+            });
+
+            let start_anim = world.build(AnimationDescriptor {
+                src: 0.0,
+                dst: 1.0,
+                factor: this.anim_factor,
             });
 
             let this = this.handle();
@@ -300,12 +309,6 @@ impl Element for Luni {
                 let this = world.fetch(this).unwrap();
                 let mut back_frame = world.fetch_mut(frame).unwrap();
                 back_frame.color = this.back_color.mix(this.front_color, value);
-            });
-
-            let start_anim = world.build(AnimationDescriptor {
-                init: 0.0,
-                target: 1.0,
-                rate: 5.0,
             });
 
             world.observer(
@@ -330,11 +333,11 @@ impl Element for Luni {
             world.observer(panel, move |interact: &Interact, world, _| match interact {
                 Interact::HoverEnter => {
                     let mut animation = world.fetch_mut(anim).unwrap();
-                    animation.target(1.0);
+                    animation.dst = 1.0;
                 }
                 Interact::HoverLeave => {
                     let mut animation = world.fetch_mut(anim).unwrap();
-                    animation.target(0.0);
+                    animation.dst = 0.0;
                 }
                 Interact::ButtonPress => {}
                 Interact::ButtonRelease => {}
@@ -373,21 +376,21 @@ impl Element for Luni {
             let menu = menu.handle();
 
             let color_anim = world.build(AnimationDescriptor {
-                init: this.back_color.with_alpha(0.0),
-                target: this.back_color,
-                rate: 5.0,
+                src: this.back_color.with_alpha(0.0),
+                dst: this.back_color,
+                factor: this.anim_factor,
             });
 
             let select_color_anim = world.build(AnimationDescriptor {
-                init: this.back_color.with_alpha(0.0),
-                target: this.back_color,
-                rate: 5.0,
+                src: this.back_color.with_alpha(0.0),
+                dst: this.back_color,
+                factor: this.anim_factor_menu,
             });
 
             let select_rect_anim = world.build(AnimationDescriptor {
-                init: 0.0,
-                target: 0.0,
-                rate: 50.0,
+                src: 0.0,
+                dst: 0.0,
+                factor: this.anim_factor_menu,
             });
 
             world.observer(color_anim, move |&AnimationValue(value), world, _| {
@@ -440,13 +443,13 @@ impl Element for Luni {
                         let this = world.fetch(this).unwrap();
                         let mut select_color_anim = world.fetch_mut(select_color_anim).unwrap();
                         let mut select_rect_anim = world.fetch_mut(select_rect_anim).unwrap();
-                        select_color_anim.target(this.front_color);
-                        select_rect_anim.target(*idx as f32);
+                        select_color_anim.dst = this.front_color;
+                        select_rect_anim.dst = *idx as f32;
                     }
                     InteractSelect::Entry(None) => {
                         let this = world.fetch(this).unwrap();
                         let mut select_color_anim = world.fetch_mut(select_color_anim).unwrap();
-                        select_color_anim.target(this.front_color.with_alpha(0.0));
+                        select_color_anim.dst = this.front_color.with_alpha(0.0);
                     }
                 },
             );

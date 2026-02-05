@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     animation::{Animation, AnimationDescriptor, AnimationValue},
     layout::Layout,
@@ -8,16 +6,16 @@ use crate::{
 };
 
 pub struct Animator {
-    animation: Handle<Animation<f32>>,
     src: Rectangle,
     dst: Rectangle,
     target: Handle,
+    animation: Handle<Animation<f32>>,
 }
 
 pub struct AnimatorDescriptor {
     pub src: Rectangle,
     pub dst: Rectangle,
-    pub time: Duration,
+    pub rate: f32,
     pub target: Handle,
 }
 
@@ -25,15 +23,17 @@ impl Descriptor for AnimatorDescriptor {
     type Target = Handle<Animator>;
 
     fn when_build(self, world: &World) -> Self::Target {
+        let animation = world.build(AnimationDescriptor {
+            src: 0.0,
+            dst: 1.0,
+            factor: self.rate,
+        });
+
         world.insert(Animator {
-            animation: world.build(AnimationDescriptor {
-                init: 0.0,
-                target: 1.0,
-                rate: 1.0 / self.time.as_secs_f32(),
-            }),
             src: self.src,
             dst: self.dst,
             target: self.target,
+            animation,
         })
     }
 }
