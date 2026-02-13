@@ -2,10 +2,8 @@ use crate::{
     layout::Layout,
     measures::Rectangle,
     theme::{Attach, Theme},
-    tools::pointer::{
-        PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus,
-    },
-    widgets::events::{Click, Interact},
+    tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
+    widgets::events::{WidgetButton, WidgetClick, WidgetHover, WidgetModified},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -70,15 +68,15 @@ impl Element for Button {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(self.collider, move |event: &PointerHit, world, _| {
             if let PointerStatus::Release = event.status {
-                world.trigger(this, &Click);
+                world.trigger(this, &WidgetClick);
             }
 
             match event.status {
                 PointerStatus::Press => {
-                    world.trigger(this, &Interact::ButtonPress);
+                    world.trigger(this, &WidgetButton::ButtonPress);
                 }
                 PointerStatus::Release => {
-                    world.trigger(this, &Interact::ButtonRelease);
+                    world.trigger(this, &WidgetButton::ButtonRelease);
                 }
                 _ => {}
             }
@@ -88,11 +86,11 @@ impl Element for Button {
             self.collider,
             move |event: &PointerHover, world, _| match event.motion {
                 PointerMotion::Enter => {
-                    world.trigger(this, &Interact::HoverEnter);
+                    world.trigger(this, &WidgetHover::HoverEnter);
                 }
                 PointerMotion::Moving => {}
                 PointerMotion::Leave => {
-                    world.trigger(this, &Interact::HoverLeave);
+                    world.trigger(this, &WidgetHover::HoverLeave);
                 }
             },
         );
@@ -114,7 +112,7 @@ impl Element for Button {
         collider.rect = self.rect;
 
         world.queue(move |world| {
-            world.trigger(this, &Interact::PropertyChange);
+            world.trigger(this, &WidgetModified);
         });
     }
 }

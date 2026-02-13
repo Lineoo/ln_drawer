@@ -85,11 +85,8 @@
 - [x] 调整发布编译配置
 - **LnDrawer v0.1.2-alpha3**
 - [ ] 重新调整主题动画
-    - [ ] 统一设计样式
-    - [ ] animation 重新设计（使用缓动）
-    - [ ] 添加 animation 对 f32 的支持
-    - [ ] 添加 animation 对 position 的支持
-    - [ ] 添加 animation 对 srgb 的支持（内部使用线性色彩空间）
+    - [x] animation 重新设计（使用缓动）
+    - [ ] attach 改为 Element 而非事件
     - [ ] theme 的动画分离各属性驱动
     - [ ] theme 支持进入/退出动画
 - [ ] noise 组件改用 menu
@@ -578,24 +575,12 @@ Viewport 在这个语境下其实是两个东西：
 
 ### 3. 渲染实现
 
-```rust
-pub enum Interact {
-    HoverEnter,
-    HoverLeave,
-    ButtonPress,
-    ButtonRelease,
-    WidgetEnabled,
-    WidgetDisabled,
-    PropertyChange,
-}
-```
+**渲染实现**主要关注每个无头组件生成的渲染类实现。
 
-**渲染实现**主要关注 `Interact` 事件，基本每个无头组件都会生成。
+- `WidgetRender` 事件用于追踪用户交互（制作动画反馈等）
+- `WidgetRender::PropertyChange` 事件时跟踪无头组件的属性并更新渲染
 
-- `Interact` 事件用于追踪用户交互（制作动画反馈等）
-- `Interact::PropertyChange` 事件时跟踪无头组件的属性并更新渲染
-
-使用 `Attach<T>` 事件将具体的组件绑定到对应的渲染实现。
+使用 `Attach<T>` 将具体的组件绑定到对应的渲染实现。
 
 ### 4. 最终实现
 

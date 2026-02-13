@@ -3,7 +3,7 @@ use crate::{
     measures::{Position, Rectangle, Size},
     theme::{Attach, Theme},
     tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
-    widgets::events::{Click, Interact, InteractSelect},
+    widgets::events::{WidgetButton, WidgetClick, WidgetHover, WidgetModified, WidgetSelect},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -100,7 +100,7 @@ impl Element for Menu {
             self.collider,
             move |event: &PointerHover, world, _| match event.motion {
                 PointerMotion::Enter => {
-                    world.trigger(this, &Interact::HoverEnter);
+                    world.trigger(this, &WidgetHover::HoverEnter);
                 }
                 PointerMotion::Moving => {
                     let mut this = world.fetch_mut(this).unwrap();
@@ -113,16 +113,16 @@ impl Element for Menu {
 
                         if this.hover.is_none_or(|x| x != idx) {
                             this.hover = Some(idx);
-                            world.trigger(this.handle(), &InteractSelect::Entry(Some(idx)));
+                            world.trigger(this.handle(), &WidgetSelect(Some(idx)));
                         }
                     } else if this.hover.is_some() {
                         this.hover = None;
-                        world.trigger(this.handle(), &InteractSelect::Entry(None));
+                        world.trigger(this.handle(), &WidgetSelect(None));
                     }
                 }
                 PointerMotion::Leave => {
-                    world.trigger(this, &InteractSelect::Entry(None));
-                    world.trigger(this, &Interact::HoverLeave);
+                    world.trigger(this, &WidgetSelect(None));
+                    world.trigger(this, &WidgetHover::HoverLeave);
 
                     let mut this = world.fetch_mut(this).unwrap();
                     this.hover = None;
@@ -134,7 +134,7 @@ impl Element for Menu {
             self.collider,
             move |event: &PointerHit, world, _| match event.status {
                 PointerStatus::Press => {
-                    world.trigger(this, &Interact::ButtonPress);
+                    world.trigger(this, &WidgetButton::ButtonPress);
                 }
                 PointerStatus::Moving => {
                     let mut this = world.fetch_mut(this).unwrap();
@@ -147,15 +147,15 @@ impl Element for Menu {
 
                         if this.hover.is_none_or(|x| x != idx) {
                             this.hover = Some(idx);
-                            world.trigger(this.handle(), &InteractSelect::Entry(Some(idx)));
+                            world.trigger(this.handle(), &WidgetSelect(Some(idx)));
                         }
                     } else if this.hover.is_some() {
                         this.hover = None;
-                        world.trigger(this.handle(), &InteractSelect::Entry(None));
+                        world.trigger(this.handle(), &WidgetSelect(None));
                     }
                 }
                 PointerStatus::Release => {
-                    world.trigger(this, &Interact::ButtonRelease);
+                    world.trigger(this, &WidgetButton::ButtonRelease);
 
                     let mut this = world.fetch_mut(this).unwrap();
 
@@ -164,7 +164,7 @@ impl Element for Menu {
                             / (this.entry_height + this.pad) as i32;
 
                         if let Some(entry) = this.entries.get(idx as usize) {
-                            world.trigger(*entry, &Click);
+                            world.trigger(*entry, &WidgetClick);
                         } else {
                             log::error!("menu hit nothing");
                         }
@@ -185,7 +185,7 @@ impl Element for Menu {
         }
 
         world.queue(move |world| {
-            world.trigger(this, &Interact::PropertyChange);
+            world.trigger(this, &WidgetModified);
         });
     }
 }

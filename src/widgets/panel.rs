@@ -3,7 +3,7 @@ use crate::{
     measures::Rectangle,
     theme::{Attach, Theme},
     tools::pointer::{PointerCollider, PointerHover, PointerMotion},
-    widgets::events::Interact,
+    widgets::events::{WidgetModified, WidgetHover},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -70,11 +70,11 @@ impl Element for Panel {
             self.collider,
             move |event: &PointerHover, world, _| match event.motion {
                 PointerMotion::Enter => {
-                    world.trigger(this, &Interact::HoverEnter);
+                    world.trigger(this, &WidgetHover::HoverEnter);
                 }
                 PointerMotion::Moving => {}
                 PointerMotion::Leave => {
-                    world.trigger(this, &Interact::HoverLeave);
+                    world.trigger(this, &WidgetHover::HoverLeave);
                 }
             },
         );
@@ -96,7 +96,7 @@ impl Element for Panel {
         collider.rect = self.rect;
 
         world.queue(move |world| {
-            world.trigger(this, &Interact::PropertyChange);
+            world.trigger(this, &WidgetModified);
         });
     }
 }

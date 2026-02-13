@@ -21,7 +21,7 @@ use crate::{
     },
     widgets::{
         check_button::{CheckButton, CheckButtonDescriptor},
-        events::Click,
+        events::WidgetClick,
         menu::{MenuDescriptor, MenuEntryDescriptor},
     },
     world::{Descriptor, Element, Handle, World},
@@ -179,7 +179,7 @@ impl Element for StrokeLayer {
                     world.dependency(text, menu.handle());
                 });
 
-                world.observer(entry, move |Click, world, _| {
+                world.observer(entry, move |WidgetClick, world, _| {
                     world.queue(move |world| {
                         let menu = world.fetch(menu).unwrap();
                         action(world, menu.position);
@@ -326,7 +326,7 @@ impl Descriptor for StrokeToolboxDescriptor {
             theme: None,
         });
 
-        world.observer(button, |Click, world, button| {});
+        world.observer(button, |WidgetClick, world, button| {});
 
         world.insert(StrokeToolbox { button })
     }

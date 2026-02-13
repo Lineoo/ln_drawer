@@ -1,15 +1,17 @@
-pub enum Interact {
+pub enum WidgetHover {
     HoverEnter,
     HoverLeave,
+}
+
+pub enum WidgetButton {
     ButtonPress,
     ButtonRelease,
-    PropertyChange,
 }
 
-pub enum InteractSelect {
-    Entry(Option<i32>),
-}
+pub struct WidgetModified;
 
-pub struct Click;
+pub struct WidgetSelect(pub Option<i32>);
 
-pub struct Switch;
+pub struct WidgetClick;
+
+pub struct WidgetSwitch;

@@ -6,7 +6,7 @@ use crate::{
     widgets::{
         button::Button,
         check_button::CheckButton,
-        events::{Interact, InteractSelect},
+        events::{WidgetButton, WidgetHover, WidgetModified, WidgetSelect},
         menu::Menu,
         panel::Panel,
     },
@@ -132,37 +132,38 @@ impl Element for Luni {
             world.dependency(start_anim, button.handle());
 
             let button = button.handle();
-            world.observer(
-                button,
-                move |interact: &Interact, world, _| match interact {
-                    Interact::HoverEnter => {
-                        let mut animation = world.fetch_mut(animation).unwrap();
-                        animation.dst = 1.0;
-                    }
-                    Interact::HoverLeave => {
-                        let mut animation = world.fetch_mut(animation).unwrap();
-                        animation.dst = 0.0;
-                    }
-                    Interact::ButtonPress => {
-                        let mut animation = world.fetch_mut(animation).unwrap();
-                        animation.dst = 0.5;
-                    }
-                    Interact::ButtonRelease => {
-                        let mut animation = world.fetch_mut(animation).unwrap();
-                        animation.dst = 1.0;
-                    }
-                    Interact::PropertyChange => {
-                        let button = world.fetch(button).unwrap();
-                        let mut front_frame = world.fetch_mut(front_frame).unwrap();
-                        let mut back_frame = world.fetch_mut(back_frame).unwrap();
+            world.observer(button, move |event: &WidgetHover, world, _| match event {
+                WidgetHover::HoverEnter => {
+                    let mut animation = world.fetch_mut(animation).unwrap();
+                    animation.dst = 1.0;
+                }
+                WidgetHover::HoverLeave => {
+                    let mut animation = world.fetch_mut(animation).unwrap();
+                    animation.dst = 0.0;
+                }
+            });
 
-                        front_frame.rect = button.rect;
-                        front_frame.order = button.order + 1;
-                        back_frame.rect = button.rect;
-                        back_frame.order = button.order;
-                    }
-                },
-            );
+            world.observer(button, move |event: &WidgetButton, world, _| match event {
+                WidgetButton::ButtonPress => {
+                    let mut animation = world.fetch_mut(animation).unwrap();
+                    animation.dst = 0.5;
+                }
+                WidgetButton::ButtonRelease => {
+                    let mut animation = world.fetch_mut(animation).unwrap();
+                    animation.dst = 1.0;
+                }
+            });
+
+            world.observer(button, move |WidgetModified, world, _| {
+                let button = world.fetch(button).unwrap();
+                let mut front_frame = world.fetch_mut(front_frame).unwrap();
+                let mut back_frame = world.fetch_mut(back_frame).unwrap();
+
+                front_frame.rect = button.rect;
+                front_frame.order = button.order + 1;
+                back_frame.rect = button.rect;
+                back_frame.order = button.order;
+            });
         });
 
         world.observer(this, |&Attach::<CheckButton>(button), world, this| {
@@ -240,43 +241,45 @@ impl Element for Luni {
             world.dependency(back_anim, button.handle());
             world.dependency(start_anim, button.handle());
 
-            world.observer(
-                button.handle(),
-                move |interact: &Interact, world, button| match interact {
-                    Interact::HoverEnter => {
-                        let mut animation = world.fetch_mut(front_anim).unwrap();
-                        animation.dst = 1.0;
-                    }
-                    Interact::HoverLeave => {
-                        let mut animation = world.fetch_mut(front_anim).unwrap();
-                        animation.dst = 0.0;
-                    }
-                    Interact::ButtonPress => {
-                        let mut animation = world.fetch_mut(front_anim).unwrap();
-                        animation.dst = 0.5;
-                    }
-                    Interact::ButtonRelease => {
-                        let mut animation = world.fetch_mut(front_anim).unwrap();
-                        animation.dst = 1.0;
-                    }
-                    Interact::PropertyChange => {
-                        let button = world.fetch(button).unwrap();
-                        let mut animation = world.fetch_mut(back_anim).unwrap();
-                        animation.dst = match button.checked {
-                            true => 0.5,
-                            false => 0.0,
-                        };
+            let button = button.handle();
+            world.observer(button, move |event: &WidgetHover, world, _| match event {
+                WidgetHover::HoverEnter => {
+                    let mut animation = world.fetch_mut(front_anim).unwrap();
+                    animation.dst = 1.0;
+                }
+                WidgetHover::HoverLeave => {
+                    let mut animation = world.fetch_mut(front_anim).unwrap();
+                    animation.dst = 0.0;
+                }
+            });
 
-                        let mut front_frame = world.fetch_mut(front_frame).unwrap();
-                        let mut back_frame = world.fetch_mut(back_frame).unwrap();
+            world.observer(button, move |event: &WidgetButton, world, _| match event {
+                WidgetButton::ButtonPress => {
+                    let mut animation = world.fetch_mut(front_anim).unwrap();
+                    animation.dst = 0.5;
+                }
+                WidgetButton::ButtonRelease => {
+                    let mut animation = world.fetch_mut(front_anim).unwrap();
+                    animation.dst = 1.0;
+                }
+            });
 
-                        front_frame.rect = button.rect;
-                        front_frame.order = button.order + 1;
-                        back_frame.rect = button.rect;
-                        back_frame.order = button.order;
-                    }
-                },
-            );
+            world.observer(button, move |WidgetModified, world, button| {
+                let button = world.fetch(button).unwrap();
+                let mut animation = world.fetch_mut(back_anim).unwrap();
+                animation.dst = match button.checked {
+                    true => 0.5,
+                    false => 0.0,
+                };
+
+                let mut front_frame = world.fetch_mut(front_frame).unwrap();
+                let mut back_frame = world.fetch_mut(back_frame).unwrap();
+
+                front_frame.rect = button.rect;
+                front_frame.order = button.order + 1;
+                back_frame.rect = button.rect;
+                back_frame.order = button.order;
+            });
         });
 
         world.observer(this, |&Attach::<Panel>(panel), world, this| {
@@ -330,24 +333,23 @@ impl Element for Luni {
             world.dependency(start_anim, panel.handle());
 
             let panel = panel.handle();
-            world.observer(panel, move |interact: &Interact, world, _| match interact {
-                Interact::HoverEnter => {
+            world.observer(panel, move |event: &WidgetHover, world, _| match event {
+                WidgetHover::HoverEnter => {
                     let mut animation = world.fetch_mut(anim).unwrap();
                     animation.dst = 1.0;
                 }
-                Interact::HoverLeave => {
+                WidgetHover::HoverLeave => {
                     let mut animation = world.fetch_mut(anim).unwrap();
                     animation.dst = 0.0;
                 }
-                Interact::ButtonPress => {}
-                Interact::ButtonRelease => {}
-                Interact::PropertyChange => {
-                    let panel = world.fetch(panel).unwrap();
-                    let mut frame = world.fetch_mut(frame).unwrap();
+            });
 
-                    frame.rect = panel.rect;
-                    frame.order = panel.order;
-                }
+            world.observer(panel, move |WidgetModified, world, _| {
+                let panel = world.fetch(panel).unwrap();
+                let mut frame = world.fetch_mut(frame).unwrap();
+
+                frame.rect = panel.rect;
+                frame.order = panel.order;
             });
         });
 
@@ -421,38 +423,29 @@ impl Element for Luni {
             world.dependency(select_color_anim, menu);
             world.dependency(select_rect_anim, menu);
 
-            world.observer(menu, move |interact: &Interact, world, _| match interact {
-                Interact::HoverEnter => {}
-                Interact::HoverLeave => {}
-                Interact::ButtonPress => {}
-                Interact::ButtonRelease => {}
-                Interact::PropertyChange => {
-                    let panel = world.fetch(menu).unwrap();
-                    let mut frame = world.fetch_mut(frame).unwrap();
+            world.observer(menu, move |WidgetModified, world, _| {
+                let panel = world.fetch(menu).unwrap();
+                let mut frame = world.fetch_mut(frame).unwrap();
 
-                    frame.rect = panel.menu_rect();
-                    frame.order = 100;
-                }
+                frame.rect = panel.menu_rect();
+                frame.order = 100;
             });
 
             let this = this.handle();
-            world.observer(
-                menu,
-                move |interact: &InteractSelect, world, _| match interact {
-                    InteractSelect::Entry(Some(idx)) => {
-                        let this = world.fetch(this).unwrap();
-                        let mut select_color_anim = world.fetch_mut(select_color_anim).unwrap();
-                        let mut select_rect_anim = world.fetch_mut(select_rect_anim).unwrap();
-                        select_color_anim.dst = this.front_color;
-                        select_rect_anim.dst = *idx as f32;
-                    }
-                    InteractSelect::Entry(None) => {
-                        let this = world.fetch(this).unwrap();
-                        let mut select_color_anim = world.fetch_mut(select_color_anim).unwrap();
-                        select_color_anim.dst = this.front_color.with_alpha(0.0);
-                    }
-                },
-            );
+            world.observer(menu, move |event: &WidgetSelect, world, _| match event {
+                WidgetSelect(Some(idx)) => {
+                    let this = world.fetch(this).unwrap();
+                    let mut select_color_anim = world.fetch_mut(select_color_anim).unwrap();
+                    let mut select_rect_anim = world.fetch_mut(select_rect_anim).unwrap();
+                    select_color_anim.dst = this.front_color;
+                    select_rect_anim.dst = *idx as f32;
+                }
+                WidgetSelect(None) => {
+                    let this = world.fetch(this).unwrap();
+                    let mut select_color_anim = world.fetch_mut(select_color_anim).unwrap();
+                    select_color_anim.dst = this.front_color.with_alpha(0.0);
+                }
+            });
         });
     }
 }
