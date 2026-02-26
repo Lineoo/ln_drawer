@@ -50,7 +50,6 @@ impl Element for SimpleNoise {
         let button = world.build(ButtonDescriptor {
             rect,
             order: 20,
-            theme: None,
         });
 
         let icon = world.build(
@@ -75,13 +74,11 @@ impl Element for SimpleNoise {
             let play = world.build(ButtonDescriptor {
                 rect: button.rect,
                 order: 30,
-                theme: None,
             });
 
             let pause = world.build(ButtonDescriptor {
                 rect: button.rect.pad_left(10, 1),
                 order: 30,
-                theme: None,
             });
 
             world.observer(play, move |WidgetClick, world, play| {

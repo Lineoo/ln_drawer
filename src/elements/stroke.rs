@@ -21,7 +21,7 @@ use crate::{
     },
     widgets::{
         check_button::{CheckButton, CheckButtonDescriptor},
-        events::WidgetClick,
+        events::{WidgetClick, WidgetSwitch},
         menu::{MenuDescriptor, MenuEntryDescriptor},
     },
     world::{Descriptor, Element, Handle, World},
@@ -83,7 +83,6 @@ impl Element for StrokeLayer {
                 entry_width: 400,
                 entry_height: 40,
                 entry_pad: 5,
-                theme: None,
             });
 
             let collider = world.insert(PointerCollider::fullscreen(80));
@@ -133,6 +132,21 @@ impl Element for StrokeLayer {
                     let bytes = include_bytes!("../../res/iconv2.png");
 
                     world.build(CanvasDescriptor::from_bytes(rect, 0, bytes).unwrap());
+                }),
+                ("Check Button", |world, position| {
+                    let button = world.build(CheckButtonDescriptor {
+                        rect: Rectangle {
+                            origin: position,
+                            extend: Size::splat(100),
+                        },
+                        checked: false,
+                        order: 10,
+                    });
+
+                    world.observer(button, |WidgetSwitch, world, button| {
+                        let mut button = world.fetch_mut(button).unwrap();
+                        button.checked = !button.checked;
+                    });
                 }),
                 ("Simple Noise", |world, position| {
                     world.build(SimpleNoiseDescriptor { position });
@@ -323,7 +337,6 @@ impl Descriptor for StrokeToolboxDescriptor {
             rect,
             checked: false,
             order: 20,
-            theme: None,
         });
 
         world.observer(button, |WidgetClick, world, button| {});

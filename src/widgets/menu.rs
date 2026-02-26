@@ -1,7 +1,7 @@
 use crate::{
     layout::Layout,
     measures::{Position, Rectangle, Size},
-    theme::{Attach, Theme},
+    theme::{Attach, Luni},
     tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
     widgets::events::{WidgetButton, WidgetClick, WidgetHover, WidgetModified, WidgetSelect},
     world::{Descriptor, Element, Handle, World},
@@ -26,7 +26,6 @@ pub struct MenuDescriptor {
     pub entry_width: u32,
     pub entry_height: u32,
     pub entry_pad: u32,
-    pub theme: Option<Handle>,
 }
 
 pub struct MenuEntryDescriptor {
@@ -40,7 +39,6 @@ impl Default for MenuDescriptor {
             entry_width: 400,
             entry_height: 40,
             entry_pad: 5,
-            theme: None,
         }
     }
 }
@@ -73,15 +71,10 @@ impl Descriptor for MenuDescriptor {
             entries: Vec::new(),
         });
 
-        match self.theme {
-            Some(theme) => world.queue(move |world| {
-                world.trigger(theme, &Attach::<Menu>(menu));
-            }),
-            None => world.queue(move |world| {
-                let theme = world.single::<Theme>().unwrap();
-                world.trigger(theme, &Attach::<Menu>(menu));
-            }),
-        }
+        world.insert(Attach {
+            widget: menu,
+            theme: world.single::<Luni>().unwrap(),
+        });
 
         world.queue(move |world| {
             let mut collider = world.fetch_mut(collider).unwrap();

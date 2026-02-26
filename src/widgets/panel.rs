@@ -1,9 +1,9 @@
 use crate::{
     layout::Layout,
     measures::Rectangle,
-    theme::{Attach, Theme},
+    theme::{Attach, Luni},
     tools::pointer::{PointerCollider, PointerHover, PointerMotion},
-    widgets::events::{WidgetModified, WidgetHover},
+    widgets::events::{WidgetHover, WidgetModified},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -16,7 +16,6 @@ pub struct Panel {
 pub struct PanelDescriptor {
     pub rect: Rectangle,
     pub order: isize,
-    pub theme: Option<Handle>,
 }
 
 impl Default for PanelDescriptor {
@@ -24,7 +23,6 @@ impl Default for PanelDescriptor {
         Self {
             rect: Rectangle::new(0, 0, 200, 200),
             order: -10,
-            theme: None,
         }
     }
 }
@@ -45,15 +43,10 @@ impl Descriptor for PanelDescriptor {
             collider,
         });
 
-        match self.theme {
-            Some(theme) => world.queue(move |world| {
-                world.trigger(theme, &Attach::<Panel>(panel));
-            }),
-            None => world.queue(move |world| {
-                let theme = world.single::<Theme>().unwrap();
-                world.trigger(theme, &Attach::<Panel>(panel));
-            }),
-        }
+        world.insert(Attach {
+            widget: panel,
+            theme: world.single::<Luni>().unwrap(),
+        });
 
         world.queue(move |world| {
             let mut collider = world.fetch_mut(collider).unwrap();

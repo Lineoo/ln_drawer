@@ -45,7 +45,7 @@ impl Element for Animator {
         let target = self.target;
         world.observer(
             self.animation,
-            move |&AnimationValue::<f32>(val), world, _| {
+            move |&AnimationValue(val), world, _| {
                 let this = world.fetch(this).unwrap();
                 world.trigger(
                     target,

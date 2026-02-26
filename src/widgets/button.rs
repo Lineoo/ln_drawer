@@ -1,7 +1,7 @@
 use crate::{
     layout::Layout,
     measures::Rectangle,
-    theme::{Attach, Theme},
+    theme::{Attach, Luni},
     tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
     widgets::events::{WidgetButton, WidgetClick, WidgetHover, WidgetModified},
     world::{Descriptor, Element, Handle, World},
@@ -16,7 +16,6 @@ pub struct Button {
 pub struct ButtonDescriptor {
     pub rect: Rectangle,
     pub order: isize,
-    pub theme: Option<Handle>,
 }
 
 impl Default for ButtonDescriptor {
@@ -24,7 +23,6 @@ impl Default for ButtonDescriptor {
         Self {
             rect: Rectangle::new(0, 0, 100, 100),
             order: 10,
-            theme: None,
         }
     }
 }
@@ -45,15 +43,10 @@ impl Descriptor for ButtonDescriptor {
             collider,
         });
 
-        match self.theme {
-            Some(theme) => world.queue(move |world| {
-                world.trigger(theme, &Attach::<Button>(button));
-            }),
-            None => world.queue(move |world| {
-                let theme = world.single::<Theme>().unwrap();
-                world.trigger(theme, &Attach::<Button>(button));
-            }),
-        }
+        world.insert(Attach {
+            widget: button,
+            theme: world.single::<Luni>().unwrap(),
+        });
 
         world.queue(move |world| {
             let mut collider = world.fetch_mut(collider).unwrap();

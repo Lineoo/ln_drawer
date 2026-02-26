@@ -1,13 +1,13 @@
 use std::time::Instant;
 
-use palette::{Mix, Srgba};
+use palette::Srgba;
 
 use crate::{
     render::{RedrawPrepare, RenderControl},
     world::{Descriptor, Element, Handle, World},
 };
 
-pub struct Animation<T> {
+pub struct Animation<T: AnimationType> {
     pub src: T,
     pub dst: T,
     pub factor: f32,
@@ -18,13 +18,21 @@ pub struct Animation<T> {
     control_active: bool,
 }
 
-pub struct AnimationDescriptor<T> {
+pub struct AnimationDescriptor<T: AnimationType> {
     pub src: T,
     pub dst: T,
     pub factor: f32,
 }
 
-pub struct AnimationValue<T>(pub T);
+impl<T: AnimationType> AnimationDescriptor<T> {
+    pub fn new(init: T, factor: f32) -> Self {
+        Self {
+            src: init,
+            dst: init,
+            factor,
+        }
+    }
+}
 
 impl<T: AnimationType> Descriptor for AnimationDescriptor<T> {
     type Target = Handle<Animation<T>>;
@@ -52,17 +60,36 @@ impl<T: AnimationType> Element for Animation<T> {
         world.observer(self.control, move |RedrawPrepare, world, control| {
             let mut this = world.fetch_mut(this).unwrap();
 
+            // calculate next value
+
             let now = Instant::now();
             let delta = (now - this.last_update).as_secs_f32();
             let factor = f32::exp(-this.factor * delta);
-            let next = T::lerp(this.src, this.dst, 1.0 - factor);
-            let changed = this.src != next;
-
-            this.src = next;
             this.last_update = now;
 
+            let mut changed = false;
+            let the = &mut *this;
+            let iter = Iterator::zip(
+                the.src.float_iter().into_iter(),
+                the.dst.float_iter().into_iter(),
+            );
+
+            for (src_ref, dst_ref) in iter {
+                let (src, dst) = (*src_ref, *dst_ref);
+
+                let next = match (src - dst).abs() < 1e-2 {
+                    true => dst, // snap
+                    false => src * factor + dst * (1.0 - factor),
+                };
+
+                changed |= src != next;
+                *src_ref = next;
+            }
+
+            // send event and change RenderControl
+
             if changed {
-                world.trigger(this.handle(), &AnimationValue(next));
+                world.trigger(this.handle(), &AnimationValue(this.src));
             }
 
             if this.control_active != changed {
@@ -86,32 +113,25 @@ impl<T: AnimationType> Element for Animation<T> {
     }
 }
 
-trait AnimationType: Copy + PartialEq + 'static {
-    /// The `factor` is usually close to 0, which stands for `rhs` rather than `self`.
-    /// Note that a built-in snapping should be provided.
-    fn lerp(self, rhs: Self, factor: f32) -> Self;
+pub struct AnimationValue<T: AnimationType>(pub T);
+
+pub trait AnimationType: PartialEq + Clone + Copy + 'static {
+    fn float_iter(&mut self) -> impl IntoIterator<Item = &mut f32>;
 }
 
 impl AnimationType for f32 {
-    fn lerp(self, rhs: Self, factor: f32) -> Self {
-        if (self - rhs).abs() < 1e-2 {
-            return rhs;
-        }
-
-        self * (1.0 - factor) + rhs * factor
+    fn float_iter(&mut self) -> impl IntoIterator<Item = &mut f32> {
+        [self]
     }
 }
 
 impl AnimationType for Srgba {
-    fn lerp(self, rhs: Self, factor: f32) -> Self {
-        if (self.red - rhs.red).abs() < 1e-2
-            && (self.green - rhs.green).abs() < 1e-2
-            && (self.blue - rhs.blue).abs() < 1e-2
-            && (self.alpha - rhs.alpha).abs() < 1e-2
-        {
-            return rhs;
-        }
-
-        self.mix(rhs, factor)
+    fn float_iter(&mut self) -> impl IntoIterator<Item = &mut f32> {
+        [
+            &mut self.color.red,
+            &mut self.color.green,
+            &mut self.color.blue,
+            &mut self.alpha,
+        ]
     }
 }

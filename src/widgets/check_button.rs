@@ -1,7 +1,7 @@
 use crate::{
     layout::Layout,
     measures::Rectangle,
-    theme::{Attach, Theme},
+    theme::{Attach, Luni},
     tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
     widgets::events::{WidgetButton, WidgetHover, WidgetModified, WidgetSwitch},
     world::{Descriptor, Element, Handle, World},
@@ -18,7 +18,6 @@ pub struct CheckButtonDescriptor {
     pub rect: Rectangle,
     pub checked: bool,
     pub order: isize,
-    pub theme: Option<Handle>,
 }
 
 impl Default for CheckButtonDescriptor {
@@ -27,7 +26,6 @@ impl Default for CheckButtonDescriptor {
             rect: Rectangle::new(0, 0, 100, 100),
             checked: false,
             order: 10,
-            theme: None,
         }
     }
 }
@@ -49,15 +47,10 @@ impl Descriptor for CheckButtonDescriptor {
             collider,
         });
 
-        match self.theme {
-            Some(theme) => world.queue(move |world| {
-                world.trigger(theme, &Attach::<CheckButton>(button));
-            }),
-            None => world.queue(move |world| {
-                let theme = world.single::<Theme>().unwrap();
-                world.trigger(theme, &Attach::<CheckButton>(button));
-            }),
-        }
+        world.insert(Attach {
+            widget: button,
+            theme: world.single::<Luni>().unwrap(),
+        });
 
         world.queue(move |world| {
             let mut collider = world.fetch_mut(collider).unwrap();
