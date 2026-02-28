@@ -129,7 +129,7 @@ impl Element for StrokeLayer {
                         extend: Size::splat(100),
                     };
 
-                    let bytes = include_bytes!("../../res/iconv2.png");
+                    let bytes = include_bytes!("../../res/icon_hicolor.png");
 
                     world.build(CanvasDescriptor::from_bytes(rect, 0, bytes).unwrap());
                 }),
