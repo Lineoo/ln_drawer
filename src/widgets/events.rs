@@ -15,3 +15,5 @@ pub struct WidgetSelect(pub Option<i32>);
 pub struct WidgetClick;
 
 pub struct WidgetSwitch;
+
+pub struct WidgetDestroyed;

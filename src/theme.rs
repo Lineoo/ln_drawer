@@ -6,7 +6,9 @@ use crate::{
     widgets::{
         button::Button,
         check_button::CheckButton,
-        events::{WidgetButton, WidgetHover, WidgetModified, WidgetSelect, WidgetSwitch},
+        events::{
+            WidgetButton, WidgetDestroyed, WidgetHover, WidgetModified, WidgetSelect, WidgetSwitch,
+        },
         menu::Menu,
         panel::Panel,
     },
@@ -23,9 +25,11 @@ pub struct Attach<T, U> {
 
 /// `Luni` stands for `ln_ui`. It's this basic widgets' render implementation of ln_drawer.
 pub struct Luni {
-    back_color: Srgba,
-    front_color: Srgba,
+    color: Srgba,
+    active_color: Srgba,
+    press_color: Srgba,
     roundness: f32,
+    press_roundness: f32,
     anim_factor: f32,
     anim_factor_menu: f32,
     pad: i32,
@@ -34,9 +38,11 @@ pub struct Luni {
 impl Default for Luni {
     fn default() -> Self {
         Self {
-            back_color: Srgba::new(0.1, 0.1, 0.1, 0.9),
-            front_color: Srgba::new(0.3, 0.3, 0.3, 1.0),
+            color: Srgba::new(0.1, 0.1, 0.1, 0.9),
+            active_color: Srgba::new(0.3, 0.3, 0.3, 1.0),
+            press_color: Srgba::new(0.2, 0.2, 0.2, 1.0),
             roundness: 5.0,
+            press_roundness: 15.0,
             anim_factor: 30.0,
             anim_factor_menu: 50.0,
             pad: 5,
@@ -56,14 +62,17 @@ impl Element for Attach<Button, Luni> {
         let frame = world.build(RoundedRectDescriptor {
             rect: button.rect,
             order: button.order,
-            color: luni.back_color,
+            color: luni.color,
             shrink: luni.roundness,
             value: luni.roundness,
             ..Default::default()
         });
 
-        let frame_anim_color =
-            world.build(AnimationDescriptor::new(luni.back_color, luni.anim_factor));
+        let frame_anim_color = world.build(AnimationDescriptor {
+            src: Srgba::new(0.0, 0.0, 0.0, 0.0),
+            dst: luni.color,
+            factor: luni.anim_factor,
+        });
 
         world.observer(frame_anim_color, move |&AnimationValue(value), world, _| {
             let mut frame = world.fetch_mut(frame).unwrap();
@@ -79,22 +88,23 @@ impl Element for Attach<Button, Luni> {
         // behavior
 
         let button = button.handle();
-        let luni_back_color = luni.back_color;
-        let luni_front_color = luni.front_color;
+        let luni = luni.handle();
 
         world.observer(button, move |event: &WidgetHover, world, _| {
+            let luni = world.fetch(luni).unwrap();
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
-                WidgetHover::HoverEnter => frame_anim_color.dst = luni_front_color,
-                WidgetHover::HoverLeave => frame_anim_color.dst = luni_back_color,
+                WidgetHover::HoverEnter => frame_anim_color.dst = luni.active_color,
+                WidgetHover::HoverLeave => frame_anim_color.dst = luni.color,
             }
         });
 
         world.observer(button, move |event: &WidgetButton, world, _| {
+            let luni = world.fetch(luni).unwrap();
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
-                WidgetButton::ButtonPress => frame_anim_color.dst = luni_front_color,
-                WidgetButton::ButtonRelease => frame_anim_color.dst = luni_back_color,
+                WidgetButton::ButtonPress => frame_anim_color.dst = luni.press_color,
+                WidgetButton::ButtonRelease => frame_anim_color.dst = luni.active_color,
             }
         });
 
@@ -118,16 +128,23 @@ impl Element for Attach<CheckButton, Luni> {
         let frame = world.build(RoundedRectDescriptor {
             rect: button.rect,
             order: button.order,
-            color: luni.back_color,
+            color: luni.color,
             shrink: luni.roundness,
             value: luni.roundness,
             ..Default::default()
         });
 
-        let frame_anim_color =
-            world.build(AnimationDescriptor::new(luni.back_color, luni.anim_factor));
-        let frame_anim_roundness =
-            world.build(AnimationDescriptor::new(luni.roundness, luni.anim_factor));
+        let frame_anim_color = world.build(AnimationDescriptor {
+            src: Srgba::new(0.0, 0.0, 0.0, 0.0),
+            dst: luni.color,
+            factor: luni.anim_factor,
+        });
+
+        let frame_anim_roundness = world.build(AnimationDescriptor {
+            src: 0.0,
+            dst: luni.roundness,
+            factor: luni.anim_factor,
+        });
 
         world.observer(frame_anim_color, move |&AnimationValue(value), world, _| {
             let mut frame = world.fetch_mut(frame).unwrap();
@@ -152,36 +169,37 @@ impl Element for Attach<CheckButton, Luni> {
         // behavior
 
         let button = button.handle();
-        let luni_back_color = luni.back_color;
-        let luni_front_color = luni.front_color;
-        let luni_roundness = luni.roundness;
+        let luni = luni.handle();
 
         world.observer(button, move |event: &WidgetHover, world, _| {
+            let luni = world.fetch(luni).unwrap();
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
-                WidgetHover::HoverEnter => frame_anim_color.dst = luni_front_color,
-                WidgetHover::HoverLeave => frame_anim_color.dst = luni_back_color,
+                WidgetHover::HoverEnter => frame_anim_color.dst = luni.active_color,
+                WidgetHover::HoverLeave => frame_anim_color.dst = luni.color,
             }
         });
 
         world.observer(button, move |event: &WidgetButton, world, _| {
+            let luni = world.fetch(luni).unwrap();
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
-                WidgetButton::ButtonPress => frame_anim_color.dst = luni_front_color,
-                WidgetButton::ButtonRelease => frame_anim_color.dst = luni_back_color,
+                WidgetButton::ButtonPress => frame_anim_color.dst = luni.press_color,
+                WidgetButton::ButtonRelease => frame_anim_color.dst = luni.active_color,
             }
         });
 
         world.observer(button, move |WidgetModified, world, _| {
             let button = world.fetch(button).unwrap();
+            let luni = world.fetch(luni).unwrap();
             let mut frame = world.fetch_mut(frame).unwrap();
             let mut frame_anim_roundness = world.fetch_mut(frame_anim_roundness).unwrap();
 
             frame.rect = button.rect;
             frame.order = button.order;
             match button.checked {
-                true => frame_anim_roundness.dst = luni_roundness + 10.0,
-                false => frame_anim_roundness.dst = luni_roundness,
+                true => frame_anim_roundness.dst = luni.press_roundness,
+                false => frame_anim_roundness.dst = luni.roundness,
             }
         });
     }
@@ -189,22 +207,25 @@ impl Element for Attach<CheckButton, Luni> {
 
 impl Element for Attach<Panel, Luni> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let button = world.fetch(self.widget).unwrap();
+        let panel = world.fetch(self.widget).unwrap();
         let luni = world.fetch(self.theme).unwrap();
 
         // display
 
         let frame = world.build(RoundedRectDescriptor {
-            rect: button.rect,
-            order: button.order,
-            color: luni.back_color,
+            rect: panel.rect,
+            order: panel.order,
+            color: luni.color,
             shrink: luni.roundness,
             value: luni.roundness,
             ..Default::default()
         });
 
-        let frame_anim_color =
-            world.build(AnimationDescriptor::new(luni.back_color, luni.anim_factor));
+        let frame_anim_color = world.build(AnimationDescriptor {
+            src: Srgba::new(0.0, 0.0, 0.0, 0.0),
+            dst: luni.color,
+            factor: luni.anim_factor,
+        });
 
         world.observer(frame_anim_color, move |&AnimationValue(value), world, _| {
             let mut frame = world.fetch_mut(frame).unwrap();
@@ -219,32 +240,24 @@ impl Element for Attach<Panel, Luni> {
 
         // behavior
 
-        let button = button.handle();
-        let luni_back_color = luni.back_color;
-        let luni_front_color = luni.front_color;
+        let panel = panel.handle();
+        let luni = luni.handle();
 
-        world.observer(button, move |event: &WidgetHover, world, _| {
+        world.observer(panel, move |event: &WidgetHover, world, _| {
+            let luni = world.fetch(luni).unwrap();
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
-                WidgetHover::HoverEnter => frame_anim_color.dst = luni_front_color,
-                WidgetHover::HoverLeave => frame_anim_color.dst = luni_back_color,
+                WidgetHover::HoverEnter => frame_anim_color.dst = luni.active_color,
+                WidgetHover::HoverLeave => frame_anim_color.dst = luni.color,
             }
         });
 
-        world.observer(button, move |event: &WidgetButton, world, _| {
-            let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
-            match event {
-                WidgetButton::ButtonPress => frame_anim_color.dst = luni_front_color,
-                WidgetButton::ButtonRelease => frame_anim_color.dst = luni_back_color,
-            }
-        });
-
-        world.observer(button, move |WidgetModified, world, _| {
-            let button = world.fetch(button).unwrap();
+        world.observer(panel, move |WidgetModified, world, _| {
+            let panel = world.fetch(panel).unwrap();
             let mut frame = world.fetch_mut(frame).unwrap();
 
-            frame.rect = button.rect;
-            frame.order = button.order;
+            frame.rect = panel.rect;
+            frame.order = panel.order;
         });
     }
 }
@@ -259,7 +272,7 @@ impl Element for Attach<Menu, Luni> {
         let frame = world.build(RoundedRectDescriptor {
             rect: menu.menu_rect(),
             order: 100,
-            color: luni.back_color,
+            color: luni.color.with_alpha(0.0),
             shrink: luni.roundness,
             value: luni.roundness,
             ..Default::default()
@@ -268,20 +281,33 @@ impl Element for Attach<Menu, Luni> {
         let select = world.build(RoundedRectDescriptor {
             rect: menu.entry_rect(0.0),
             order: 101,
-            color: luni.front_color.with_alpha(0.0),
+            color: luni.active_color.with_alpha(0.0),
             shrink: luni.roundness,
             value: luni.roundness,
             ..Default::default()
         });
 
+        // anim bind
+
+        let frame_anim_alpha = world.build(AnimationDescriptor {
+            src: 0.0,
+            dst: 1.0,
+            factor: luni.anim_factor,
+        });
+
         let select_anim_alpha = world.build(AnimationDescriptor::new(0.0, luni.anim_factor));
-        let select_anim_rect = world.build(AnimationDescriptor::new(0.0, luni.anim_factor));
+        let select_anim_rect = world.build(AnimationDescriptor::new(0.0, luni.anim_factor_menu));
+
+        world.observer(frame_anim_alpha, move |&AnimationValue(value), world, _| {
+            let mut frame = world.fetch_mut(frame).unwrap();
+            frame.color.alpha = value;
+        });
 
         world.observer(
             select_anim_alpha,
             move |&AnimationValue(value), world, _| {
-                let mut select_frame = world.fetch_mut(select).unwrap();
-                select_frame.color.alpha = value;
+                let mut select = world.fetch_mut(select).unwrap();
+                select.color.alpha = value;
             },
         );
 
@@ -294,7 +320,6 @@ impl Element for Attach<Menu, Luni> {
 
         // dependency
 
-        world.dependency(this, self.widget);
         world.dependency(frame, this);
         world.dependency(select, this);
         world.dependency(select_anim_alpha, this);
@@ -303,10 +328,10 @@ impl Element for Attach<Menu, Luni> {
         // behavior
 
         world.observer(menu, move |WidgetModified, world, _| {
-            let panel = world.fetch(menu).unwrap();
+            let menu = world.fetch(menu).unwrap();
             let mut frame = world.fetch_mut(frame).unwrap();
 
-            frame.rect = panel.menu_rect();
+            frame.rect = menu.menu_rect();
             frame.order = 100;
         });
 
@@ -321,6 +346,22 @@ impl Element for Attach<Menu, Luni> {
                 let mut select_anim_alpha = world.fetch_mut(select_anim_alpha).unwrap();
                 select_anim_alpha.dst = 0.0;
             }
+        });
+
+        world.observer(menu, move |WidgetDestroyed, world, _| {
+            world.observer(
+                frame_anim_alpha,
+                move |&AnimationValue::<f32>(value), world, _| {
+                    if value == 0f32 {
+                        world.remove(this);
+                    }
+                },
+            );
+
+            let mut frame_anim_alpha = world.fetch_mut(frame_anim_alpha).unwrap();
+            let mut select_anim_alpha = world.fetch_mut(select_anim_alpha).unwrap();
+            frame_anim_alpha.dst = 0.0;
+            select_anim_alpha.dst = 0.0;
         });
     }
 }

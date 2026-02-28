@@ -92,6 +92,7 @@
 - [ ] noise 组件改用 menu
 - [ ] menu 的进入退出矩形动画
     - [ ] Interact 事件：Remove
+- [ ] menu 的字也得是 theme 负责吧
 - [ ] 滑条、宽滑条
 - [ ] 新的获得性排列布局器 layer
     - [ ] 置层事件 `Place`
@@ -102,6 +103,7 @@
     - [ ] 统一音频接口
     - [ ] 用户界面
 - [ ] 设置界面
+- [ ] fetch traceback 功能
 - [ ] world 调试模块
     - [ ] 零触发警告
     - [ ] 未注册事件触发显示警告
@@ -235,6 +237,29 @@ impl ElementDescriptor for BazDescriptor {
         Baz { inner }
     }
 }
+```
+
+### 延迟执行 insert 和 remove
+
+我们遵循生命周期最小的原则：
+- 在 insert 后无法 fetch
+- 在 insert-flush 后正常 fetch
+- 在 remove 后立刻无法 fetch
+- 在 remove-flush 后当然无法 fetch
+
+我们极力避免出现生命周期交叉！（图中没有画 queue 有关的，但是也应该尽力保证不交叉）
+```text
+/--- insert
+|    insert-flush ----=\  
+|    ...               |  >==\  ===> where `when_insert` runs (after insert-flush)
+|    modify            |     |
+|    ...               |     |  ===> where `when_modify` runs (after modify)
+|    ...               |     |
+|    ...               |  >==/  ===> where `when_remove` runs (before remove)
+|    remove       ----=/   ^^^
+\--- remove-flush    ^^^   element-trait hook lifecycle
+^^^                  fetch-available lifecycle
+actual ownership lifecycle      ===> where `drop` runs
 ```
 
 ### 生命周期事件
