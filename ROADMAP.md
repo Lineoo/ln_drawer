@@ -250,14 +250,18 @@ impl ElementDescriptor for BazDescriptor {
 我们极力避免出现生命周期交叉！（图中没有画 queue 有关的，但是也应该尽力保证不交叉）
 ```text
 /--- insert
-|    insert-flush ----=\  
-|    ...               |  >==\  ===> where `when_insert` runs (after insert-flush)
-|    modify            |     |
-|    ...               |     |  ===> where `when_modify` runs (after modify)
+|    insert-flush ----=\
+|    insert-event      |  >==\  ===> where `when_insert` runs (after insert-flush)
 |    ...               |     |
-|    ...               |  >==/  ===> where `when_remove` runs (before remove)
-|    remove       ----=/   ^^^
-\--- remove-flush    ^^^   element-trait hook lifecycle
+|    modify            |     |
+|    modify-event      |     |  ===> where `when_modify` runs (after modify)
+|    ...               |     |
+|    bind-deps         |     |
+|    ...               |     |
+|    remove-event      |  >==/  ===> where `when_remove` runs (before remove)
+|    remove-deps       |   ^^^
+|    remove       ----=/   element-trait hook lifecycle
+\--- remove-flush    ^^^
 ^^^                  fetch-available lifecycle
 actual ownership lifecycle      ===> where `drop` runs
 ```

@@ -3,7 +3,9 @@ use crate::{
     measures::{Position, Rectangle, Size},
     theme::{Attach, Luni},
     tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
-    widgets::events::{WidgetButton, WidgetClick, WidgetDestroyed, WidgetHover, WidgetModified, WidgetSelect},
+    widgets::events::{
+        WidgetButton, WidgetClick, WidgetDestroyed, WidgetHover, WidgetModified, WidgetSelect,
+    },
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -184,9 +186,7 @@ impl Element for Menu {
 
     // FIXME this is unavailable yet
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {
-        world.queue(move |world| {
-            world.trigger(this, &WidgetDestroyed);
-        });
+        world.trigger(this, &WidgetDestroyed);
     }
 }
 

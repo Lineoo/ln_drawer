@@ -323,7 +323,7 @@ impl Element for Attach<Menu, Luni> {
         world.dependency(frame, this);
         world.dependency(select, this);
         world.dependency(select_anim_alpha, this);
-        world.dependency(select_anim_rect, this);
+        world.dependency(select_anim_rect, menu);
 
         // behavior
 

@@ -66,7 +66,9 @@ impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(this, |event: &WindowEvent, world, this| {
             if let WindowEvent::CloseRequested = event {
-                world.remove(this);
+                world.queue(move |world| {
+                    world.remove(this);
+                });
             }
         });
 

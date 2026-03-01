@@ -108,6 +108,7 @@ pub struct World {
 
 struct WorldType {
     cache: HashSet<Handle>,
+    type_name: &'static str,
     when_insert: fn(&mut dyn Any, &World, Handle),
     when_modify: fn(&mut dyn Any, &World, Handle),
     when_remove: fn(&mut dyn Any, &World, Handle),
@@ -154,6 +155,7 @@ impl World {
                 log::debug!("register elements: {}", type_name::<T>());
                 WorldType {
                     cache: HashSet::new(),
+                    type_name: type_name::<T>(),
                     when_insert: |elem, world, handle| {
                         T::when_insert(elem.downcast_mut().unwrap(), world, handle.cast());
                     },
@@ -183,22 +185,33 @@ impl World {
     }
 
     /// Cell-mode removal cannot access the element immediately so we can't return the owned value of removed element.
-    pub fn remove<T: ?Sized>(&self, handle: Handle<T>) -> usize {
-        let handle = handle.cast();
+    pub fn remove<T: ?Sized + 'static>(&self, handle: Handle<T>) -> usize {
+        let handle_any = handle.cast();
 
-        if !self.validate(handle) {
+        if self.removed.borrow().contains(&handle_any) {
             return 0;
         }
 
-        // write immediate record
-        let mut removed = self.removed.borrow_mut();
-        removed.insert(handle);
-        drop(removed);
+        let mut occupied = self.occupied.borrow_mut();
+
+        let cnt = occupied.entry(handle_any).or_default();
+        if *cnt != 0 {
+            panic!("{:?} is borrowed during removal", handle);
+        }
+
+        drop(occupied);
+
+        // when_remove
+        // SAFETY: we have checked the mutability
+        let element = self.members.get(&handle_any).unwrap().as_ref();
+        let when_remove = self.typehint.get(&element.type_id()).unwrap().when_remove;
+        let element = element as *const dyn Any as *mut dyn Any;
+        when_remove(unsafe { element.as_mut().unwrap() }, self, handle_any);
 
         // maintain dependency
         let mut cnt = 1;
         if let Some(mut dependencies) = self.single_fetch_mut::<Dependencies>()
-            && let Some(this) = dependencies.0.remove(&handle)
+            && let Some(this) = dependencies.0.remove(&handle_any)
         {
             // clean for parents
             for depend_on in this.depend_on {
@@ -208,7 +221,7 @@ impl World {
 
                 // search for itself and swap remove
                 for i in 0..depend_on.depend_by.len() {
-                    if depend_on.depend_by[i] == handle {
+                    if depend_on.depend_by[i] == handle_any {
                         depend_on.depend_by.swap_remove(i);
                         break;
                     }
@@ -222,22 +235,19 @@ impl World {
             }
         }
 
+        // write immediate record
+        let mut removed = self.removed.borrow_mut();
+        removed.insert(handle_any);
+        drop(removed);
+
         self.queue(move |world| {
-            let type_id = world.members.get(&handle).unwrap().as_ref().type_id();
-
-            // when_remove
-            // SAFETY: because of remove table, callers cannot access it anyway
-            let when_remove = world.typehint.get(&type_id).unwrap().when_remove;
-            let element = world.members.get(&handle).unwrap().as_ref();
-            let element = element as *const dyn Any as *mut dyn Any;
-            when_remove(unsafe { element.as_mut().unwrap() }, world, handle);
-
             // update cache
+            let type_id = world.members.get(&handle_any).unwrap().as_ref().type_id();
             let typehint = world.typehint.get_mut(&type_id).unwrap();
-            typehint.cache.remove(&handle);
+            typehint.cache.remove(&handle_any);
 
             // pop out storage
-            world.members.remove(&handle);
+            world.members.remove(&handle_any);
 
             log::trace!("remove {:?}", handle);
         });
@@ -247,14 +257,10 @@ impl World {
 
     // cell-mode ops //
 
-    /// Check whether target element exists, insertion without `flush` *will* be included.
+    /// Check whether target element exists, insertion without `flush` will *NOT* be included.
     pub fn validate<T: ?Sized>(&self, handle: Handle<T>) -> bool {
         if self.removed.borrow().contains(&handle.cast()) {
             return false;
-        }
-
-        if self.inserted.borrow().contains(&handle.cast()) {
-            return true;
         }
 
         self.members.contains_key(&handle.cast())
@@ -453,13 +459,20 @@ impl World {
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
     pub fn dependency<T: ?Sized, U: ?Sized>(&self, target: Handle<T>, depend_on: Handle<U>) {
-        let target = target.cast();
-        let depend_on = depend_on.cast();
+        if self.removed.borrow().contains(&depend_on.cast()) {
+            log::error!("{target:?} try to depend on {depend_on:?}, which has just removed");
+            return;
+        }
 
-        if !self.validate(depend_on) {
+        if !self.members.contains_key(&depend_on.cast())
+            && !self.inserted.borrow().contains(&depend_on.cast())
+        {
             log::error!("{target:?} try to depend on {depend_on:?}, which does not exist");
             return;
         }
+
+        let target = target.cast();
+        let depend_on = depend_on.cast();
 
         match self.single_fetch_mut::<Dependencies>() {
             Some(mut dependencies) => {

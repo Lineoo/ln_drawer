@@ -97,12 +97,17 @@ impl Element for StrokeLayer {
                 let menu = world.fetch(menu).unwrap();
 
                 if !event.position.within(menu.menu_rect()) {
-                    world.remove(menu.handle());
+                    let menu = menu.handle();
+                    world.queue(move |world| {
+                        world.remove(menu);
+                    });
                 }
             });
 
             world.observer(collider, move |&PointerMenu(_), world, _| {
-                world.remove(menu);
+                world.queue(move |world| {
+                    world.remove(menu);
+                });
             });
 
             type Entries<const N: usize> = [(&'static str, for<'w> fn(&'w World, Position)); N];
@@ -197,7 +202,10 @@ impl Element for StrokeLayer {
                     world.queue(move |world| {
                         let menu = world.fetch(menu).unwrap();
                         action(world, menu.position);
-                        world.remove(menu.handle());
+                        let menu = menu.handle();
+                        world.queue(move |world| {
+                            world.remove(menu);
+                        });
                     });
                 });
             }
