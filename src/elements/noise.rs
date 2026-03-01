@@ -84,13 +84,13 @@ impl Element for SimpleNoise {
             world.observer(play, move |WidgetClick, world, play| {
                 let this = world.fetch(this).unwrap();
                 this.sink.play();
-                world.remove(play);
+                world.remove(play).unwrap();
             });
 
             world.observer(pause, move |WidgetClick, world, pause| {
                 let this = world.fetch(this).unwrap();
                 this.sink.pause();
-                world.remove(pause);
+                world.remove(pause).unwrap();
             });
 
             let button = button.handle();

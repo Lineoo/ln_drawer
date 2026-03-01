@@ -56,7 +56,7 @@ impl Element for StrokeLayer {
         world.foreach::<StrokeLayer>(|stroke| {
             // need to keep it singleton
             if stroke != this {
-                world.remove(stroke);
+                world.remove(stroke).unwrap();
             }
         });
 
@@ -99,14 +99,14 @@ impl Element for StrokeLayer {
                 if !event.position.within(menu.menu_rect()) {
                     let menu = menu.handle();
                     world.queue(move |world| {
-                        world.remove(menu);
+                        world.remove(menu).unwrap();
                     });
                 }
             });
 
             world.observer(collider, move |&PointerMenu(_), world, _| {
                 world.queue(move |world| {
-                    world.remove(menu);
+                    world.remove(menu).unwrap();
                 });
             });
 
@@ -204,7 +204,7 @@ impl Element for StrokeLayer {
                         action(world, menu.position);
                         let menu = menu.handle();
                         world.queue(move |world| {
-                            world.remove(menu);
+                            world.remove(menu).unwrap();
                         });
                     });
                 });

@@ -353,7 +353,7 @@ impl Element for Attach<Menu, Luni> {
                 frame_anim_alpha,
                 move |&AnimationValue::<f32>(value), world, _| {
                     if value == 0f32 {
-                        world.remove(this);
+                        world.remove(this).unwrap();
                     }
                 },
             );

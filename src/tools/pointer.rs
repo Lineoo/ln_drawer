@@ -139,7 +139,7 @@ impl PointerCollider {
 impl Element for PointerCollider {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
         world.queue(|world| {
-            if let Some(mut pointer) = world.single_fetch_mut::<PointerTool>() {
+            if let Ok(mut pointer) = world.single_fetch_mut::<PointerTool>() {
                 pointer.update_hovering(world);
             }
         });
@@ -147,7 +147,7 @@ impl Element for PointerCollider {
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         world.queue(|world| {
-            if let Some(mut pointer) = world.single_fetch_mut::<PointerTool>() {
+            if let Ok(mut pointer) = world.single_fetch_mut::<PointerTool>() {
                 pointer.update_hovering(world);
             }
         });
@@ -155,7 +155,7 @@ impl Element for PointerCollider {
 
     fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
         world.queue(|world| {
-            if let Some(mut pointer) = world.single_fetch_mut::<PointerTool>() {
+            if let Ok(mut pointer) = world.single_fetch_mut::<PointerTool>() {
                 pointer.update_hovering(world);
             }
         });

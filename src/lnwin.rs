@@ -28,7 +28,7 @@ pub struct Lnwin {
 
 impl ApplicationHandler for Lnwin {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.world.single::<Lnwindow>().is_none() {
+        if self.world.single::<Lnwindow>().is_err() {
             let lnwindow = Lnwindow::new(event_loop);
             lnwindow.window.request_redraw();
 
@@ -44,11 +44,11 @@ impl ApplicationHandler for Lnwin {
         event: WindowEvent,
     ) {
         match self.world.single::<Lnwindow>() {
-            Some(window) => {
+            Ok(window) => {
                 self.world.trigger(window, &event);
                 self.world.flush();
             }
-            None => event_loop.exit(),
+            Err(_) => event_loop.exit(),
         }
     }
 
