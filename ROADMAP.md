@@ -90,14 +90,14 @@
     - [x] theme 的动画分离各属性驱动
     - [ ] theme 支持进入/退出动画
 - [ ] noise 组件改用 menu
-- [ ] menu 的进入退出矩形动画
-    - [ ] Interact 事件：Remove
+- [x] menu 的进入退出矩形动画
+    - [x] Interact 事件：Remove
+- [x] 统一的异常处理
 - [ ] menu 的字也得是 theme 负责吧
 - [ ] 滑条、宽滑条
 - [ ] 新的获得性排列布局器 layer
     - [ ] 置层事件 `Place`
     - [ ] 使用
-- [ ] 统一的异常处理
 - [ ] resize 限制
 - [ ] 音乐播放器
     - [ ] 统一音频接口
