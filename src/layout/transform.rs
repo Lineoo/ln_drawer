@@ -1,6 +1,7 @@
 use crate::{
-    layout::Layout,
+    layout::LayoutRectangle,
     measures::{Position, Rectangle},
+    widgets::WidgetRectangle,
     world::{Element, Handle, World},
 };
 
@@ -75,30 +76,23 @@ impl Transform {
 
 impl Element for Transform {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let ob = world.observer(self.source, move |layout: &Layout, world, _| match layout {
-            Layout::Rectangle(rect) => {
-                let this = world.fetch(this).unwrap();
+        let ob = world.observer(self.source, move |&WidgetRectangle(rect), world, _| {
+            let this = world.fetch(this).unwrap();
 
-                let left = rect.extend.w as f32 * this.left.anchor;
-                let left = rect.origin.x + left.round() as i32 + this.left.offset;
+            let left = rect.extend.w as f32 * this.left.anchor;
+            let left = rect.origin.x + left.round() as i32 + this.left.offset;
 
-                let down = rect.extend.h as f32 * this.down.anchor;
-                let down = rect.origin.y + down.round() as i32 + this.down.offset;
+            let down = rect.extend.h as f32 * this.down.anchor;
+            let down = rect.origin.y + down.round() as i32 + this.down.offset;
 
-                let right = rect.extend.w as f32 * this.right.anchor;
-                let right = rect.origin.x + right.round() as i32 + this.right.offset;
+            let right = rect.extend.w as f32 * this.right.anchor;
+            let right = rect.origin.x + right.round() as i32 + this.right.offset;
 
-                let up = rect.extend.h as f32 * this.up.anchor;
-                let up = rect.origin.y + up.round() as i32 + this.up.offset;
+            let up = rect.extend.h as f32 * this.up.anchor;
+            let up = rect.origin.y + up.round() as i32 + this.up.offset;
 
-                let layout = Layout::Rectangle(Rectangle::new(left, down, right, up));
-                world.trigger(this.target, &layout);
-            }
-            Layout::Alpha(alpha) => {
-                let this = world.fetch(this).unwrap();
-                let layout = Layout::Alpha(*alpha);
-                world.trigger(this.target, &layout);
-            }
+            let layout = LayoutRectangle(Rectangle::new(left, down, right, up));
+            world.trigger(this.target, &layout);
         });
 
         world.dependency(ob, this);

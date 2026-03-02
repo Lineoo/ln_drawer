@@ -1,6 +1,6 @@
 use crate::{
     animation::{Animation, AnimationDescriptor, AnimationValue},
-    layout::Layout,
+    layout::LayoutRectangle,
     measures::Rectangle,
     world::{Descriptor, Element, Handle, World},
 };
@@ -43,15 +43,12 @@ impl Element for Animator {
         world.dependency(self.animation, this);
 
         let target = self.target;
-        world.observer(
-            self.animation,
-            move |&AnimationValue(val), world, _| {
-                let this = world.fetch(this).unwrap();
-                world.trigger(
-                    target,
-                    &Layout::Rectangle(Rectangle::lerp(this.src, this.dst, val)),
-                );
-            },
-        );
+        world.observer(self.animation, move |&AnimationValue(val), world, _| {
+            let this = world.fetch(this).unwrap();
+            world.trigger(
+                target,
+                &LayoutRectangle(Rectangle::lerp(this.src, this.dst, val)),
+            );
+        });
     }
 }

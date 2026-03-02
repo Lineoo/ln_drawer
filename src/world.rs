@@ -475,7 +475,7 @@ impl World {
     pub fn observer<T: ?Sized + 'static, E: 'static>(
         &self,
         target: Handle<T>,
-        action: impl Fn(&E, &World, Handle<T>) + 'static,
+        mut action: impl FnMut(&E, &World, Handle<T>) + 'static,
     ) -> Handle {
         let handle = self.insert(Observer {
             action: Box::new(move |event, world| action(event, world, target)),
@@ -491,7 +491,7 @@ impl World {
         if let Ok(observers) = self.single_fetch::<Observers<E>>()
             && let Some(observers) = observers.members.get(&target.cast())
         {
-            for observer in observers.iter().filter_map(|x| self.fetch_mut(*x).ok()) {
+            for mut observer in observers.iter().filter_map(|x| self.fetch_mut(*x).ok()) {
                 (observer.action)(event, self);
                 cnt += 1;
             }
@@ -661,7 +661,7 @@ struct Observers<E> {
 
 #[expect(clippy::type_complexity)]
 struct Observer<E> {
-    action: Box<dyn Fn(&E, &World)>,
+    action: Box<dyn FnMut(&E, &World)>,
     target: Handle,
 }
 

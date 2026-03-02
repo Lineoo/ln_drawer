@@ -1,10 +1,13 @@
 use crate::{
-    layout::Layout,
+    layout::LayoutRectangle,
     measures::{Position, Rectangle, Size},
-    theme::{Attach, Luni},
-    tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
-    widgets::events::{
-        WidgetButton, WidgetClick, WidgetDestroyed, WidgetHover, WidgetModified, WidgetSelect,
+    theme::Luni,
+    tools::pointer::{
+        PointerCollider, PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus,
+    },
+    widgets::{
+        Attach, WidgetButton, WidgetClick, WidgetDestroyed, WidgetHover, WidgetRectangle,
+        WidgetSelect,
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -75,7 +78,7 @@ impl Descriptor for MenuDescriptor {
 
         world.insert(Attach {
             widget: menu,
-            theme: world.single::<Luni>().unwrap(),
+            target: world.single::<Luni>().unwrap(),
         });
 
         world.queue(move |world| {
@@ -94,10 +97,10 @@ impl Element for Menu {
         world.observer(
             self.collider,
             move |event: &PointerHover, world, _| match event.motion {
-                PointerMotion::Enter => {
+                PointerHoverStatus::Enter => {
                     world.trigger(this, &WidgetHover::HoverEnter);
                 }
-                PointerMotion::Moving => {
+                PointerHoverStatus::Moving => {
                     let mut this = world.fetch_mut(this).unwrap();
 
                     if event.position.within(this.menu_rect()) {
@@ -115,7 +118,7 @@ impl Element for Menu {
                         world.trigger(this.handle(), &WidgetSelect(None));
                     }
                 }
-                PointerMotion::Leave => {
+                PointerHoverStatus::Leave => {
                     world.trigger(this, &WidgetSelect(None));
                     world.trigger(this, &WidgetHover::HoverLeave);
 
@@ -128,10 +131,10 @@ impl Element for Menu {
         world.observer(
             self.collider,
             move |event: &PointerHit, world, _| match event.status {
-                PointerStatus::Press => {
+                PointerHitStatus::Press => {
                     world.trigger(this, &WidgetButton::ButtonPress);
                 }
-                PointerStatus::Moving => {
+                PointerHitStatus::Moving => {
                     let mut this = world.fetch_mut(this).unwrap();
 
                     if event.position.within(this.menu_rect()) {
@@ -149,7 +152,7 @@ impl Element for Menu {
                         world.trigger(this.handle(), &WidgetSelect(None));
                     }
                 }
-                PointerStatus::Release => {
+                PointerHitStatus::Release => {
                     world.trigger(this, &WidgetButton::ButtonRelease);
 
                     let mut this = world.fetch_mut(this).unwrap();
@@ -176,12 +179,10 @@ impl Element for Menu {
         collider.rect = self.menu_rect();
 
         for (i, entry) in self.entries.iter().enumerate() {
-            world.trigger(*entry, &Layout::Rectangle(self.entry_rect(i as f32)));
+            world.trigger(*entry, &LayoutRectangle(self.entry_rect(i as f32)));
         }
 
-        world.queue(move |world| {
-            world.trigger(this, &WidgetModified);
-        });
+        world.trigger(this, &WidgetRectangle(self.menu_rect()));
     }
 
     // FIXME this is unavailable yet

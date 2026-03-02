@@ -1,13 +1,10 @@
 use rodio::{OutputStream, OutputStreamBuilder, Sink, source::noise};
 
 use crate::{
-    layout::translatable::TranslatableDescriptor,
+    layout::transform::Transform,
     measures::{Position, Rectangle, Size},
     render::canvas::CanvasDescriptor,
-    widgets::{
-        button::ButtonDescriptor,
-        events::{WidgetClick, WidgetModified},
-    },
+    widgets::{WidgetClick, WidgetRectangle, button::ButtonDescriptor, resizable::Resizable},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -47,10 +44,7 @@ impl Element for SimpleNoise {
             extend: Size::splat(70),
         };
 
-        let button = world.build(ButtonDescriptor {
-            rect,
-            order: 20,
-        });
+        let button = world.build(ButtonDescriptor { rect, order: 20 });
 
         let icon = world.build(
             CanvasDescriptor::from_bytes(
@@ -61,12 +55,8 @@ impl Element for SimpleNoise {
             .unwrap(),
         );
 
-        world.build(TranslatableDescriptor {
-            rect,
-            order: 25,
-            hollow: true,
-            target: button.untyped(),
-        });
+        let resizable = world.insert(Resizable { rect });
+        world.insert(Transform::copy(resizable.untyped(), button.untyped()));
 
         world.observer(button, move |WidgetClick, world, button| {
             let button = world.fetch(button).unwrap();
@@ -100,10 +90,9 @@ impl Element for SimpleNoise {
             world.dependency(pause, button);
         });
 
-        world.observer(button, move |WidgetModified, world, button| {
-            let button = world.fetch(button).unwrap();
+        world.observer(button, move |&WidgetRectangle(rect), world, _| {
             let mut icon = world.fetch_mut(icon).unwrap();
-            icon.rect = button.rect.expand(-20);
+            icon.rect = rect.expand(-20);
         });
 
         world.dependency(button, this);

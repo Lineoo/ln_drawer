@@ -1,6 +1,8 @@
 #![windows_subsystem = "windows"]
 
+mod animation;
 mod elements;
+mod layout;
 mod lnwin;
 mod measures;
 mod render;
@@ -9,8 +11,6 @@ mod theme;
 mod tools;
 mod widgets;
 mod world;
-mod animation;
-pub mod layout;
 
 use winit::{error::EventLoopError, event_loop::EventLoop};
 

@@ -1,9 +1,11 @@
 use crate::{
-    layout::Layout,
+    layout::LayoutRectangle,
     measures::Rectangle,
-    theme::{Attach, Luni},
-    tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
-    widgets::events::{WidgetButton, WidgetHover, WidgetModified, WidgetSwitch},
+    theme::Luni,
+    tools::pointer::{
+        PointerCollider, PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus,
+    },
+    widgets::{Attach, WidgetButton, WidgetChecked, WidgetClick, WidgetHover, WidgetRectangle},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -49,7 +51,7 @@ impl Descriptor for CheckButtonDescriptor {
 
         world.insert(Attach {
             widget: button,
-            theme: world.single::<Luni>().unwrap(),
+            target: world.single::<Luni>().unwrap(),
         });
 
         world.queue(move |world| {
@@ -64,15 +66,15 @@ impl Descriptor for CheckButtonDescriptor {
 impl Element for CheckButton {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(self.collider, move |event: &PointerHit, world, _| {
-            if let PointerStatus::Release = event.status {
-                world.trigger(this, &WidgetSwitch);
+            if let PointerHitStatus::Release = event.status {
+                world.trigger(this, &WidgetClick);
             }
 
             match event.status {
-                PointerStatus::Press => {
+                PointerHitStatus::Press => {
                     world.trigger(this, &WidgetButton::ButtonPress);
                 }
-                PointerStatus::Release => {
+                PointerHitStatus::Release => {
                     world.trigger(this, &WidgetButton::ButtonRelease);
                 }
                 _ => {}
@@ -82,22 +84,19 @@ impl Element for CheckButton {
         world.observer(
             self.collider,
             move |event: &PointerHover, world, _| match event.motion {
-                PointerMotion::Enter => {
+                PointerHoverStatus::Enter => {
                     world.trigger(this, &WidgetHover::HoverEnter);
                 }
-                PointerMotion::Moving => {}
-                PointerMotion::Leave => {
+                PointerHoverStatus::Moving => {}
+                PointerHoverStatus::Leave => {
                     world.trigger(this, &WidgetHover::HoverLeave);
                 }
             },
         );
 
-        world.observer(this, |layout: &Layout, world, this| match layout {
-            Layout::Rectangle(rect) => {
-                let mut this = world.fetch_mut(this).unwrap();
-                this.rect = *rect;
-            }
-            Layout::Alpha(alpha) => unimplemented!(),
+        world.observer(this, |&LayoutRectangle(rect), world, this| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
         });
 
         world.dependency(self.collider, this);
@@ -108,8 +107,7 @@ impl Element for CheckButton {
         collider.order = self.order;
         collider.rect = self.rect;
 
-        world.queue(move |world| {
-            world.trigger(this, &WidgetModified);
-        });
+        world.trigger(this, &WidgetRectangle(self.rect));
+        world.trigger(this, &WidgetChecked(self.checked));
     }
 }

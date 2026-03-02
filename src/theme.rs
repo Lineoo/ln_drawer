@@ -2,26 +2,14 @@ use palette::{Srgba, WithAlpha};
 
 use crate::{
     animation::{AnimationDescriptor, AnimationValue},
-    render::rounded::RoundedRectDescriptor,
+    render::{rounded::RoundedRectDescriptor, wireframe::WireframeDescriptor},
     widgets::{
-        button::Button,
-        check_button::CheckButton,
-        events::{
-            WidgetButton, WidgetDestroyed, WidgetHover, WidgetModified, WidgetSelect, WidgetSwitch,
-        },
-        menu::Menu,
-        panel::Panel,
+        Attach, WidgetButton, WidgetChecked, WidgetDestroyed, WidgetHover, WidgetRectangle,
+        WidgetSelect, button::Button, check_button::CheckButton, menu::Menu, panel::Panel,
+        resizable::Resizable,
     },
     world::{Element, Handle, World},
 };
-
-/// Attach a headless widget to a specific theme.
-///
-/// Create observers on widgets' events
-pub struct Attach<T, U> {
-    pub widget: Handle<T>,
-    pub theme: Handle<U>,
-}
 
 /// `Luni` stands for `ln_ui`. It's this basic widgets' render implementation of ln_drawer.
 pub struct Luni {
@@ -55,7 +43,7 @@ impl Element for Luni {}
 impl Element for Attach<Button, Luni> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let button = world.fetch(self.widget).unwrap();
-        let luni = world.fetch(self.theme).unwrap();
+        let luni = world.fetch(self.target).unwrap();
 
         // display
 
@@ -108,12 +96,9 @@ impl Element for Attach<Button, Luni> {
             }
         });
 
-        world.observer(button, move |WidgetModified, world, _| {
-            let button = world.fetch(button).unwrap();
+        world.observer(button, move |&WidgetRectangle(rect), world, _| {
             let mut frame = world.fetch_mut(frame).unwrap();
-
-            frame.rect = button.rect;
-            frame.order = button.order;
+            frame.rect = rect;
         });
     }
 }
@@ -121,7 +106,7 @@ impl Element for Attach<Button, Luni> {
 impl Element for Attach<CheckButton, Luni> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let button = world.fetch(self.widget).unwrap();
-        let luni = world.fetch(self.theme).unwrap();
+        let luni = world.fetch(self.target).unwrap();
 
         // display
 
@@ -189,15 +174,16 @@ impl Element for Attach<CheckButton, Luni> {
             }
         });
 
-        world.observer(button, move |WidgetModified, world, _| {
-            let button = world.fetch(button).unwrap();
-            let luni = world.fetch(luni).unwrap();
+        world.observer(button, move |&WidgetRectangle(rect), world, _| {
             let mut frame = world.fetch_mut(frame).unwrap();
+            frame.rect = rect;
+        });
+
+        world.observer(button, move |&WidgetChecked(checked), world, _| {
+            let luni = world.fetch(luni).unwrap();
             let mut frame_anim_roundness = world.fetch_mut(frame_anim_roundness).unwrap();
 
-            frame.rect = button.rect;
-            frame.order = button.order;
-            match button.checked {
+            match checked {
                 true => frame_anim_roundness.dst = luni.press_roundness,
                 false => frame_anim_roundness.dst = luni.roundness,
             }
@@ -208,7 +194,7 @@ impl Element for Attach<CheckButton, Luni> {
 impl Element for Attach<Panel, Luni> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let panel = world.fetch(self.widget).unwrap();
-        let luni = world.fetch(self.theme).unwrap();
+        let luni = world.fetch(self.target).unwrap();
 
         // display
 
@@ -252,12 +238,9 @@ impl Element for Attach<Panel, Luni> {
             }
         });
 
-        world.observer(panel, move |WidgetModified, world, _| {
-            let panel = world.fetch(panel).unwrap();
+        world.observer(panel, move |&WidgetRectangle(rect), world, _| {
             let mut frame = world.fetch_mut(frame).unwrap();
-
-            frame.rect = panel.rect;
-            frame.order = panel.order;
+            frame.rect = rect;
         });
     }
 }
@@ -265,7 +248,7 @@ impl Element for Attach<Panel, Luni> {
 impl Element for Attach<Menu, Luni> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let menu = world.fetch(self.widget).unwrap();
-        let luni = world.fetch(self.theme).unwrap();
+        let luni = world.fetch(self.target).unwrap();
 
         // display
 
@@ -327,12 +310,9 @@ impl Element for Attach<Menu, Luni> {
 
         // behavior
 
-        world.observer(menu, move |WidgetModified, world, _| {
-            let menu = world.fetch(menu).unwrap();
+        world.observer(menu, move |&WidgetRectangle(rect), world, _| {
             let mut frame = world.fetch_mut(frame).unwrap();
-
-            frame.rect = menu.menu_rect();
-            frame.order = 100;
+            frame.rect = rect;
         });
 
         world.observer(menu, move |event: &WidgetSelect, world, _| match event {
@@ -362,6 +342,24 @@ impl Element for Attach<Menu, Luni> {
             let mut select_anim_alpha = world.fetch_mut(select_anim_alpha).unwrap();
             frame_anim_alpha.dst = 0.0;
             select_anim_alpha.dst = 0.0;
+        });
+    }
+}
+
+impl Element for Attach<Resizable, Luni> {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let resizable = world.fetch(self.widget).unwrap();
+        let luni = world.fetch(self.target).unwrap();
+
+        let wireframe = world.build(WireframeDescriptor {
+            rect: resizable.rect,
+            order: 100,
+            visible: true,
+        });
+
+        world.observer(self.widget, move |&WidgetRectangle(rect), world, _| {
+            let mut wireframe = world.fetch_mut(wireframe).unwrap();
+            wireframe.rect = rect;
         });
     }
 }

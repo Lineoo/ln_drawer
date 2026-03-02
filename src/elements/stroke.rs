@@ -17,11 +17,11 @@ use crate::{
     },
     tools::{
         modifiers::ModifiersTool,
-        pointer::{PointerCollider, PointerHit, PointerMenu, PointerStatus},
+        pointer::{PointerCollider, PointerHit, PointerMenu, PointerHitStatus},
     },
     widgets::{
+        WidgetClick, 
         check_button::{CheckButton, CheckButtonDescriptor},
-        events::{WidgetClick, WidgetSwitch},
         menu::{MenuDescriptor, MenuEntryDescriptor},
     },
     world::{Descriptor, Element, Handle, World},
@@ -65,7 +65,7 @@ impl Element for StrokeLayer {
         world.dependency(collider, this);
 
         world.observer(collider, move |event: &PointerHit, world, _| {
-            if let PointerStatus::Moving | PointerStatus::Press = event.status {
+            if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
                 let mut stroke = world.fetch_mut(this).unwrap();
 
                 let tool = world.single_fetch::<ModifiersTool>().unwrap();
@@ -90,7 +90,7 @@ impl Element for StrokeLayer {
             world.dependency(collider, menu);
 
             world.observer(collider, move |event: &PointerHit, world, _| {
-                if let PointerStatus::Press = event.status {
+                if let PointerHitStatus::Press = event.status {
                     return;
                 };
 
@@ -148,7 +148,7 @@ impl Element for StrokeLayer {
                         order: 10,
                     });
 
-                    world.observer(button, |WidgetSwitch, world, button| {
+                    world.observer(button, |WidgetClick, world, button| {
                         let mut button = world.fetch_mut(button).unwrap();
                         button.checked = !button.checked;
                     });
