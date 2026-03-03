@@ -1,13 +1,42 @@
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+    time::Duration,
+};
 
 use crate::{
     elements::{
         palette::{Palette, PaletteDescriptor},
         stroke::{StrokeLayer, StrokeLayerDescriptor},
-    },
-    render::canvas::{Canvas, CanvasDescriptor},
-    world::World,
+    }, lnwin::Lnwindow, render::canvas::{Canvas, CanvasDescriptor}, tools::timer::{Timer, TimerHit}, world::{Element, Handle, World}
 };
+
+pub struct Save {
+    pub period: Duration,
+}
+
+impl Default for Save {
+    fn default() -> Self {
+        Save {
+            period: Duration::from_secs(10),
+        }
+    }
+}
+
+impl Element for Save {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        load_from_file(world);
+        let timer = world.insert(Timer::new(self.period));
+        world.observer(timer, |TimerHit, world, _| {
+            save_into_file(world);
+        });
+
+        world.dependency(this, world.single::<Lnwindow>().unwrap());
+    }
+
+    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
+        save_into_file(world);
+    }
+}
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct SaveFile {
@@ -50,11 +79,13 @@ pub fn save_into_file(world: &World) {
         log::warn!("failed to write world file");
         return;
     };
+
+    log::debug!("world saved");
 }
 
-pub fn read_from_file(world: &World) {
+pub fn load_from_file(world: &World) {
     let Ok(mut file) = std::fs::File::open("target/world.ln-world") else {
-        log::warn!("failed to read world file");
+        log::debug!("no world file");
         return;
     };
 
@@ -80,4 +111,6 @@ pub fn read_from_file(world: &World) {
     if let Some(stroke) = save.stroke {
         world.build(stroke);
     }
+
+    log::debug!("world loaded");
 }

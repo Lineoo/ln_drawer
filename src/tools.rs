@@ -5,4 +5,5 @@ pub mod camera;
 pub mod focus;
 pub mod modifiers;
 pub mod pointer;
+pub mod timer;
 pub mod touch;

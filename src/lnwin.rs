@@ -16,6 +16,7 @@ use crate::{
         text::TextManagerDescriptor, viewport::ViewportDescriptor,
         wireframe::WireframeManagerDescriptor,
     },
+    save::Save,
     theme::Luni,
     tools::{
         camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool,
@@ -35,7 +36,7 @@ impl ApplicationHandler for Lnwin {
             let lnwindow = Lnwindow::new(event_loop);
             self.world.insert(lnwindow);
             self.world.flush();
-        } else {   
+        } else {
             let mut render = self.world.single_fetch_mut::<Render>().unwrap();
             let lnwindow = self.world.single_fetch::<Lnwindow>().unwrap();
             render.surface_recreate(&lnwindow);
@@ -72,7 +73,7 @@ impl Element for Lnwindow {
         world.observer(this, |event: &WindowEvent, world, this| {
             if let WindowEvent::CloseRequested = event {
                 world.queue(move |world| {
-                    world.remove(this);
+                    world.remove(this).unwrap();
                 });
             }
         });
@@ -107,6 +108,10 @@ impl Element for Lnwindow {
             world.insert(ModifiersTool::default());
 
             world.insert(Luni::default());
+        });
+
+        world.queue(|world| {
+            world.insert(Save::default());
         });
     }
 }

@@ -161,7 +161,7 @@ impl Element for StrokeLayer {
                     crate::save::save_into_file(world);
                 }),
                 ("  World read", |world, _position| {
-                    crate::save::read_from_file(world);
+                    crate::save::load_from_file(world);
                 }),
                 ("", |_, _| {}),
                 ("Switch transparency", |world, _| {
