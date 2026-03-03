@@ -17,9 +17,10 @@ pub fn desktop_main() {
 
     log::info!("This is LnDrawer. Welcome!");
 
+    let mut lnwin = lnwin::Lnwin::default();
+
     let event_loop = EventLoop::builder().build().unwrap();
-    let mut app = lnwin::Lnwin::default();
-    event_loop.run_app(&mut app).unwrap();
+    event_loop.run_app(&mut lnwin).unwrap();
 }
 
 #[cfg(target_os = "android")]
@@ -30,10 +31,10 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
 
     android_logger::init_once(
         Config::default()
-            .with_max_level(log::LevelFilter::Trace)
+            .with_max_level(log::LevelFilter::Debug)
             .with_filter(
                 FilterBuilder::new()
-                    .filter(None, log::LevelFilter::Trace)
+                    .filter(None, log::LevelFilter::Debug)
                     .filter(Some("naga"), log::LevelFilter::Warn)
                     .filter(Some("wgpu"), log::LevelFilter::Warn)
                     .build(),
@@ -43,7 +44,9 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
 
     log::info!("This is LnDrawer Mobile. Welcome!");
 
+    let mut lnwin = lnwin::Lnwin::default();
+    lnwin.world.insert(app.clone());
+
     let event_loop = EventLoop::builder().with_android_app(app).build().unwrap();
-    let mut app = lnwin::Lnwin::default();
-    event_loop.run_app(&mut app).unwrap();
+    event_loop.run_app(&mut lnwin).unwrap();
 }

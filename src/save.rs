@@ -1,13 +1,21 @@
 use std::{
     io::{Read, Write},
+    path::PathBuf,
     time::Duration,
 };
+
+#[cfg(target_os = "android")]
+use winit::platform::android::activity::AndroidApp;
 
 use crate::{
     elements::{
         palette::{Palette, PaletteDescriptor},
         stroke::{StrokeLayer, StrokeLayerDescriptor},
-    }, lnwin::Lnwindow, render::canvas::{Canvas, CanvasDescriptor}, tools::timer::{Timer, TimerHit}, world::{Element, Handle, World}
+    },
+    lnwin::Lnwindow,
+    render::canvas::{Canvas, CanvasDescriptor},
+    tools::timer::{Timer, TimerHit},
+    world::{Element, Handle, World},
 };
 
 pub struct Save {
@@ -60,12 +68,14 @@ pub fn save_into_file(world: &World) {
         save.stroke.replace(stroke.to_descriptor(world));
     }
 
-    let Ok(()) = std::fs::create_dir_all("target") else {
+    let target = get_file_path(world);
+
+    let Ok(()) = std::fs::create_dir_all(target.parent().unwrap()) else {
         log::warn!("failed to create target folder");
         return;
     };
 
-    let Ok(mut file) = std::fs::File::create("target/world.ln-world") else {
+    let Ok(mut file) = std::fs::File::create(target) else {
         log::warn!("failed to create save world file");
         return;
     };
@@ -84,7 +94,9 @@ pub fn save_into_file(world: &World) {
 }
 
 pub fn load_from_file(world: &World) {
-    let Ok(mut file) = std::fs::File::open("target/world.ln-world") else {
+    let target = get_file_path(world);
+
+    let Ok(mut file) = std::fs::File::open(target) else {
         log::debug!("no world file");
         return;
     };
@@ -113,4 +125,16 @@ pub fn load_from_file(world: &World) {
     }
 
     log::debug!("world loaded");
+}
+
+pub fn get_file_path(world: &World) -> PathBuf {
+    #[cfg(target_os = "android")]
+    if let Ok(app) = world.single_fetch::<AndroidApp>()
+        && let Some(mut path) = app.obb_path()
+    {
+        path.push("world.ln-world");
+        return path;
+    }
+
+    PathBuf::from("target/world.ln-world")
 }

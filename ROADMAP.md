@@ -102,12 +102,9 @@
 - [x] `Widget*` 家族事件移动到根模块
 - [x] `WidgetSwitch` 合并到 `WidgetClick`
 - [x] SaveManager 更加可用
-    - [ ] 跨平台的存储支持
+    - [x] 跨平台的存储支持
     - [x] 自动读取/保存
         - [x] timer
-    - [ ] 清空世界
-- [ ] menu 的字也得是 theme 负责吧
-    - [ ] menu 改用 Panel -> Layout -> Label
 - **LnDrawer v0.1.2**
 - [ ] 迁移到 winit 0.31.0-beta2
     - [ ] 移动端画笔区分
@@ -115,6 +112,8 @@
     - [ ] 双指缩放
     - [ ] 触摸可用的按钮设计
     - [ ] 重新设计相机移动模组
+- [ ] menu 的字也得是 theme 负责吧
+    - [ ] menu 改用 Panel -> Layout -> Label
 - [ ] 菜单按钮
 - [ ] 更美观的调色板组件
     - [ ] 滑条、宽滑条

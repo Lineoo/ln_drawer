@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+#[cfg(target_os = "android")]
+use winit::platform::android::activity::AndroidApp;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
@@ -27,7 +29,7 @@ use crate::{
 
 #[derive(Default)]
 pub struct Lnwin {
-    world: World,
+    pub world: World,
 }
 
 impl ApplicationHandler for Lnwin {
@@ -135,3 +137,6 @@ impl Lnwindow {
         [x, y]
     }
 }
+
+#[cfg(target_os = "android")]
+impl Element for AndroidApp {}
