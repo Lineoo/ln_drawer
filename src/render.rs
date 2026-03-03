@@ -11,7 +11,7 @@ use wgpu::{
     Adapter, Color, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device,
     DeviceDescriptor, Features, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference,
     PresentMode, Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor,
-    RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration, SurfaceTarget, TextureUsages,
+    RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration, TextureUsages,
     TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
@@ -22,8 +22,11 @@ use crate::{
 };
 
 pub struct Render {
-    // wgpu interface
+    // wgpu surface
     surface: Surface<'static>,
+    config: SurfaceConfiguration,
+
+    // wgpu interface
     adapter: Adapter,
     device: Device,
     queue: Queue,
@@ -49,7 +52,6 @@ pub struct RenderActive {
     pub rpass: RenderPass<'static>,
 }
 
-#[derive(Debug)]
 pub struct RenderControl {
     pub visible: bool,
     pub order: isize,
@@ -62,10 +64,10 @@ pub struct RedrawPrepare;
 pub struct Redraw;
 
 impl Render {
-    pub async fn new(window: impl Into<SurfaceTarget<'static>>) -> Render {
+    pub async fn new(lnwindow: &Lnwindow) -> Render {
         let instance = Instance::default();
 
-        let surface = instance.create_surface(window).unwrap();
+        let surface = instance.create_surface(lnwindow.window.clone()).unwrap();
 
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -87,8 +89,13 @@ impl Render {
             .await
             .unwrap();
 
+        let size = lnwindow.window.inner_size();
+        let config = Render::configuration(&surface, &adapter, size);
+        surface.configure(&device, &config);
+
         Render {
             surface,
+            config,
             adapter,
             device,
             queue,
@@ -100,8 +107,17 @@ impl Render {
         }
     }
 
-    fn configure_surface(&self, size: PhysicalSize<u32>) {
-        let caps = self.surface.get_capabilities(&self.adapter);
+    pub fn surface_reconfigure(&mut self, size: PhysicalSize<u32>) {
+        self.config = Render::configuration(&self.surface, &self.adapter, size);
+        self.surface.configure(&self.device, &self.config);
+    }
+
+    fn configuration(
+        surface: &Surface,
+        adapter: &Adapter,
+        size: PhysicalSize<u32>,
+    ) -> SurfaceConfiguration {
+        let caps = surface.get_capabilities(&adapter);
         let config = SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
             format: *caps.formats.first().unwrap(),
@@ -133,11 +149,11 @@ impl Render {
             view_formats: vec![],
         };
 
-        self.surface.configure(&self.device, &config);
-
         log::trace!("resize in {}, {}", config.width, config.height);
         log::trace!("present mode {:?} is selected", config.present_mode);
         log::trace!("alpha mode {:?} is selected", config.alpha_mode);
+
+        config
     }
 }
 
@@ -149,15 +165,11 @@ impl Element for Render {
             clear_color: Color::BLACK,
         });
 
-        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-        self.configure_surface(lnwindow.window.inner_size());
-        lnwindow.window.request_redraw();
-
-        let lnwindow = lnwindow.handle();
+        let lnwindow = world.single::<Lnwindow>().unwrap();
         world.observer(lnwindow, move |event: &WindowEvent, world, _| match event {
             WindowEvent::Resized(size) => {
-                let render = world.fetch(this).unwrap();
-                render.configure_surface(*size);
+                let mut render = world.fetch_mut(this).unwrap();
+                render.surface_reconfigure(*size);
             }
 
             WindowEvent::RedrawRequested => {

@@ -86,7 +86,7 @@
 - **LnDrawer v0.1.2-alpha3**
 - [ ] 支持响应 suspended/resumed
 - [ ] 触摸支持
-    - [ ] 单指拖拽
+    - [x] 单指拖拽
     - [ ] 双指缩放
 - **android**
 - [ ] 重新调整主题动画

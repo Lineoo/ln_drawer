@@ -59,9 +59,6 @@ impl Descriptor for RoundedRectManagerDescriptor {
         let render = world.single_fetch::<Render>().unwrap();
         let viewport = world.single_fetch::<Viewport>().unwrap();
 
-        let caps = render.surface.get_capabilities(&render.adapter);
-        let format = *caps.formats.first().unwrap();
-
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("rounded_shader"),
             source: ShaderSource::Wgsl(include_str!("rounded.wgsl").into()),
@@ -111,7 +108,7 @@ impl Descriptor for RoundedRectManagerDescriptor {
                     entry_point: Some("fs_main"),
                     compilation_options: Default::default(),
                     targets: &[Some(ColorTargetState {
-                        format,
+                        format: render.config.format,
                         blend: Some(BlendState::ALPHA_BLENDING),
                         write_mask: ColorWrites::ALL,
                     })],

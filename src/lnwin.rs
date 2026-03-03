@@ -35,7 +35,11 @@ impl ApplicationHandler for Lnwin {
             let lnwindow = Lnwindow::new(event_loop);
             self.world.insert(lnwindow);
             self.world.flush();
-        }
+        };
+
+        let mut render = self.world.single_fetch_mut::<Render>().unwrap();
+        let lnwindow = self.world.single_fetch::<Lnwindow>().unwrap();
+        render.surface_reconfigure(lnwindow.window.inner_size());
     }
 
     fn window_event(
@@ -73,7 +77,7 @@ impl Element for Lnwindow {
 
         world.queue(move |world| {
             let lnwindow = world.fetch_mut(this).unwrap();
-            world.insert(pollster::block_on(Render::new(lnwindow.window.clone())));
+            world.insert(pollster::block_on(Render::new(&lnwindow)));
         });
 
         world.queue(move |world| {
