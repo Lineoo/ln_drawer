@@ -1,5 +1,5 @@
 use crate::{
-    layout::LayoutRectangle,
+    layout::{LayoutRectangle, transform::Transform},
     measures::Rectangle,
     theme::Luni,
     tools::pointer::{
@@ -50,6 +50,8 @@ impl Button {
             order: self.order,
             enabled: true,
         });
+
+        world.insert(Transform::copy(this.untyped(), collider.untyped()));
 
         world.observer(collider, move |event: &PointerHit, world, _| {
             match event.status {

@@ -96,5 +96,7 @@ impl Element for Transform {
         });
 
         world.dependency(ob, this);
+        world.dependency(this, self.source);
+        world.dependency(this, self.target);
     }
 }
