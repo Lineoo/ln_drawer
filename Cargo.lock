@@ -1418,7 +1418,7 @@ checksum = "f5e54036fe321fd421e10d732f155734c4e4afd610dd556d9a82833ab3ee0bed"
 
 [[package]]
 name = "ln_drawer"
-version = "0.1.2-alpha3"
+version = "0.1.2"
 dependencies = [
  "android_logger",
  "bytemuck",
