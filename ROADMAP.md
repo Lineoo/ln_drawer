@@ -84,8 +84,8 @@
 - [x] 噪声种类选择
 - [x] 调整发布编译配置
 - **LnDrawer v0.1.2-alpha3**
-- [ ] 支持响应 suspended/resumed
-- [ ] 触摸支持
+- [x] 支持响应 suspended/resumed
+- [x] 触摸支持
     - [x] 单指拖拽
     - [ ] 双指缩放
 - **android**

@@ -27,6 +27,7 @@ pub struct Render {
     config: SurfaceConfiguration,
 
     // wgpu interface
+    instance: Instance,
     adapter: Adapter,
     device: Device,
     queue: Queue,
@@ -96,6 +97,7 @@ impl Render {
         Render {
             surface,
             config,
+            instance,
             adapter,
             device,
             queue,
@@ -107,7 +109,9 @@ impl Render {
         }
     }
 
-    pub fn surface_reconfigure(&mut self, size: PhysicalSize<u32>) {
+    pub fn surface_recreate(&mut self, lnwindow: &Lnwindow) {
+        self.surface = self.instance.create_surface(lnwindow.window.clone()).unwrap();
+        let size = lnwindow.window.inner_size();
         self.config = Render::configuration(&self.surface, &self.adapter, size);
         self.surface.configure(&self.device, &self.config);
     }
@@ -169,7 +173,9 @@ impl Element for Render {
         world.observer(lnwindow, move |event: &WindowEvent, world, _| match event {
             WindowEvent::Resized(size) => {
                 let mut render = world.fetch_mut(this).unwrap();
-                render.surface_reconfigure(*size);
+                render.config.width = size.width.max(1);
+                render.config.height = size.height.max(1);
+                render.surface.configure(&render.device, &render.config);
             }
 
             WindowEvent::RedrawRequested => {

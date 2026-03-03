@@ -35,11 +35,11 @@ impl ApplicationHandler for Lnwin {
             let lnwindow = Lnwindow::new(event_loop);
             self.world.insert(lnwindow);
             self.world.flush();
-        };
-
-        let mut render = self.world.single_fetch_mut::<Render>().unwrap();
-        let lnwindow = self.world.single_fetch::<Lnwindow>().unwrap();
-        render.surface_reconfigure(lnwindow.window.inner_size());
+        } else {   
+            let mut render = self.world.single_fetch_mut::<Render>().unwrap();
+            let lnwindow = self.world.single_fetch::<Lnwindow>().unwrap();
+            render.surface_recreate(&lnwindow);
+        }
     }
 
     fn window_event(
