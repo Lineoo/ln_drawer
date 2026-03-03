@@ -5,7 +5,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{canvas::CanvasDescriptor, viewport::Viewport},
-    widgets::panel::{Panel, PanelDescriptor},
+    widgets::panel::Panel,
     world::{Element, Handle, World},
 };
 
@@ -22,7 +22,7 @@ impl Element for TouchTool {
                 extend: Size::splat(100),
             };
 
-            let bytes = include_bytes!("../../res/iconv2.png");
+            let bytes = include_bytes!("../../res/icon_hicolor.png");
 
             world.build(CanvasDescriptor::from_bytes(rect, 0, bytes).unwrap());
         });
@@ -43,7 +43,7 @@ impl Element for TouchTool {
 
                         let mut cache = world.single_fetch_mut::<TouchTool>().unwrap();
 
-                        let panel = world.build(PanelDescriptor {
+                        let panel = world.insert(Panel {
                             rect: Rectangle::new_half(location_world.floor(), Size::new(32, 32)),
                             ..Default::default()
                         });
@@ -66,7 +66,7 @@ impl Element for TouchTool {
                         let mut cache = world.single_fetch_mut::<TouchTool>().unwrap();
 
                         let panel = *cache.touch.get(&touch.id).unwrap();
-                        world.remove(panel);
+                        world.remove(panel).unwrap();
 
                         cache.touch.remove(&touch.id);
                     }
