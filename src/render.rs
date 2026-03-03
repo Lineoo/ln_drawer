@@ -11,10 +11,10 @@ use wgpu::{
     Adapter, Color, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device,
     DeviceDescriptor, Features, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference,
     PresentMode, Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor,
-    RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration, SurfaceTarget, TextureUsages,
+    RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration, TextureUsages,
     TextureViewDescriptor, Trace,
 };
-use winit::event::WindowEvent;
+use winit::{dpi::PhysicalSize, event::WindowEvent};
 
 use crate::{
     lnwin::Lnwindow,
@@ -22,8 +22,12 @@ use crate::{
 };
 
 pub struct Render {
-    // wgpu interface
+    // wgpu surface
     surface: Surface<'static>,
+    config: SurfaceConfiguration,
+
+    // wgpu interface
+    instance: Instance,
     adapter: Adapter,
     device: Device,
     queue: Queue,
@@ -49,7 +53,6 @@ pub struct RenderActive {
     pub rpass: RenderPass<'static>,
 }
 
-#[derive(Debug)]
 pub struct RenderControl {
     pub visible: bool,
     pub order: isize,
@@ -62,10 +65,10 @@ pub struct RedrawPrepare;
 pub struct Redraw;
 
 impl Render {
-    pub async fn new(window: impl Into<SurfaceTarget<'static>>) -> Render {
+    pub async fn new(lnwindow: &Lnwindow) -> Render {
         let instance = Instance::default();
 
-        let surface = instance.create_surface(window).unwrap();
+        let surface = instance.create_surface(lnwindow.window.clone()).unwrap();
 
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -87,8 +90,14 @@ impl Render {
             .await
             .unwrap();
 
+        let size = lnwindow.window.inner_size();
+        let config = Render::configuration(&surface, &adapter, size);
+        surface.configure(&device, &config);
+
         Render {
             surface,
+            config,
+            instance,
             adapter,
             device,
             queue,
@@ -98,6 +107,57 @@ impl Render {
             last_control: None,
             last_lossy: None,
         }
+    }
+
+    pub fn surface_recreate(&mut self, lnwindow: &Lnwindow) {
+        self.surface = self.instance.create_surface(lnwindow.window.clone()).unwrap();
+        let size = lnwindow.window.inner_size();
+        self.config = Render::configuration(&self.surface, &self.adapter, size);
+        self.surface.configure(&self.device, &self.config);
+    }
+
+    fn configuration(
+        surface: &Surface,
+        adapter: &Adapter,
+        size: PhysicalSize<u32>,
+    ) -> SurfaceConfiguration {
+        let caps = surface.get_capabilities(&adapter);
+        let config = SurfaceConfiguration {
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            format: *caps.formats.first().unwrap(),
+            width: size.width.max(1),
+            height: size.height.max(1),
+            desired_maximum_frame_latency: 2,
+            present_mode: {
+                let caps = &caps.present_modes;
+                if caps.contains(&PresentMode::FifoRelaxed) {
+                    PresentMode::FifoRelaxed
+                } else if caps.contains(&PresentMode::Fifo) {
+                    PresentMode::Fifo
+                } else {
+                    *caps.first().unwrap()
+                }
+            },
+            alpha_mode: {
+                let caps = &caps.alpha_modes;
+                if caps.contains(&CompositeAlphaMode::PreMultiplied) {
+                    CompositeAlphaMode::PreMultiplied
+                } else if caps.contains(&CompositeAlphaMode::PostMultiplied) {
+                    CompositeAlphaMode::PostMultiplied
+                } else if caps.contains(&CompositeAlphaMode::Inherit) {
+                    CompositeAlphaMode::Inherit
+                } else {
+                    *caps.first().unwrap()
+                }
+            },
+            view_formats: vec![],
+        };
+
+        log::trace!("resize in {}, {}", config.width, config.height);
+        log::trace!("present mode {:?} is selected", config.present_mode);
+        log::trace!("alpha mode {:?} is selected", config.alpha_mode);
+
+        config
     }
 }
 
@@ -112,44 +172,10 @@ impl Element for Render {
         let lnwindow = world.single::<Lnwindow>().unwrap();
         world.observer(lnwindow, move |event: &WindowEvent, world, _| match event {
             WindowEvent::Resized(size) => {
-                let render = world.fetch(this).unwrap();
-                let caps = render.surface.get_capabilities(&render.adapter);
-                let config = SurfaceConfiguration {
-                    usage: TextureUsages::RENDER_ATTACHMENT,
-                    format: *caps.formats.first().unwrap(),
-                    width: size.width.max(1),
-                    height: size.height.max(1),
-                    desired_maximum_frame_latency: 2,
-                    present_mode: {
-                        let caps = &caps.present_modes;
-                        if caps.contains(&PresentMode::FifoRelaxed) {
-                            PresentMode::FifoRelaxed
-                        } else if caps.contains(&PresentMode::Fifo) {
-                            PresentMode::Fifo
-                        } else {
-                            *caps.first().unwrap()
-                        }
-                    },
-                    alpha_mode: {
-                        let caps = &caps.alpha_modes;
-                        if caps.contains(&CompositeAlphaMode::PreMultiplied) {
-                            CompositeAlphaMode::PreMultiplied
-                        } else if caps.contains(&CompositeAlphaMode::PostMultiplied) {
-                            CompositeAlphaMode::PostMultiplied
-                        } else if caps.contains(&CompositeAlphaMode::Inherit) {
-                            CompositeAlphaMode::Inherit
-                        } else {
-                            *caps.first().unwrap()
-                        }
-                    },
-                    view_formats: vec![],
-                };
-
-                log::trace!("resize in {}, {}", config.width, config.height);
-                log::trace!("present mode {:?} is selected", config.present_mode);
-                log::trace!("alpha mode {:?} is selected", config.alpha_mode);
-
-                render.surface.configure(&render.device, &config);
+                let mut render = world.fetch_mut(this).unwrap();
+                render.config.width = size.width.max(1);
+                render.config.height = size.height.max(1);
+                render.surface.configure(&render.device, &render.config);
             }
 
             WindowEvent::RedrawRequested => {

@@ -17,7 +17,10 @@ use crate::{
         wireframe::WireframeManagerDescriptor,
     },
     theme::Luni,
-    tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
+    tools::{
+        camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool,
+        touch::TouchTool,
+    },
     world::{Element, Handle, World},
 };
 
@@ -30,10 +33,12 @@ impl ApplicationHandler for Lnwin {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.world.single::<Lnwindow>().is_err() {
             let lnwindow = Lnwindow::new(event_loop);
-            lnwindow.window.request_redraw();
-
             self.world.insert(lnwindow);
             self.world.flush();
+        } else {   
+            let mut render = self.world.single_fetch_mut::<Render>().unwrap();
+            let lnwindow = self.world.single_fetch::<Lnwindow>().unwrap();
+            render.surface_recreate(&lnwindow);
         }
     }
 
@@ -74,7 +79,7 @@ impl Element for Lnwindow {
 
         world.queue(move |world| {
             let lnwindow = world.fetch_mut(this).unwrap();
-            world.insert(pollster::block_on(Render::new(lnwindow.window.clone())));
+            world.insert(pollster::block_on(Render::new(&lnwindow)));
         });
 
         world.queue(move |world| {
@@ -97,6 +102,7 @@ impl Element for Lnwindow {
             world.insert(Focus::default());
             world.insert(StrokeLayer::default());
             world.insert(PointerTool::default());
+            world.insert(TouchTool::default());
             world.insert(CameraTool::default());
             world.insert(ModifiersTool::default());
 

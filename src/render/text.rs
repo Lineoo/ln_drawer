@@ -64,9 +64,6 @@ impl Descriptor for TextManagerDescriptor {
         let render = world.single_fetch::<Render>().unwrap();
         let viewport = world.single_fetch::<Viewport>().unwrap();
 
-        let caps = render.surface.get_capabilities(&render.adapter);
-        let format = *caps.formats.first().unwrap();
-
         let shader_vs = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("vertex_shader"),
             source: ShaderSource::Wgsl(include_str!("vertex.wgsl").into()),
@@ -139,7 +136,7 @@ impl Descriptor for TextManagerDescriptor {
                     entry_point: Some("fs_main"),
                     compilation_options: Default::default(),
                     targets: &[Some(ColorTargetState {
-                        format,
+                        format: render.config.format,
                         blend: Some(BlendState::ALPHA_BLENDING),
                         write_mask: ColorWrites::ALL,
                     })],
