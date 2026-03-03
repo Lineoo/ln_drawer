@@ -39,5 +39,14 @@ strip = "symbols"
 lto = "fat"
 codegen-units = 1
 
+[package.metadata.android]
+package = "org.ln_drawer.ln_drawer"
+resources = "android"
+apk_name = "LnDrawer"
+
 [package.metadata.android.sdk]
 min_sdk_version = 26
+
+[package.metadata.android.application]
+icon = "@mipmap/icon"
+label = "LnDrawer"
