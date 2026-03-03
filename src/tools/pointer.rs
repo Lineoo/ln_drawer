@@ -3,10 +3,7 @@ use std::cell::Cell;
 use winit::event::{ElementState, MouseButton, Touch, WindowEvent};
 
 use crate::{
-    lnwin::Lnwindow,
-    measures::{Position, PositionFract, Rectangle, Size},
-    render::viewport::Viewport,
-    world::{Element, Handle, World},
+    layout::LayoutRectangle, lnwin::Lnwindow, measures::{Position, PositionFract, Rectangle, Size}, render::viewport::Viewport, world::{Element, Handle, World}
 };
 
 #[derive(Debug, Default)]
@@ -137,7 +134,12 @@ impl PointerCollider {
 // Behaviors //
 
 impl Element for PointerCollider {
-    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(this, |&LayoutRectangle(rect), world, this| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
+        });
+
         world.queue(|world| {
             if let Ok(mut pointer) = world.single_fetch_mut::<PointerTool>() {
                 pointer.update_hovering(world);

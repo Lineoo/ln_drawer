@@ -4,7 +4,7 @@ use crate::{
     layout::transform::Transform,
     measures::{Position, Rectangle, Size},
     render::canvas::CanvasDescriptor,
-    widgets::{WidgetClick, WidgetRectangle, button::ButtonDescriptor, resizable::Resizable},
+    widgets::{WidgetClick, WidgetRectangle, button::Button, resizable::Resizable},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -44,7 +44,7 @@ impl Element for SimpleNoise {
             extend: Size::splat(70),
         };
 
-        let button = world.build(ButtonDescriptor { rect, order: 20 });
+        let button = world.insert(Button { rect, order: 20 });
 
         let icon = world.build(
             CanvasDescriptor::from_bytes(
@@ -61,12 +61,12 @@ impl Element for SimpleNoise {
         world.observer(button, move |WidgetClick, world, button| {
             let button = world.fetch(button).unwrap();
 
-            let play = world.build(ButtonDescriptor {
+            let play = world.insert(Button {
                 rect: button.rect,
                 order: 30,
             });
 
-            let pause = world.build(ButtonDescriptor {
+            let pause = world.insert(Button {
                 rect: button.rect.pad_left(10, 1),
                 order: 30,
             });

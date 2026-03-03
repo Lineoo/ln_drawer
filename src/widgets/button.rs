@@ -6,21 +6,15 @@ use crate::{
         PointerCollider, PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus,
     },
     widgets::{Attach, WidgetButton, WidgetClick, WidgetHover, WidgetRectangle},
-    world::{Descriptor, Element, Handle, World},
+    world::{Element, Handle, World},
 };
 
 pub struct Button {
     pub rect: Rectangle,
     pub order: isize,
-    collider: Handle<PointerCollider>,
 }
 
-pub struct ButtonDescriptor {
-    pub rect: Rectangle,
-    pub order: isize,
-}
-
-impl Default for ButtonDescriptor {
+impl Default for Button {
     fn default() -> Self {
         Self {
             rect: Rectangle::new(0, 0, 100, 100),
@@ -29,48 +23,41 @@ impl Default for ButtonDescriptor {
     }
 }
 
-impl Descriptor for ButtonDescriptor {
-    type Target = Handle<Button>;
-
-    fn when_build(self, world: &World) -> Self::Target {
-        let collider = world.insert(PointerCollider {
-            rect: self.rect,
-            order: self.order,
-            enabled: false,
-        });
-
-        let button = world.insert(Button {
-            rect: self.rect,
-            order: self.order,
-            collider,
+impl Element for Button {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.observer(this, |&LayoutRectangle(rect), world, this| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
         });
 
         world.insert(Attach {
-            widget: button,
+            widget: this,
             target: world.single::<Luni>().unwrap(),
         });
 
-        world.queue(move |world| {
-            let mut collider = world.fetch_mut(collider).unwrap();
-            collider.enabled = true;
-        });
+        self.attach_pointer(world, this);
+    }
 
-        button
+    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
+        world.trigger(this, &WidgetRectangle(self.rect));
     }
 }
 
-impl Element for Button {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(self.collider, move |event: &PointerHit, world, _| {
-            if let PointerHitStatus::Release = event.status {
-                world.trigger(this, &WidgetClick);
-            }
+impl Button {
+    fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
+        let collider = world.insert(PointerCollider {
+            rect: self.rect,
+            order: self.order,
+            enabled: true,
+        });
 
+        world.observer(collider, move |event: &PointerHit, world, _| {
             match event.status {
                 PointerHitStatus::Press => {
                     world.trigger(this, &WidgetButton::ButtonPress);
                 }
                 PointerHitStatus::Release => {
+                    world.trigger(this, &WidgetClick);
                     world.trigger(this, &WidgetButton::ButtonRelease);
                 }
                 _ => {}
@@ -78,31 +65,18 @@ impl Element for Button {
         });
 
         world.observer(
-            self.collider,
+            collider,
             move |event: &PointerHover, world, _| match event.motion {
                 PointerHoverStatus::Enter => {
                     world.trigger(this, &WidgetHover::HoverEnter);
                 }
-                PointerHoverStatus::Moving => {}
                 PointerHoverStatus::Leave => {
                     world.trigger(this, &WidgetHover::HoverLeave);
                 }
+                _ => {}
             },
         );
 
-        world.observer(this, |&LayoutRectangle(rect), world, this| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
-        });
-
-        world.dependency(self.collider, this);
-    }
-
-    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
-        let mut collider = world.fetch_mut(self.collider).unwrap();
-        collider.order = self.order;
-        collider.rect = self.rect;
-
-        world.trigger(this, &WidgetRectangle(self.rect));
+        world.dependency(collider, this);
     }
 }
