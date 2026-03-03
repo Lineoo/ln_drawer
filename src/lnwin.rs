@@ -16,7 +16,7 @@ use crate::{
         text::TextManagerDescriptor, viewport::ViewportDescriptor,
         wireframe::WireframeManagerDescriptor,
     },
-    theme::{Luni, Theme},
+    theme::Luni,
     tools::{
         camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool,
         touch::TouchTool,
@@ -31,7 +31,7 @@ pub struct Lnwin {
 
 impl ApplicationHandler for Lnwin {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.world.single::<Lnwindow>().is_none() {
+        if self.world.single::<Lnwindow>().is_err() {
             let lnwindow = Lnwindow::new(event_loop);
             self.world.insert(lnwindow);
             self.world.flush();
@@ -49,11 +49,11 @@ impl ApplicationHandler for Lnwin {
         event: WindowEvent,
     ) {
         match self.world.single::<Lnwindow>() {
-            Some(window) => {
+            Ok(window) => {
                 self.world.trigger(window, &event);
                 self.world.flush();
             }
-            None => event_loop.exit(),
+            Err(_) => event_loop.exit(),
         }
     }
 
@@ -71,7 +71,9 @@ impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(this, |event: &WindowEvent, world, this| {
             if let WindowEvent::CloseRequested = event {
-                world.remove(this);
+                world.queue(move |world| {
+                    world.remove(this);
+                });
             }
         });
 
@@ -104,8 +106,7 @@ impl Element for Lnwindow {
             world.insert(CameraTool::default());
             world.insert(ModifiersTool::default());
 
-            let luni = world.insert(Luni::default());
-            world.insert(Theme(luni.untyped()));
+            world.insert(Luni::default());
         });
     }
 }

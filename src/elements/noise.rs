@@ -1,13 +1,10 @@
 use rodio::{OutputStream, OutputStreamBuilder, Sink, source::noise};
 
 use crate::{
-    layout::translatable::TranslatableDescriptor,
+    layout::transform::Transform,
     measures::{Position, Rectangle, Size},
     render::canvas::CanvasDescriptor,
-    widgets::{
-        button::ButtonDescriptor,
-        events::{Click, Interact},
-    },
+    widgets::{WidgetClick, WidgetRectangle, button::ButtonDescriptor, resizable::Resizable},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -47,11 +44,7 @@ impl Element for SimpleNoise {
             extend: Size::splat(70),
         };
 
-        let button = world.build(ButtonDescriptor {
-            rect,
-            order: 20,
-            theme: None,
-        });
+        let button = world.build(ButtonDescriptor { rect, order: 20 });
 
         let icon = world.build(
             CanvasDescriptor::from_bytes(
@@ -62,38 +55,32 @@ impl Element for SimpleNoise {
             .unwrap(),
         );
 
-        world.build(TranslatableDescriptor {
-            rect,
-            order: 25,
-            hollow: true,
-            target: button.untyped(),
-        });
+        let resizable = world.insert(Resizable { rect });
+        world.insert(Transform::copy(resizable.untyped(), button.untyped()));
 
-        world.observer(button, move |Click, world, button| {
+        world.observer(button, move |WidgetClick, world, button| {
             let button = world.fetch(button).unwrap();
 
             let play = world.build(ButtonDescriptor {
                 rect: button.rect,
                 order: 30,
-                theme: None,
             });
 
             let pause = world.build(ButtonDescriptor {
                 rect: button.rect.pad_left(10, 1),
                 order: 30,
-                theme: None,
             });
 
-            world.observer(play, move |Click, world, play| {
+            world.observer(play, move |WidgetClick, world, play| {
                 let this = world.fetch(this).unwrap();
                 this.sink.play();
-                world.remove(play);
+                world.remove(play).unwrap();
             });
 
-            world.observer(pause, move |Click, world, pause| {
+            world.observer(pause, move |WidgetClick, world, pause| {
                 let this = world.fetch(this).unwrap();
                 this.sink.pause();
-                world.remove(pause);
+                world.remove(pause).unwrap();
             });
 
             let button = button.handle();
@@ -103,12 +90,9 @@ impl Element for SimpleNoise {
             world.dependency(pause, button);
         });
 
-        world.observer(button, move |interact: &Interact, world, button| {
-            if let Interact::PropertyChange = interact {
-                let button = world.fetch(button).unwrap();
-                let mut icon = world.fetch_mut(icon).unwrap();
-                icon.rect = button.rect.expand(-20);
-            }
+        world.observer(button, move |&WidgetRectangle(rect), world, _| {
+            let mut icon = world.fetch_mut(icon).unwrap();
+            icon.rect = rect.expand(-20);
         });
 
         world.dependency(button, this);

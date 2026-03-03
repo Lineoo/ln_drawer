@@ -1,9 +1,11 @@
 use crate::{
-    layout::Layout,
+    layout::LayoutRectangle,
     measures::Rectangle,
-    theme::{Attach, Theme},
-    tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
-    widgets::events::{Interact, Switch},
+    theme::Luni,
+    tools::pointer::{
+        PointerCollider, PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus,
+    },
+    widgets::{Attach, WidgetButton, WidgetChecked, WidgetClick, WidgetHover, WidgetRectangle},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -18,7 +20,6 @@ pub struct CheckButtonDescriptor {
     pub rect: Rectangle,
     pub checked: bool,
     pub order: isize,
-    pub theme: Option<Handle>,
 }
 
 impl Default for CheckButtonDescriptor {
@@ -27,7 +28,6 @@ impl Default for CheckButtonDescriptor {
             rect: Rectangle::new(0, 0, 100, 100),
             checked: false,
             order: 10,
-            theme: None,
         }
     }
 }
@@ -49,15 +49,10 @@ impl Descriptor for CheckButtonDescriptor {
             collider,
         });
 
-        match self.theme {
-            Some(theme) => world.queue(move |world| {
-                world.trigger(theme, &Attach::<CheckButton>(button));
-            }),
-            None => world.queue(move |world| {
-                let theme = world.single::<Theme>().unwrap();
-                world.trigger(theme, &Attach::<CheckButton>(button));
-            }),
-        }
+        world.insert(Attach {
+            widget: button,
+            target: world.single::<Luni>().unwrap(),
+        });
 
         world.queue(move |world| {
             let mut collider = world.fetch_mut(collider).unwrap();
@@ -71,16 +66,16 @@ impl Descriptor for CheckButtonDescriptor {
 impl Element for CheckButton {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(self.collider, move |event: &PointerHit, world, _| {
-            if let PointerStatus::Release = event.status {
-                world.trigger(this, &Switch);
+            if let PointerHitStatus::Release = event.status {
+                world.trigger(this, &WidgetClick);
             }
 
             match event.status {
-                PointerStatus::Press => {
-                    world.trigger(this, &Interact::ButtonPress);
+                PointerHitStatus::Press => {
+                    world.trigger(this, &WidgetButton::ButtonPress);
                 }
-                PointerStatus::Release => {
-                    world.trigger(this, &Interact::ButtonRelease);
+                PointerHitStatus::Release => {
+                    world.trigger(this, &WidgetButton::ButtonRelease);
                 }
                 _ => {}
             }
@@ -89,22 +84,19 @@ impl Element for CheckButton {
         world.observer(
             self.collider,
             move |event: &PointerHover, world, _| match event.motion {
-                PointerMotion::Enter => {
-                    world.trigger(this, &Interact::HoverEnter);
+                PointerHoverStatus::Enter => {
+                    world.trigger(this, &WidgetHover::HoverEnter);
                 }
-                PointerMotion::Moving => {}
-                PointerMotion::Leave => {
-                    world.trigger(this, &Interact::HoverLeave);
+                PointerHoverStatus::Moving => {}
+                PointerHoverStatus::Leave => {
+                    world.trigger(this, &WidgetHover::HoverLeave);
                 }
             },
         );
 
-        world.observer(this, |layout: &Layout, world, this| match layout {
-            Layout::Rectangle(rect) => {
-                let mut this = world.fetch_mut(this).unwrap();
-                this.rect = *rect;
-            }
-            Layout::Alpha(alpha) => unimplemented!(),
+        world.observer(this, |&LayoutRectangle(rect), world, this| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
         });
 
         world.dependency(self.collider, this);
@@ -115,8 +107,7 @@ impl Element for CheckButton {
         collider.order = self.order;
         collider.rect = self.rect;
 
-        world.queue(move |world| {
-            world.trigger(this, &Interact::PropertyChange);
-        });
+        world.trigger(this, &WidgetRectangle(self.rect));
+        world.trigger(this, &WidgetChecked(self.checked));
     }
 }

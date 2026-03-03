@@ -27,7 +27,7 @@ pub fn save_into_file(world: &World) {
         save.images.push(image.to_descriptor());
     });
 
-    if let Some(stroke) = world.single_fetch_mut::<StrokeLayer>() {
+    if let Ok(stroke) = world.single_fetch_mut::<StrokeLayer>() {
         save.stroke.replace(stroke.to_descriptor(world));
     }
 

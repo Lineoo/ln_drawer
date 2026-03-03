@@ -1,9 +1,14 @@
 use crate::{
-    layout::Layout,
+    layout::LayoutRectangle,
     measures::{Position, Rectangle, Size},
-    theme::{Attach, Theme},
-    tools::pointer::{PointerCollider, PointerHit, PointerHover, PointerMotion, PointerStatus},
-    widgets::events::{Click, Interact, InteractSelect},
+    theme::Luni,
+    tools::pointer::{
+        PointerCollider, PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus,
+    },
+    widgets::{
+        Attach, WidgetButton, WidgetClick, WidgetDestroyed, WidgetHover, WidgetRectangle,
+        WidgetSelect,
+    },
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -26,7 +31,6 @@ pub struct MenuDescriptor {
     pub entry_width: u32,
     pub entry_height: u32,
     pub entry_pad: u32,
-    pub theme: Option<Handle>,
 }
 
 pub struct MenuEntryDescriptor {
@@ -40,7 +44,6 @@ impl Default for MenuDescriptor {
             entry_width: 400,
             entry_height: 40,
             entry_pad: 5,
-            theme: None,
         }
     }
 }
@@ -73,15 +76,10 @@ impl Descriptor for MenuDescriptor {
             entries: Vec::new(),
         });
 
-        match self.theme {
-            Some(theme) => world.queue(move |world| {
-                world.trigger(theme, &Attach::<Menu>(menu));
-            }),
-            None => world.queue(move |world| {
-                let theme = world.single::<Theme>().unwrap();
-                world.trigger(theme, &Attach::<Menu>(menu));
-            }),
-        }
+        world.insert(Attach {
+            widget: menu,
+            target: world.single::<Luni>().unwrap(),
+        });
 
         world.queue(move |world| {
             let mut collider = world.fetch_mut(collider).unwrap();
@@ -99,10 +97,10 @@ impl Element for Menu {
         world.observer(
             self.collider,
             move |event: &PointerHover, world, _| match event.motion {
-                PointerMotion::Enter => {
-                    world.trigger(this, &Interact::HoverEnter);
+                PointerHoverStatus::Enter => {
+                    world.trigger(this, &WidgetHover::HoverEnter);
                 }
-                PointerMotion::Moving => {
+                PointerHoverStatus::Moving => {
                     let mut this = world.fetch_mut(this).unwrap();
 
                     if event.position.within(this.menu_rect()) {
@@ -113,16 +111,16 @@ impl Element for Menu {
 
                         if this.hover.is_none_or(|x| x != idx) {
                             this.hover = Some(idx);
-                            world.trigger(this.handle(), &InteractSelect::Entry(Some(idx)));
+                            world.trigger(this.handle(), &WidgetSelect(Some(idx)));
                         }
                     } else if this.hover.is_some() {
                         this.hover = None;
-                        world.trigger(this.handle(), &InteractSelect::Entry(None));
+                        world.trigger(this.handle(), &WidgetSelect(None));
                     }
                 }
-                PointerMotion::Leave => {
-                    world.trigger(this, &InteractSelect::Entry(None));
-                    world.trigger(this, &Interact::HoverLeave);
+                PointerHoverStatus::Leave => {
+                    world.trigger(this, &WidgetSelect(None));
+                    world.trigger(this, &WidgetHover::HoverLeave);
 
                     let mut this = world.fetch_mut(this).unwrap();
                     this.hover = None;
@@ -133,10 +131,10 @@ impl Element for Menu {
         world.observer(
             self.collider,
             move |event: &PointerHit, world, _| match event.status {
-                PointerStatus::Press => {
-                    world.trigger(this, &Interact::ButtonPress);
+                PointerHitStatus::Press => {
+                    world.trigger(this, &WidgetButton::ButtonPress);
                 }
-                PointerStatus::Moving => {
+                PointerHitStatus::Moving => {
                     let mut this = world.fetch_mut(this).unwrap();
 
                     if event.position.within(this.menu_rect()) {
@@ -147,15 +145,15 @@ impl Element for Menu {
 
                         if this.hover.is_none_or(|x| x != idx) {
                             this.hover = Some(idx);
-                            world.trigger(this.handle(), &InteractSelect::Entry(Some(idx)));
+                            world.trigger(this.handle(), &WidgetSelect(Some(idx)));
                         }
                     } else if this.hover.is_some() {
                         this.hover = None;
-                        world.trigger(this.handle(), &InteractSelect::Entry(None));
+                        world.trigger(this.handle(), &WidgetSelect(None));
                     }
                 }
-                PointerStatus::Release => {
-                    world.trigger(this, &Interact::ButtonRelease);
+                PointerHitStatus::Release => {
+                    world.trigger(this, &WidgetButton::ButtonRelease);
 
                     let mut this = world.fetch_mut(this).unwrap();
 
@@ -164,7 +162,7 @@ impl Element for Menu {
                             / (this.entry_height + this.pad) as i32;
 
                         if let Some(entry) = this.entries.get(idx as usize) {
-                            world.trigger(*entry, &Click);
+                            world.trigger(*entry, &WidgetClick);
                         } else {
                             log::error!("menu hit nothing");
                         }
@@ -181,12 +179,15 @@ impl Element for Menu {
         collider.rect = self.menu_rect();
 
         for (i, entry) in self.entries.iter().enumerate() {
-            world.trigger(*entry, &Layout::Rectangle(self.entry_rect(i as f32)));
+            world.trigger(*entry, &LayoutRectangle(self.entry_rect(i as f32)));
         }
 
-        world.queue(move |world| {
-            world.trigger(this, &Interact::PropertyChange);
-        });
+        world.trigger(this, &WidgetRectangle(self.menu_rect()));
+    }
+
+    // FIXME this is unavailable yet
+    fn when_remove(&mut self, world: &World, this: Handle<Self>) {
+        world.trigger(this, &WidgetDestroyed);
     }
 }
 

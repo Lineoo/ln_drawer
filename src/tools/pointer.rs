@@ -42,26 +42,26 @@ pub struct PointerEdgeCollider {
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHit {
     pub position: Position,
-    pub status: PointerStatus,
+    pub status: PointerHitStatus,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHitEdge {
     pub position: Position,
-    pub status: PointerStatus,
+    pub status: PointerHitStatus,
     pub edge: PointerEdge,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHover {
     pub position: Position,
-    pub motion: PointerMotion,
+    pub motion: PointerHoverStatus,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHoverEdge {
     pub position: Position,
-    pub motion: PointerMotion,
+    pub motion: PointerHoverStatus,
     pub edge: PointerEdge,
 }
 
@@ -79,14 +79,14 @@ pub struct PointerEdgeCheck {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PointerStatus {
+pub enum PointerHitStatus {
     Press,
     Moving,
     Release,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PointerMotion {
+pub enum PointerHoverStatus {
     Enter,
     Moving,
     Leave,
@@ -139,7 +139,7 @@ impl PointerCollider {
 impl Element for PointerCollider {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
         world.queue(|world| {
-            if let Some(mut pointer) = world.single_fetch_mut::<PointerTool>() {
+            if let Ok(mut pointer) = world.single_fetch_mut::<PointerTool>() {
                 pointer.update_hovering(world);
             }
         });
@@ -147,7 +147,7 @@ impl Element for PointerCollider {
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         world.queue(|world| {
-            if let Some(mut pointer) = world.single_fetch_mut::<PointerTool>() {
+            if let Ok(mut pointer) = world.single_fetch_mut::<PointerTool>() {
                 pointer.update_hovering(world);
             }
         });
@@ -155,7 +155,7 @@ impl Element for PointerCollider {
 
     fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
         world.queue(|world| {
-            if let Some(mut pointer) = world.single_fetch_mut::<PointerTool>() {
+            if let Ok(mut pointer) = world.single_fetch_mut::<PointerTool>() {
                 pointer.update_hovering(world);
             }
         });
@@ -225,7 +225,7 @@ impl Element for PointerEdgeCollider {
             let mut lock = world.fetch_mut(lock).unwrap();
 
             match (event.status, lock.edge) {
-                (PointerStatus::Press, None) => {
+                (PointerHitStatus::Press, None) => {
                     let mut idx = 0;
 
                     let fetched = world.fetch(this).unwrap();
@@ -272,7 +272,7 @@ impl Element for PointerEdgeCollider {
                     );
                 }
 
-                (PointerStatus::Moving, Some(edge)) => {
+                (PointerHitStatus::Moving, Some(edge)) => {
                     world.trigger(
                         this,
                         &PointerHitEdge {
@@ -283,7 +283,7 @@ impl Element for PointerEdgeCollider {
                     );
                 }
 
-                (PointerStatus::Release, Some(edge)) => {
+                (PointerHitStatus::Release, Some(edge)) => {
                     lock.edge = None;
                     world.trigger(
                         this,
@@ -339,7 +339,7 @@ impl Element for PointerTool {
                                     hovering,
                                     &PointerHit {
                                         position: position.floor(),
-                                        status: PointerStatus::Moving,
+                                        status: PointerHitStatus::Moving,
                                     },
                                 );
                             } else {
@@ -347,7 +347,7 @@ impl Element for PointerTool {
                                     hovering,
                                     &PointerHover {
                                         position: position.floor(),
-                                        motion: PointerMotion::Moving,
+                                        motion: PointerHoverStatus::Moving,
                                     },
                                 );
                             }
@@ -364,7 +364,7 @@ impl Element for PointerTool {
                                 hovering,
                                 &PointerHit {
                                     position: pointer.position.floor(),
-                                    status: PointerStatus::Press,
+                                    status: PointerHitStatus::Press,
                                 },
                             );
                         }
@@ -382,7 +382,7 @@ impl Element for PointerTool {
                                 hovering,
                                 &PointerHit {
                                     position: pointer.position.floor(),
-                                    status: PointerStatus::Release,
+                                    status: PointerHitStatus::Release,
                                 },
                             );
                         }
@@ -408,7 +408,7 @@ impl Element for PointerTool {
                                 hovering,
                                 &PointerHover {
                                     position: pointer.position.floor(),
-                                    motion: PointerMotion::Leave,
+                                    motion: PointerHoverStatus::Leave,
                                 },
                             );
                         }
@@ -450,7 +450,7 @@ impl PointerTool {
                     hovering,
                     &PointerHover {
                         position: position.floor(),
-                        motion: PointerMotion::Leave,
+                        motion: PointerHoverStatus::Leave,
                     },
                 );
             }
@@ -460,7 +460,7 @@ impl PointerTool {
                     landing,
                     &PointerHover {
                         position: position.floor(),
-                        motion: PointerMotion::Enter,
+                        motion: PointerHoverStatus::Enter,
                     },
                 );
             }
