@@ -1,4 +1,4 @@
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent};
 
 use crate::{
     lnwin::Lnwindow,
@@ -7,16 +7,22 @@ use crate::{
     world::{Element, Handle, World},
 };
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct CameraTool {
     cursor: [f64; 2],
     start: Option<Start>,
 }
 
-#[derive(Debug)]
-struct Start {
-    cursor: [f64; 2],
-    center: PositionFract,
+enum Start {
+    Cursor {
+        cursor: [f64; 2],
+        center: PositionFract,
+    },
+    Touch {
+        position: [f64; 2],
+        touch_id: u64,
+        center: PositionFract,
+    },
 }
 
 impl Element for CameraTool {
@@ -31,14 +37,14 @@ impl Element for CameraTool {
                     let position = lnwindow.cursor_to_screen(*position);
 
                     this.cursor = position;
-                    if let Some(start) = &mut this.start {
+                    if let Some(Start::Cursor { cursor, center }) = &mut this.start {
                         let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
                         let delta = viewport.screen_to_world_relative([
-                            start.cursor[0] - position[0],
-                            start.cursor[1] - position[1],
+                            cursor[0] - position[0],
+                            cursor[1] - position[1],
                         ]);
 
-                        viewport.center = start.center + delta;
+                        viewport.center = *center + delta;
                     }
                 }
 
@@ -48,11 +54,13 @@ impl Element for CameraTool {
                     ..
                 } => {
                     let mut this = world.fetch_mut(this).unwrap();
-                    let viewport = world.single_fetch::<Viewport>().unwrap();
-                    this.start = Some(Start {
-                        cursor: this.cursor,
-                        center: viewport.center,
-                    });
+                    if let None = this.start {
+                        let viewport = world.single_fetch::<Viewport>().unwrap();
+                        this.start = Some(Start::Cursor {
+                            cursor: this.cursor,
+                            center: viewport.center,
+                        });
+                    }
                 }
 
                 WindowEvent::MouseInput {
@@ -61,7 +69,9 @@ impl Element for CameraTool {
                     ..
                 } => {
                     let mut this = world.fetch_mut(this).unwrap();
-                    this.start = None;
+                    if let Some(Start::Cursor { .. }) = this.start {
+                        this.start = None;
+                    }
                 }
 
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -73,18 +83,65 @@ impl Element for CameraTool {
                     let this = &mut *world.fetch_mut(this).unwrap();
                     let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
 
-                    let cursor = viewport.screen_to_world_absolute(this.cursor);
+                    let world_cursor = viewport.screen_to_world_absolute(this.cursor);
 
-                    let follow = (viewport.center - cursor) * (-zoom_delta).exp2();
-                    viewport.center = cursor + follow;
+                    let follow = (viewport.center - world_cursor) * (-zoom_delta).exp2();
+                    viewport.center = world_cursor + follow;
 
-                    if let Some(start) = &mut this.start {
-                        let follow = (start.center - cursor) * (-zoom_delta).exp2();
-                        start.center = cursor + follow;
+                    if let Some(Start::Cursor { center, .. }) = &mut this.start {
+                        let follow = (*center - world_cursor) * (-zoom_delta).exp2();
+                        *center = world_cursor + follow;
                     }
 
                     viewport.zoom += zoom_delta;
                 }
+
+                WindowEvent::Touch(touch) => match touch.phase {
+                    TouchPhase::Started => {
+                        let mut this = world.fetch_mut(this).unwrap();
+                        if let None = this.start {
+                            let lnwindow = world.fetch(lnwindow).unwrap();
+                            let position = lnwindow.cursor_to_screen(touch.location);
+                            let viewport = world.single_fetch::<Viewport>().unwrap();
+                            this.start = Some(Start::Touch {
+                                position,
+                                touch_id: touch.id,
+                                center: viewport.center,
+                            });
+                        }
+                    }
+
+                    TouchPhase::Moved => {
+                        let mut this = world.fetch_mut(this).unwrap();
+                        if let Some(Start::Touch {
+                            position,
+                            touch_id,
+                            center,
+                        }) = &mut this.start
+                            && *touch_id == touch.id
+                        {
+                            let lnwindow = world.fetch(lnwindow).unwrap();
+                            let screen = lnwindow.cursor_to_screen(touch.location);
+                            let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
+
+                            let delta = viewport.screen_to_world_relative([
+                                position[0] - screen[0],
+                                position[1] - screen[1],
+                            ]);
+
+                            viewport.center = *center + delta;
+                        }
+                    }
+
+                    TouchPhase::Ended | TouchPhase::Cancelled => {
+                        let mut this = world.fetch_mut(this).unwrap();
+                        if let Some(Start::Touch { touch_id, .. }) = this.start
+                            && touch_id == touch.id
+                        {
+                            this.start = None;
+                        }
+                    }
+                },
 
                 _ => {}
             },
