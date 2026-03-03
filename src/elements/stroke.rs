@@ -11,16 +11,16 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::{
-        RenderPortal,
+        Render,
         canvas::{Canvas, CanvasDescriptor},
         text::TextDescriptor,
     },
     tools::{
         modifiers::ModifiersTool,
-        pointer::{PointerCollider, PointerHit, PointerMenu, PointerHitStatus},
+        pointer::{PointerCollider, PointerHit, PointerHitStatus, PointerMenu},
     },
     widgets::{
-        WidgetClick, 
+        WidgetClick,
         check_button::{CheckButton, CheckButtonDescriptor},
         menu::{MenuDescriptor, MenuEntryDescriptor},
     },
@@ -165,11 +165,11 @@ impl Element for StrokeLayer {
                 }),
                 ("", |_, _| {}),
                 ("Switch transparency", |world, _| {
-                    let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
-                    if rportal.clear_color == Color::TRANSPARENT {
-                        rportal.clear_color = Color::BLACK;
-                    } else if rportal.clear_color == Color::BLACK {
-                        rportal.clear_color = Color::TRANSPARENT;
+                    let mut render = world.single_fetch_mut::<Render>().unwrap();
+                    if render.clear_color == Color::TRANSPARENT {
+                        render.clear_color = Color::BLACK;
+                    } else if render.clear_color == Color::BLACK {
+                        render.clear_color = Color::TRANSPARENT;
                     }
                 }),
                 ("Switch title bar", |world, _| {

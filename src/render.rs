@@ -32,6 +32,9 @@ pub struct Render {
     device: Device,
     queue: Queue,
 
+    // render pass
+    pub clear_color: Color,
+
     // render control
     sequence: Vec<Handle<RenderControl>>,
     refreshing: bool,
@@ -42,15 +45,14 @@ pub struct Render {
     last_lossy: Option<Instant>,
 }
 
-pub struct RenderPortal {
-    pub active: Option<RenderActive>,
-    pub redrawing: bool,
-    pub clear_color: Color,
+struct RenderPortal {
+    active: Option<RenderActive>,
+    redrawing: bool,
 }
 
-pub struct RenderActive {
+struct RenderActive {
     encoder: CommandEncoder,
-    pub rpass: RenderPass<'static>,
+    rpass: RenderPass<'static>,
 }
 
 pub struct RenderControl {
@@ -101,6 +103,7 @@ impl Render {
             adapter,
             device,
             queue,
+            clear_color: Color::BLACK,
             sequence: Vec::new(),
             refreshing: false,
             last_redraw: None,
@@ -166,7 +169,6 @@ impl Element for Render {
         let portal = world.insert(RenderPortal {
             active: None,
             redrawing: false,
-            clear_color: Color::BLACK,
         });
 
         let lnwindow = world.single::<Lnwindow>().unwrap();
@@ -241,7 +243,6 @@ impl Element for Render {
 
                 // setup render pass
 
-                let mut rportal = world.fetch_mut(portal).unwrap();
                 let texture = render.surface.get_current_texture().unwrap();
                 let view = texture
                     .texture
@@ -259,7 +260,7 @@ impl Element for Render {
                             view: &view,
                             resolve_target: None,
                             ops: Operations {
-                                load: LoadOp::Clear(rportal.clear_color),
+                                load: LoadOp::Clear(render.clear_color),
                                 store: StoreOp::Store,
                             },
                             depth_slice: None,
@@ -270,6 +271,7 @@ impl Element for Render {
 
                 // call everyone to draw
 
+                let mut rportal = world.fetch_mut(portal).unwrap();
                 rportal.active.replace(RenderActive { encoder, rpass });
                 drop(rportal);
 
