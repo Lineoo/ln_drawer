@@ -4,7 +4,7 @@ use palette::Srgba;
 
 use crate::{
     render::{RedrawPrepare, RenderControl},
-    world::{Descriptor, Element, Handle, World},
+    world::{Descriptor, Element, Handle, RefMut, World},
 };
 
 pub struct Animation<T: AnimationType> {
@@ -52,6 +52,37 @@ impl<T: AnimationType> Descriptor for AnimationDescriptor<T> {
             control,
             control_active: self.src != self.dst,
         })
+    }
+}
+
+pub struct SimpleAnimationDescriptor<T, W, F>
+where
+    T: AnimationType,
+    W: Element,
+    F: FnMut(RefMut<W>, &World, T) + 'static,
+{
+    pub animation: AnimationDescriptor<T>,
+    pub widget: Handle<W>,
+    pub action: F,
+}
+
+impl<T, W, F> Descriptor for SimpleAnimationDescriptor<T, W, F>
+where
+    T: AnimationType,
+    W: Element,
+    F: FnMut(RefMut<W>, &World, T) + 'static,
+{
+    type Target = Handle<Animation<T>>;
+
+    fn when_build(mut self, world: &World) -> Self::Target {
+        let anim = world.build(self.animation);
+        world.dependency(anim, self.widget);
+        world.observer(anim, move |&AnimationValue::<T>(value), world, _| {
+            let widget = world.fetch_mut(self.widget).unwrap();
+            (self.action)(widget, world, value);
+        });
+
+        anim
     }
 }
 
@@ -113,6 +144,7 @@ impl<T: AnimationType> Element for Animation<T> {
     }
 }
 
+
 pub struct AnimationValue<T: AnimationType>(pub T);
 
 pub trait AnimationType: PartialEq + Clone + Copy + 'static {
@@ -122,6 +154,12 @@ pub trait AnimationType: PartialEq + Clone + Copy + 'static {
 impl AnimationType for f32 {
     fn float_iter(&mut self) -> impl IntoIterator<Item = &mut f32> {
         [self]
+    }
+}
+
+impl<const N: usize> AnimationType for [f32; N] {
+    fn float_iter(&mut self) -> impl IntoIterator<Item = &mut f32> {
+        self
     }
 }
 

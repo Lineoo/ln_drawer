@@ -13,14 +13,14 @@ use crate::{
 
 /// `Luni` stands for `ln_ui`. It's this basic widgets' render implementation of ln_drawer.
 pub struct Luni {
-    color: Srgba,
-    active_color: Srgba,
-    press_color: Srgba,
-    roundness: f32,
-    press_roundness: f32,
-    anim_factor: f32,
-    anim_factor_menu: f32,
-    pad: i32,
+    pub color: Srgba,
+    pub active_color: Srgba,
+    pub press_color: Srgba,
+    pub roundness: f32,
+    pub press_roundness: f32,
+    pub anim_factor: f32,
+    pub anim_factor_menu: f32,
+    pub pad: i32,
 }
 
 impl Default for Luni {

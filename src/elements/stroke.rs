@@ -22,6 +22,7 @@ use crate::{
     widgets::{
         WidgetClick,
         check_button::{CheckButton, CheckButtonDescriptor},
+        color_picker::ColorPicker,
         menu::{MenuDescriptor, MenuEntryDescriptor},
     },
     world::{Descriptor, Element, Handle, World},
@@ -176,6 +177,15 @@ impl Element for StrokeLayer {
                     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                     let decorated = lnwindow.window.is_decorated();
                     lnwindow.window.set_decorations(!decorated);
+                }),
+                ("Color Picker", |world, position| {
+                    world.insert(ColorPicker {
+                        rect: Rectangle {
+                            origin: position,
+                            extend: Size::splat(50),
+                        },
+                        color: Default::default(),
+                    });
                 }),
             ];
 

@@ -5,6 +5,7 @@ pub mod check_button;
 pub mod menu;
 pub mod panel;
 pub mod resizable;
+pub mod color_picker;
 
 /// Attach a headless widget to a specific element.
 pub struct Attach<T, U> {
