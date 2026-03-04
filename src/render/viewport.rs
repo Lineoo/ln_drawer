@@ -20,7 +20,7 @@ pub struct Viewport {
     control: Handle<RenderControl>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ViewportDescriptor {
     pub size: Size,
     pub center: PositionFract,

@@ -1,19 +1,11 @@
-use std::{
-    io::{Read, Write},
-    path::PathBuf,
-    time::Duration,
-};
+use std::{io::Read, path::PathBuf, time::Duration};
 
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
 use crate::{
-    elements::{
-        palette::{Palette, PaletteDescriptor},
-        stroke::{StrokeLayer, StrokeLayerDescriptor},
-    },
     lnwin::Lnwindow,
-    render::canvas::{Canvas, CanvasDescriptor},
+    render::viewport::{Viewport, ViewportDescriptor},
     tools::timer::{Timer, TimerHit},
     world::{Element, Handle, World},
 };
@@ -48,24 +40,18 @@ impl Element for Save {
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct SaveFile {
-    palettes: Vec<PaletteDescriptor>,
-    images: Vec<CanvasDescriptor>,
-    stroke: Option<StrokeLayerDescriptor>,
+    viewport: Option<ViewportDescriptor>,
 }
 
 pub fn save_into_file(world: &World) {
     let mut save = SaveFile::default();
 
-    world.foreach_fetch::<Palette>(|_, palette| {
-        save.palettes.push(palette.to_descriptor());
-    });
-
-    world.foreach_fetch::<Canvas>(|_, image| {
-        save.images.push(image.to_descriptor());
-    });
-
-    if let Ok(stroke) = world.single_fetch_mut::<StrokeLayer>() {
-        save.stroke.replace(stroke.to_descriptor(world));
+    if let Ok(viewport) = world.single_fetch_mut::<Viewport>() {
+        save.viewport = Some(ViewportDescriptor {
+            size: viewport.size,
+            center: viewport.center,
+            zoom: viewport.zoom,
+        });
     }
 
     let target = get_file_path(world);
@@ -75,18 +61,13 @@ pub fn save_into_file(world: &World) {
         return;
     };
 
-    let Ok(mut file) = std::fs::File::create(target) else {
+    let Ok(file) = std::fs::File::create(target) else {
         log::warn!("failed to create save world file");
         return;
     };
 
-    let Ok(bytes) = postcard::to_allocvec(&save) else {
+    let Ok(_) = postcard::to_io(&save, file) else {
         log::warn!("failed to encode world file through postcard");
-        return;
-    };
-
-    let Ok(_) = file.write_all(&bytes) else {
-        log::warn!("failed to write world file");
         return;
     };
 
@@ -96,32 +77,20 @@ pub fn save_into_file(world: &World) {
 pub fn load_from_file(world: &World) {
     let target = get_file_path(world);
 
-    let Ok(mut file) = std::fs::File::open(target) else {
+    let Ok(file) = std::fs::File::open(target) else {
         log::debug!("no world file");
         return;
     };
 
-    let mut bytes = Vec::new();
-    let Ok(_) = file.read_to_end(&mut bytes) else {
-        log::warn!("failed to read world file");
+    let Ok((save, _)) = postcard::from_io::<SaveFile, _>((file, &mut [0u8; 0xFFFF])) else {
+        log::warn!("failed to decode world file through postcard");
         return;
     };
 
-    let Ok(save): Result<SaveFile, _> = postcard::from_bytes(&bytes) else {
-        log::warn!("failed to decode world file through bincode");
-        return;
-    };
-
-    for palette in save.palettes {
-        world.build(palette);
-    }
-
-    for image in save.images {
-        world.build(image);
-    }
-
-    if let Some(stroke) = save.stroke {
-        world.build(stroke);
+    if let Some(save_viewport) = save.viewport {
+        let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
+        viewport.center = save_viewport.center;
+        viewport.zoom = save_viewport.zoom;
     }
 
     log::debug!("world loaded");
