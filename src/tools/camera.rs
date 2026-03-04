@@ -1,4 +1,6 @@
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent};
+use winit::event::{
+    ButtonSource, ElementState, FingerId, MouseButton, MouseScrollDelta, PointerSource, WindowEvent,
+};
 
 use crate::{
     lnwin::Lnwindow,
@@ -20,7 +22,7 @@ enum Start {
     },
     Touch {
         position: [f64; 2],
-        touch_id: u64,
+        touch_id: FingerId,
         center: PositionFract,
     },
 }
@@ -30,7 +32,11 @@ impl Element for CameraTool {
         world.observer(
             world.single::<Lnwindow>().unwrap(),
             move |event: &WindowEvent, world, lnwindow| match event {
-                WindowEvent::CursorMoved { position, .. } => {
+                WindowEvent::PointerMoved {
+                    position,
+                    source: PointerSource::Mouse,
+                    ..
+                } => {
                     let mut this = world.fetch_mut(this).unwrap();
 
                     let lnwindow = world.fetch(lnwindow).unwrap();
@@ -48,9 +54,9 @@ impl Element for CameraTool {
                     }
                 }
 
-                WindowEvent::MouseInput {
+                WindowEvent::PointerButton {
                     state: ElementState::Pressed,
-                    button: MouseButton::Middle,
+                    button: ButtonSource::Mouse(MouseButton::Middle),
                     ..
                 } => {
                     let mut this = world.fetch_mut(this).unwrap();
@@ -63,9 +69,9 @@ impl Element for CameraTool {
                     }
                 }
 
-                WindowEvent::MouseInput {
+                WindowEvent::PointerButton {
                     state: ElementState::Released,
-                    button: MouseButton::Middle,
+                    button: ButtonSource::Mouse(MouseButton::Middle),
                     ..
                 } => {
                     let mut this = world.fetch_mut(this).unwrap();
@@ -96,52 +102,61 @@ impl Element for CameraTool {
                     viewport.zoom += zoom_delta;
                 }
 
-                WindowEvent::Touch(touch) => match touch.phase {
-                    TouchPhase::Started => {
-                        let mut this = world.fetch_mut(this).unwrap();
-                        if let None = this.start {
-                            let lnwindow = world.fetch(lnwindow).unwrap();
-                            let position = lnwindow.cursor_to_screen(touch.location);
-                            let viewport = world.single_fetch::<Viewport>().unwrap();
-                            this.start = Some(Start::Touch {
-                                position,
-                                touch_id: touch.id,
-                                center: viewport.center,
-                            });
-                        }
-                    }
+                WindowEvent::PointerMoved {
+                    position,
+                    source: PointerSource::Touch { finger_id, .. },
+                    ..
+                } => {
+                    let mut this = world.fetch_mut(this).unwrap();
+                    if let Some(Start::Touch {
+                        position: start,
+                        touch_id,
+                        center,
+                    }) = &mut this.start
+                        && touch_id == finger_id
+                    {
+                        let lnwindow = world.fetch(lnwindow).unwrap();
+                        let screen = lnwindow.cursor_to_screen(*position);
+                        let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
 
-                    TouchPhase::Moved => {
-                        let mut this = world.fetch_mut(this).unwrap();
-                        if let Some(Start::Touch {
+                        let delta = viewport
+                            .screen_to_world_relative([start[0] - screen[0], start[1] - screen[1]]);
+
+                        viewport.center = *center + delta;
+                    }
+                }
+
+                WindowEvent::PointerButton {
+                    position,
+                    state: ElementState::Pressed,
+                    button: ButtonSource::Touch { finger_id, .. },
+                    ..
+                } => {
+                    let mut this = world.fetch_mut(this).unwrap();
+                    if let None = this.start {
+                        let lnwindow = world.fetch(lnwindow).unwrap();
+                        let position = lnwindow.cursor_to_screen(*position);
+                        let viewport = world.single_fetch::<Viewport>().unwrap();
+                        this.start = Some(Start::Touch {
                             position,
-                            touch_id,
-                            center,
-                        }) = &mut this.start
-                            && *touch_id == touch.id
-                        {
-                            let lnwindow = world.fetch(lnwindow).unwrap();
-                            let screen = lnwindow.cursor_to_screen(touch.location);
-                            let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
-
-                            let delta = viewport.screen_to_world_relative([
-                                position[0] - screen[0],
-                                position[1] - screen[1],
-                            ]);
-
-                            viewport.center = *center + delta;
-                        }
+                            touch_id: *finger_id,
+                            center: viewport.center,
+                        });
                     }
+                }
 
-                    TouchPhase::Ended | TouchPhase::Cancelled => {
-                        let mut this = world.fetch_mut(this).unwrap();
-                        if let Some(Start::Touch { touch_id, .. }) = this.start
-                            && touch_id == touch.id
-                        {
-                            this.start = None;
-                        }
+                WindowEvent::PointerButton {
+                    state: ElementState::Released,
+                    button: ButtonSource::Touch { finger_id, .. },
+                    ..
+                } => {
+                    let mut this = world.fetch_mut(this).unwrap();
+                    if let Some(Start::Touch { touch_id, .. }) = this.start
+                        && touch_id == *finger_id
+                    {
+                        this.start = None;
                     }
-                },
+                }
 
                 _ => {}
             },

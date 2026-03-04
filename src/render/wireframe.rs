@@ -72,7 +72,7 @@ impl Descriptor for WireframeManagerDescriptor {
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("wireframe_pipeline_layout"),
                 bind_group_layouts: &[&viewport.layout, &bind_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let pipeline = render
@@ -102,7 +102,7 @@ impl Descriptor for WireframeManagerDescriptor {
                 }),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 

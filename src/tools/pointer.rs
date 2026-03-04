@@ -1,9 +1,13 @@
 use std::cell::Cell;
 
-use winit::event::{ElementState, MouseButton, Touch, WindowEvent};
+use winit::event::{ButtonSource, ElementState, MouseButton, WindowEvent};
 
 use crate::{
-    layout::LayoutRectangle, lnwin::Lnwindow, measures::{Position, PositionFract, Rectangle, Size}, render::viewport::Viewport, world::{Element, Handle, World}
+    layout::LayoutRectangle,
+    lnwin::Lnwindow,
+    measures::{Position, PositionFract, Rectangle, Size},
+    render::viewport::Viewport,
+    world::{Element, Handle, World},
 };
 
 #[derive(Debug, Default)]
@@ -327,7 +331,11 @@ impl Element for PointerTool {
                 let mut pointer = world.fetch_mut(this).unwrap();
                 let lnwindow = world.fetch(lnwindow).unwrap();
                 match event {
-                    WindowEvent::CursorMoved { position, .. } => {
+                    WindowEvent::PointerMoved {
+                        position,
+                        primary: true,
+                        ..
+                    } => {
                         let viewport = world.single_fetch::<Viewport>().unwrap();
                         let position = lnwindow.cursor_to_screen(*position);
                         let position = viewport.screen_to_world_absolute(position);
@@ -356,9 +364,10 @@ impl Element for PointerTool {
                         }
                     }
 
-                    WindowEvent::MouseInput {
-                        button: MouseButton::Left,
+                    WindowEvent::PointerButton {
+                        button: ButtonSource::Mouse(MouseButton::Left) | ButtonSource::Touch { .. },
                         state: ElementState::Pressed,
+                        primary: true,
                         ..
                     } => {
                         if let Some(hovering) = pointer.hovering {
@@ -374,9 +383,10 @@ impl Element for PointerTool {
                         pointer.pressed = true;
                     }
 
-                    WindowEvent::MouseInput {
-                        button: MouseButton::Left,
+                    WindowEvent::PointerButton {
+                        button: ButtonSource::Mouse(MouseButton::Left) | ButtonSource::Touch { .. },
                         state: ElementState::Released,
+                        primary: true,
                         ..
                     } => {
                         if let Some(hovering) = pointer.hovering {
@@ -393,9 +403,10 @@ impl Element for PointerTool {
                         pointer.update_hovering(world);
                     }
 
-                    WindowEvent::MouseInput {
-                        button: MouseButton::Right,
+                    WindowEvent::PointerButton {
+                        button: ButtonSource::Mouse(MouseButton::Right),
                         state: ElementState::Pressed,
+                        primary: true,
                         ..
                     } => {
                         let target = intersect(world, pointer.position.floor()).first().copied();
@@ -404,7 +415,7 @@ impl Element for PointerTool {
                         }
                     }
 
-                    WindowEvent::CursorLeft { .. } => {
+                    WindowEvent::PointerLeft { primary: true, .. } => {
                         if let Some(hovering) = pointer.hovering {
                             world.trigger(
                                 hovering,

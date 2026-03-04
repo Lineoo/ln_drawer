@@ -113,7 +113,7 @@ impl Descriptor for TextManagerDescriptor {
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("text_pipeline_layout"),
                 bind_group_layouts: &[&viewport.layout, &bind_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0
             });
 
         let pipeline = render
@@ -143,7 +143,7 @@ impl Descriptor for TextManagerDescriptor {
                 }),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 

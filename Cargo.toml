@@ -25,10 +25,10 @@ serde = "1.0.228"
 smallvec = "1.15.1"
 thiserror = "2.0.16"
 tokio = "1.47.1"
-wgpu = "26.0"
+wgpu = "28.0"
 
 [dependencies.winit]
-version = "0.30"
+version = "0.31.0-beta.2"
 features = ["android-native-activity"]
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -42,7 +42,6 @@ codegen-units = 1
 [package.metadata.android]
 package = "org.ln_drawer.ln_drawer"
 resources = "android"
-apk_name = "LnDrawer"
 
 [package.metadata.android.sdk]
 min_sdk_version = 26

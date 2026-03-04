@@ -7,7 +7,7 @@ use winit::{
     dpi::PhysicalPosition,
     event::WindowEvent,
     event_loop::ActiveEventLoop,
-    window::{Window, WindowId},
+    window::{Window, WindowAttributes, WindowId},
 };
 
 use crate::{
@@ -20,10 +20,7 @@ use crate::{
     },
     save::Save,
     theme::Luni,
-    tools::{
-        camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool,
-        touch::TouchTool,
-    },
+    tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
     world::{Element, Handle, World},
 };
 
@@ -33,7 +30,7 @@ pub struct Lnwin {
 }
 
 impl ApplicationHandler for Lnwin {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.world.single::<Lnwindow>().is_err() {
             let lnwindow = Lnwindow::new(event_loop);
             self.world.insert(lnwindow);
@@ -47,7 +44,7 @@ impl ApplicationHandler for Lnwin {
 
     fn window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         _window_id: WindowId,
         event: WindowEvent,
     ) {
@@ -59,15 +56,11 @@ impl ApplicationHandler for Lnwin {
             Err(_) => event_loop.exit(),
         }
     }
-
-    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        self.world = World::default();
-    }
 }
 
 /// The main window.
 pub struct Lnwindow {
-    pub window: Arc<Window>,
+    pub window: Arc<dyn Window>,
 }
 
 impl Element for Lnwindow {
@@ -87,7 +80,7 @@ impl Element for Lnwindow {
 
         world.queue(move |world| {
             let lnwindow = world.fetch_mut(this).unwrap();
-            let size = lnwindow.window.inner_size();
+            let size = lnwindow.window.surface_size();
             world.build(ViewportDescriptor {
                 size: Size::new(size.width, size.height),
                 ..Default::default()
@@ -105,7 +98,6 @@ impl Element for Lnwindow {
             world.insert(Focus::default());
             world.insert(StrokeLayer::default());
             world.insert(PointerTool::default());
-            world.insert(TouchTool::default());
             world.insert(CameraTool::default());
             world.insert(ModifiersTool::default());
 
@@ -119,19 +111,19 @@ impl Element for Lnwindow {
 }
 
 impl Lnwindow {
-    fn new(event_loop: &ActiveEventLoop) -> Lnwindow {
-        let win_attr = Window::default_attributes()
+    fn new(event_loop: &dyn ActiveEventLoop) -> Lnwindow {
+        let win_attr = WindowAttributes::default()
             .with_transparent(true)
             .with_title("LnDrawer");
 
         let window = event_loop.create_window(win_attr).unwrap();
-        let window = Arc::new(window);
+        let window = Arc::from(window);
 
         Lnwindow { window }
     }
 
     pub fn cursor_to_screen(&self, position: PhysicalPosition<f64>) -> [f64; 2] {
-        let size = self.window.inner_size();
+        let size = self.window.surface_size();
         let x = (position.x * 2.0) / size.width as f64 - 1.0;
         let y = 1.0 - (position.y * 2.0) / size.height as f64;
         [x, y]

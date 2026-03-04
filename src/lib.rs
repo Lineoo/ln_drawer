@@ -17,10 +17,10 @@ pub fn desktop_main() {
 
     log::info!("This is LnDrawer. Welcome!");
 
-    let mut lnwin = lnwin::Lnwin::default();
+    let lnwin = lnwin::Lnwin::default();
 
     let event_loop = EventLoop::builder().build().unwrap();
-    event_loop.run_app(&mut lnwin).unwrap();
+    event_loop.run_app(lnwin).unwrap();
 }
 
 #[cfg(target_os = "android")]
@@ -44,9 +44,9 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
 
     log::info!("This is LnDrawer Mobile. Welcome!");
 
-    let mut lnwin = lnwin::Lnwin::default();
+    let lnwin = lnwin::Lnwin::default();
     lnwin.world.insert(app.clone());
 
     let event_loop = EventLoop::builder().with_android_app(app).build().unwrap();
-    event_loop.run_app(&mut lnwin).unwrap();
+    event_loop.run_app(lnwin).unwrap();
 }
