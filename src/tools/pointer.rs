@@ -365,11 +365,19 @@ impl Element for PointerTool {
                     }
 
                     WindowEvent::PointerButton {
+                        position,
                         button: ButtonSource::Mouse(MouseButton::Left) | ButtonSource::Touch { .. },
                         state: ElementState::Pressed,
                         primary: true,
                         ..
                     } => {
+                        let viewport = world.single_fetch::<Viewport>().unwrap();
+                        let position = lnwindow.cursor_to_screen(*position);
+                        let position = viewport.screen_to_world_absolute(position);
+
+                        pointer.position = position;
+                        pointer.update_hovering(world);
+
                         if let Some(hovering) = pointer.hovering {
                             world.trigger(
                                 hovering,
@@ -384,11 +392,19 @@ impl Element for PointerTool {
                     }
 
                     WindowEvent::PointerButton {
+                        position,
                         button: ButtonSource::Mouse(MouseButton::Left) | ButtonSource::Touch { .. },
                         state: ElementState::Released,
                         primary: true,
                         ..
                     } => {
+                        let viewport = world.single_fetch::<Viewport>().unwrap();
+                        let position = lnwindow.cursor_to_screen(*position);
+                        let position = viewport.screen_to_world_absolute(position);
+
+                        pointer.position = position;
+                        pointer.update_hovering(world);
+
                         if let Some(hovering) = pointer.hovering {
                             world.trigger(
                                 hovering,
@@ -404,11 +420,19 @@ impl Element for PointerTool {
                     }
 
                     WindowEvent::PointerButton {
+                        position,
                         button: ButtonSource::Mouse(MouseButton::Right),
                         state: ElementState::Pressed,
                         primary: true,
                         ..
                     } => {
+                        let viewport = world.single_fetch::<Viewport>().unwrap();
+                        let position = lnwindow.cursor_to_screen(*position);
+                        let position = viewport.screen_to_world_absolute(position);
+
+                        pointer.position = position;
+                        pointer.update_hovering(world);
+
                         let target = intersect(world, pointer.position.floor()).first().copied();
                         if let Some(target) = target {
                             world.trigger(target, &PointerMenu(pointer.position.floor()));

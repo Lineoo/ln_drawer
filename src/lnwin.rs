@@ -12,7 +12,7 @@ use winit::{
 
 use crate::{
     elements::stroke::StrokeLayer,
-    measures::Size,
+    measures::{Rectangle, Size},
     render::{
         Render, canvas::CanvasManagerDescriptor, rounded::RoundedRectManagerDescriptor,
         text::TextManagerDescriptor, viewport::ViewportDescriptor,
@@ -21,6 +21,7 @@ use crate::{
     save::Save,
     theme::Luni,
     tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
+    widgets::color_picker::ColorPicker,
     world::{Element, Handle, World},
 };
 
@@ -106,6 +107,13 @@ impl Element for Lnwindow {
 
         world.queue(|world| {
             world.insert(Save::default());
+        });
+
+        world.queue(|world| {
+            world.insert(ColorPicker {
+                rect: Rectangle::new(0, 0, 40, 40),
+                color: Default::default(),
+            });
         });
     }
 }
