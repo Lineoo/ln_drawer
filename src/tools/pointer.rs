@@ -1,6 +1,6 @@
 use std::cell::Cell;
 
-use winit::event::{ButtonSource, ElementState, MouseButton, WindowEvent};
+use winit::event::{ButtonSource, ElementState, MouseButton, PointerKind, WindowEvent};
 
 use crate::{
     layout::LayoutRectangle,
@@ -44,6 +44,7 @@ pub struct PointerEdgeCollider {
 pub struct PointerHit {
     pub position: Position,
     pub status: PointerHitStatus,
+    pub pointer: PointerKind,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -57,6 +58,7 @@ pub struct PointerHitEdge {
 pub struct PointerHover {
     pub position: Position,
     pub motion: PointerHoverStatus,
+    pub pointer: PointerKind,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -146,7 +148,7 @@ impl Element for PointerCollider {
 
         world.queue(|world| {
             if let Ok(mut pointer) = world.single_fetch_mut::<PointerTool>() {
-                pointer.update_hovering(world);
+                pointer.update_hovering(world, PointerKind::Unknown);
             }
         });
     }
@@ -154,7 +156,7 @@ impl Element for PointerCollider {
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         world.queue(|world| {
             if let Ok(mut pointer) = world.single_fetch_mut::<PointerTool>() {
-                pointer.update_hovering(world);
+                pointer.update_hovering(world, PointerKind::Unknown);
             }
         });
     }
@@ -162,7 +164,7 @@ impl Element for PointerCollider {
     fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
         world.queue(|world| {
             if let Ok(mut pointer) = world.single_fetch_mut::<PointerTool>() {
-                pointer.update_hovering(world);
+                pointer.update_hovering(world, PointerKind::Unknown);
             }
         });
     }
@@ -333,6 +335,7 @@ impl Element for PointerTool {
                 match event {
                     WindowEvent::PointerMoved {
                         position,
+                        source,
                         primary: true,
                         ..
                     } => {
@@ -340,8 +343,10 @@ impl Element for PointerTool {
                         let position = lnwindow.cursor_to_screen(*position);
                         let position = viewport.screen_to_world_absolute(position);
 
+                        let kind = PointerKind::from(source.clone());
+
                         pointer.position = position;
-                        pointer.update_hovering(world);
+                        pointer.update_hovering(world, kind);
 
                         if let Some(hovering) = pointer.hovering {
                             if pointer.pressed {
@@ -350,6 +355,7 @@ impl Element for PointerTool {
                                     &PointerHit {
                                         position: position.floor(),
                                         status: PointerHitStatus::Moving,
+                                        pointer: kind,
                                     },
                                 );
                             } else {
@@ -358,6 +364,7 @@ impl Element for PointerTool {
                                     &PointerHover {
                                         position: position.floor(),
                                         motion: PointerHoverStatus::Moving,
+                                        pointer: kind,
                                     },
                                 );
                             }
@@ -366,73 +373,70 @@ impl Element for PointerTool {
 
                     WindowEvent::PointerButton {
                         position,
-                        button: ButtonSource::Mouse(MouseButton::Left) | ButtonSource::Touch { .. },
-                        state: ElementState::Pressed,
+                        button,
+                        state,
                         primary: true,
                         ..
-                    } => {
+                    } if matches!(
+                        button,
+                        ButtonSource::Mouse(MouseButton::Left)
+                            | ButtonSource::Touch { .. }
+                            | ButtonSource::TabletTool { .. }
+                            | ButtonSource::Unknown(_)
+                    ) =>
+                    {
                         let viewport = world.single_fetch::<Viewport>().unwrap();
                         let position = lnwindow.cursor_to_screen(*position);
                         let position = viewport.screen_to_world_absolute(position);
 
+                        let kind = match button {
+                            ButtonSource::Mouse(_) => PointerKind::Mouse,
+                            ButtonSource::Touch { finger_id, .. } => PointerKind::Touch(*finger_id),
+                            ButtonSource::TabletTool { kind, .. } => PointerKind::TabletTool(*kind),
+                            ButtonSource::Unknown(_) => PointerKind::Unknown,
+                        };
+
                         pointer.position = position;
-                        pointer.update_hovering(world);
+                        pointer.update_hovering(world, kind);
 
-                        if let Some(hovering) = pointer.hovering {
-                            world.trigger(
-                                hovering,
-                                &PointerHit {
-                                    position: pointer.position.floor(),
-                                    status: PointerHitStatus::Press,
-                                },
-                            );
+                        match state {
+                            ElementState::Pressed => {
+                                if let Some(hovering) = pointer.hovering {
+                                    world.trigger(
+                                        hovering,
+                                        &PointerHit {
+                                            position: pointer.position.floor(),
+                                            status: PointerHitStatus::Press,
+                                            pointer: kind,
+                                        },
+                                    );
+                                }
+
+                                pointer.pressed = true;
+                            }
+                            ElementState::Released => {
+                                if let Some(hovering) = pointer.hovering {
+                                    world.trigger(
+                                        hovering,
+                                        &PointerHit {
+                                            position: pointer.position.floor(),
+                                            status: PointerHitStatus::Release,
+                                            pointer: kind,
+                                        },
+                                    );
+                                }
+
+                                pointer.pressed = false;
+                            }
                         }
-
-                        pointer.pressed = true;
                     }
 
                     WindowEvent::PointerButton {
-                        position,
-                        button: ButtonSource::Mouse(MouseButton::Left) | ButtonSource::Touch { .. },
-                        state: ElementState::Released,
-                        primary: true,
-                        ..
-                    } => {
-                        let viewport = world.single_fetch::<Viewport>().unwrap();
-                        let position = lnwindow.cursor_to_screen(*position);
-                        let position = viewport.screen_to_world_absolute(position);
-
-                        pointer.position = position;
-                        pointer.update_hovering(world);
-
-                        if let Some(hovering) = pointer.hovering {
-                            world.trigger(
-                                hovering,
-                                &PointerHit {
-                                    position: pointer.position.floor(),
-                                    status: PointerHitStatus::Release,
-                                },
-                            );
-                        }
-
-                        pointer.pressed = false;
-                        pointer.update_hovering(world);
-                    }
-
-                    WindowEvent::PointerButton {
-                        position,
                         button: ButtonSource::Mouse(MouseButton::Right),
                         state: ElementState::Pressed,
                         primary: true,
                         ..
                     } => {
-                        let viewport = world.single_fetch::<Viewport>().unwrap();
-                        let position = lnwindow.cursor_to_screen(*position);
-                        let position = viewport.screen_to_world_absolute(position);
-
-                        pointer.position = position;
-                        pointer.update_hovering(world);
-
                         let target = intersect(world, pointer.position.floor()).first().copied();
                         if let Some(target) = target {
                             world.trigger(target, &PointerMenu(pointer.position.floor()));
@@ -446,6 +450,7 @@ impl Element for PointerTool {
                                 &PointerHover {
                                     position: pointer.position.floor(),
                                     motion: PointerHoverStatus::Leave,
+                                    pointer: PointerKind::Mouse,
                                 },
                             );
                         }
@@ -461,7 +466,7 @@ impl Element for PointerTool {
 }
 
 impl PointerTool {
-    fn update_hovering(&mut self, world: &World) {
+    fn update_hovering(&mut self, world: &World, pointer: PointerKind) {
         let position = self.position;
 
         if self.pressed {
@@ -488,6 +493,7 @@ impl PointerTool {
                     &PointerHover {
                         position: position.floor(),
                         motion: PointerHoverStatus::Leave,
+                        pointer,
                     },
                 );
             }
@@ -498,6 +504,7 @@ impl PointerTool {
                     &PointerHover {
                         position: position.floor(),
                         motion: PointerHoverStatus::Enter,
+                        pointer,
                     },
                 );
             }

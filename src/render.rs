@@ -100,7 +100,7 @@ impl Render {
             adapter,
             device,
             queue,
-            clear_color: Color::BLACK,
+            clear_color: Color::WHITE,
             sequence: Vec::new(),
             refreshing: false,
             last_redraw: None,

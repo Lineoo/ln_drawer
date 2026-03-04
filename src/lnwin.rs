@@ -21,7 +21,7 @@ use crate::{
     save::Save,
     theme::Luni,
     tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
-    widgets::color_picker::ColorPicker,
+    widgets::{WidgetClick, check_button::CheckButtonDescriptor, color_picker::ColorPicker},
     world::{Element, Handle, World},
 };
 
@@ -111,8 +111,19 @@ impl Element for Lnwindow {
 
         world.queue(|world| {
             world.insert(ColorPicker {
-                rect: Rectangle::new(0, 0, 40, 40),
+                rect: Rectangle::new(0, 0, 30, 30),
                 color: Default::default(),
+            });
+
+            let button = world.build(CheckButtonDescriptor {
+                rect: Rectangle::new(-60, 0, -30, 30),
+                checked: false,
+                order: 10,
+            });
+
+            world.observer(button, |WidgetClick, world, button| {
+                let mut button = world.fetch_mut(button).unwrap();
+                button.checked = !button.checked;
             });
         });
     }
