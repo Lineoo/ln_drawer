@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use palette::Srgba;
 
@@ -7,7 +7,7 @@ use crate::{
     world::{Descriptor, Element, Handle, RefMut, World},
 };
 
-pub struct Animation<T: AnimationType> {
+pub struct Animation<T: AnimationEasingType> {
     pub src: T,
     pub dst: T,
     pub factor: f32,
@@ -18,13 +18,13 @@ pub struct Animation<T: AnimationType> {
     control_active: bool,
 }
 
-pub struct AnimationDescriptor<T: AnimationType> {
+pub struct AnimationDescriptor<T: AnimationEasingType> {
     pub src: T,
     pub dst: T,
     pub factor: f32,
 }
 
-impl<T: AnimationType> AnimationDescriptor<T> {
+impl<T: AnimationEasingType> AnimationDescriptor<T> {
     pub fn new(init: T, factor: f32) -> Self {
         Self {
             src: init,
@@ -34,7 +34,7 @@ impl<T: AnimationType> AnimationDescriptor<T> {
     }
 }
 
-impl<T: AnimationType> Descriptor for AnimationDescriptor<T> {
+impl<T: AnimationEasingType> Descriptor for AnimationDescriptor<T> {
     type Target = Handle<Animation<T>>;
 
     fn when_build(self, world: &World) -> Self::Target {
@@ -57,7 +57,7 @@ impl<T: AnimationType> Descriptor for AnimationDescriptor<T> {
 
 pub struct SimpleAnimationDescriptor<T, W, F>
 where
-    T: AnimationType,
+    T: AnimationEasingType,
     W: Element,
     F: FnMut(RefMut<W>, &World, T) + 'static,
 {
@@ -68,7 +68,7 @@ where
 
 impl<T, W, F> Descriptor for SimpleAnimationDescriptor<T, W, F>
 where
-    T: AnimationType,
+    T: AnimationEasingType,
     W: Element,
     F: FnMut(RefMut<W>, &World, T) + 'static,
 {
@@ -86,7 +86,7 @@ where
     }
 }
 
-impl<T: AnimationType> Element for Animation<T> {
+impl<T: AnimationEasingType> Element for Animation<T> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let control = self.control;
         world.observer(control, move |RedrawPrepare, world| {
@@ -95,28 +95,16 @@ impl<T: AnimationType> Element for Animation<T> {
             // calculate next value
 
             let now = Instant::now();
-            let delta = (now - this.last_update).as_secs_f32();
-            let factor = f32::exp(-this.factor * delta);
-            this.last_update = now;
 
-            let mut changed = false;
             let the = &mut *this;
-            let iter = Iterator::zip(
-                the.src.float_iter().into_iter(),
-                the.dst.float_iter().into_iter(),
+            let changed = T::step(
+                &mut the.src,
+                &mut the.dst,
+                the.factor,
+                now - the.last_update,
             );
 
-            for (src_ref, dst_ref) in iter {
-                let (src, dst) = (*src_ref, *dst_ref);
-
-                let next = match (src - dst).abs() < 1e-2 {
-                    true => dst, // snap
-                    false => src * factor + dst * (1.0 - factor),
-                };
-
-                changed |= src != next;
-                *src_ref = next;
-            }
+            this.last_update = now;
 
             // send event and change RenderControl
 
@@ -145,25 +133,53 @@ impl<T: AnimationType> Element for Animation<T> {
     }
 }
 
-pub struct AnimationValue<T: AnimationType>(pub T);
+pub struct AnimationValue<T: AnimationEasingType>(pub T);
 
 pub trait AnimationType: PartialEq + Clone + Copy + 'static {
+    fn step(&mut self, rhs: &mut Self, factor: f32, delta: Duration) -> bool;
+}
+
+pub trait AnimationEasingType: PartialEq + Clone + Copy + 'static {
     fn float_iter(&mut self) -> impl IntoIterator<Item = &mut f32>;
 }
 
-impl AnimationType for f32 {
+impl<T: AnimationEasingType> AnimationType for T {
+    fn step(&mut self, rhs: &mut Self, factor: f32, delta: Duration) -> bool {
+        let delta = delta.as_secs_f32();
+        let factor = f32::exp(-factor * delta);
+
+        let mut changed = false;
+        let iter = Iterator::zip(self.float_iter().into_iter(), rhs.float_iter().into_iter());
+
+        for (src_ref, dst_ref) in iter {
+            let (src, dst) = (*src_ref, *dst_ref);
+
+            let next = match (src - dst).abs() < 1e-2 {
+                true => dst, // snap
+                false => src * factor + dst * (1.0 - factor),
+            };
+
+            changed |= src != next;
+            *src_ref = next;
+        }
+
+        changed
+    }
+}
+
+impl AnimationEasingType for f32 {
     fn float_iter(&mut self) -> impl IntoIterator<Item = &mut f32> {
         [self]
     }
 }
 
-impl<const N: usize> AnimationType for [f32; N] {
+impl<const N: usize> AnimationEasingType for [f32; N] {
     fn float_iter(&mut self) -> impl IntoIterator<Item = &mut f32> {
         self
     }
 }
 
-impl AnimationType for Srgba {
+impl AnimationEasingType for Srgba {
     fn float_iter(&mut self) -> impl IntoIterator<Item = &mut f32> {
         [
             &mut self.color.red,
