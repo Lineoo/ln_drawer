@@ -112,6 +112,9 @@
     - [ ] 双指缩放
     - [ ] 触摸可用的按钮设计
     - [ ] 重新设计相机移动模组
+- [ ] `Handle<dyn Any>` 不再可省略
+- [ ] foreach 删除多余的 Handle 提供
+- [ ] observer 删除多余的 Handle 提供
 - [ ] menu 的字也得是 theme 负责吧
     - [ ] menu 改用 Panel -> Layout -> Label
 - [ ] 菜单按钮
