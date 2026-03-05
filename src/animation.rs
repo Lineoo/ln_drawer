@@ -136,10 +136,12 @@ impl<T: AnimationType> Element for Animation<T> {
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        self.control_active = true;
-        self.last_update = Instant::now();
-        let mut control = world.fetch_mut(self.control).unwrap();
-        control.refreshing = true;
+        if self.src != self.dst {
+            self.control_active = true;
+            self.last_update = Instant::now();
+            let mut control = world.fetch_mut(self.control).unwrap();
+            control.refreshing = true;
+        }
     }
 }
 
