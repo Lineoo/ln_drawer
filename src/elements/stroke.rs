@@ -2,6 +2,7 @@ use cosmic_text::Metrics;
 use hashbrown::HashMap;
 use palette::Srgba;
 use wgpu::Color;
+use winit::event::PointerKind;
 
 use crate::{
     elements::{
@@ -67,6 +68,10 @@ impl Element for StrokeLayer {
 
         world.observer(collider, move |event: &PointerHit, world, _| {
             if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
+                if let PointerKind::Touch(_) = event.pointer {
+                    return;
+                }
+
                 let mut stroke = world.fetch_mut(this).unwrap();
 
                 let tool = world.single_fetch::<ModifiersTool>().unwrap();

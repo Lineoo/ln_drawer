@@ -31,6 +31,10 @@ wgpu = "28.0"
 version = "0.31.0-beta.2"
 features = ["android-native-activity"]
 
+[patch.crates-io.winit]
+git = "https://github.com/Lineoo/winit/"
+branch = "ln_drawer"
+
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15.1"
 
