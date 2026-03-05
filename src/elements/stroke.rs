@@ -96,7 +96,7 @@ impl Element for StrokeLayer {
             world.dependency(collider, menu);
 
             world.observer(collider, move |event: &PointerHit, world, _| {
-                if let PointerHitStatus::Press = event.status {
+                if let PointerHitStatus::Press | PointerHitStatus::Moving = event.status {
                     return;
                 };
 
