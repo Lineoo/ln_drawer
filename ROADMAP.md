@@ -106,22 +106,21 @@
     - [x] 自动读取/保存
         - [x] timer
 - **LnDrawer v0.1.2**
-
 - [x] 迁移到 winit 0.31.0-beta2
     - [x] 移动端画笔区分
-
 - [x] foreach 删除多余的 Handle 提供
 - [x] observer 删除多余的 Handle 提供
-- [ ] request hook
-
 - [ ] 触摸可用性
     - [ ] 双指缩放
+        - [ ] Pointer 事件提供屏幕空间数据
+        - [ ] 分离 PointerTool, MouseTool 和 MultiTouchTool
     - [ ] 触摸可用的按钮/拖曳设计
         - [ ] Pointer 事件给到原始屏幕坐标
     - [ ] 重新设计相机移动模组
-
 - [ ] menu 的字也得是 theme 负责吧
     - [ ] menu 改用 Panel -> Layout -> Label
+- [ ] 存档结构设计
+    - [ ] request hook
 - [ ] 菜单按钮
 - [ ] 更美观的调色板组件
     - [ ] 滑条、宽滑条

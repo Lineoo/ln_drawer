@@ -2,9 +2,7 @@ use crate::{
     layout::LayoutRectangle,
     measures::{Position, Rectangle},
     theme::Luni,
-    tools::pointer::{
-        PointerEdge, PointerEdgeCollider, PointerHitEdge, PointerHitStatus, PointerTool,
-    },
+    tools::pointer::{PointerEdge, PointerEdgeCollider, PointerHitEdge, PointerHitStatus},
     widgets::{Attach, WidgetDestroyed, WidgetRectangle},
     world::{Element, Handle, World},
 };
@@ -31,10 +29,7 @@ impl Element for Resizable {
             target: world.single::<Luni>().unwrap(),
         });
 
-        world.insert(Attach {
-            widget: this,
-            target: world.single::<PointerTool>().unwrap(),
-        });
+        self.attach_pointer(world, this);
     }
 
     fn when_modify(&mut self, world: &World, this: Handle<Self>) {
@@ -46,12 +41,10 @@ impl Element for Resizable {
     }
 }
 
-impl Element for Attach<Resizable, PointerTool> {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let resizable = world.fetch(self.widget).unwrap();
-
+impl Resizable {
+    fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
         let collider = world.insert(PointerEdgeCollider {
-            rect: resizable.rect,
+            rect: self.rect,
             order: 1000,
             enabled: true,
         });
@@ -63,10 +56,9 @@ impl Element for Attach<Resizable, PointerTool> {
             collider.rect = rect;
         });
 
-        let resizable = resizable.handle();
         let mut start = None::<Start>;
         world.observer(collider, move |hit: &PointerHitEdge, world| {
-            let mut this = world.fetch_mut(resizable).unwrap();
+            let mut this = world.fetch_mut(this).unwrap();
 
             match (hit.status, start) {
                 (PointerHitStatus::Press, None) => {

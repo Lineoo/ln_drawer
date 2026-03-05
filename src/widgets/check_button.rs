@@ -83,7 +83,7 @@ impl Element for CheckButton {
 
         world.observer(
             self.collider,
-            move |event: &PointerHover, world| match event.motion {
+            move |event: &PointerHover, world| match event.status {
                 PointerHoverStatus::Enter => {
                     world.trigger(this, &WidgetHover::HoverEnter);
                 }

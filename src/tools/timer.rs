@@ -24,16 +24,15 @@ impl Timer {
 }
 
 impl Element for Timer {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        match world.single_fetch_mut::<TimerLastTick>() {
-            Ok(mut last_tick) => {
-                last_tick.tick(world);
-            }
-            Err(WorldError::SingletonNoSuch(_)) => {
-                world.insert(TimerLastTick(Instant::now()));
-            }
-            _ => (),
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<TimerLastTick>() {
+            world.insert(TimerLastTick(Instant::now()));
         }
+
+        world.queue(|world| {
+            let mut last_tick = world.single_fetch_mut::<TimerLastTick>().unwrap();
+            last_tick.tick(world);
+        });
     }
 }
 

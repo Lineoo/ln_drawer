@@ -18,7 +18,8 @@ use crate::{
     },
     tools::{
         modifiers::ModifiersTool,
-        pointer::{PointerCollider, PointerHit, PointerHitStatus, PointerMenu},
+        mouse::PointerMenu,
+        pointer::{PointerCollider, PointerHit, PointerHitStatus},
     },
     widgets::{
         WidgetClick,

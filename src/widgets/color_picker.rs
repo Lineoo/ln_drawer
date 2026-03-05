@@ -96,7 +96,7 @@ impl ColorPicker {
         });
 
         world.observer(collider, move |event: &PointerHover, world| {
-            match event.motion {
+            match event.status {
                 PointerHoverStatus::Enter => {
                     world.trigger(this, &WidgetHover::HoverEnter);
                 }

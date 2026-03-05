@@ -20,7 +20,7 @@ use crate::{
     },
     save::Save,
     theme::Luni,
-    tools::{camera::CameraTool, focus::Focus, modifiers::ModifiersTool, pointer::PointerTool},
+    tools::{viewport::ViewportUtils, focus::Focus, modifiers::ModifiersTool},
     widgets::{WidgetClick, check_button::CheckButtonDescriptor, color_picker::ColorPicker},
     world::{Element, Handle, World},
 };
@@ -98,8 +98,7 @@ impl Element for Lnwindow {
         world.queue(|world| {
             world.insert(Focus::default());
             world.insert(StrokeLayer::default());
-            world.insert(PointerTool::default());
-            world.insert(CameraTool::default());
+            world.insert(ViewportUtils::default());
             world.insert(ModifiersTool::default());
 
             world.insert(Luni::default());
