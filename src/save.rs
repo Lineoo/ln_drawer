@@ -1,4 +1,4 @@
-use std::{io::Read, path::PathBuf, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
@@ -99,11 +99,17 @@ pub fn load_from_file(world: &World) {
 pub fn get_file_path(world: &World) -> PathBuf {
     #[cfg(target_os = "android")]
     if let Ok(app) = world.single_fetch::<AndroidApp>()
-        && let Some(mut path) = app.obb_path()
+        && let Some(mut path) = app.external_data_path()
     {
         path.push("world.ln-world");
         return path;
     }
 
-    PathBuf::from("target/world.ln-world")
+    if let Some(mut path) = dirs::data_local_dir() {
+        path.push("LnDrawer/world.ln-world");
+        return path;
+    }
+
+    log::error!("failed to get data directory");
+    PathBuf::from("world.ln-world")
 }
