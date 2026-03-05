@@ -26,7 +26,7 @@ impl Element for Save {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         load_from_file(world);
         let timer = world.insert(Timer::new(self.period));
-        world.observer(timer, |TimerHit, world, _| {
+        world.observer(timer, |TimerHit, world| {
             save_into_file(world);
         });
 

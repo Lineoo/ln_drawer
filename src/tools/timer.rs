@@ -42,7 +42,7 @@ struct TimerLastTick(Instant);
 impl Element for TimerLastTick {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
-        world.observer(lnwindow, move |_: &WindowEvent, world, _| {
+        world.observer(lnwindow, move |_: &WindowEvent, world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.tick(world);
         });
@@ -54,7 +54,7 @@ impl TimerLastTick {
         let now = Instant::now();
         let delta = now - self.0;
 
-        world.foreach_fetch_mut::<Timer>(|_, mut timer| {
+        world.foreach_fetch_mut::<Timer>(|mut timer| {
             timer.rest = timer.rest.saturating_sub(delta);
             if timer.rest.is_zero() {
                 timer.rest = timer.period;

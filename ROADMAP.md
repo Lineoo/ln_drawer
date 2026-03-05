@@ -110,9 +110,9 @@
 - [x] 迁移到 winit 0.31.0-beta2
     - [x] 移动端画笔区分
 
-- [ ] `Handle<dyn Any>` 不再可省略
-- [ ] foreach 删除多余的 Handle 提供
-- [ ] observer 删除多余的 Handle 提供
+- [x] foreach 删除多余的 Handle 提供
+- [x] observer 删除多余的 Handle 提供
+- [ ] request hook
 
 - [ ] 触摸可用性
     - [ ] 双指缩放

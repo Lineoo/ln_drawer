@@ -33,7 +33,7 @@ impl Element for ColorPicker {
 
 impl ColorPicker {
     fn receive_layout(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |&LayoutRectangle(rect), world, this| {
+        world.observer(this, move |&LayoutRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.rect = rect;
         });
@@ -62,12 +62,12 @@ impl ColorPicker {
             },
         });
 
-        world.observer(this, move |&WidgetRectangle(rect), world, _| {
+        world.observer(this, move |&WidgetRectangle(rect), world| {
             let mut frame_rect = world.fetch_mut(frame_rect).unwrap();
             frame_rect.dst = [rect.width() as f32, rect.height() as f32];
         });
 
-        world.observer(this, move |&WidgetDestroyed, world, _| {
+        world.observer(this, move |&WidgetDestroyed, world| {
             world.remove(frame).unwrap();
         });
     }
@@ -82,7 +82,7 @@ impl ColorPicker {
         world.insert(Transform::copy(this.untyped(), collider.untyped()));
         world.dependency(collider, this);
 
-        world.observer(collider, move |event: &PointerHit, world, _| {
+        world.observer(collider, move |event: &PointerHit, world| {
             match event.status {
                 PointerHitStatus::Press => {
                     world.trigger(this, &WidgetButton::ButtonPress);
@@ -95,9 +95,8 @@ impl ColorPicker {
             }
         });
 
-        world.observer(
-            collider,
-            move |event: &PointerHover, world, _| match event.motion {
+        world.observer(collider, move |event: &PointerHover, world| {
+            match event.motion {
                 PointerHoverStatus::Enter => {
                     world.trigger(this, &WidgetHover::HoverEnter);
                 }
@@ -105,12 +104,12 @@ impl ColorPicker {
                     world.trigger(this, &WidgetHover::HoverLeave);
                 }
                 _ => {}
-            },
-        );
+            }
+        });
     }
 
     fn attach_default_behavior(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |&WidgetClick, world, this| {
+        world.observer(this, move |&WidgetClick, world| {
             let mut this = world.fetch_mut(this).unwrap();
             if this.is_expanded() {
                 this.rect.extend = Size::new(30, 30);

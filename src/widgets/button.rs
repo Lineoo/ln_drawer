@@ -25,7 +25,7 @@ impl Default for Button {
 
 impl Element for Button {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |&LayoutRectangle(rect), world, this| {
+        world.observer(this, move |&LayoutRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.rect = rect;
         });
@@ -53,7 +53,7 @@ impl Button {
 
         world.insert(Transform::copy(this.untyped(), collider.untyped()));
 
-        world.observer(collider, move |event: &PointerHit, world, _| {
+        world.observer(collider, move |event: &PointerHit, world| {
             match event.status {
                 PointerHitStatus::Press => {
                     world.trigger(this, &WidgetButton::ButtonPress);
@@ -66,9 +66,8 @@ impl Button {
             }
         });
 
-        world.observer(
-            collider,
-            move |event: &PointerHover, world, _| match event.motion {
+        world.observer(collider, move |event: &PointerHover, world| {
+            match event.motion {
                 PointerHoverStatus::Enter => {
                     world.trigger(this, &WidgetHover::HoverEnter);
                 }
@@ -76,8 +75,8 @@ impl Button {
                     world.trigger(this, &WidgetHover::HoverLeave);
                 }
                 _ => {}
-            },
-        );
+            }
+        });
 
         world.dependency(collider, this);
     }

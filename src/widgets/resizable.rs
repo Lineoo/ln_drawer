@@ -21,7 +21,7 @@ struct Start {
 
 impl Element for Resizable {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, move |&LayoutRectangle(rect), world, this| {
+        world.observer(this, move |&LayoutRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.rect = rect;
         });
@@ -58,14 +58,14 @@ impl Element for Attach<Resizable, PointerTool> {
 
         world.dependency(collider, this);
 
-        world.observer(this, move |&WidgetRectangle(rect), world, _| {
+        world.observer(this, move |&WidgetRectangle(rect), world| {
             let mut collider = world.fetch_mut(collider).unwrap();
             collider.rect = rect;
         });
 
         let resizable = resizable.handle();
         let mut start = None::<Start>;
-        world.observer(collider, move |hit: &PointerHitEdge, world, _| {
+        world.observer(collider, move |hit: &PointerHitEdge, world| {
             let mut this = world.fetch_mut(resizable).unwrap();
 
             match (hit.status, start) {

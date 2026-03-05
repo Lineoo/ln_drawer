@@ -96,7 +96,7 @@ impl Element for Menu {
 
         world.observer(
             self.collider,
-            move |event: &PointerHover, world, _| match event.motion {
+            move |event: &PointerHover, world| match event.motion {
                 PointerHoverStatus::Enter => {
                     world.trigger(this, &WidgetHover::HoverEnter);
                 }
@@ -130,7 +130,7 @@ impl Element for Menu {
 
         world.observer(
             self.collider,
-            move |event: &PointerHit, world, _| match event.status {
+            move |event: &PointerHit, world| match event.status {
                 PointerHitStatus::Press => {
                     world.trigger(this, &WidgetButton::ButtonPress);
                 }

@@ -203,7 +203,7 @@ impl Descriptor for RoundedRectDescriptor {
 
 impl Element for RoundedRect {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(self.control, move |Redraw, world, _| {
+        world.observer(self.control, move |Redraw, world| {
             let manager = world.single_fetch::<RoundedRectManager>().unwrap();
             let viewport = world.single_fetch::<Viewport>().unwrap();
             let this = world.fetch(this).unwrap();

@@ -133,7 +133,7 @@ impl Element for Palette {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         // main //
 
-        world.observer(self.main_collider, move |event: &PointerHit, world, _| {
+        world.observer(self.main_collider, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this).unwrap();
             let main = world.fetch(this.main).unwrap();
 
@@ -160,7 +160,7 @@ impl Element for Palette {
 
         // hue //
 
-        world.observer(self.hue_collider, move |event: &PointerHit, world, _| {
+        world.observer(self.hue_collider, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this).unwrap();
             let hue = world.fetch(this.hue).unwrap();
 
@@ -181,7 +181,7 @@ impl Element for Palette {
 
         // redraw //
 
-        world.observer(self.control, move |LossyPrepare, world, _| {
+        world.observer(self.control, move |LossyPrepare, world| {
             let mut this = world.fetch_mut(this).unwrap();
 
             if !this.redraw {

@@ -66,7 +66,7 @@ pub struct Lnwindow {
 
 impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |event: &WindowEvent, world, this| {
+        world.observer(this, move |event: &WindowEvent, world| {
             if let WindowEvent::CloseRequested = event {
                 world.queue(move |world| {
                     world.remove(this).unwrap();
@@ -121,7 +121,7 @@ impl Element for Lnwindow {
                 order: 10,
             });
 
-            world.observer(button, |WidgetClick, world, button| {
+            world.observer(button, move |WidgetClick, world| {
                 let mut button = world.fetch_mut(button).unwrap();
                 button.checked = !button.checked;
             });

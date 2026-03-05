@@ -290,7 +290,7 @@ impl Descriptor for TextDescriptor<'_> {
 
 impl Element for Text {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(self.control, move |Redraw, world, _| {
+        world.observer(self.control, move |Redraw, world| {
             let manager = world.single_fetch::<TextManager>().unwrap();
             let viewport = world.single_fetch::<Viewport>().unwrap();
             let this = world.fetch(this).unwrap();
@@ -327,7 +327,7 @@ impl Element for TextEdit {
 
         world.dependency(collider, this);
 
-        world.observer(collider, move |&PointerHit(event), world, _| match event {
+        world.observer(collider, move |&PointerHit(event), world| match event {
             PointerEvent::Pressed(position) => {
                 let fetched = &mut *world.fetch_mut(this).unwrap();
 
@@ -492,7 +492,7 @@ impl Element for TextEdit {
             fetched.redraw = true;
         });
 
-        world.observer(collider, move |&PointerMenu(position), world, _| {
+        world.observer(collider, move |&PointerMenu(position), world| {
             world.insert(world.build(MenuDescriptor {
                 position,
                 entries: vec![MenuEntryDescriptor {
@@ -507,7 +507,7 @@ impl Element for TextEdit {
 
         let interface = world.single::<Interface>().unwrap();
 
-        let tracker = world.observer(interface, move |Redraw, world, _| {
+        let tracker = world.observer(interface, move |Redraw, world| {
             let mut this = world.fetch_mut(this).unwrap();
 
             if this.redraw {

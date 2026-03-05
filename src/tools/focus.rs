@@ -14,7 +14,7 @@ impl Element for Focus {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
 
-        world.observer(lnwindow, move |event: &WindowEvent, world, _| {
+        world.observer(lnwindow, move |event: &WindowEvent, world| {
             let WindowEvent::KeyboardInput { event, .. } = event else {
                 return;
             };
@@ -26,7 +26,7 @@ impl Element for Focus {
             }
         });
 
-        world.observer(this, |&RequestFocus(on), world, this| {
+        world.observer(this, move |&RequestFocus(on), world| {
             let mut fetched = world.fetch_mut(this).unwrap();
 
             let off = fetched.focus;

@@ -266,7 +266,7 @@ impl Descriptor for CanvasDescriptor {
 
 impl Element for Canvas {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(self.control, move |Redraw, world, _| {
+        world.observer(self.control, move |Redraw, world| {
             let manager = world.single_fetch::<CanvasManager>().unwrap();
             let viewport = world.single_fetch::<Viewport>().unwrap();
             let this = world.fetch(this).unwrap();

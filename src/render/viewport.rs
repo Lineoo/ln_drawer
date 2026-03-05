@@ -106,7 +106,7 @@ impl Descriptor for ViewportDescriptor {
 impl Element for Viewport {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
-        world.observer(lnwindow, move |event: &WindowEvent, world, _| {
+        world.observer(lnwindow, move |event: &WindowEvent, world| {
             if let WindowEvent::SurfaceResized(size) = event {
                 let mut viewport = world.fetch_mut(this).unwrap();
 

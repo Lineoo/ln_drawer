@@ -77,7 +77,7 @@ where
     fn when_build(mut self, world: &World) -> Self::Target {
         let anim = world.build(self.animation);
         world.dependency(anim, self.widget);
-        world.observer(anim, move |&AnimationValue::<T>(value), world, _| {
+        world.observer(anim, move |&AnimationValue::<T>(value), world| {
             let widget = world.fetch_mut(self.widget).unwrap();
             (self.action)(widget, world, value);
         });
@@ -88,7 +88,8 @@ where
 
 impl<T: AnimationType> Element for Animation<T> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(self.control, move |RedrawPrepare, world, control| {
+        let control = self.control;
+        world.observer(control, move |RedrawPrepare, world| {
             let mut this = world.fetch_mut(this).unwrap();
 
             // calculate next value
@@ -135,15 +136,12 @@ impl<T: AnimationType> Element for Animation<T> {
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        if self.src != self.dst {
-            self.control_active = true;
-            self.last_update = Instant::now();
-            let mut control = world.fetch_mut(self.control).unwrap();
-            control.refreshing = true;
-        }
+        self.control_active = true;
+        self.last_update = Instant::now();
+        let mut control = world.fetch_mut(self.control).unwrap();
+        control.refreshing = true;
     }
 }
-
 
 pub struct AnimationValue<T: AnimationType>(pub T);
 

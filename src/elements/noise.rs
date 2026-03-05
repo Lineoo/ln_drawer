@@ -58,7 +58,7 @@ impl Element for SimpleNoise {
         let resizable = world.insert(Resizable { rect });
         world.insert(Transform::copy(resizable.untyped(), button.untyped()));
 
-        world.observer(button, move |WidgetClick, world, button| {
+        world.observer(button, move |WidgetClick, world| {
             let button = world.fetch(button).unwrap();
 
             let play = world.insert(Button {
@@ -71,13 +71,13 @@ impl Element for SimpleNoise {
                 order: 30,
             });
 
-            world.observer(play, move |WidgetClick, world, play| {
+            world.observer(play, move |WidgetClick, world| {
                 let this = world.fetch(this).unwrap();
                 this.sink.play();
                 world.remove(play).unwrap();
             });
 
-            world.observer(pause, move |WidgetClick, world, pause| {
+            world.observer(pause, move |WidgetClick, world| {
                 let this = world.fetch(this).unwrap();
                 this.sink.pause();
                 world.remove(pause).unwrap();
@@ -90,7 +90,7 @@ impl Element for SimpleNoise {
             world.dependency(pause, button);
         });
 
-        world.observer(button, move |&WidgetRectangle(rect), world, _| {
+        world.observer(button, move |&WidgetRectangle(rect), world| {
             let mut icon = world.fetch_mut(icon).unwrap();
             icon.rect = rect.expand(-20);
         });

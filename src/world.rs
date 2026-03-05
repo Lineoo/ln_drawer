@@ -462,12 +462,12 @@ impl World {
         }
     }
 
-    pub fn foreach_fetch<T: Element>(&self, mut f: impl FnMut(Handle<T>, Ref<T>)) {
-        self.foreach::<T>(|handle| f(handle, self.fetch(handle).unwrap()))
+    pub fn foreach_fetch<T: Element>(&self, mut f: impl FnMut(Ref<T>)) {
+        self.foreach::<T>(|handle| f(self.fetch(handle).unwrap()))
     }
 
-    pub fn foreach_fetch_mut<T: Element>(&self, mut f: impl FnMut(Handle<T>, RefMut<T>)) {
-        self.foreach::<T>(|handle| f(handle, self.fetch_mut(handle).unwrap()))
+    pub fn foreach_fetch_mut<T: Element>(&self, mut f: impl FnMut(RefMut<T>)) {
+        self.foreach::<T>(|handle| f(self.fetch_mut(handle).unwrap()))
     }
 
     // observer & trigger //
@@ -475,10 +475,10 @@ impl World {
     pub fn observer<T: ?Sized + 'static, E: 'static>(
         &self,
         target: Handle<T>,
-        mut action: impl FnMut(&E, &World, Handle<T>) + 'static,
+        mut action: impl FnMut(&E, &World) + 'static,
     ) -> Handle {
         let handle = self.insert(Observer {
-            action: Box::new(move |event, world| action(event, world, target)),
+            action: Box::new(move |event, world| action(event, world)),
             target: target.cast(),
         });
 
@@ -821,12 +821,12 @@ mod test {
 
         world.flush();
 
-        world.observer(left, |TestEvent(i), world, this| {
-            let mut this = world.fetch_mut(this).unwrap();
+        world.observer(left, move |TestEvent(i), world| {
+            let mut this = world.fetch_mut(left).unwrap();
             this.0 += i;
         });
 
-        let obs = world.observer(left, move |TestEvent(i), world, _| {
+        let obs = world.observer(left, move |TestEvent(i), world| {
             let mut this = world.fetch_mut(right).unwrap();
             this.0 += i;
         });

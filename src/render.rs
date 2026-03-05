@@ -169,7 +169,7 @@ impl Element for Render {
         });
 
         let lnwindow = world.single::<Lnwindow>().unwrap();
-        world.observer(lnwindow, move |event: &WindowEvent, world, _| match event {
+        world.observer(lnwindow, move |event: &WindowEvent, world| match event {
             WindowEvent::SurfaceResized(size) => {
                 let mut render = world.fetch_mut(this).unwrap();
                 render.config.width = size.width.max(1);
@@ -197,12 +197,12 @@ impl Element for Render {
                     let mut refreshing = false;
 
                     let mut buf = Vec::with_capacity(world.len::<RenderControl>());
-                    world.foreach_fetch::<RenderControl>(|control, fetched| {
-                        if fetched.visible {
-                            buf.push((control, fetched.order));
+                    world.foreach_fetch::<RenderControl>(|control| {
+                        if control.visible {
+                            buf.push((control.handle(), control.order));
                         }
 
-                        if fetched.refreshing {
+                        if control.refreshing {
                             refreshing = true;
                         }
                     });

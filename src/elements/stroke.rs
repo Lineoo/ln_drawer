@@ -66,7 +66,7 @@ impl Element for StrokeLayer {
 
         world.dependency(collider, this);
 
-        world.observer(collider, move |event: &PointerHit, world, _| {
+        world.observer(collider, move |event: &PointerHit, world| {
             if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
                 if let PointerKind::Touch(_) = event.pointer {
                     return;
@@ -83,7 +83,7 @@ impl Element for StrokeLayer {
             }
         });
 
-        world.observer(collider, move |&PointerMenu(position), world, _| {
+        world.observer(collider, move |&PointerMenu(position), world| {
             let menu = world.build(MenuDescriptor {
                 position,
                 entry_width: 400,
@@ -95,7 +95,7 @@ impl Element for StrokeLayer {
 
             world.dependency(collider, menu);
 
-            world.observer(collider, move |event: &PointerHit, world, _| {
+            world.observer(collider, move |event: &PointerHit, world| {
                 if let PointerHitStatus::Press | PointerHitStatus::Moving = event.status {
                     return;
                 };
@@ -110,7 +110,7 @@ impl Element for StrokeLayer {
                 }
             });
 
-            world.observer(collider, move |&PointerMenu(_), world, _| {
+            world.observer(collider, move |&PointerMenu(_), world| {
                 world.queue(move |world| {
                     world.remove(menu).unwrap();
                 });
@@ -154,7 +154,7 @@ impl Element for StrokeLayer {
                         order: 10,
                     });
 
-                    world.observer(button, |WidgetClick, world, button| {
+                    world.observer(button, move |WidgetClick, world| {
                         let mut button = world.fetch_mut(button).unwrap();
                         button.checked = !button.checked;
                     });
@@ -213,7 +213,7 @@ impl Element for StrokeLayer {
                     world.dependency(text, menu.handle());
                 });
 
-                world.observer(entry, move |WidgetClick, world, _| {
+                world.observer(entry, move |WidgetClick, world| {
                     world.queue(move |world| {
                         let menu = world.fetch(menu).unwrap();
                         action(world, menu.position);
@@ -319,7 +319,7 @@ impl StrokeLayer {
             let (wx, wy) = StrokeLayer::world_to_texture(point, canvas.rect);
             self.color = canvas.read(wx, wy);
 
-            world.foreach_fetch_mut::<Palette>(|_, mut palette| {
+            world.foreach_fetch_mut::<Palette>(|mut palette| {
                 palette.set_color(self.color);
             });
         }
@@ -362,7 +362,7 @@ impl Descriptor for StrokeToolboxDescriptor {
             order: 20,
         });
 
-        world.observer(button, |WidgetClick, world, button| {});
+        world.observer(button, |WidgetClick, world| {});
 
         world.insert(StrokeToolbox { button })
     }

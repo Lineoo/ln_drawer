@@ -108,7 +108,7 @@ impl PointerCollider {
 
 impl Element for PointerCollider {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, |&LayoutRectangle(rect), world, this| {
+        world.observer(this, move |&LayoutRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.rect = rect;
         });
@@ -146,7 +146,7 @@ impl Element for PointerCollider {
 impl Element for PointerTool {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
-        world.observer(lnwindow, move |event: &WindowEvent, world, _| {
+        world.observer(lnwindow, move |event: &WindowEvent, world| {
             let mut this = world.fetch_mut(this).unwrap();
             let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
             let viewport = world.single_fetch::<Viewport>().unwrap();
@@ -359,9 +359,9 @@ impl Pointer {
 
     fn intersect(world: &World, point: Position) -> Vec<Handle<PointerCollider>> {
         let mut result = Vec::with_capacity(8);
-        world.foreach_fetch::<PointerCollider>(|handle, collider| {
+        world.foreach_fetch::<PointerCollider>(|collider| {
             if collider.enabled && point.within(collider.rect) {
-                result.push((handle, collider.order));
+                result.push((collider.handle(), collider.order));
             }
         });
 
@@ -450,7 +450,7 @@ impl Element for PointerEdgeCollider {
 
         let lock = world.insert(ColliderEdgeLock { edge: None });
 
-        world.observer(collider, move |event: &PointerCheck, world, _| {
+        world.observer(collider, move |event: &PointerCheck, world| {
             let mut idx = 0;
 
             let fetched = world.fetch(this).unwrap();
@@ -497,7 +497,7 @@ impl Element for PointerEdgeCollider {
             event.occlude.set(check.occlude.get());
         });
 
-        world.observer(collider, move |event: &PointerHit, world, _| {
+        world.observer(collider, move |event: &PointerHit, world| {
             let mut lock = world.fetch_mut(lock).unwrap();
 
             match (event.status, lock.edge) {
@@ -575,7 +575,7 @@ impl Element for PointerEdgeCollider {
             }
         });
 
-        world.observer(this, move |ColliderUpdate, world, this| {
+        world.observer(this, move |ColliderUpdate, world| {
             let this = world.fetch(this).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
             collider.rect = this.rect.expand(EXPAND);

@@ -76,7 +76,7 @@ impl Transform {
 
 impl Element for Transform {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let ob = world.observer(self.source, move |&WidgetRectangle(rect), world, _| {
+        let ob = world.observer(self.source, move |&WidgetRectangle(rect), world| {
             let this = world.fetch(this).unwrap();
 
             let left = rect.extend.w as f32 * this.left.anchor;

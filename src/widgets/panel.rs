@@ -34,9 +34,8 @@ impl Element for Panel {
             enabled: false,
         });
 
-        world.observer(
-            collider,
-            move |event: &PointerHover, world, _| match event.motion {
+        world.observer(collider, move |event: &PointerHover, world| {
+            match event.motion {
                 PointerHoverStatus::Enter => {
                     world.trigger(this, &WidgetHover::HoverEnter);
                 }
@@ -44,15 +43,15 @@ impl Element for Panel {
                 PointerHoverStatus::Leave => {
                     world.trigger(this, &WidgetHover::HoverLeave);
                 }
-            },
-        );
+            }
+        });
 
-        world.observer(this, move |&WidgetRectangle(rect), world, _| {
+        world.observer(this, move |&WidgetRectangle(rect), world| {
             let mut collider = world.fetch_mut(collider).unwrap();
             collider.rect = rect;
         });
 
-        world.observer(this, |&LayoutRectangle(rect), world, this| {
+        world.observer(this, move |&LayoutRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.rect = rect;
         });

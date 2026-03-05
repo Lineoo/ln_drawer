@@ -65,7 +65,7 @@ impl Descriptor for CheckButtonDescriptor {
 
 impl Element for CheckButton {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(self.collider, move |event: &PointerHit, world, _| {
+        world.observer(self.collider, move |event: &PointerHit, world| {
             if let PointerHitStatus::Release = event.status {
                 world.trigger(this, &WidgetClick);
             }
@@ -83,7 +83,7 @@ impl Element for CheckButton {
 
         world.observer(
             self.collider,
-            move |event: &PointerHover, world, _| match event.motion {
+            move |event: &PointerHover, world| match event.motion {
                 PointerHoverStatus::Enter => {
                     world.trigger(this, &WidgetHover::HoverEnter);
                 }
@@ -94,7 +94,7 @@ impl Element for CheckButton {
             },
         );
 
-        world.observer(this, |&LayoutRectangle(rect), world, this| {
+        world.observer(this, move |&LayoutRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.rect = rect;
         });

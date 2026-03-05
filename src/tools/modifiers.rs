@@ -12,14 +12,13 @@ pub struct ModifiersTool {
 
 impl Element for ModifiersTool {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(
-            world.single::<Lnwindow>().unwrap(),
-            move |event: &WindowEvent, world, lnwindow| {
-                if let WindowEvent::ModifiersChanged(modifiers) = event {
-                    let mut tool = world.fetch_mut(this).unwrap();
-                    tool.modifiers = *modifiers;
-                }
-            },
-        );
+        let lnwindow = world.single::<Lnwindow>().unwrap();
+
+        world.observer(lnwindow, move |event: &WindowEvent, world| {
+            if let WindowEvent::ModifiersChanged(modifiers) = event {
+                let mut tool = world.fetch_mut(this).unwrap();
+                tool.modifiers = *modifiers;
+            }
+        });
     }
 }
