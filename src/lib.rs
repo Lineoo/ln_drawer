@@ -5,6 +5,7 @@ mod lnwin;
 mod measures;
 mod render;
 mod save;
+mod stroke;
 mod theme;
 mod tools;
 mod widgets;

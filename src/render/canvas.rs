@@ -32,7 +32,7 @@ pub struct Canvas {
 
     bind: BindGroup,
     uniform: Buffer,
-    texture: Texture,
+    pub texture: Texture,
     sampler: Sampler,
     queue: Queue,
 
@@ -183,8 +183,10 @@ impl Descriptor for CanvasDescriptor {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8UnormSrgb,
-            usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::COPY_DST
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::STORAGE_BINDING,
             view_formats: &[],
         };
 

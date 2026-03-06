@@ -8,7 +8,11 @@ pub mod wireframe;
 use std::time::{Duration, Instant};
 
 use wgpu::{
-    Adapter, Color, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor, ExperimentalFeatures, Features, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference, PresentMode, Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration, TextureUsages, TextureViewDescriptor, Trace
+    Adapter, Color, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device,
+    DeviceDescriptor, ExperimentalFeatures, Features, Instance, Limits, LoadOp, MemoryHints,
+    Operations, PowerPreference, PresentMode, Queue, RenderPass, RenderPassColorAttachment,
+    RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration,
+    TextureFormat, TextureUsages, TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -23,10 +27,10 @@ pub struct Render {
     config: SurfaceConfiguration,
 
     // wgpu interface
-    instance: Instance,
-    adapter: Adapter,
-    device: Device,
-    queue: Queue,
+    pub instance: Instance,
+    pub adapter: Adapter,
+    pub device: Device,
+    pub queue: Queue,
 
     // render pass
     pub clear_color: Color,
@@ -77,10 +81,12 @@ impl Render {
             .await
             .unwrap();
 
+        log::debug!("wgpu adapter: {:?}", adapter.get_info());
+
         let (device, queue) = adapter
             .request_device(&DeviceDescriptor {
                 label: None,
-                required_features: Features::empty(),
+                required_features: Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                 required_limits: Limits::defaults(),
                 experimental_features: ExperimentalFeatures::disabled(),
                 memory_hints: MemoryHints::MemoryUsage,
@@ -110,7 +116,10 @@ impl Render {
     }
 
     pub fn surface_recreate(&mut self, lnwindow: &Lnwindow) {
-        self.surface = self.instance.create_surface(lnwindow.window.clone()).unwrap();
+        self.surface = self
+            .instance
+            .create_surface(lnwindow.window.clone())
+            .unwrap();
         let size = lnwindow.window.surface_size();
         self.config = Render::configuration(&self.surface, &self.adapter, size);
         self.surface.configure(&self.device, &self.config);

@@ -11,7 +11,6 @@ use winit::{
 };
 
 use crate::{
-    elements::stroke::StrokeLayer,
     measures::Size,
     render::{
         Render, canvas::CanvasManagerDescriptor, rounded::RoundedRectManagerDescriptor,
@@ -19,6 +18,7 @@ use crate::{
         wireframe::WireframeManagerDescriptor,
     },
     save::Save,
+    stroke::StrokeLayer,
     theme::Luni,
     tools::{focus::Focus, modifiers::ModifiersTool, viewport::ViewportUtils},
     world::{Element, Handle, World},

@@ -1,3 +1,5 @@
+pub mod round_brush;
+
 use cosmic_text::Metrics;
 use hashbrown::HashMap;
 use palette::Srgba;
@@ -17,6 +19,7 @@ use crate::{
         canvas::{Canvas, CanvasDescriptor},
         text::TextDescriptor,
     },
+    stroke::round_brush::RoundBrush,
     tools::{
         modifiers::ModifiersTool,
         mouse::PointerMenu,
@@ -30,7 +33,7 @@ use crate::{
         color_picker::ColorPicker,
         menu::{MenuDescriptor, MenuEntryDescriptor},
     },
-    world::{Descriptor, Element, Handle, World},
+    world::{Descriptor, Element, Handle, World, WorldError},
 };
 
 const CHUNK_SIZE: u32 = 512;
@@ -182,7 +185,7 @@ impl Element for StrokeLayer {
                         extend: Size::splat(100),
                     };
 
-                    let bytes = include_bytes!("../../res/icon_hicolor.png");
+                    let bytes = include_bytes!("../res/icon_hicolor.png");
 
                     world.build(CanvasDescriptor::from_bytes(rect, 0, bytes).unwrap());
                 }),
@@ -401,12 +404,22 @@ impl StrokeLayer {
             })
         });
 
+        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<RoundBrush>() {
+            world.insert(RoundBrush::new(&world.single_fetch().unwrap()));
+        }
+
         let canvas = chunk.canvas;
         let color = self.color;
         world.queue(move |world| {
-            let mut canvas = world.fetch_mut(canvas).unwrap();
+            let canvas = world.fetch(canvas).unwrap();
+            let brush = world.single_fetch::<RoundBrush>().unwrap();
+            let render = world.single_fetch::<Render>().unwrap();
+
             let (wx, wy) = StrokeLayer::world_to_texture(point, canvas.rect);
-            canvas.draw(wx, wy, color);
+            brush.draw(&canvas.texture, [wx as f32, wy as f32], 6.0, 0.5, &render);
+
+            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            lnwindow.window.request_redraw();
         });
     }
 

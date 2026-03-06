@@ -1,13 +1,13 @@
 use palette::{FromColor, Hsl, SetHue, Srgba, WithAlpha};
 
 use crate::{
-    elements::stroke::StrokeLayer,
     measures::{Position, Rectangle, Size},
     render::{
         LossyPrepare, RenderControl,
         canvas::{Canvas, CanvasDescriptor},
         wireframe::{Wireframe, WireframeDescriptor},
     },
+    stroke::StrokeLayer,
     tools::pointer::{PointerCollider, PointerHit},
     world::{Descriptor, Element, Handle, World},
 };
