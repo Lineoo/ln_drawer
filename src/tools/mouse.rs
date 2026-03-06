@@ -4,13 +4,14 @@ use winit::event::{
 
 use crate::{
     lnwin::Lnwindow,
-    measures::{Fract, Position},
+    measures::{Fract, Position, PositionFract},
     render::viewport::Viewport,
     tools::{pointer::PointerCollider, viewport::ViewportUtils},
     world::{Element, Handle, World},
 };
 
 /// Mouse-specific operations like right-click and middle-click.
+#[derive(Default)]
 pub struct MouseTool;
 
 /// Right-click events.
@@ -56,7 +57,9 @@ impl Element for MouseTool {
                 let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
 
                 let cursor = lnwindow.cursor_to_screen(*position);
-                viewport_utils.cursor_locked(world, cursor);
+                viewport_utils.cursor(world, cursor);
+                viewport_utils.anchor_on_screen(world, cursor);
+                viewport_utils.locked(true);
             }
 
             WindowEvent::PointerMoved {
@@ -81,7 +84,8 @@ impl Element for MouseTool {
                 let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
 
                 let cursor = lnwindow.cursor_to_screen(*position);
-                viewport_utils.cursor_unlocked(world, cursor);
+                viewport_utils.cursor(world, cursor);
+                viewport_utils.locked(false);
             }
 
             WindowEvent::MouseWheel { delta, .. } => {

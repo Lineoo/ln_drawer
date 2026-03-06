@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-use crate::measures::{Rectangle, Size};
+use crate::measures::{Fract, PositionFract, Rectangle, Size};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Position {
@@ -77,6 +77,13 @@ impl Position {
 
     pub const fn splat(n: i32) -> Position {
         Position { x: n, y: n }
+    }
+
+    pub fn into_fract(self) -> PositionFract {
+        PositionFract {
+            x: Fract { n: self.x, nf: 0 },
+            y: Fract { n: self.y, nf: 0 },
+        }
     }
 
     pub fn into_array(self) -> [i32; 2] {

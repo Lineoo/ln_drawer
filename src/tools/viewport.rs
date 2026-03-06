@@ -6,64 +6,83 @@ use crate::{
 
 #[derive(Default)]
 pub struct ViewportUtils {
-    /// same as the pointer
     cursor: [f64; 2],
 
-    /// trying to follow your pointer
-    anchor: [f64; 2],
-    anchor_center: PositionFract,
+    // viewport: PositionFract      = viewport.center
+    // cursor_in_viewport: [f64; 2] = cursor
+    anchor: PositionFract,
+    cursor_in_anchor: [f64; 2],
 
-    /// indicate whether it's locked
     locked: bool,
 }
 
 impl ViewportUtils {
-    /// The behavior will depend on previous operations.
-    pub fn cursor(&mut self, world: &World, cursor: [f64; 2]) {
-        match self.locked {
-            false => self.cursor_unlocked(world, cursor),
-            true => self.cursor_locked(world, cursor),
-        }
-    }
-
-    /// Viewport doesn't change. Anchor will just teleport to the cursor.
-    pub fn cursor_unlocked(&mut self, world: &World, cursor: [f64; 2]) {
-        let viewport = world.single_fetch::<Viewport>().unwrap();
-
-        self.cursor = cursor;
-        self.locked = false;
-
-        self.anchor = cursor;
-        self.anchor_center = viewport.center;
-    }
-
-    /// Viewport changes. Anchor will try best to follow the cursor by adjusting viewport.
-    pub fn cursor_locked(&mut self, world: &World, cursor: [f64; 2]) {
-        let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
-
-        self.cursor = cursor;
-        self.locked = true;
-
-        let delta = viewport.screen_to_world_relative([
-            self.cursor[0] - self.anchor[0],
-            self.cursor[1] - self.anchor[1],
-        ]);
-
-        viewport.center = self.anchor_center - delta;
-    }
-
     /// Adjust zoom value, zooming in/out the anchor.
     pub fn zoom_delta(&mut self, world: &World, delta: Fract) {
         let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
+        let zoom_center = viewport.screen_to_world_absolute(self.cursor);
 
-        let world_cursor = viewport.screen_to_world_absolute(self.cursor);
-        let follow = (viewport.center - world_cursor) * (-delta).exp2();
+        let anchor_origin = self.anchor;
+        self.anchor = zoom_center;
+        self.cursor_in_anchor = [0.0, 0.0];
 
         viewport.zoom += delta;
-        viewport.center = world_cursor + follow;
+        drop(viewport);
 
-        self.anchor = self.cursor;
-        self.anchor_center = viewport.center;
+        self.update_locked(world);
+
+        self.anchor = anchor_origin;
+        self.update_unlocked(world);
+    }
+
+    pub fn cursor(&mut self, world: &World, cursor: [f64; 2]) {
+        self.cursor = cursor;
+        self.update(world);
+    }
+
+    pub fn anchor(&mut self, world: &World, anchor: PositionFract) {
+        self.anchor = anchor;
+        self.update(world);
+    }
+
+    pub fn anchor_on_screen(&mut self, world: &World, anchor_on_screen: [f64; 2]) {
+        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let anchor = viewport.screen_to_world_absolute(anchor_on_screen);
+        drop(viewport);
+        self.anchor(world, anchor);
+    }
+
+    /// Set **locked** to change viewport.
+    pub fn locked(&mut self, locked: bool) {
+        self.locked = locked;
+    }
+
+    /// The behavior will depend on previous operations.
+    fn update(&mut self, world: &World) {
+        if self.locked {
+            self.update_locked(world);
+        } else {
+            self.update_unlocked(world);
+        }
+    }
+
+    /// resolve `viewport.center`
+    fn update_locked(&mut self, world: &World) {
+        let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
+        let delta = viewport.screen_to_world_relative([
+            self.cursor[0] - self.cursor_in_anchor[0],
+            self.cursor[1] - self.cursor_in_anchor[1],
+        ]);
+
+        viewport.center = self.anchor - delta;
+    }
+
+    /// resolve `cursor_in_anchor`
+    fn update_unlocked(&mut self, world: &World) {
+        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let delta = viewport.world_to_screen_relative(self.anchor - viewport.center);
+
+        self.cursor_in_anchor = [self.cursor[0] - delta[0], self.cursor[1] - delta[1]];
     }
 }
 

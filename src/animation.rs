@@ -86,6 +86,44 @@ where
     }
 }
 
+pub struct OnceAnimationDescriptor<T, W, F>
+where
+    T: AnimationEasingType,
+    W: Element,
+    F: FnMut(RefMut<W>, &World, T) + 'static,
+{
+    pub animation: AnimationDescriptor<T>,
+    pub widget: Handle<W>,
+    pub action: F,
+}
+
+impl<T, W, F> Descriptor for OnceAnimationDescriptor<T, W, F>
+where
+    T: AnimationEasingType,
+    W: Element,
+    F: FnMut(RefMut<W>, &World, T) + 'static,
+{
+    type Target = Handle<Animation<T>>;
+
+    fn when_build(mut self, world: &World) -> Self::Target {
+        let dst = self.animation.dst;
+        let anim = world.build(self.animation);
+        world.dependency(anim, self.widget);
+        world.observer(anim, move |&AnimationValue::<T>(value), world| {
+            let widget = world.fetch_mut(self.widget).unwrap();
+            (self.action)(widget, world, value);
+
+            if value == dst {
+                world.queue(move |world| {
+                    world.remove(anim).unwrap();
+                });
+            }
+        });
+
+        anim
+    }
+}
+
 impl<T: AnimationEasingType> Element for Animation<T> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let control = self.control;

@@ -76,6 +76,7 @@ impl ops::MulAssign for Fract {
 }
 
 impl Fract {
+    pub const ZERO: Fract = Fract { n: 0, nf: 0 };
     pub const ONE: Fract = Fract { n: 1, nf: 0 };
 
     pub const fn new(n: i32, nf: u32) -> Fract {

@@ -5,6 +5,7 @@ use wgpu::Color;
 use winit::event::PointerKind;
 
 use crate::{
+    animation::{AnimationDescriptor, OnceAnimationDescriptor},
     elements::{
         noise::SimpleNoiseDescriptor,
         palette::{Palette, PaletteDescriptor},
@@ -20,9 +21,11 @@ use crate::{
         modifiers::ModifiersTool,
         mouse::PointerMenu,
         pointer::{PointerCollider, PointerHit, PointerHitStatus},
+        viewport::ViewportUtils,
     },
     widgets::{
-        WidgetClick,
+        WidgetButton, WidgetClick,
+        button::Button,
         check_button::{CheckButton, CheckButtonDescriptor},
         color_picker::ColorPicker,
         menu::{MenuDescriptor, MenuEntryDescriptor},
@@ -82,6 +85,33 @@ impl Element for StrokeLayer {
                     stroke.draw(event.position, world);
                 }
             }
+        });
+
+        // test //
+
+        world.insert(ColorPicker {
+            rect: Rectangle::new(0, 0, 30, 30),
+            color: Default::default(),
+        });
+
+        let button = world.build(CheckButtonDescriptor {
+            rect: Rectangle::new(-60, 0, -30, 30),
+            checked: false,
+            order: 10,
+        });
+
+        world.observer(button, move |WidgetClick, world| {
+            let mut button = world.fetch_mut(button).unwrap();
+            button.checked = !button.checked;
+        });
+
+        let button = world.insert(Button {
+            rect: Rectangle::new(-120, 0, -90, 30),
+            order: 10,
+        });
+
+        world.observer(button, move |WidgetClick, world| {
+            world.trigger(collider, &PointerMenu(Position::new(-90, 30)));
         });
 
         world.observer(collider, move |&PointerMenu(position), world| {
@@ -191,6 +221,66 @@ impl Element for StrokeLayer {
                             extend: Size::splat(50),
                         },
                         color: Default::default(),
+                    });
+                }),
+                ("Hook!", |world, position| {
+                    let button = world.insert(Button {
+                        rect: Rectangle {
+                            origin: position,
+                            extend: Size::splat(50),
+                        },
+                        order: 100,
+                    });
+
+                    let mut anim_stock = None;
+                    world.observer(button, move |event, world| match event {
+                        WidgetButton::ButtonPress => {
+                            let button = world.fetch(button).unwrap();
+                            let current = button.rect.origin;
+
+                            let mut viewport_utils =
+                                world.single_fetch_mut::<ViewportUtils>().unwrap();
+                            viewport_utils.anchor(world, button.rect.origin.into_fract());
+                            viewport_utils.locked(true);
+
+                            let anim = world.build(OnceAnimationDescriptor {
+                                animation: AnimationDescriptor {
+                                    src: [current.x as f32, current.y as f32],
+                                    dst: if current.x.abs() < 50 && current.y.abs() < 50 {
+                                        if position.x.abs() < 50 && position.y.abs() < 50 {
+                                            [position.x as f32 + 1500.0, position.y as f32 + 1500.0]
+                                        } else {
+                                            [position.x as f32, position.y as f32]
+                                        }
+                                    } else {
+                                        [0.0, 0.0]
+                                    },
+                                    factor: 5.0,
+                                },
+                                widget: button.handle(),
+                                action: |mut button, world, val| {
+                                    button.rect.origin =
+                                        Position::new(val[0].round() as i32, val[1].round() as i32);
+
+                                    let mut viewport_utils =
+                                        world.single_fetch_mut::<ViewportUtils>().unwrap();
+                                    viewport_utils.anchor(world, button.rect.origin.into_fract());
+                                },
+                            });
+
+                            if let Some(old) = anim_stock.replace(anim) {
+                                let _ = world.remove(old);
+                            }
+                        }
+                        WidgetButton::ButtonRelease => {
+                            let mut viewport_utils =
+                                world.single_fetch_mut::<ViewportUtils>().unwrap();
+                            viewport_utils.locked(false);
+
+                            if let Some(old) = anim_stock.take() {
+                                let _ = world.remove(old);
+                            }
+                        }
                     });
                 }),
             ];

@@ -12,7 +12,7 @@ use winit::{
 
 use crate::{
     elements::stroke::StrokeLayer,
-    measures::{Rectangle, Size},
+    measures::Size,
     render::{
         Render, canvas::CanvasManagerDescriptor, rounded::RoundedRectManagerDescriptor,
         text::TextManagerDescriptor, viewport::ViewportDescriptor,
@@ -20,8 +20,7 @@ use crate::{
     },
     save::Save,
     theme::Luni,
-    tools::{viewport::ViewportUtils, focus::Focus, modifiers::ModifiersTool},
-    widgets::{WidgetClick, check_button::CheckButtonDescriptor, color_picker::ColorPicker},
+    tools::{focus::Focus, modifiers::ModifiersTool, viewport::ViewportUtils},
     world::{Element, Handle, World},
 };
 
@@ -93,6 +92,7 @@ impl Element for Lnwindow {
             world.build(RoundedRectManagerDescriptor);
             world.build(TextManagerDescriptor);
             world.build(WireframeManagerDescriptor);
+            world.insert(Luni::default());
         });
 
         world.queue(|world| {
@@ -100,30 +100,10 @@ impl Element for Lnwindow {
             world.insert(StrokeLayer::default());
             world.insert(ViewportUtils::default());
             world.insert(ModifiersTool::default());
-
-            world.insert(Luni::default());
         });
 
         world.queue(|world| {
             world.insert(Save::default());
-        });
-
-        world.queue(|world| {
-            world.insert(ColorPicker {
-                rect: Rectangle::new(0, 0, 30, 30),
-                color: Default::default(),
-            });
-
-            let button = world.build(CheckButtonDescriptor {
-                rect: Rectangle::new(-60, 0, -30, 30),
-                checked: false,
-                order: 10,
-            });
-
-            world.observer(button, move |WidgetClick, world| {
-                let mut button = world.fetch_mut(button).unwrap();
-                button.checked = !button.checked;
-            });
         });
     }
 }

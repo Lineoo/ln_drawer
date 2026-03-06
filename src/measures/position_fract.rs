@@ -72,6 +72,11 @@ impl ops::MulAssign<Fract> for PositionFract {
 }
 
 impl PositionFract {
+    pub const ZERO: Self = PositionFract {
+        x: Fract::ZERO,
+        y: Fract::ZERO,
+    };
+
     pub const fn new(x: Fract, y: Fract) -> PositionFract {
         PositionFract { x, y }
     }

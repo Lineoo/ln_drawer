@@ -98,7 +98,7 @@ impl Element for PointerCollider {
         }
 
         if let Err(WorldError::SingletonNoSuch(_)) = world.single::<MouseTool>() {
-            world.insert(MouseTool);
+            world.insert(MouseTool::default());
         }
 
         world.observer(this, move |&LayoutRectangle(rect), world| {
@@ -256,9 +256,7 @@ impl Pointer {
         self.position = position;
         self.screen = screen;
 
-        if !self.pressed {
-            self.recalculate_hovering(world);
-        }
+        self.recalculate_hovering(world);
 
         if let Some(hovering) = self.hovering {
             if self.pressed {
@@ -303,9 +301,7 @@ impl Pointer {
             );
         }
 
-        if !pressed {
-            self.recalculate_hovering(world);
-        }
+        self.recalculate_hovering(world);
     }
 
     fn update_hovering(&mut self, world: &World, hovering: Option<Handle<PointerCollider>>) {
@@ -338,6 +334,10 @@ impl Pointer {
     }
 
     fn recalculate_hovering(&mut self, world: &World) {
+        if self.pressed {
+            return;
+        }
+
         let mut landing = None;
         for each in PointerCollider::intersect(world, self.position) {
             let check = PointerCheck {

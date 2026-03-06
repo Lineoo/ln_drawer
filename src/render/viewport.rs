@@ -145,4 +145,15 @@ impl Viewport {
         let y = delta[1] / scale * self.size.h as f64 / 2.0;
         PositionFract::new(Fract::from_f64(x), Fract::from_f64(y))
     }
+
+    pub fn world_to_screen_absolute(&self, point: PositionFract) -> [f64; 2] {
+        self.world_to_screen_relative(point - self.center)
+    }
+
+    pub fn world_to_screen_relative(&self, point: PositionFract) -> [f64; 2] {
+        let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
+        let x = point.x.into_f64() * 2.0 / self.size.w as f64 * scale;
+        let y = point.y.into_f64() * 2.0 / self.size.h as f64 * scale;
+        [x, y]
+    }
 }
