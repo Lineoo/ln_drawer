@@ -71,11 +71,22 @@ impl Element for StrokeLayer {
         world.dependency(collider, this);
 
         world.observer(collider, move |event: &PointerHit, world| {
-            if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
-                if let PointerKind::Touch(_) = event.pointer {
-                    return;
+            if let PointerKind::Touch(_) = event.pointer {
+                let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
+                match event.status {
+                    PointerHitStatus::Press => {
+                        viewport_utils.anchor_on_screen(world, event.screen);
+                        viewport_utils.locked(true);
+                    }
+                    PointerHitStatus::Moving => {}
+                    PointerHitStatus::Release => {
+                        viewport_utils.locked(false);
+                    }
                 }
+                return;
+            }
 
+            if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
                 let mut stroke = world.fetch_mut(this).unwrap();
 
                 let tool = world.single_fetch::<ModifiersTool>().unwrap();
@@ -247,8 +258,8 @@ impl Element for StrokeLayer {
                                 animation: AnimationDescriptor {
                                     src: [current.x as f32, current.y as f32],
                                     dst: if current.x.abs() < 50 && current.y.abs() < 50 {
-                                        if position.x.abs() < 50 && position.y.abs() < 50 {
-                                            [position.x as f32 + 1500.0, position.y as f32 + 1500.0]
+                                        if position.x.abs() < 500 && position.y.abs() < 500 {
+                                            [position.x as f32 + 1500.0, position.y as f32]
                                         } else {
                                             [position.x as f32, position.y as f32]
                                         }

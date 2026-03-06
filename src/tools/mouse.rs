@@ -62,18 +62,6 @@ impl Element for MouseTool {
                 viewport_utils.locked(true);
             }
 
-            WindowEvent::PointerMoved {
-                position,
-                source: PointerSource::Mouse,
-                ..
-            } => {
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
-
-                let cursor = lnwindow.cursor_to_screen(*position);
-                viewport_utils.cursor(world, cursor);
-            }
-
             WindowEvent::PointerButton {
                 position,
                 state: ElementState::Released,

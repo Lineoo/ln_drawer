@@ -9,7 +9,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Position, Rectangle, Size},
     render::viewport::Viewport,
-    tools::mouse::MouseTool,
+    tools::{mouse::MouseTool, viewport::ViewportUtils},
     world::{Element, Handle, World, WorldError},
 };
 
@@ -175,6 +175,8 @@ impl Element for PointerTool {
 
                     let screen = lnwindow.cursor_to_screen(*position);
                     let position = viewport.screen_to_world_absolute(screen).floor();
+
+                    drop((lnwindow, viewport));
                     pointer.update_position(world, position, screen);
                 }
 
@@ -198,8 +200,9 @@ impl Element for PointerTool {
 
                     let screen = lnwindow.cursor_to_screen(*position);
                     let position = viewport.screen_to_world_absolute(screen).floor();
-                    pointer.update_position(world, position, screen);
 
+                    drop((lnwindow, viewport));
+                    pointer.update_position(world, position, screen);
                     pointer.update_pressed(
                         world,
                         match state {
@@ -216,6 +219,8 @@ impl Element for PointerTool {
 
                     let screen = lnwindow.cursor_to_screen(*position);
                     let position = viewport.screen_to_world_absolute(screen).floor();
+
+                    drop((lnwindow, viewport));
                     pointer.update_position(world, position, screen);
                 }
 
@@ -227,7 +232,11 @@ impl Element for PointerTool {
                     if let Some(position) = *position {
                         let screen = lnwindow.cursor_to_screen(position);
                         let position = viewport.screen_to_world_absolute(screen).floor();
+
+                        drop((lnwindow, viewport));
                         pointer.update_position(world, position, screen);
+                    } else {
+                        drop((lnwindow, viewport));
                     }
 
                     if let Some(hovering) = pointer.hovering {
@@ -257,6 +266,10 @@ impl Pointer {
         self.screen = screen;
 
         self.recalculate_hovering(world);
+
+        let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
+        viewport_utils.cursor(world, screen);
+        drop(viewport_utils);
 
         if let Some(hovering) = self.hovering {
             if self.pressed {
