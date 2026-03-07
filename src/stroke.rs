@@ -299,10 +299,10 @@ impl StrokeLayer {
                 ("", |_, _| {}),
                 ("Switch transparency", |world, _| {
                     let mut render = world.single_fetch_mut::<Render>().unwrap();
-                    if render.clear_color == Color::TRANSPARENT {
-                        render.clear_color = Color::BLACK;
-                    } else if render.clear_color == Color::BLACK {
-                        render.clear_color = Color::TRANSPARENT;
+                    if render.clear_color.a == 0.0 {
+                        render.clear_color.a = 1.0;
+                    } else if render.clear_color.a == 1.0 {
+                        render.clear_color.a = 0.0;
                     }
                 }),
                 ("Switch title bar", |world, _| {
