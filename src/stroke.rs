@@ -60,13 +60,16 @@ pub struct BrushModifier {
 struct Draw {
     position: Position,
     force: f32,
+    color: Srgba,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawUniform {
+    color: [f32; 4],
     position: [i32; 2],
-    _pad: u64,
+    force: f32,
+    _pad: u32,
 }
 
 impl Element for StrokeLayer {
@@ -168,12 +171,14 @@ impl StrokeLayer {
             }
 
             if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
+                let mut this = world.fetch_mut(this).unwrap();
+
                 let draw = Draw {
                     position: event.position,
                     force: event.data.force.unwrap_or(1.0),
+                    color: this.front_color,
                 };
 
-                let mut this = world.fetch_mut(this).unwrap();
                 this.draw(draw, world);
             }
         });
@@ -440,7 +445,14 @@ impl StrokeLayer {
             &self.draw_data,
             0,
             bytemuck::bytes_of(&DrawUniform {
+                color: [
+                    draw.color.red,
+                    draw.color.green,
+                    draw.color.blue,
+                    draw.color.alpha,
+                ],
                 position: draw.position.into_array(),
+                force: draw.force,
                 _pad: 0,
             }),
         );
