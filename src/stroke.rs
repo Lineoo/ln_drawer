@@ -1,9 +1,16 @@
-pub mod round_brush;
+mod canvas;
+mod round_brush;
 
 use cosmic_text::Metrics;
 use hashbrown::HashMap;
-use palette::Srgba;
-use wgpu::Color;
+use palette::{Srgba, WithAlpha};
+use wgpu::{
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
+    BufferDescriptor, BufferUsages, Color, Queue, ShaderStages, StorageTextureAccess,
+    TextureFormat, TextureViewDimension,
+    util::{BufferInitDescriptor, DeviceExt},
+};
 use winit::event::PointerKind;
 
 use crate::{
@@ -13,13 +20,12 @@ use crate::{
         palette::{Palette, PaletteDescriptor},
     },
     lnwin::Lnwindow,
-    measures::{Position, Rectangle, Size},
-    render::{
-        Render,
-        canvas::{Canvas, CanvasDescriptor},
-        text::TextDescriptor,
+    measures::{Position, PositionFract, Rectangle, Size},
+    render::{Render, canvas::CanvasDescriptor, text::TextDescriptor},
+    stroke::{
+        canvas::{CanvasChunk, CanvasChunkPipeline},
+        round_brush::{RoundBrush, RoundBrushPipeline},
     },
-    stroke::round_brush::RoundBrush,
     tools::{
         modifiers::ModifiersTool,
         mouse::PointerMenu,
@@ -38,26 +44,28 @@ use crate::{
 
 const CHUNK_SIZE: u32 = 512;
 
-#[derive(Default)]
 pub struct StrokeLayer {
-    chunks: HashMap<(i32, i32), StrokeChunk>,
-    pub color: Srgba,
+    pub chunks: HashMap<(i32, i32), Handle<CanvasChunk>>,
+    pub front_color: Srgba,
+    pub brush: RoundBrush,
+
+    draw: BindGroup,
+    draw_data: Buffer,
+
+    queue: Queue,
 }
 
-pub struct StrokeChunk {
-    canvas: Handle<Canvas>,
+struct Draw {
+    position: Position,
+    force: f32,
 }
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct StrokeLayerDescriptor {
-    pub chunks: Vec<StrokeChunkDescriptor>,
-    pub color: (f32, f32, f32, f32),
-}
-
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct StrokeChunkDescriptor {
-    pub key: (i32, i32),
-    pub data: Option<Vec<u8>>,
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct DrawUniform {
+    position: [i32; 2],
+    force: f32,
+    _pad: u32,
 }
 
 impl Element for StrokeLayer {
@@ -69,8 +77,73 @@ impl Element for StrokeLayer {
             }
         });
 
-        let collider = world.insert(PointerCollider::fullscreen(-100));
+        self.attach_pointer(world, this);
+    }
+}
 
+impl StrokeLayer {
+    pub fn new(world: &World) -> Self {
+        let render = world.single_fetch::<Render>().unwrap();
+        let device = &render.device;
+
+        let draw = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("draw"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let canvas_chunk_pipeline = CanvasChunkPipeline::new(world);
+        let round_brush_pipeline =
+            RoundBrushPipeline::new(&render, &canvas_chunk_pipeline.compute, &draw);
+
+        let draw_data = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("draw_data"),
+            contents: bytemuck::bytes_of(&DrawUniform {
+                position: [0; 2],
+                force: 0.0,
+                _pad: 0,
+            }),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let draw = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("draw"),
+            layout: &draw,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &draw_data,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
+        let default_brush = RoundBrush::new(&render, &round_brush_pipeline, 6.0, 0.5);
+
+        world.insert(canvas_chunk_pipeline);
+        world.insert(round_brush_pipeline);
+
+        StrokeLayer {
+            chunks: HashMap::new(),
+            front_color: palette::named::BLACK.with_alpha(1.0).into_format(),
+            brush: default_brush,
+            draw,
+            draw_data,
+            queue: render.queue.clone(),
+        }
+    }
+
+    fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
+        let collider = world.insert(PointerCollider::fullscreen(-100));
         world.dependency(collider, this);
 
         world.observer(collider, move |event: &PointerHit, world| {
@@ -90,14 +163,13 @@ impl Element for StrokeLayer {
             }
 
             if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
-                let mut stroke = world.fetch_mut(this).unwrap();
+                let draw = Draw {
+                    position: event.position,
+                    force: 1.0,
+                };
 
-                let tool = world.single_fetch::<ModifiersTool>().unwrap();
-                if tool.modifiers.state().alt_key() {
-                    stroke.pick(event.position, world);
-                } else {
-                    stroke.draw(event.position, world);
-                }
+                let mut this = world.fetch_mut(this).unwrap();
+                this.draw(draw, world);
             }
         });
 
@@ -331,160 +403,48 @@ impl Element for StrokeLayer {
             }
         });
     }
-}
 
-impl Descriptor for StrokeLayerDescriptor {
-    type Target = Handle<StrokeLayer>;
+    fn draw(&mut self, draw: Draw, world: &World) {
+        let chunk = (
+            draw.position.x.div_euclid(CHUNK_SIZE as i32),
+            draw.position.y.div_euclid(CHUNK_SIZE as i32),
+        );
 
-    fn when_build(self, world: &World) -> Self::Target {
-        let mut layer = StrokeLayer {
-            chunks: HashMap::new(),
-            color: Srgba::from_components(self.color),
-        };
+        match self.chunks.get(&chunk) {
+            Some(&canvas) => {
+                let canvas = world.fetch(canvas).unwrap();
 
-        for chunk in self.chunks {
-            layer.chunks.insert(chunk.key, world.build(chunk));
+                self.draw_chunk(&canvas, draw, world);
+            }
+            None => {
+                let canvas = CanvasChunk::new(world, chunk);
+
+                self.draw_chunk(&canvas, draw, world);
+
+                let canvas = world.insert(canvas);
+                self.chunks.insert(chunk, canvas);
+            }
         }
-
-        world.insert(layer)
     }
-}
 
-impl Descriptor for StrokeChunkDescriptor {
-    type Target = StrokeChunk;
+    fn draw_chunk(&mut self, canvas: &CanvasChunk, draw: Draw, world: &World) {
+        let brush_pipeline = world.single_fetch::<RoundBrushPipeline>().unwrap();
+        let render = world.single_fetch::<Render>().unwrap();
 
-    fn when_build(self, world: &World) -> Self::Target {
-        StrokeChunk {
-            canvas: world.build(CanvasDescriptor {
-                rect: Rectangle {
-                    origin: Position::new(
-                        self.key.0 * CHUNK_SIZE as i32,
-                        self.key.1 * CHUNK_SIZE as i32,
-                    ),
-                    extend: Size::splat(CHUNK_SIZE),
-                },
-                order: 0,
-                visible: true,
-                data: self.data,
-                width: CHUNK_SIZE,
-                height: CHUNK_SIZE,
+        self.queue.write_buffer(
+            &self.draw_data,
+            0,
+            bytemuck::bytes_of(&DrawUniform {
+                position: draw.position.into_array(),
+                force: draw.force,
+                _pad: 0,
             }),
-        }
-    }
-}
-
-impl StrokeLayer {
-    pub fn to_descriptor(&self, world: &World) -> StrokeLayerDescriptor {
-        let mut layer = StrokeLayerDescriptor::default();
-
-        for (key, chunk) in &self.chunks {
-            let canvas = world.fetch(chunk.canvas).unwrap();
-            let painter = canvas.to_descriptor();
-            layer.chunks.push(StrokeChunkDescriptor {
-                key: *key,
-                data: painter.data,
-            });
-        }
-
-        layer.color = self.color.into_components();
-
-        layer
-    }
-
-    pub fn draw(&mut self, point: Position, world: &World) {
-        let chunk_key = (
-            point.x.div_euclid(CHUNK_SIZE as i32),
-            point.y.div_euclid(CHUNK_SIZE as i32),
         );
 
-        let chunk = self.chunks.entry(chunk_key).or_insert_with(|| {
-            world.build(StrokeChunkDescriptor {
-                key: chunk_key,
-                data: None,
-            })
-        });
+        self.brush
+            .draw(&render, &brush_pipeline, &canvas.compute, &self.draw);
 
-        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<RoundBrush>() {
-            world.insert(RoundBrush::new(&world.single_fetch().unwrap()));
-        }
-
-        let canvas = chunk.canvas;
-        let color = self.color;
-        world.queue(move |world| {
-            let canvas = world.fetch(canvas).unwrap();
-            let brush = world.single_fetch::<RoundBrush>().unwrap();
-            let render = world.single_fetch::<Render>().unwrap();
-
-            let (wx, wy) = StrokeLayer::world_to_texture(point, canvas.rect);
-            brush.draw(&canvas.texture, [wx as f32, wy as f32], 6.0, 0.5, &render);
-
-            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-            lnwindow.window.request_redraw();
-        });
-    }
-
-    pub fn pick(&mut self, point: Position, world: &World) {
-        let chunk_key = (
-            point.x.div_euclid(CHUNK_SIZE as i32),
-            point.y.div_euclid(CHUNK_SIZE as i32),
-        );
-
-        if let Some(chunk) = self.chunks.get(&chunk_key) {
-            let canvas = world.fetch(chunk.canvas).unwrap();
-            let (wx, wy) = StrokeLayer::world_to_texture(point, canvas.rect);
-            self.color = canvas.read(wx, wy);
-
-            world.foreach_fetch_mut::<Palette>(|mut palette| {
-                palette.set_color(self.color);
-            });
-        }
-    }
-
-    fn world_to_texture(point: Position, rect: Rectangle) -> (i32, i32) {
-        let relative_x = point.x - rect.origin.x;
-        let relative_y = point.y - rect.origin.y;
-
-        let width = rect.width();
-        let height = rect.height();
-
-        let wrapped_x = (relative_x).rem_euclid(width as i32);
-        let wrapped_y = (height as i32 - 1 - relative_y).rem_euclid(height as i32);
-
-        (wrapped_x, wrapped_y)
-    }
-}
-
-pub struct StrokeToolbox {
-    button: Handle<CheckButton>,
-}
-
-pub struct StrokeToolboxDescriptor {
-    pub position: Position,
-}
-
-impl Descriptor for StrokeToolboxDescriptor {
-    type Target = Handle<StrokeToolbox>;
-
-    fn when_build(self, world: &World) -> Self::Target {
-        let rect = Rectangle {
-            origin: self.position,
-            extend: Size::splat(70),
-        };
-
-        let button = world.build(CheckButtonDescriptor {
-            rect,
-            checked: false,
-            order: 20,
-        });
-
-        world.observer(button, |WidgetClick, world| {});
-
-        world.insert(StrokeToolbox { button })
-    }
-}
-
-impl Element for StrokeToolbox {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.dependency(self.button, this);
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        lnwindow.window.request_redraw();
     }
 }

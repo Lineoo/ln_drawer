@@ -112,15 +112,20 @@
 - [x] observer 删除多余的 Handle 提供
 - [ ] 触摸可用性
     - [ ] 双指缩放
-        - [ ] Pointer 事件提供屏幕空间数据
+        - [x] Pointer 事件提供屏幕空间数据
         - [ ] 分离 PointerTool, MouseTool 和 MultiTouchTool
-    - [ ] 触摸可用的按钮/拖曳设计
-        - [ ] Pointer 事件给到原始屏幕坐标
-    - [ ] 重新设计相机移动模组
+    - [x] 触摸可用的按钮/拖曳设计
+        - [x] Pointer 事件给到原始屏幕坐标
+    - [x] 重新设计相机移动模组
+- [ ] 提升 PointerTool 提供的精度
 - [ ] menu 的字也得是 theme 负责吧
     - [ ] menu 改用 Panel -> Layout -> Label
+- [ ] 所有的像现在的 render shader 之类的东西都应该移动到 theme(luni) 下面
+    - [ ] Render 的职能就是 viewport, sorting, redraw management, clipping
+    - [ ] 统一 vertex shader
 - [ ] 存档结构设计
-    - [ ] request hook
+    - [ ] 直接使用闭包的渲染阶段
+    - [ ] 直接使用闭包的存档请求
 - [ ] 菜单按钮
 - [ ] 更美观的调色板组件
     - [ ] 滑条、宽滑条

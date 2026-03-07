@@ -112,6 +112,8 @@ impl Descriptor for PaletteDescriptor {
             visible: true,
             order: 1,
             refreshing: false,
+            prepare: None,
+            draw: None,
         });
 
         world.insert(Palette {
@@ -149,7 +151,7 @@ impl Element for Palette {
             this.hsl.lightness = lightness as f32 / (HEIGHT - 1) as f32;
 
             let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
-            layer.color = this.get_color();
+            layer.front_color = this.get_color();
 
             this.redraw = true;
         });
@@ -170,7 +172,7 @@ impl Element for Palette {
             this.hsl.set_hue((hue as f32 / WIDTH as f32) * 360.0);
 
             let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
-            layer.color = this.get_color();
+            layer.front_color = this.get_color();
 
             this.redraw = true;
         });

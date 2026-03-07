@@ -16,7 +16,8 @@ use wgpu::{
 use crate::{
     measures::{Position, Rectangle, Size},
     render::{
-        Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport,
+        Redraw, Render, RenderControl, RenderInformation, RenderPortal, vertex::VertexUniform,
+        viewport::Viewport,
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -35,8 +36,6 @@ pub struct Canvas {
     pub texture: Texture,
     sampler: Sampler,
     queue: Queue,
-
-    control: Handle<RenderControl>,
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -208,7 +207,7 @@ impl Descriptor for CanvasDescriptor {
         };
 
         let sampler = render.device.create_sampler(&SamplerDescriptor {
-            label: Some("canvas_sampler"),
+            label: Some("canvas"),
             ..Default::default()
         });
 
@@ -218,7 +217,7 @@ impl Descriptor for CanvasDescriptor {
         });
 
         let bind = render.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("canvas_bind"),
+            label: Some("canvas"),
             layout: &manager.bind_layout,
             entries: &[
                 BindGroupEntry {
@@ -240,12 +239,6 @@ impl Descriptor for CanvasDescriptor {
             ],
         });
 
-        let control = world.insert(RenderControl {
-            visible: self.visible,
-            order: self.order,
-            refreshing: false,
-        });
-
         world.insert(Canvas {
             data: match self.data {
                 Some(bytes) => bytes.to_vec(),
@@ -261,30 +254,40 @@ impl Descriptor for CanvasDescriptor {
             texture,
             sampler,
             queue: render.queue.clone(),
-            control,
         })
     }
 }
 
 impl Element for Canvas {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(self.control, move |Redraw, world| {
-            let manager = world.single_fetch::<CanvasManager>().unwrap();
-            let viewport = world.single_fetch::<Viewport>().unwrap();
-            let this = world.fetch(this).unwrap();
+        let control = world.insert(RenderControl {
+            visible: self.visible,
+            order: self.order,
+            refreshing: false,
+            prepare: Some(Box::new(move |world| {
+                let this = world.fetch(this).unwrap();
 
-            let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
-            let rpass = &mut rportal.active.as_mut().unwrap().rpass;
-            rpass.set_pipeline(&manager.pipeline);
-            rpass.set_bind_group(0, &viewport.bind, &[]);
-            rpass.set_bind_group(1, &this.bind, &[]);
-            rpass.draw(0..4, 0..1);
+                Some(RenderInformation {
+                    render_order: this.order,
+                    keep_redrawing: false,
+                })
+            })),
+            draw: Some(Box::new(move |world, rpass| {
+                let manager = world.single_fetch::<CanvasManager>().unwrap();
+                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let this = world.fetch(this).unwrap();
+
+                rpass.set_pipeline(&manager.pipeline);
+                rpass.set_bind_group(0, &viewport.bind, &[]);
+                rpass.set_bind_group(1, &this.bind, &[]);
+                rpass.draw(0..4, 0..1);
+            })),
         });
 
-        world.dependency(self.control, this);
+        world.dependency(control, this);
     }
 
-    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+    fn when_modify(&mut self, _world: &World, _this: Handle<Self>) {
         let uniform = VertexUniform {
             origin: self.rect.origin.into_array(),
             extend: self.rect.extend.into_array(),
@@ -292,10 +295,6 @@ impl Element for Canvas {
 
         let bytes = bytemuck::bytes_of(&uniform);
         self.queue.write_buffer(&self.uniform, 0, bytes);
-
-        let mut control = world.fetch_mut(self.control).unwrap();
-        control.order = self.order;
-        control.visible = self.visible;
     }
 }
 

@@ -93,11 +93,11 @@ impl Element for Lnwindow {
             world.build(TextManagerDescriptor);
             world.build(WireframeManagerDescriptor);
             world.insert(Luni::default());
+            world.insert(StrokeLayer::new(world));
         });
 
         world.queue(|world| {
             world.insert(Focus::default());
-            world.insert(StrokeLayer::default());
             world.insert(ViewportUtils::default());
             world.insert(ModifiersTool::default());
         });

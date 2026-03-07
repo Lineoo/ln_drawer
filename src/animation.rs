@@ -42,6 +42,8 @@ impl<T: AnimationEasingType> Descriptor for AnimationDescriptor<T> {
             visible: true,
             order: 0,
             refreshing: self.src != self.dst,
+            prepare: None,
+            draw: None,
         });
 
         world.insert(Animation {

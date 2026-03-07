@@ -1,6 +1,6 @@
 use wgpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BufferBinding, BufferDescriptor,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferDescriptor,
     BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, ComputePipeline,
     ComputePipelineDescriptor, PipelineLayoutDescriptor, ShaderModuleDescriptor, ShaderSource,
     ShaderStages, StorageTextureAccess, Texture, TextureFormat, TextureViewDescriptor,
@@ -8,44 +8,37 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
 };
 
-use crate::{render::Render, world::Element};
+use crate::{
+    render::Render,
+    stroke::StrokeLayer,
+    world::{Element, World},
+};
 
 pub struct RoundBrush {
-    pipeline: ComputePipeline,
-    canvas: BindGroupLayout,
-    brush: BindGroupLayout,
+    pub brush: BindGroup,
+    pub brush_data: Buffer,
+}
+
+pub struct RoundBrushPipeline {
+    pub pipeline: ComputePipeline,
+    pub brush: BindGroupLayout,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct RoundBrushBind {
-    position: [f32; 2],
+struct RoundBrushUniform {
     size: f32,
     softness: f32,
 }
 
-impl Element for RoundBrush {}
+impl Element for RoundBrushPipeline {}
 
-impl RoundBrush {
-    pub fn new(render: &Render) -> Self {
+impl RoundBrushPipeline {
+    pub fn new(render: &Render, canvas: &BindGroupLayout, draw: &BindGroupLayout) -> Self {
         let device = &render.device;
 
-        let canvas = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("canvas"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::StorageTexture {
-                    access: StorageTextureAccess::ReadWrite,
-                    format: TextureFormat::Rgba8Unorm,
-                    view_dimension: TextureViewDimension::D2,
-                },
-                count: None,
-            }],
-        });
-
         let brush = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("brush"),
+            label: Some("round_brush"),
             entries: &[BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::COMPUTE,
@@ -59,73 +52,63 @@ impl RoundBrush {
         });
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("brush"),
-            bind_group_layouts: &[&canvas, &brush],
+            label: Some("round_brush"),
+            bind_group_layouts: &[canvas, draw, &brush],
             immediate_size: 0,
         });
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("brush"),
+            label: Some("round_brush"),
             source: ShaderSource::Wgsl(include_str!("round_brush.wgsl").into()),
         });
 
         let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("brush"),
+            label: Some("round_brush"),
             layout: Some(&pipeline),
             module: &shader,
-            entry_point: Some("round_brush"),
+            entry_point: Some("cs_main"),
             compilation_options: Default::default(),
             cache: None,
         });
 
-        RoundBrush {
-            pipeline,
-            canvas,
-            brush,
-        }
+        RoundBrushPipeline { pipeline, brush }
     }
+}
 
-    pub fn draw(
-        &self,
-        texture: &Texture,
-        position: [f32; 2],
-        size: f32,
-        softness: f32,
-        render: &Render,
-    ) {
+impl RoundBrush {
+    pub fn new(render: &Render, pipeline: &RoundBrushPipeline, size: f32, softness: f32) -> Self {
         let device = &render.device;
 
-        let canvas = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("canvas"),
-            layout: &self.canvas,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(
-                    &texture.create_view(&TextureViewDescriptor::default()),
-                ),
-            }],
+        let brush_data = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("round_brush"),
+            contents: bytemuck::bytes_of(&RoundBrushUniform { size, softness }),
+            usage: BufferUsages::UNIFORM,
         });
 
         let brush = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("brush"),
-            layout: &self.brush,
+            label: Some("round_brush"),
+            layout: &pipeline.brush,
             entries: &[BindGroupEntry {
                 binding: 0,
                 resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &device.create_buffer_init(&BufferInitDescriptor {
-                        label: Some("brush_buffer"),
-                        contents: bytemuck::bytes_of(&RoundBrushBind {
-                            position,
-                            size,
-                            softness,
-                        }),
-                        usage: BufferUsages::UNIFORM,
-                    }),
+                    buffer: &brush_data,
                     offset: 0,
                     size: None,
                 }),
             }],
         });
+
+        RoundBrush { brush, brush_data }
+    }
+
+    pub fn draw(
+        &self,
+        render: &Render,
+        pipeline: &RoundBrushPipeline,
+        canvas: &BindGroup,
+        draw: &BindGroup,
+    ) {
+        let device = &render.device;
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("brush"),
@@ -136,9 +119,10 @@ impl RoundBrush {
             timestamp_writes: None,
         });
 
-        cpass.set_pipeline(&self.pipeline);
-        cpass.set_bind_group(0, Some(&canvas), &[]);
-        cpass.set_bind_group(1, Some(&brush), &[]);
+        cpass.set_pipeline(&pipeline.pipeline);
+        cpass.set_bind_group(0, Some(canvas), &[]);
+        cpass.set_bind_group(1, Some(draw), &[]);
+        cpass.set_bind_group(2, Some(&self.brush), &[]);
         cpass.dispatch_workgroups(4, 4, 1);
 
         drop(cpass);

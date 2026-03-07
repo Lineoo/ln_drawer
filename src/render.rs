@@ -23,8 +23,8 @@ use crate::{
 
 pub struct Render {
     // wgpu surface
-    surface: Surface<'static>,
-    config: SurfaceConfiguration,
+    pub surface: Surface<'static>,
+    pub config: SurfaceConfiguration,
 
     // wgpu interface
     pub instance: Instance,
@@ -45,25 +45,44 @@ pub struct Render {
     last_lossy: Option<Instant>,
 }
 
+#[deprecated]
 struct RenderPortal {
     active: Option<RenderActive>,
     redrawing: bool,
 }
 
+#[deprecated]
 struct RenderActive {
     encoder: CommandEncoder,
     rpass: RenderPass<'static>,
 }
 
+type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;
+type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'static>)>;
+
 pub struct RenderControl {
     pub visible: bool,
     pub order: isize,
     pub refreshing: bool,
+
+    /// prepare to render and give related information
+    pub prepare: Option<RenderPrepareCommand>,
+
+    /// draw with given render pass
+    pub draw: Option<RenderDrawCommand>,
 }
 
+pub struct RenderInformation {
+    pub render_order: isize,
+    pub keep_redrawing: bool,
+}
+
+#[deprecated]
 pub struct LossyPrepare;
 
+#[deprecated]
 pub struct RedrawPrepare;
+#[deprecated]
 pub struct Redraw;
 
 impl Render {
@@ -206,7 +225,17 @@ impl Element for Render {
                     let mut refreshing = false;
 
                     let mut buf = Vec::with_capacity(world.len::<RenderControl>());
-                    world.foreach_fetch::<RenderControl>(|control| {
+                    world.foreach_fetch_mut::<RenderControl>(|mut control| {
+                        if let Some(prepare) = &mut control.prepare {
+                            let info = prepare(world);
+                            if let Some(info) = info {
+                                buf.push((control.handle(), info.render_order));
+                                refreshing |= info.keep_redrawing;
+                            }
+
+                            return;
+                        };
+
                         if control.visible {
                             buf.push((control.handle(), control.order));
                         }
@@ -260,7 +289,7 @@ impl Element for Render {
                         label: Some("main_encoder"),
                     });
 
-                let rpass = encoder
+                let mut rpass = encoder
                     .begin_render_pass(&RenderPassDescriptor {
                         color_attachments: &[Some(RenderPassColorAttachment {
                             view: &view,
@@ -276,6 +305,16 @@ impl Element for Render {
                     .forget_lifetime();
 
                 // call everyone to draw
+
+                // FIXME why it's here
+                render.sequence.retain(|x| world.available_mut(*x).is_ok());
+
+                for control in &render.sequence {
+                    let mut control = world.fetch_mut(*control).unwrap();
+                    if let Some(render) = &mut control.draw {
+                        render(world, &mut rpass);
+                    }
+                }
 
                 let mut rportal = world.fetch_mut(portal).unwrap();
                 rportal.active.replace(RenderActive { encoder, rpass });

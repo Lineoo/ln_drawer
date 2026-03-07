@@ -184,6 +184,8 @@ impl Descriptor for RoundedRectDescriptor {
             visible: self.visible,
             order: self.order,
             refreshing: false,
+            prepare: None,
+            draw: None,
         });
 
         world.insert(RoundedRect {

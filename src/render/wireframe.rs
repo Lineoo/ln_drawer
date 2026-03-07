@@ -150,6 +150,8 @@ impl Descriptor for WireframeDescriptor {
             visible: self.visible,
             order: self.order,
             refreshing: false,
+            prepare: None,
+            draw: None,
         });
 
         world.insert(Wireframe {

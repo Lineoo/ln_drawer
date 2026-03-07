@@ -88,6 +88,8 @@ impl Descriptor for ViewportDescriptor {
             visible: true,
             order: 0,
             refreshing: false,
+            prepare: None,
+            draw: None,
         });
 
         world.insert(Viewport {
