@@ -1,18 +1,12 @@
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferDescriptor,
-    BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, PipelineLayoutDescriptor, ShaderModuleDescriptor, ShaderSource,
-    ShaderStages, StorageTextureAccess, Texture, TextureFormat, TextureViewDescriptor,
-    TextureViewDimension,
-    util::{BufferInitDescriptor, DeviceExt},
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor,
+    ComputePipeline, ComputePipelineDescriptor, PipelineLayoutDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages,
 };
 
-use crate::{
-    render::Render,
-    stroke::StrokeLayer,
-    world::{Element, World},
-};
+use crate::{render::Render, world::Element};
 
 pub struct RoundBrush {
     pub brush: BindGroup,
@@ -26,9 +20,9 @@ pub struct RoundBrushPipeline {
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct RoundBrushUniform {
-    size: f32,
-    softness: f32,
+pub struct RoundBrushUniform {
+    pub size: f32,
+    pub softness: f32,
 }
 
 impl Element for RoundBrushPipeline {}
@@ -43,7 +37,7 @@ impl RoundBrushPipeline {
                 binding: 0,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
+                    ty: BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
@@ -76,13 +70,14 @@ impl RoundBrushPipeline {
 }
 
 impl RoundBrush {
-    pub fn new(render: &Render, pipeline: &RoundBrushPipeline, size: f32, softness: f32) -> Self {
+    pub fn new(render: &Render, pipeline: &RoundBrushPipeline) -> Self {
         let device = &render.device;
 
-        let brush_data = device.create_buffer_init(&BufferInitDescriptor {
+        let brush_data = device.create_buffer(&BufferDescriptor {
             label: Some("round_brush"),
-            contents: bytemuck::bytes_of(&RoundBrushUniform { size, softness }),
-            usage: BufferUsages::UNIFORM,
+            size: size_of::<RoundBrushUniform>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         let brush = device.create_bind_group(&BindGroupDescriptor {

@@ -29,7 +29,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     let alpha = smoothstep(
         1.0 + brush.softness,
         1.0 - brush.softness,
-        length(vec2f(center - coords)) / brush.size
+        length(vec2f(center - coords)) / brush.size,
     );
 
     let color = alpha * color_a + (1 - alpha) * color_b;

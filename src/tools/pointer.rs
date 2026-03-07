@@ -2,7 +2,9 @@
 
 use std::cell::Cell;
 
-use winit::event::{ButtonSource, ElementState, MouseButton, PointerKind, WindowEvent};
+use winit::event::{
+    ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
+};
 
 use crate::{
     layout::LayoutRectangle,
@@ -28,14 +30,7 @@ pub struct PointerHit {
     pub position: Position,
     pub screen: [f64; 2],
     pub status: PointerHitStatus,
-    pub pointer: PointerKind,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PointerHover {
-    pub position: Position,
-    pub screen: [f64; 2],
-    pub status: PointerHoverStatus,
+    pub data: PointerHitData,
     pub pointer: PointerKind,
 }
 
@@ -44,6 +39,19 @@ pub enum PointerHitStatus {
     Press,
     Moving,
     Release,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PointerHitData {
+    pub force: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PointerHover {
+    pub position: Position,
+    pub screen: [f64; 2],
+    pub status: PointerHoverStatus,
+    pub pointer: PointerKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +71,12 @@ struct Pointer {
     screen: [f64; 2],
     kind: PointerKind,
     hovering: Option<Handle<PointerCollider>>,
-    pressed: bool,
+    pressed: Option<Press>,
+}
+
+#[derive(Clone, Copy)]
+struct Press {
+    force: Option<f32>,
 }
 
 impl PointerCollider {
@@ -141,7 +154,7 @@ impl PointerTool {
                 screen: Default::default(),
                 kind,
                 hovering: None,
-                pressed: false,
+                pressed: None,
             });
 
             self.pointer.as_mut()
@@ -177,6 +190,18 @@ impl Element for PointerTool {
                     let position = viewport.screen_to_world_absolute(screen).floor();
 
                     drop((lnwindow, viewport));
+                    if let Some(press) = &mut pointer.pressed {
+                        press.force = match source {
+                            PointerSource::Mouse => Some(1.0),
+                            PointerSource::Touch { force, .. } => {
+                                force.map(|x| x.normalized(None) as f32)
+                            }
+                            PointerSource::TabletTool { data, .. } => {
+                                data.force.map(|x| x.normalized(None) as f32)
+                            }
+                            PointerSource::Unknown => None,
+                        };
+                    }
                     pointer.update_position(world, position, screen);
                 }
 
@@ -206,8 +231,19 @@ impl Element for PointerTool {
                     pointer.update_pressed(
                         world,
                         match state {
-                            ElementState::Pressed => true,
-                            ElementState::Released => false,
+                            ElementState::Pressed => Some(Press {
+                                force: match button {
+                                    ButtonSource::Mouse(_) => Some(1.0),
+                                    ButtonSource::Touch { force, .. } => {
+                                        force.map(|x| x.normalized(None) as f32)
+                                    }
+                                    ButtonSource::TabletTool { data, .. } => {
+                                        data.force.map(|x| x.normalized(None) as f32)
+                                    }
+                                    ButtonSource::Unknown(_) => None,
+                                },
+                            }),
+                            ElementState::Released => None,
                         },
                     );
                 }
@@ -272,13 +308,16 @@ impl Pointer {
         drop(viewport_utils);
 
         if let Some(hovering) = self.hovering {
-            if self.pressed {
+            if let Some(pressed) = self.pressed {
                 world.trigger(
                     hovering,
                     &PointerHit {
                         position,
                         screen,
                         status: PointerHitStatus::Moving,
+                        data: PointerHitData {
+                            force: pressed.force,
+                        },
                         pointer: self.kind,
                     },
                 );
@@ -296,24 +335,32 @@ impl Pointer {
         }
     }
 
-    fn update_pressed(&mut self, world: &World, pressed: bool) {
-        self.pressed = pressed;
-
+    fn update_pressed(&mut self, world: &World, pressed: Option<Press>) {
         if let Some(hovering) = self.hovering {
-            world.trigger(
-                hovering,
-                &PointerHit {
+            let hit = match (self.pressed, pressed) {
+                (None, Some(press)) => Some(PointerHit {
                     position: self.position,
                     screen: self.screen,
-                    status: match pressed {
-                        true => PointerHitStatus::Press,
-                        false => PointerHitStatus::Release,
-                    },
+                    status: PointerHitStatus::Press,
+                    data: PointerHitData { force: press.force },
                     pointer: self.kind,
-                },
-            );
+                }),
+                (Some(press), None) => Some(PointerHit {
+                    position: self.position,
+                    screen: self.screen,
+                    status: PointerHitStatus::Release,
+                    data: PointerHitData { force: press.force },
+                    pointer: self.kind,
+                }),
+                _ => None,
+            };
+
+            if let Some(hit) = hit {
+                world.trigger(hovering, &hit);
+            }
         }
 
+        self.pressed = pressed;
         self.recalculate_hovering(world);
     }
 
@@ -347,7 +394,7 @@ impl Pointer {
     }
 
     fn recalculate_hovering(&mut self, world: &World) {
-        if self.pressed {
+        if self.pressed.is_some() {
             return;
         }
 

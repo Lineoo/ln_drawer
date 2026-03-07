@@ -5,29 +5,23 @@ use cosmic_text::Metrics;
 use hashbrown::HashMap;
 use palette::{Srgba, WithAlpha};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, Color, Queue, ShaderStages, StorageTextureAccess,
-    TextureFormat, TextureViewDimension,
-    util::{BufferInitDescriptor, DeviceExt},
+    BufferDescriptor, BufferUsages, Color, Queue, ShaderStages,
 };
 use winit::event::PointerKind;
 
 use crate::{
     animation::{AnimationDescriptor, OnceAnimationDescriptor},
-    elements::{
-        noise::SimpleNoiseDescriptor,
-        palette::{Palette, PaletteDescriptor},
-    },
+    elements::{noise::SimpleNoiseDescriptor, palette::PaletteDescriptor},
     lnwin::Lnwindow,
-    measures::{Position, PositionFract, Rectangle, Size},
+    measures::{Position, Rectangle, Size},
     render::{Render, canvas::CanvasDescriptor, text::TextDescriptor},
     stroke::{
         canvas::{CanvasChunk, CanvasChunkPipeline},
-        round_brush::{RoundBrush, RoundBrushPipeline},
+        round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushUniform},
     },
     tools::{
-        modifiers::ModifiersTool,
         mouse::PointerMenu,
         pointer::{PointerCollider, PointerHit, PointerHitStatus},
         viewport::ViewportUtils,
@@ -35,11 +29,11 @@ use crate::{
     widgets::{
         WidgetButton, WidgetClick,
         button::Button,
-        check_button::{CheckButton, CheckButtonDescriptor},
+        check_button::CheckButtonDescriptor,
         color_picker::ColorPicker,
         menu::{MenuDescriptor, MenuEntryDescriptor},
     },
-    world::{Descriptor, Element, Handle, World, WorldError},
+    world::{Element, Handle, World},
 };
 
 const CHUNK_SIZE: u32 = 512;
@@ -48,11 +42,19 @@ pub struct StrokeLayer {
     pub chunks: HashMap<(i32, i32), Handle<CanvasChunk>>,
     pub front_color: Srgba,
     pub brush: RoundBrush,
+    pub modifier: BrushModifier,
 
     draw: BindGroup,
     draw_data: Buffer,
 
     queue: Queue,
+}
+
+pub struct BrushModifier {
+    pub min_size: f32,
+    pub max_size: f32,
+    pub size_force_exp: f32,
+    pub softness: f32,
 }
 
 struct Draw {
@@ -64,8 +66,7 @@ struct Draw {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawUniform {
     position: [i32; 2],
-    force: f32,
-    _pad: u32,
+    _pad: u64,
 }
 
 impl Element for StrokeLayer {
@@ -104,14 +105,11 @@ impl StrokeLayer {
         let round_brush_pipeline =
             RoundBrushPipeline::new(&render, &canvas_chunk_pipeline.compute, &draw);
 
-        let draw_data = device.create_buffer_init(&BufferInitDescriptor {
+        let draw_data = device.create_buffer(&BufferDescriptor {
             label: Some("draw_data"),
-            contents: bytemuck::bytes_of(&DrawUniform {
-                position: [0; 2],
-                force: 0.0,
-                _pad: 0,
-            }),
+            size: size_of::<DrawUniform>() as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         let draw = device.create_bind_group(&BindGroupDescriptor {
@@ -127,7 +125,13 @@ impl StrokeLayer {
             }],
         });
 
-        let default_brush = RoundBrush::new(&render, &round_brush_pipeline, 6.0, 0.5);
+        let default_brush = RoundBrush::new(&render, &round_brush_pipeline);
+        let default_modifier = BrushModifier {
+            min_size: 2.0,
+            max_size: 6.0,
+            size_force_exp: 2.0,
+            softness: 0.5,
+        };
 
         world.insert(canvas_chunk_pipeline);
         world.insert(round_brush_pipeline);
@@ -136,6 +140,7 @@ impl StrokeLayer {
             chunks: HashMap::new(),
             front_color: palette::named::BLACK.with_alpha(1.0).into_format(),
             brush: default_brush,
+            modifier: default_modifier,
             draw,
             draw_data,
             queue: render.queue.clone(),
@@ -165,7 +170,7 @@ impl StrokeLayer {
             if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
                 let draw = Draw {
                     position: event.position,
-                    force: 1.0,
+                    force: event.data.force.unwrap_or(1.0),
                 };
 
                 let mut this = world.fetch_mut(this).unwrap();
@@ -436,8 +441,19 @@ impl StrokeLayer {
             0,
             bytemuck::bytes_of(&DrawUniform {
                 position: draw.position.into_array(),
-                force: draw.force,
                 _pad: 0,
+            }),
+        );
+
+        let modifier = &self.modifier;
+        self.queue.write_buffer(
+            &self.brush.brush_data,
+            0,
+            bytemuck::bytes_of(&RoundBrushUniform {
+                size: modifier.min_size
+                    + (modifier.max_size - modifier.min_size)
+                        * draw.force.powf(modifier.size_force_exp),
+                softness: modifier.softness,
             }),
         );
 
