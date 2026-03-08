@@ -4,7 +4,9 @@ struct Rectangle {
 }
 
 struct DrawConfig {
+    dirty_coords: vec2i,
     stroke_count: u32,
+    force: f32,
 }
 
 struct Draw {
@@ -26,21 +28,20 @@ struct Brush {
 
 @group(2) @binding(0) var<uniform> brush: Brush;
 
-@compute @workgroup_size(8, 8)
+@compute @workgroup_size(16, 16)
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
-    let center = (draw[0].position - rect.origin);
-    let coords = center - vec2i(16) + vec2i(id.xy);
+    let coords = config.dirty_coords + vec2i(id.xy) - rect.origin;
 
     var working_color = textureLoad(texture, coords);
     for (var i = 0u; i < config.stroke_count; i++) {
-        let draw_center = (draw[i].position - rect.origin);
+        let center = (draw[i].position - rect.origin);
 
         let a = draw[i].color;
         let color_a = a.rgb;
         let alpha_a = a.a * smoothstep(
             1.0 + brush.softness,
             1.0 - brush.softness,
-            length(vec2f(draw_center - coords)) / brush.size,
+            length(vec2f(center - coords)) / brush.size,
         );
 
         let b = working_color;

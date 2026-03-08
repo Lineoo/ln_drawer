@@ -221,6 +221,15 @@ impl Rectangle {
         )
     }
 
+    pub fn grow(self, rhs: Rectangle) -> Rectangle {
+        Rectangle::new(
+            i32::min(self.left(), rhs.left()),
+            i32::min(self.down(), rhs.down()),
+            i32::max(self.right(), rhs.right()),
+            i32::max(self.up(), rhs.up()),
+        )
+    }
+
     /// will cause precise loss
     pub fn lerp(self, rhs: Rectangle, factor: f32) -> Rectangle {
         let x = self.origin.x as f32 * (1.0 - factor) + rhs.origin.x as f32 * factor;

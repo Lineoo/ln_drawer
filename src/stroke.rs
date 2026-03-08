@@ -7,7 +7,8 @@ use palette::{Srgba, WithAlpha};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, Queue, ShaderStages,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, Queue,
+    ShaderStages,
 };
 use winit::event::PointerKind;
 
@@ -71,6 +72,7 @@ struct Draw {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawConfigUniform {
+    dirty_coords: [i32; 2],
     stroke_count: u32,
     force: f32,
 }
@@ -460,78 +462,120 @@ impl StrokeLayer {
     }
 
     fn draw(&mut self, draw: Draw, world: &World, this: Handle<Self>) {
-        let chunk = (
-            draw.position.x.div_euclid(CHUNK_SIZE as i32),
-            draw.position.y.div_euclid(CHUNK_SIZE as i32),
-        );
+        // apply brush modifier //
 
-        let canvas = match self.chunks.get(&chunk) {
-            Some(&canvas) => canvas,
-            None => {
-                let canvas = CanvasChunk::new(world, chunk);
+        let size = self.modifier.min_size
+            + (self.modifier.max_size - self.modifier.min_size)
+                * draw.force.powf(self.modifier.size_force_exp);
 
-                let canvas = world.insert(canvas);
-                self.chunks.insert(chunk, canvas);
-
-                canvas
-            }
+        let brush = RoundBrushUniform {
+            size: size,
+            softness: self.modifier.softness,
         };
 
-        world.queue(move |world| {
-            let canvas = world.fetch(canvas).unwrap();
-            let mut this = world.fetch_mut(this).unwrap();
+        // generate draws //
 
-            let dst = draw.position.into_fract();
-            let mut v_position = *this.v_position.get_or_insert(dst);
+        let dst = draw.position.into_fract();
+        let step = Fract::from_f32(size);
 
-            let step = Fract::from_f32(
-                this.modifier.min_size
-                    + (this.modifier.max_size - this.modifier.min_size)
-                        * draw.force.powf(this.modifier.size_force_exp),
-            );
+        let mut v_position = *self.v_position.get_or_insert(dst);
+        let mut draw_buf = Vec::new();
+        let mut dirty_box = Rectangle::new_half(v_position.round(), Size::splat(0));
 
-            let mut draw_buf = Vec::new();
+        while v_position.distance(dst) >= step || draw_buf.is_empty() {
+            v_position = v_position.move_towards(dst, step);
 
-            while v_position.distance(dst) >= step {
-                v_position = v_position.move_towards(dst, step);
-
-                let draw = Draw {
-                    position: v_position.round(),
-                    ..draw
-                };
-
-                draw_buf.push(DrawStorage {
-                    color: [
-                        draw.color.red,
-                        draw.color.green,
-                        draw.color.blue,
-                        draw.color.alpha,
-                    ],
-                    position: draw.position.into_array(),
-                    force: draw.force,
-                    _pad: 0,
-                });
-            }
-
-            let config = DrawConfigUniform {
-                stroke_count: draw_buf.len() as u32,
-                force: draw.force,
+            let draw = Draw {
+                position: v_position.round(),
+                ..draw
             };
 
-            this.draw_chunk(&canvas, &config, &draw_buf, world);
-            this.v_position = Some(v_position);
+            draw_buf.push(DrawStorage {
+                color: [
+                    draw.color.red,
+                    draw.color.green,
+                    draw.color.blue,
+                    draw.color.alpha,
+                ],
+                position: draw.position.into_array(),
+                force: draw.force,
+                _pad: 0,
+            });
+
+            dirty_box = dirty_box.grow(Rectangle::new_half(
+                v_position.round(),
+                Size::splat((size * 2.0).ceil() as u32),
+            ));
+        }
+
+        self.v_position = Some(v_position);
+
+        let config = DrawConfigUniform {
+            dirty_coords: dirty_box.origin.into_array(),
+            stroke_count: draw_buf.len() as u32,
+            force: draw.force,
+        };
+
+        self.draw_batch(dirty_box, config, draw_buf, brush, world, this);
+    }
+
+    fn draw_batch(
+        &mut self,
+        dirty_box: Rectangle,
+        config: DrawConfigUniform,
+        draw: Vec<DrawStorage>,
+        brush: RoundBrushUniform,
+        world: &World,
+        this: Handle<Self>,
+    ) {
+        let chunk_src = (
+            dirty_box.left().div_euclid(CHUNK_SIZE as i32),
+            dirty_box.down().div_euclid(CHUNK_SIZE as i32),
+        );
+
+        let chunk_dst = (
+            (dirty_box.right() - 1).div_euclid(CHUNK_SIZE as i32) + 1,
+            (dirty_box.up() - 1).div_euclid(CHUNK_SIZE as i32) + 1,
+        );
+
+        let mut chunks = Vec::new();
+        for chunk_x in chunk_src.0..chunk_dst.0 {
+            for chunk_y in chunk_src.1..chunk_dst.1 {
+                chunks.push(match self.chunks.get(&(chunk_x, chunk_y)) {
+                    Some(&canvas) => canvas,
+                    None => {
+                        let canvas = CanvasChunk::new(world, (chunk_x, chunk_y));
+
+                        let canvas = world.insert(canvas);
+                        self.chunks.insert((chunk_x, chunk_y), canvas);
+
+                        canvas
+                    }
+                });
+            }
+        }
+
+        world.queue(move |world| {
+            for chunk in chunks {
+                let mut this = world.fetch_mut(this).unwrap();
+                let chunk = world.fetch(chunk).unwrap();
+                this.draw_chunk(dirty_box, &chunk, &config, &draw, &brush, world);
+            }
         });
     }
 
     fn draw_chunk(
         &mut self,
+        dirty_box: Rectangle,
         canvas: &CanvasChunk,
         config: &DrawConfigUniform,
         draw: &[DrawStorage],
+        brush: &RoundBrushUniform,
         world: &World,
     ) {
         let brush_pipeline = world.single_fetch::<RoundBrushPipeline>().unwrap();
         let render = world.single_fetch::<Render>().unwrap();
+        let device = &render.device;
 
         self.queue
             .write_buffer(&self.draw_config, 0, bytemuck::bytes_of(config));
@@ -539,20 +583,36 @@ impl StrokeLayer {
         self.queue
             .write_buffer(&self.draw_data_array, 0, bytemuck::cast_slice(draw));
 
-        let modifier = &self.modifier;
-        self.queue.write_buffer(
-            &self.brush.brush_data,
-            0,
-            bytemuck::bytes_of(&RoundBrushUniform {
-                size: modifier.min_size
-                    + (modifier.max_size - modifier.min_size)
-                        * config.force.powf(modifier.size_force_exp),
-                softness: modifier.softness,
-            }),
+        self.queue
+            .write_buffer(&self.brush.brush_data, 0, bytemuck::bytes_of(brush));
+
+        // start compute pass
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("brush"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("brush"),
+            timestamp_writes: None,
+        });
+
+        cpass.set_pipeline(&brush_pipeline.pipeline);
+        cpass.set_bind_group(0, Some(&canvas.compute), &[]);
+        cpass.set_bind_group(1, Some(&self.draw), &[]);
+        cpass.set_bind_group(2, Some(&self.brush.brush), &[]);
+
+        const WORKGROUP_SIZE: Size = Size::new(16, 16);
+        cpass.dispatch_workgroups(
+            (dirty_box.extend.w - 1) / WORKGROUP_SIZE.w + 1,
+            (dirty_box.extend.h - 1) / WORKGROUP_SIZE.h + 1,
+            1,
         );
 
-        self.brush
-            .draw(&render, &brush_pipeline, &canvas.compute, &self.draw);
+        drop(cpass);
+
+        let command = encoder.finish();
+        render.queue.submit([command]);
 
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         lnwindow.window.request_redraw();

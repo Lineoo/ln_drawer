@@ -95,34 +95,4 @@ impl RoundBrush {
 
         RoundBrush { brush, brush_data }
     }
-
-    pub fn draw(
-        &self,
-        render: &Render,
-        pipeline: &RoundBrushPipeline,
-        canvas: &BindGroup,
-        draw: &BindGroup,
-    ) {
-        let device = &render.device;
-
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("brush"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("brush"),
-            timestamp_writes: None,
-        });
-
-        cpass.set_pipeline(&pipeline.pipeline);
-        cpass.set_bind_group(0, Some(canvas), &[]);
-        cpass.set_bind_group(1, Some(draw), &[]);
-        cpass.set_bind_group(2, Some(&self.brush), &[]);
-        cpass.dispatch_workgroups(4, 4, 1);
-
-        drop(cpass);
-
-        let command = encoder.finish();
-        render.queue.submit([command]);
-    }
 }
