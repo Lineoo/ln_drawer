@@ -1,16 +1,15 @@
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor,
-    ComputePipeline, ComputePipelineDescriptor, PipelineLayoutDescriptor, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages,
+    BufferDescriptor, BufferUsages, ComputePipeline, ComputePipelineDescriptor,
+    PipelineLayoutDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
 };
 
 use crate::{render::Render, world::Element};
 
 pub struct RoundBrush {
     pub brush: BindGroup,
-    pub brush_data: Buffer,
+    pub brush_data_array: Buffer,
 }
 
 pub struct RoundBrushPipeline {
@@ -20,10 +19,14 @@ pub struct RoundBrushPipeline {
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct RoundBrushUniform {
+pub struct RoundBrushStorage {
+    pub color: [f32; 4],
+    pub position: [i32; 2],
+    pub force: f32,
     pub size: f32,
     pub softness: f32,
     pub flow: f32,
+    pub _pad: u64,
 }
 
 impl Element for RoundBrushPipeline {}
@@ -38,7 +41,7 @@ impl RoundBrushPipeline {
                 binding: 0,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
+                    ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
@@ -74,10 +77,10 @@ impl RoundBrush {
     pub fn new(render: &Render, pipeline: &RoundBrushPipeline) -> Self {
         let device = &render.device;
 
-        let brush_data = device.create_buffer(&BufferDescriptor {
+        let brush_data_array = device.create_buffer(&BufferDescriptor {
             label: Some("round_brush"),
-            size: size_of::<RoundBrushUniform>() as u64,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            size: size_of::<RoundBrushStorage>() as u64 * super::MAX_STROKE,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -87,13 +90,16 @@ impl RoundBrush {
             entries: &[BindGroupEntry {
                 binding: 0,
                 resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &brush_data,
+                    buffer: &brush_data_array,
                     offset: 0,
                     size: None,
                 }),
             }],
         });
 
-        RoundBrush { brush, brush_data }
+        RoundBrush {
+            brush,
+            brush_data_array,
+        }
     }
 }

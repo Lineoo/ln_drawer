@@ -117,6 +117,10 @@
     - [x] 触摸可用的按钮/拖曳设计
         - [x] Pointer 事件给到原始屏幕坐标
     - [x] 重新设计相机移动模组
+- [x] 压力感应连续
+- [ ] 存档
+- [ ] 缩放
+- [ ] 撤回
 - [ ] 提升 PointerTool 提供的精度
 - [ ] menu 的字也得是 theme 负责吧
     - [ ] menu 改用 Panel -> Layout -> Label

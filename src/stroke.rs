@@ -20,7 +20,7 @@ use crate::{
     render::{Render, canvas::CanvasDescriptor, text::TextDescriptor},
     stroke::{
         canvas::{CanvasChunk, CanvasChunkPipeline},
-        round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushUniform},
+        round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushStorage},
     },
     tools::{
         mouse::PointerMenu,
@@ -38,7 +38,7 @@ use crate::{
 };
 
 const CHUNK_SIZE: u32 = 512;
-const MAX_DRAW: u64 = 1000;
+const MAX_STROKE: u64 = 1000;
 
 pub struct StrokeLayer {
     pub chunks: HashMap<(i32, i32), Handle<CanvasChunk>>,
@@ -46,11 +46,10 @@ pub struct StrokeLayer {
     pub brush: RoundBrush,
     pub modifier: BrushModifier,
 
-    v_position: Option<PositionFract>,
+    current: Option<BrushInstance>,
 
     draw: BindGroup,
-    draw_config: Buffer,
-    draw_data_array: Buffer,
+    draw_data: Buffer,
 
     queue: Queue,
 }
@@ -67,26 +66,17 @@ pub struct BrushModifier {
 }
 
 #[derive(Clone, Copy)]
-struct Draw {
-    position: Position,
+struct BrushInstance {
+    position: PositionFract,
     force: f32,
-    color: Srgba,
+    step: Fract,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct DrawConfigUniform {
+struct DrawUniform {
     dirty_coords: [i32; 2],
     stroke_count: u32,
-    force: f32,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct DrawStorage {
-    color: [f32; 4],
-    position: [i32; 2],
-    force: f32,
     _pad: u32,
 }
 
@@ -110,69 +100,40 @@ impl StrokeLayer {
 
         let draw = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("draw"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
+                count: None,
+            }],
         });
 
         let canvas_chunk_pipeline = CanvasChunkPipeline::new(world);
         let round_brush_pipeline =
             RoundBrushPipeline::new(&render, &canvas_chunk_pipeline.compute, &draw);
 
-        let draw_config = device.create_buffer(&BufferDescriptor {
-            label: Some("draw_config"),
-            size: size_of::<DrawConfigUniform>() as u64,
+        let draw_data = device.create_buffer(&BufferDescriptor {
+            label: Some("draw_data"),
+            size: size_of::<DrawUniform>() as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let draw_data_array = device.create_buffer(&BufferDescriptor {
-            label: Some("draw_data_array"),
-            size: size_of::<DrawStorage>() as u64 * MAX_DRAW,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let draw = device.create_bind_group(&BindGroupDescriptor {
             label: Some("draw"),
             layout: &draw,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &draw_config,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &draw_data_array,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-            ],
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &draw_data,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
         });
 
         let default_brush = RoundBrush::new(&render, &round_brush_pipeline);
@@ -195,10 +156,9 @@ impl StrokeLayer {
             front_color: palette::named::BLACK.with_alpha(1.0).into_format(),
             brush: default_brush,
             modifier: default_modifier,
-            v_position: None,
+            current: None,
             draw,
-            draw_config,
-            draw_data_array,
+            draw_data,
             queue: render.queue.clone(),
         }
     }
@@ -222,18 +182,18 @@ impl StrokeLayer {
                 }
             } else if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
                 let mut this = world.fetch_mut(this).unwrap();
-                let draw = Draw {
-                    position: event.position,
+                let target = BrushInstance {
+                    position: event.position.into_fract(),
                     force: event.data.force.unwrap_or(1.0),
-                    color: this.front_color,
+                    step: Fract::ZERO,
                 };
 
                 let handle = this.handle();
-                this.draw(draw, world, handle);
+                this.draw(target, world, handle);
             } else {
                 world.queue(move |world| {
                     let mut this = world.fetch_mut(this).unwrap();
-                    this.v_position = None;
+                    this.current = None;
                 });
             }
         });
@@ -469,78 +429,81 @@ impl StrokeLayer {
         });
     }
 
-    fn draw(&mut self, draw: Draw, world: &World, this: Handle<Self>) {
-        // apply brush modifier //
-
-        let size = self.modifier.min_size
-            + (self.modifier.max_size - self.modifier.min_size)
-                * draw.force.powf(self.modifier.size_force_exp);
-
-        let flow = self.modifier.min_flow
-            + (self.modifier.max_flow - self.modifier.min_flow)
-                * draw.force.powf(self.modifier.flow_force_exp);
-
-        let brush = RoundBrushUniform {
-            softness: self.modifier.softness,
-            size,
-            flow,
-        };
-
+    fn draw(&mut self, target: BrushInstance, world: &World, this: Handle<Self>) {
         // generate draws //
 
-        let dst = draw.position.into_fract();
-        let step = Fract::from_f32(match self.modifier.step {
-            Some(step) => step,
-            None => size / 5.0,
-        });
+        let previous = *self.current.get_or_insert(target);
+        let mut working = previous;
+        let mut brushes = Vec::new();
+        let mut dirty_box = Rectangle::new_half(working.position.round(), Size::splat(0));
 
-        let mut v_position = *self.v_position.get_or_insert(dst);
-        let mut draw_buf = Vec::new();
-        let mut dirty_box = Rectangle::new_half(v_position.round(), Size::splat(0));
+        while working.position.distance(target.position) >= working.step
+            && brushes.len() < MAX_STROKE as usize
+        {
+            working.position = working.position.move_towards(target.position, working.step);
 
-        while v_position.distance(dst) >= step || draw_buf.is_empty() {
-            v_position = v_position.move_towards(dst, step);
-
-            let draw = Draw {
-                position: v_position.round(),
-                ..draw
+            let previous_distance = previous.position.distance(target.position).into_f32();
+            let working_distance = working.position.distance(target.position).into_f32();
+            let progress = match working_distance < 1e-6 {
+                true => 1.0,
+                false => 1.0 - working_distance / previous_distance,
             };
 
-            draw_buf.push(DrawStorage {
-                color: [
-                    draw.color.red,
-                    draw.color.green,
-                    draw.color.blue,
-                    draw.color.alpha,
-                ],
-                position: draw.position.into_array(),
-                force: draw.force,
+            working.force = (1.0 - progress) * previous.force + progress * target.force;
+
+            // apply brush modifier //
+
+            let modifier = &self.modifier;
+
+            let size = modifier.min_size
+                + (modifier.max_size - modifier.min_size)
+                    * working.force.powf(modifier.size_force_exp);
+
+            let flow = modifier.min_flow
+                + (modifier.max_flow - modifier.min_flow)
+                    * working.force.powf(modifier.flow_force_exp);
+
+            let softness = modifier.softness;
+
+            let color = self.front_color;
+
+            brushes.push(RoundBrushStorage {
+                color: [color.red, color.green, color.blue, color.alpha],
+                position: working.position.round().into_array(),
+                force: working.force,
+                size,
+                softness,
+                flow,
                 _pad: 0,
             });
 
             dirty_box = dirty_box.grow(Rectangle::new_half(
-                v_position.round(),
+                working.position.round(),
                 Size::splat((size * 2.0).ceil() as u32),
             ));
+
+            working.step = Fract::from_f32(match self.modifier.step {
+                Some(step) => step,
+                None => size / 5.0,
+            });
         }
 
-        self.v_position = Some(v_position);
+        self.current = Some(working);
 
-        let config = DrawConfigUniform {
+        let draw = DrawUniform {
             dirty_coords: dirty_box.origin.into_array(),
-            stroke_count: draw_buf.len() as u32,
-            force: draw.force,
+            stroke_count: brushes.len() as u32,
+            _pad: 0,
         };
 
-        self.draw_batch(dirty_box, config, draw_buf, brush, world, this);
+        self.draw_batch(dirty_box, draw, brushes, world, this);
     }
 
     fn draw_batch(
         &mut self,
         dirty_box: Rectangle,
-        config: DrawConfigUniform,
-        draw: Vec<DrawStorage>,
-        brush: RoundBrushUniform,
+        draw: DrawUniform,
+        brushes: Vec<RoundBrushStorage>,
         world: &World,
         this: Handle<Self>,
     ) {
@@ -575,7 +538,7 @@ impl StrokeLayer {
             for chunk in chunks {
                 let mut this = world.fetch_mut(this).unwrap();
                 let chunk = world.fetch(chunk).unwrap();
-                this.draw_chunk(dirty_box, &chunk, &config, &draw, &brush, world);
+                this.draw_chunk(dirty_box, &chunk, &draw, &brushes, world);
             }
         });
     }
@@ -584,23 +547,26 @@ impl StrokeLayer {
         &mut self,
         dirty_box: Rectangle,
         canvas: &CanvasChunk,
-        config: &DrawConfigUniform,
-        draw: &[DrawStorage],
-        brush: &RoundBrushUniform,
+        draw: &DrawUniform,
+        brushes: &[RoundBrushStorage],
         world: &World,
     ) {
+        if dirty_box.extend.w == 0 || dirty_box.extend.h == 0 {
+            return;
+        }
+
         let brush_pipeline = world.single_fetch::<RoundBrushPipeline>().unwrap();
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
 
         self.queue
-            .write_buffer(&self.draw_config, 0, bytemuck::bytes_of(config));
+            .write_buffer(&self.draw_data, 0, bytemuck::bytes_of(draw));
 
-        self.queue
-            .write_buffer(&self.draw_data_array, 0, bytemuck::cast_slice(draw));
-
-        self.queue
-            .write_buffer(&self.brush.brush_data, 0, bytemuck::bytes_of(brush));
+        self.queue.write_buffer(
+            &self.brush.brush_data_array,
+            0,
+            bytemuck::cast_slice(brushes),
+        );
 
         // start compute pass
 
