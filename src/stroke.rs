@@ -37,6 +37,7 @@ use crate::{
 };
 
 const CHUNK_SIZE: u32 = 512;
+const MAX_DRAW: u64 = 300;
 
 pub struct StrokeLayer {
     pub chunks: HashMap<(i32, i32), Handle<CanvasChunk>>,
@@ -47,7 +48,8 @@ pub struct StrokeLayer {
     v_position: Option<PositionFract>,
 
     draw: BindGroup,
-    draw_data: Buffer,
+    draw_config: Buffer,
+    draw_data_array: Buffer,
 
     queue: Queue,
 }
@@ -68,7 +70,14 @@ struct Draw {
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct DrawUniform {
+struct DrawConfigUniform {
+    stroke_count: u32,
+    force: f32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct DrawStorage {
     color: [f32; 4],
     position: [i32; 2],
     force: f32,
@@ -95,40 +104,69 @@ impl StrokeLayer {
 
         let draw = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("draw"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
         });
 
         let canvas_chunk_pipeline = CanvasChunkPipeline::new(world);
         let round_brush_pipeline =
             RoundBrushPipeline::new(&render, &canvas_chunk_pipeline.compute, &draw);
 
-        let draw_data = device.create_buffer(&BufferDescriptor {
-            label: Some("draw_data"),
-            size: size_of::<DrawUniform>() as u64,
+        let draw_config = device.create_buffer(&BufferDescriptor {
+            label: Some("draw_config"),
+            size: size_of::<DrawConfigUniform>() as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let draw_data_array = device.create_buffer(&BufferDescriptor {
+            label: Some("draw_data_array"),
+            size: size_of::<DrawStorage>() as u64 * MAX_DRAW,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let draw = device.create_bind_group(&BindGroupDescriptor {
             label: Some("draw"),
             layout: &draw,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &draw_data,
-                    offset: 0,
-                    size: None,
-                }),
-            }],
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &draw_config,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &draw_data_array,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+            ],
         });
 
         let default_brush = RoundBrush::new(&render, &round_brush_pipeline);
@@ -149,7 +187,8 @@ impl StrokeLayer {
             modifier: default_modifier,
             v_position: None,
             draw,
-            draw_data,
+            draw_config,
+            draw_data_array,
             queue: render.queue.clone(),
         }
     }
@@ -444,14 +483,14 @@ impl StrokeLayer {
 
             let dst = draw.position.into_fract();
             let mut v_position = *this.v_position.get_or_insert(dst);
-            let modifier = &this.modifier;
+
             let step = Fract::from_f32(
-                modifier.min_size
-                    + (modifier.max_size - modifier.min_size)
-                        * draw.force.powf(modifier.size_force_exp),
+                this.modifier.min_size
+                    + (this.modifier.max_size - this.modifier.min_size)
+                        * draw.force.powf(this.modifier.size_force_exp),
             );
 
-            this.draw_chunk(&canvas, draw, world);
+            let mut draw_buf = Vec::new();
 
             while v_position.distance(dst) >= step {
                 v_position = v_position.move_towards(dst, step);
@@ -461,32 +500,44 @@ impl StrokeLayer {
                     ..draw
                 };
 
-                this.draw_chunk(&canvas, draw, world);
+                draw_buf.push(DrawStorage {
+                    color: [
+                        draw.color.red,
+                        draw.color.green,
+                        draw.color.blue,
+                        draw.color.alpha,
+                    ],
+                    position: draw.position.into_array(),
+                    force: draw.force,
+                    _pad: 0,
+                });
             }
 
+            let config = DrawConfigUniform {
+                stroke_count: draw_buf.len() as u32,
+                force: draw.force,
+            };
+
+            this.draw_chunk(&canvas, &config, &draw_buf, world);
             this.v_position = Some(v_position);
         });
     }
 
-    fn draw_chunk(&mut self, canvas: &CanvasChunk, draw: Draw, world: &World) {
+    fn draw_chunk(
+        &mut self,
+        canvas: &CanvasChunk,
+        config: &DrawConfigUniform,
+        draw: &[DrawStorage],
+        world: &World,
+    ) {
         let brush_pipeline = world.single_fetch::<RoundBrushPipeline>().unwrap();
         let render = world.single_fetch::<Render>().unwrap();
 
-        self.queue.write_buffer(
-            &self.draw_data,
-            0,
-            bytemuck::bytes_of(&DrawUniform {
-                color: [
-                    draw.color.red,
-                    draw.color.green,
-                    draw.color.blue,
-                    draw.color.alpha,
-                ],
-                position: draw.position.into_array(),
-                force: draw.force,
-                _pad: 0,
-            }),
-        );
+        self.queue
+            .write_buffer(&self.draw_config, 0, bytemuck::bytes_of(config));
+
+        self.queue
+            .write_buffer(&self.draw_data_array, 0, bytemuck::cast_slice(draw));
 
         let modifier = &self.modifier;
         self.queue.write_buffer(
@@ -495,7 +546,7 @@ impl StrokeLayer {
             bytemuck::bytes_of(&RoundBrushUniform {
                 size: modifier.min_size
                     + (modifier.max_size - modifier.min_size)
-                        * draw.force.powf(modifier.size_force_exp),
+                        * config.force.powf(modifier.size_force_exp),
                 softness: modifier.softness,
             }),
         );
