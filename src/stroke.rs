@@ -7,7 +7,7 @@ use palette::{Srgba, WithAlpha};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, Color, Queue, ShaderStages,
+    BufferDescriptor, BufferUsages, Queue, ShaderStages,
 };
 use winit::event::PointerKind;
 
@@ -15,7 +15,7 @@ use crate::{
     animation::{AnimationDescriptor, OnceAnimationDescriptor},
     elements::{noise::SimpleNoiseDescriptor, palette::PaletteDescriptor},
     lnwin::Lnwindow,
-    measures::{Position, Rectangle, Size},
+    measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{Render, canvas::CanvasDescriptor, text::TextDescriptor},
     stroke::{
         canvas::{CanvasChunk, CanvasChunkPipeline},
@@ -44,6 +44,8 @@ pub struct StrokeLayer {
     pub brush: RoundBrush,
     pub modifier: BrushModifier,
 
+    v_position: Option<PositionFract>,
+
     draw: BindGroup,
     draw_data: Buffer,
 
@@ -57,6 +59,7 @@ pub struct BrushModifier {
     pub softness: f32,
 }
 
+#[derive(Clone, Copy)]
 struct Draw {
     position: Position,
     force: f32,
@@ -144,6 +147,7 @@ impl StrokeLayer {
             front_color: palette::named::BLACK.with_alpha(1.0).into_format(),
             brush: default_brush,
             modifier: default_modifier,
+            v_position: None,
             draw,
             draw_data,
             queue: render.queue.clone(),
@@ -167,19 +171,21 @@ impl StrokeLayer {
                         viewport_utils.locked(false);
                     }
                 }
-                return;
-            }
-
-            if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
+            } else if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
                 let mut this = world.fetch_mut(this).unwrap();
-
                 let draw = Draw {
                     position: event.position,
                     force: event.data.force.unwrap_or(1.0),
                     color: this.front_color,
                 };
 
-                this.draw(draw, world);
+                let handle = this.handle();
+                this.draw(draw, world, handle);
+            } else {
+                world.queue(move |world| {
+                    let mut this = world.fetch_mut(this).unwrap();
+                    this.v_position = None;
+                });
             }
         });
 
@@ -414,27 +420,52 @@ impl StrokeLayer {
         });
     }
 
-    fn draw(&mut self, draw: Draw, world: &World) {
+    fn draw(&mut self, draw: Draw, world: &World, this: Handle<Self>) {
         let chunk = (
             draw.position.x.div_euclid(CHUNK_SIZE as i32),
             draw.position.y.div_euclid(CHUNK_SIZE as i32),
         );
 
-        match self.chunks.get(&chunk) {
-            Some(&canvas) => {
-                let canvas = world.fetch(canvas).unwrap();
-
-                self.draw_chunk(&canvas, draw, world);
-            }
+        let canvas = match self.chunks.get(&chunk) {
+            Some(&canvas) => canvas,
             None => {
                 let canvas = CanvasChunk::new(world, chunk);
 
-                self.draw_chunk(&canvas, draw, world);
-
                 let canvas = world.insert(canvas);
                 self.chunks.insert(chunk, canvas);
+
+                canvas
             }
-        }
+        };
+
+        world.queue(move |world| {
+            let canvas = world.fetch(canvas).unwrap();
+            let mut this = world.fetch_mut(this).unwrap();
+
+            let dst = draw.position.into_fract();
+            let mut v_position = *this.v_position.get_or_insert(dst);
+            let modifier = &this.modifier;
+            let step = Fract::from_f32(
+                modifier.min_size
+                    + (modifier.max_size - modifier.min_size)
+                        * draw.force.powf(modifier.size_force_exp),
+            );
+
+            this.draw_chunk(&canvas, draw, world);
+
+            while v_position.distance(dst) >= step {
+                v_position = v_position.move_towards(dst, step);
+
+                let draw = Draw {
+                    position: v_position.round(),
+                    ..draw
+                };
+
+                this.draw_chunk(&canvas, draw, world);
+            }
+
+            this.v_position = Some(v_position);
+        });
     }
 
     fn draw_chunk(&mut self, canvas: &CanvasChunk, draw: Draw, world: &World) {

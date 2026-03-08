@@ -1,6 +1,8 @@
 use std::{fmt, ops};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct Fract {
     pub n: i32,
     pub nf: u32,
@@ -85,6 +87,22 @@ impl Fract {
 
     pub fn floor(self) -> i32 {
         self.n
+    }
+
+    pub fn round(self) -> i32 {
+        if self.nf >= u32::MAX / 2 {
+            self.n + 1
+        } else {
+            self.n
+        }
+    }
+
+    pub fn sqrt(self) -> Fract {
+        Fract::from_f64(self.into_f64().sqrt())
+    }
+
+    pub fn recip(self) -> Fract {
+        Fract::from_f64(self.into_f64().recip())
     }
 
     pub fn exp2(self) -> Fract {

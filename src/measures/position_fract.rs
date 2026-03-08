@@ -92,6 +92,34 @@ impl PositionFract {
         }
     }
 
+    pub fn round(self) -> Position {
+        Position {
+            x: self.x.round(),
+            y: self.y.round(),
+        }
+    }
+
+    pub fn length(self) -> Fract {
+        (self.x * self.x + self.y * self.y).sqrt()
+    }
+
+    pub fn distance(self, rhs: PositionFract) -> Fract {
+        (self - rhs).length()
+    }
+
+    pub fn normalize(self) -> PositionFract {
+        self * self.length().recip()
+    }
+
+    pub fn move_towards(self, dst: PositionFract, distance: Fract) -> PositionFract {
+        let delta = dst - self;
+        if delta.length() >= distance {
+            self + delta.normalize() * distance
+        } else {
+            dst
+        }
+    }
+
     pub fn into_array(self) -> [i32; 2] {
         [self.x.n, self.y.n]
     }
