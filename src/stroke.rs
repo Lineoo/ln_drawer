@@ -38,7 +38,7 @@ use crate::{
 };
 
 const CHUNK_SIZE: u32 = 512;
-const MAX_DRAW: u64 = 300;
+const MAX_DRAW: u64 = 1000;
 
 pub struct StrokeLayer {
     pub chunks: HashMap<(i32, i32), Handle<CanvasChunk>>,
@@ -59,7 +59,11 @@ pub struct BrushModifier {
     pub min_size: f32,
     pub max_size: f32,
     pub size_force_exp: f32,
+    pub min_flow: f32,
+    pub max_flow: f32,
+    pub flow_force_exp: f32,
     pub softness: f32,
+    pub step: Option<f32>,
 }
 
 #[derive(Clone, Copy)]
@@ -173,10 +177,14 @@ impl StrokeLayer {
 
         let default_brush = RoundBrush::new(&render, &round_brush_pipeline);
         let default_modifier = BrushModifier {
-            min_size: 2.0,
+            min_size: 0.5,
             max_size: 6.0,
-            size_force_exp: 2.0,
+            size_force_exp: 1.0,
+            min_flow: 0.1,
+            max_flow: 1.0,
+            flow_force_exp: 2.0,
             softness: 0.5,
+            step: None,
         };
 
         world.insert(canvas_chunk_pipeline);
@@ -468,15 +476,23 @@ impl StrokeLayer {
             + (self.modifier.max_size - self.modifier.min_size)
                 * draw.force.powf(self.modifier.size_force_exp);
 
+        let flow = self.modifier.min_flow
+            + (self.modifier.max_flow - self.modifier.min_flow)
+                * draw.force.powf(self.modifier.flow_force_exp);
+
         let brush = RoundBrushUniform {
-            size: size,
             softness: self.modifier.softness,
+            size,
+            flow,
         };
 
         // generate draws //
 
         let dst = draw.position.into_fract();
-        let step = Fract::from_f32(size);
+        let step = Fract::from_f32(match self.modifier.step {
+            Some(step) => step,
+            None => size / 5.0,
+        });
 
         let mut v_position = *self.v_position.get_or_insert(dst);
         let mut draw_buf = Vec::new();

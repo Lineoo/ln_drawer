@@ -23,6 +23,7 @@ pub struct RoundBrushPipeline {
 pub struct RoundBrushUniform {
     pub size: f32,
     pub softness: f32,
+    pub flow: f32,
 }
 
 impl Element for RoundBrushPipeline {}

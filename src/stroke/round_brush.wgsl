@@ -18,6 +18,7 @@ struct Draw {
 struct Brush {
     size: f32,
     softness: f32,
+    flow: f32,
 }
 
 @group(0) @binding(0) var texture: texture_storage_2d<rgba8unorm, read_write>;
@@ -38,11 +39,15 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
 
         let a = draw[i].color;
         let color_a = a.rgb;
-        let alpha_a = a.a * smoothstep(
+        let alpha_a = a.a * brush.flow * smoothstep(
             1.0 + brush.softness,
             1.0 - brush.softness,
             length(vec2f(center - coords)) / brush.size,
         );
+
+        if alpha_a < 1e-6 {
+            continue;
+        }
 
         let b = working_color;
         let color_b = b.rgb;
