@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
@@ -13,15 +13,18 @@ use winit::{
 use crate::{
     measures::Size,
     render::{
-        Render, canvas::CanvasManagerDescriptor, rounded::RoundedRectManagerDescriptor,
-        text::TextManagerDescriptor, viewport::ViewportDescriptor,
+        Render,
+        canvas::CanvasManagerDescriptor,
+        rounded::RoundedRectManagerDescriptor,
+        text::TextManagerDescriptor,
+        viewport::{Viewport, ViewportDescriptor},
         wireframe::WireframeManagerDescriptor,
     },
-    save::Save,
+    save::{AutosaveRequest, Save, SaveControl, SaveDatabase, SaveExpand, SaveScheduler},
     stroke::StrokeLayer,
     theme::Luni,
     tools::{focus::Focus, modifiers::ModifiersTool, viewport::ViewportUtils},
-    world::{Element, Handle, World},
+    world::{Element, Handle, World, WorldError},
 };
 
 #[derive(Default)]
@@ -78,13 +81,76 @@ impl Element for Lnwindow {
             world.insert(pollster::block_on(Render::new(&lnwindow)));
         });
 
-        world.queue(move |world| {
-            let lnwindow = world.fetch_mut(this).unwrap();
-            let size = lnwindow.window.surface_size();
-            world.build(ViewportDescriptor {
-                size: Size::new(size.width, size.height),
-                ..Default::default()
+        world.queue(|world| {
+            SaveDatabase::init(world);
+            world.insert(SaveScheduler {
+                autosave_duration: Duration::from_secs(10),
             });
+        });
+
+        world.queue(|world| {
+            world.insert(SaveExpand {
+                name: "viewport".into(),
+                expand: Box::new(move |world, control| {
+                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                    let size = lnwindow.window.surface_size();
+
+                    let control = world.fetch(control).unwrap();
+                    let viewport_descriptor =
+                        postcard::from_bytes::<ViewportDescriptor>(&control.read(world)).unwrap();
+
+                    let viewport = world.build(ViewportDescriptor {
+                        size: Size::new(size.width, size.height),
+                        ..viewport_descriptor
+                    });
+
+                    let control = control.handle();
+                    let scheduler = world.single::<SaveScheduler>().unwrap();
+                    world.observer(scheduler, move |AutosaveRequest, world| {
+                        let viewport = world.fetch(viewport).unwrap();
+                        let control = world.fetch(control).unwrap();
+
+                        let bytes = postcard::to_stdvec(&ViewportDescriptor {
+                            size: viewport.size,
+                            center: viewport.center,
+                            zoom: viewport.zoom,
+                        })
+                        .unwrap();
+
+                        control.write(world, &bytes);
+                    });
+                }),
+            });
+
+            world.flush();
+
+            if let Err(WorldError::SingletonNoSuch(_)) = world.single::<Viewport>() {
+                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let size = lnwindow.window.surface_size();
+
+                let viewport = world.build(ViewportDescriptor {
+                    size: Size::new(size.width, size.height),
+                    ..Default::default()
+                });
+
+                let control = SaveControl::create("viewport".into(), world, &[]);
+                let scheduler = world.single::<SaveScheduler>().unwrap();
+                world.observer(scheduler, move |AutosaveRequest, world| {
+                    let viewport = world.fetch(viewport).unwrap();
+                    let control = world.fetch(control).unwrap();
+
+                    let bytes = postcard::to_stdvec(&ViewportDescriptor {
+                        size: viewport.size,
+                        center: viewport.center,
+                        zoom: viewport.zoom,
+                    })
+                    .unwrap();
+
+                    control.write(world, &bytes);
+                });
+            }
+
+            world.flush();
         });
 
         world.queue(|world| {
@@ -100,10 +166,6 @@ impl Element for Lnwindow {
             world.insert(Focus::default());
             world.insert(ViewportUtils::default());
             world.insert(ModifiersTool::default());
-        });
-
-        world.queue(|world| {
-            world.insert(Save::default());
         });
     }
 }
