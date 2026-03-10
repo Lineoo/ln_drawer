@@ -4,6 +4,7 @@ mod round_brush;
 use cosmic_text::Metrics;
 use hashbrown::HashMap;
 use palette::{Srgba, WithAlpha};
+use serde_bytes::ByteBuf;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
@@ -70,7 +71,7 @@ pub struct BrushModifier {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Archive {
-    chunks: Vec<((i32, i32), Vec<u8>)>,
+    chunks: Vec<((i32, i32), ByteBuf)>,
 }
 
 #[derive(Clone, Copy)]
@@ -299,7 +300,7 @@ impl StrokeLayer {
         self.device.poll(PollType::wait_indefinitely()).unwrap();
 
         for (chunk, bytes) in rx.iter() {
-            archive.chunks.push((chunk, bytes));
+            archive.chunks.push((chunk, bytes.into()));
 
             if archive.chunks.len() >= self.chunks.len() {
                 break;

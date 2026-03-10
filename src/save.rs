@@ -1,6 +1,7 @@
 use std::{path::PathBuf, time::Duration};
 
 use hashbrown::HashMap;
+use serde_bytes::ByteBuf;
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
@@ -27,7 +28,7 @@ pub struct SaveScheduler {
 pub struct AutosaveRequest;
 
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct SaveDatabase(HashMap<u64, (String, Vec<u8>)>, u64);
+pub struct SaveDatabase(HashMap<u64, (String, ByteBuf)>, u64);
 
 impl SaveControl {
     pub fn create(name: String, world: &World, bytes: &[u8]) -> Handle<SaveControl> {
@@ -38,14 +39,14 @@ impl SaveControl {
         }
 
         let id = db.1;
-        let ret = db.0.insert(id, (name.clone(), bytes.to_vec()));
+        let ret = db.0.insert(id, (name.clone(), bytes.to_vec().into()));
         debug_assert!(ret.is_none());
         world.insert(SaveControl(name, id))
     }
 
     pub fn read(&self, world: &World) -> Vec<u8> {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
-        db.0.get(&self.1).unwrap().1.clone()
+        db.0.get(&self.1).unwrap().1.clone().into_vec()
     }
 
     pub fn write(&self, world: &World, bytes: &[u8]) {
@@ -86,25 +87,28 @@ impl SaveDatabase {
 
         let target = get_file_path(world, "world.ln-world");
 
-        let Ok(file) = std::fs::File::open(target) else {
-            log::debug!("no world file");
+        if let Ok(file) = std::fs::File::open(target) {
+            let mmap = unsafe { memmap2::Mmap::map(&file).unwrap() };
+
+            let Ok(db) = postcard::from_bytes::<SaveDatabase>(&mmap) else {
+                log::warn!("failed to decode world file through postcard");
+                return;
+            };
+
+            for (id, (name, _)) in &db.0 {
+                world.insert(SaveControl(name.clone(), *id));
+            }
+
+            world.insert(db);
+            world.flush();
+
+            log::debug!("world loaded");
+        } else {
             world.insert(SaveDatabase(HashMap::new(), 0));
-            return;
-        };
+            world.flush();
 
-        let Ok((db, _)) = postcard::from_io::<SaveDatabase, _>((file, &mut [0u8; 0xFFFF])) else {
-            log::warn!("failed to decode world file through postcard");
-            return;
-        };
-
-        for (id, (name, _)) in &db.0 {
-            world.insert(SaveControl(name.clone(), *id));
+            log::debug!("world created");
         }
-
-        world.insert(db);
-        world.flush();
-
-        log::debug!("world loaded");
     }
 
     pub fn flush(&self, world: &World) {
