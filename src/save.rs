@@ -39,21 +39,24 @@ impl SaveControl {
         }
 
         let id = db.1;
-        let ret = db.0.insert(id, (name.clone(), bytes.to_vec().into()));
+        let compressed = zstd::encode_all(bytes, 0).unwrap();
+        let ret = db.0.insert(id, (name.clone(), compressed.into()));
         debug_assert!(ret.is_none());
         world.insert(SaveControl(name, id))
     }
 
     pub fn read(&self, world: &World) -> Vec<u8> {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
-        db.0.get(&self.1).unwrap().1.clone().into_vec()
+        let raw = &db.0.get(&self.1).unwrap().1;
+        zstd::decode_all(raw.as_slice()).unwrap()
     }
 
     pub fn write(&self, world: &World, bytes: &[u8]) {
         let mut db = world.single_fetch_mut::<SaveDatabase>().unwrap();
-        let buf = &mut db.0.get_mut(&self.1).unwrap().1;
+        let buf = &mut *db.0.get_mut(&self.1).unwrap().1;
         buf.clear();
-        buf.extend_from_slice(bytes);
+
+        zstd::stream::copy_encode(bytes, buf, 0).unwrap();
     }
 }
 
@@ -91,7 +94,7 @@ impl SaveDatabase {
             let mmap = unsafe { memmap2::Mmap::map(&file).unwrap() };
 
             let Ok(db) = postcard::from_bytes::<SaveDatabase>(&mmap) else {
-                log::warn!("failed to decode world file through postcard");
+                log::error!("failed to decode world file through postcard");
                 return;
             };
 

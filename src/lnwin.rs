@@ -20,7 +20,7 @@ use crate::{
         viewport::{Viewport, ViewportDescriptor},
         wireframe::WireframeManagerDescriptor,
     },
-    save::{AutosaveRequest, Save, SaveControl, SaveDatabase, SaveExpand, SaveScheduler},
+    save::{AutosaveRequest, SaveControl, SaveDatabase, SaveExpand, SaveScheduler},
     stroke::StrokeLayer,
     theme::Luni,
     tools::{focus::Focus, modifiers::ModifiersTool, viewport::ViewportUtils},
@@ -84,7 +84,7 @@ impl Element for Lnwindow {
         world.queue(|world| {
             SaveDatabase::init(world);
             world.insert(SaveScheduler {
-                autosave_duration: Duration::from_secs(180),
+                autosave_duration: Duration::from_secs(10),
             });
         });
 
