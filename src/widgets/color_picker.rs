@@ -6,8 +6,9 @@ use crate::{
     measures::{Rectangle, Size},
     render::rounded::RoundedRectDescriptor,
     theme::Luni,
-    tools::pointer::{
-        PointerCollider, PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus,
+    tools::{
+        collider::PointerCollider,
+        pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
     widgets::{WidgetButton, WidgetClick, WidgetDestroyed, WidgetHover, WidgetRectangle},
     world::{Element, Handle, World},

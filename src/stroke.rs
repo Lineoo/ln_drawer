@@ -26,8 +26,9 @@ use crate::{
         round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushStorage},
     },
     tools::{
+        collider::PointerCollider,
         mouse::PointerMenu,
-        pointer::{PointerCollider, PointerHit, PointerHitStatus},
+        pointer::{PointerHit, PointerHitStatus},
         viewport::ViewportUtils,
     },
     widgets::{

@@ -8,3 +8,4 @@ pub mod pointer;
 pub mod timer;
 pub mod touch;
 pub mod mouse;
+pub mod collider;

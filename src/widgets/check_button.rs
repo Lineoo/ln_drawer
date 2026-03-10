@@ -2,8 +2,9 @@ use crate::{
     layout::LayoutRectangle,
     measures::Rectangle,
     theme::Luni,
-    tools::pointer::{
-        PointerCollider, PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus,
+    tools::{
+        collider::PointerCollider,
+        pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
     widgets::{Attach, WidgetButton, WidgetChecked, WidgetClick, WidgetHover, WidgetRectangle},
     world::{Descriptor, Element, Handle, World},

@@ -2,7 +2,10 @@ use crate::{
     layout::LayoutRectangle,
     measures::Rectangle,
     theme::Luni,
-    tools::pointer::{PointerCollider, PointerHover, PointerHoverStatus},
+    tools::{
+        collider::PointerCollider,
+        pointer::{PointerHover, PointerHoverStatus},
+    },
     widgets::{Attach, WidgetDestroyed, WidgetHover, WidgetRectangle},
     world::{Element, Handle, World},
 };

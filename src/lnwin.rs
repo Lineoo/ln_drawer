@@ -23,7 +23,10 @@ use crate::{
     save::{AutosaveRequest, SaveControl, SaveDatabase, SaveExpand, SaveScheduler},
     stroke::StrokeLayer,
     theme::Luni,
-    tools::{focus::Focus, modifiers::ModifiersTool, viewport::ViewportUtils},
+    tools::{
+        collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
+        pointer::PointerTool, viewport::ViewportUtils,
+    },
     world::{Element, Handle, World, WorldError},
 };
 
@@ -157,6 +160,13 @@ impl Element for Lnwindow {
             world.build(TextManagerDescriptor);
             world.build(WireframeManagerDescriptor);
             world.insert(Luni::default());
+        });
+
+        world.queue(|world| {
+            ToolColliderDispatcher::init(world);
+
+            PointerTool::init(world);
+            MouseTool::init(world);
         });
 
         world.queue(|world| {

@@ -8,7 +8,7 @@ use crate::{
         wireframe::{Wireframe, WireframeDescriptor},
     },
     stroke::StrokeLayer,
-    tools::pointer::{PointerCollider, PointerHit},
+    tools::{collider::PointerCollider, pointer::PointerHit},
     world::{Descriptor, Element, Handle, World},
 };
 

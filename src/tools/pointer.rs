@@ -7,22 +7,20 @@ use winit::event::{
 };
 
 use crate::{
-    layout::LayoutRectangle,
     lnwin::Lnwindow,
-    measures::{Position, Rectangle, Size},
+    measures::{Position, Rectangle},
     render::viewport::Viewport,
-    tools::{mouse::MouseTool, viewport::ViewportUtils},
-    world::{Element, Handle, World, WorldError},
+    tools::{
+        collider::{PointerCollider, ToolColliderChanged, ToolColliderDispatcher},
+        viewport::ViewportUtils,
+    },
+    world::{Element, Handle, World},
 };
 
 /// Guaranteed for single-pointer operations like mouse cursor or the first-touch finger.
-///
-/// **Associated Events**: [`PointerHit`], [`PointerHover`], [`PointerMenu`]
-#[derive(Clone, Copy)]
-pub struct PointerCollider {
-    pub rect: Rectangle,
-    pub order: isize,
-    pub enabled: bool,
+pub struct PointerTool {
+    /// the main pointer that takes effect
+    pointer: Option<Pointer>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -34,18 +32,6 @@ pub struct PointerHit {
     pub pointer: PointerKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PointerHitStatus {
-    Press,
-    Moving,
-    Release,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PointerHitData {
-    pub force: Option<f32>,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHover {
     pub position: Position,
@@ -55,15 +41,29 @@ pub struct PointerHover {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerHitStatus {
+    Press,
+    Moving,
+    Release,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PointerHoverStatus {
     Enter,
     Moving,
     Leave,
 }
 
-struct PointerTool {
-    /// the main pointer that takes effect
-    pointer: Option<Pointer>,
+#[derive(Debug, Clone, Copy)]
+pub struct PointerData {
+    pub position: Position,
+    pub screen: [f64; 2],
+    pub pointer: PointerKind,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PointerHitData {
+    pub force: Option<f32>,
 }
 
 struct Pointer {
@@ -79,74 +79,11 @@ struct Press {
     force: Option<f32>,
 }
 
-impl PointerCollider {
-    pub const fn fullscreen(order: isize) -> PointerCollider {
-        PointerCollider {
-            rect: Rectangle {
-                origin: Position::MIN,
-                extend: Size::MAX,
-            },
-            order,
-            enabled: true,
-        }
-    }
-
-    pub fn intersect(world: &World, point: Position) -> Vec<Handle<PointerCollider>> {
-        let mut result = Vec::with_capacity(8);
-        world.foreach_fetch::<PointerCollider>(|collider| {
-            if collider.enabled && point.within(collider.rect) {
-                result.push((collider.handle(), collider.order));
-            }
-        });
-
-        result.sort_by(|(_, a), (_, b)| b.cmp(a));
-        result.iter().map(|x| x.0).collect::<Vec<_>>()
-    }
-}
-
-impl Element for PointerCollider {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<PointerTool>() {
-            world.insert(PointerTool { pointer: None });
-        }
-
-        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<MouseTool>() {
-            world.insert(MouseTool::default());
-        }
-
-        world.observer(this, move |&LayoutRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
-        });
-
-        world.queue(|world| {
-            let mut tool = world.single_fetch_mut::<PointerTool>().unwrap();
-            if let Some(pointer) = &mut tool.pointer {
-                pointer.recalculate_hovering(world);
-            }
-        });
-    }
-
-    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        world.queue(|world| {
-            let mut tool = world.single_fetch_mut::<PointerTool>().unwrap();
-            if let Some(pointer) = &mut tool.pointer {
-                pointer.recalculate_hovering(world);
-            }
-        });
-    }
-
-    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
-        world.queue(|world| {
-            let mut tool = world.single_fetch_mut::<PointerTool>().unwrap();
-            if let Some(pointer) = &mut tool.pointer {
-                pointer.recalculate_hovering(world);
-            }
-        });
-    }
-}
-
 impl PointerTool {
+    pub fn init(world: &mut World) {
+        world.insert(PointerTool { pointer: None });
+    }
+
     fn alloc_pointer(&mut self, kind: PointerKind) -> Option<&mut Pointer> {
         if self.pointer.is_none() {
             self.pointer = Some(Pointer {
@@ -292,6 +229,18 @@ impl Element for PointerTool {
 
                 _ => {}
             }
+        });
+
+        let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
+        world.observer(dispatcher, |&ToolColliderChanged(collider), world| {
+            world.queue(move |world| {
+                let mut tool = world.single_fetch_mut::<PointerTool>().unwrap();
+                if let Some(pointer) = &mut tool.pointer
+                    && pointer.hovering == Some(collider)
+                {
+                    pointer.recalculate_hovering(world);
+                }
+            });
         });
     }
 }

@@ -6,18 +6,22 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Fract, Position, PositionFract},
     render::viewport::Viewport,
-    tools::{pointer::PointerCollider, viewport::ViewportUtils},
+    tools::{collider::PointerCollider, viewport::ViewportUtils},
     world::{Element, Handle, World},
 };
 
 /// Mouse-specific operations like right-click and middle-click.
-#[derive(Default)]
 pub struct MouseTool;
 
 /// Right-click events.
-// TODO specific Menu collider
 #[derive(Clone, Copy)]
 pub struct PointerMenu(pub Position);
+
+impl MouseTool {
+    pub fn init(world: &mut World) {
+        world.insert(MouseTool);
+    }
+}
 
 impl Element for MouseTool {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
