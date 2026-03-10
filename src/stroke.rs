@@ -7,8 +7,9 @@ use palette::{Srgba, WithAlpha};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, Queue,
-    ShaderStages,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, Device,
+    Extent3d, MapMode, Origin3d, Queue, ShaderStages, TexelCopyBufferInfoBase,
+    TexelCopyBufferLayout, TexelCopyTextureInfoBase, TextureAspect, wgt::PollType,
 };
 use winit::event::PointerKind;
 
@@ -18,6 +19,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{Render, canvas::CanvasDescriptor, text::TextDescriptor},
+    save::{AutosaveRequest, SaveControl, SaveExpand, SaveScheduler},
     stroke::{
         canvas::{CanvasChunk, CanvasChunkPipeline},
         round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushStorage},
@@ -34,7 +36,7 @@ use crate::{
         color_picker::ColorPicker,
         menu::{MenuDescriptor, MenuEntryDescriptor},
     },
-    world::{Element, Handle, World},
+    world::{Element, Handle, World, WorldError},
 };
 
 const CHUNK_SIZE: u32 = 512;
@@ -51,6 +53,7 @@ pub struct StrokeLayer {
     draw: BindGroup,
     draw_data: Buffer,
 
+    device: Device,
     queue: Queue,
 }
 
@@ -63,6 +66,11 @@ pub struct BrushModifier {
     pub flow_force_exp: f32,
     pub softness: f32,
     pub step: Option<f32>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Archive {
+    chunks: Vec<((i32, i32), Vec<u8>)>,
 }
 
 #[derive(Clone, Copy)]
@@ -94,6 +102,60 @@ impl Element for StrokeLayer {
 }
 
 impl StrokeLayer {
+    pub fn init(world: &mut World) {
+        world.insert(SaveExpand {
+            name: "stroke".into(),
+            expand: Box::new(|world, control| {
+                let mut stroke = StrokeLayer::new(world);
+
+                world.queue(move |world| {
+                    let control = world.fetch(control).unwrap();
+                    let bytes = control.read(world);
+
+                    let archive = postcard::from_bytes::<Archive>(&bytes).unwrap();
+
+                    for (chunk, bytes) in archive.chunks {
+                        let canvas = CanvasChunk::new(world, chunk);
+                        stroke.queue.write_texture(
+                            TexelCopyTextureInfoBase {
+                                texture: &canvas.texture,
+                                mip_level: 0,
+                                origin: Origin3d::ZERO,
+                                aspect: wgpu::TextureAspect::All,
+                            },
+                            &bytes,
+                            TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(CHUNK_SIZE * 4),
+                                rows_per_image: Some(CHUNK_SIZE),
+                            },
+                            Extent3d {
+                                width: CHUNK_SIZE,
+                                height: CHUNK_SIZE,
+                                depth_or_array_layers: 1,
+                            },
+                        );
+
+                        let canvas = world.insert(canvas);
+                        stroke.chunks.insert(chunk, canvas);
+                    }
+
+                    let control = control.handle();
+                    let stroke = world.insert(stroke);
+                    StrokeLayer::register_saving(world, stroke, control);
+                });
+            }),
+        });
+
+        world.flush();
+
+        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<StrokeLayer>() {
+            let stroke = world.insert(StrokeLayer::new(world));
+            let control = SaveControl::create("stroke".into(), world, &[]);
+            StrokeLayer::register_saving(world, stroke, control);
+        }
+    }
+
     pub fn new(world: &World) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
@@ -159,8 +221,92 @@ impl StrokeLayer {
             current: None,
             draw,
             draw_data,
+            device: render.device.clone(),
             queue: render.queue.clone(),
         }
+    }
+
+    fn register_saving(world: &World, this: Handle<Self>, control: Handle<SaveControl>) {
+        let scheduler = world.single::<SaveScheduler>().unwrap();
+        world.observer(scheduler, move |AutosaveRequest, world| {
+            let this = world.fetch(this).unwrap();
+
+            let archive = this.device_readback(world);
+            let bytes = postcard::to_stdvec(&archive).unwrap();
+
+            let control = world.fetch(control).unwrap();
+            control.write(world, &bytes);
+        });
+    }
+
+    fn device_readback(&self, world: &World) -> Archive {
+        let mut archive = Archive { chunks: Vec::new() };
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        for (&chunk, &canvas) in &self.chunks {
+            let canvas = world.fetch(canvas).unwrap();
+
+            let readback_buffer = self.device.create_buffer(&BufferDescriptor {
+                label: Some("canvas_readback"),
+                size: (CHUNK_SIZE * CHUNK_SIZE * 4) as u64,
+                usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+            let mut encoder = self
+                .device
+                .create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("canvas_readback"),
+                });
+
+            encoder.copy_texture_to_buffer(
+                TexelCopyTextureInfoBase {
+                    texture: &canvas.texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyBufferInfoBase {
+                    buffer: &readback_buffer,
+                    layout: TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(CHUNK_SIZE * 4),
+                        rows_per_image: Some(CHUNK_SIZE),
+                    },
+                },
+                Extent3d {
+                    width: CHUNK_SIZE,
+                    height: CHUNK_SIZE,
+                    depth_or_array_layers: 1,
+                },
+            );
+
+            let command = encoder.finish();
+
+            self.queue.submit([command]);
+
+            let inner = readback_buffer.clone();
+            let tx = tx.clone();
+            readback_buffer.map_async(MapMode::Read, .., move |ret| {
+                ret.unwrap();
+
+                let view = inner.get_mapped_range(..);
+                tx.send((chunk, view.to_vec())).unwrap();
+            });
+        }
+
+        self.device.poll(PollType::wait_indefinitely()).unwrap();
+
+        for (chunk, bytes) in rx.iter() {
+            archive.chunks.push((chunk, bytes));
+
+            if archive.chunks.len() >= self.chunks.len() {
+                break;
+            }
+        }
+
+        archive
     }
 
     fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {

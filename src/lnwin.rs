@@ -84,7 +84,7 @@ impl Element for Lnwindow {
         world.queue(|world| {
             SaveDatabase::init(world);
             world.insert(SaveScheduler {
-                autosave_duration: Duration::from_secs(10),
+                autosave_duration: Duration::from_secs(180),
             });
         });
 
@@ -121,9 +121,9 @@ impl Element for Lnwindow {
                     });
                 }),
             });
+        });
 
-            world.flush();
-
+        world.queue(|world| {
             if let Err(WorldError::SingletonNoSuch(_)) = world.single::<Viewport>() {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let size = lnwindow.window.surface_size();
@@ -149,8 +149,6 @@ impl Element for Lnwindow {
                     control.write(world, &bytes);
                 });
             }
-
-            world.flush();
         });
 
         world.queue(|world| {
@@ -159,7 +157,10 @@ impl Element for Lnwindow {
             world.build(TextManagerDescriptor);
             world.build(WireframeManagerDescriptor);
             world.insert(Luni::default());
-            world.insert(StrokeLayer::new(world));
+        });
+
+        world.queue(|world| {
+            StrokeLayer::init(world);
         });
 
         world.queue(|world| {

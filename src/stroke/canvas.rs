@@ -22,7 +22,7 @@ pub struct CanvasChunk {
     fragment: BindGroup,
 
     rectangle: Buffer,
-    texture: Texture,
+    pub texture: Texture,
     sampler: Sampler,
 }
 
@@ -190,7 +190,10 @@ impl CanvasChunk {
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
+            usage: TextureUsages::COPY_SRC
+                | TextureUsages::COPY_DST
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::STORAGE_BINDING,
             view_formats: &[],
         });
 
