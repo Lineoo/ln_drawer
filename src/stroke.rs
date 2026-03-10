@@ -50,6 +50,7 @@ pub struct StrokeLayer {
     pub brush: RoundBrush,
     pub modifier: BrushModifier,
 
+    archive: Archive,
     current: Option<BrushInstance>,
 
     draw: BindGroup,
@@ -72,7 +73,7 @@ pub struct BrushModifier {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Archive {
-    chunks: Vec<((i32, i32), ByteBuf)>,
+    chunks: HashMap<(i32, i32), ByteBuf>,
 }
 
 #[derive(Clone, Copy)]
@@ -114,9 +115,8 @@ impl StrokeLayer {
                     let control = world.fetch(control).unwrap();
                     let bytes = control.read(world);
 
-                    let archive = postcard::from_bytes::<Archive>(&bytes).unwrap();
-
-                    for (chunk, bytes) in archive.chunks {
+                    stroke.archive = postcard::from_bytes::<Archive>(&bytes).unwrap();
+                    for (&chunk, bytes) in &stroke.archive.chunks {
                         let canvas = CanvasChunk::new(world, chunk);
                         stroke.queue.write_texture(
                             TexelCopyTextureInfoBase {
@@ -220,6 +220,9 @@ impl StrokeLayer {
             front_color: palette::named::BLACK.with_alpha(1.0).into_format(),
             brush: default_brush,
             modifier: default_modifier,
+            archive: Archive {
+                chunks: HashMap::new(),
+            },
             current: None,
             draw,
             draw_data,
@@ -231,23 +234,29 @@ impl StrokeLayer {
     fn register_saving(world: &World, this: Handle<Self>, control: Handle<SaveControl>) {
         let scheduler = world.single::<SaveScheduler>().unwrap();
         world.observer(scheduler, move |AutosaveRequest, world| {
-            let this = world.fetch(this).unwrap();
+            let mut this = world.fetch_mut(this).unwrap();
 
-            let archive = this.device_readback(world);
-            let bytes = postcard::to_stdvec(&archive).unwrap();
+            this.device_readback(world);
+            let bytes = postcard::to_stdvec(&this.archive).unwrap();
 
             let control = world.fetch(control).unwrap();
             control.write(world, &bytes);
         });
     }
 
-    fn device_readback(&self, world: &World) -> Archive {
-        let mut archive = Archive { chunks: Vec::new() };
-
+    fn device_readback(&mut self, world: &World) {
         let (tx, rx) = std::sync::mpsc::channel();
 
+        let mut cnt = 0;
         for (&chunk, &canvas) in &self.chunks {
-            let canvas = world.fetch(canvas).unwrap();
+            let mut canvas = world.fetch_mut(canvas).unwrap();
+
+            if !canvas.changed {
+                continue;
+            }
+
+            cnt += 1;
+            canvas.changed = false;
 
             let readback_buffer = self.device.create_buffer(&BufferDescriptor {
                 label: Some("canvas_readback"),
@@ -300,15 +309,12 @@ impl StrokeLayer {
 
         self.device.poll(PollType::wait_indefinitely()).unwrap();
 
-        for (chunk, bytes) in rx.iter() {
-            archive.chunks.push((chunk, bytes.into()));
-
-            if archive.chunks.len() >= self.chunks.len() {
-                break;
-            }
+        while cnt != 0
+            && let Ok((chunk, bytes)) = rx.recv()
+        {
+            self.archive.chunks.insert(chunk, bytes.into());
+            cnt -= 1;
         }
-
-        archive
     }
 
     fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
@@ -685,8 +691,8 @@ impl StrokeLayer {
         world.queue(move |world| {
             for chunk in chunks {
                 let mut this = world.fetch_mut(this).unwrap();
-                let chunk = world.fetch(chunk).unwrap();
-                this.draw_chunk(dirty_box, &chunk, &draw, &brushes, world);
+                let mut chunk = world.fetch_mut(chunk).unwrap();
+                this.draw_chunk(dirty_box, &mut chunk, &draw, &brushes, world);
             }
         });
     }
@@ -694,7 +700,7 @@ impl StrokeLayer {
     fn draw_chunk(
         &mut self,
         dirty_box: Rectangle,
-        canvas: &CanvasChunk,
+        canvas: &mut CanvasChunk,
         draw: &DrawUniform,
         brushes: &[RoundBrushStorage],
         world: &World,
@@ -706,6 +712,8 @@ impl StrokeLayer {
         let brush_pipeline = world.single_fetch::<RoundBrushPipeline>().unwrap();
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
+
+        canvas.changed = true;
 
         self.queue
             .write_buffer(&self.draw_data, 0, bytemuck::bytes_of(draw));

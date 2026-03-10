@@ -17,6 +17,8 @@ use crate::{
 };
 
 pub struct CanvasChunk {
+    pub changed: bool,
+
     pub compute: BindGroup,
     vertex: BindGroup,
     fragment: BindGroup,
@@ -265,6 +267,7 @@ impl CanvasChunk {
         });
 
         CanvasChunk {
+            changed: false,
             vertex,
             compute,
             fragment,
