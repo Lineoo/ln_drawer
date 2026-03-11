@@ -1,4 +1,7 @@
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use hashbrown::HashMap;
 use serde_bytes::ByteBuf;
@@ -25,6 +28,7 @@ pub struct SaveScheduler {
 }
 
 /// The event is triggered on [`SaveScheduler`].
+/// TODO use Element instead of Event
 pub struct AutosaveRequest;
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -75,8 +79,14 @@ impl SaveExpand {
 
 impl SaveScheduler {
     fn autosave(&mut self, world: &World, this: Handle<Self>) {
+        let start = Instant::now();
+
         world.trigger(this, &AutosaveRequest);
         let db = world.single_fetch::<SaveDatabase>().unwrap();
+
+        let cost = Instant::now().duration_since(start);
+        log::debug!("autosave request finished in {cost:?}");
+
         db.flush(world);
     }
 }
@@ -105,12 +115,12 @@ impl SaveDatabase {
             world.insert(db);
             world.flush();
 
-            log::debug!("world loaded");
+            log::debug!("database loaded");
         } else {
             world.insert(SaveDatabase(HashMap::new(), 0));
             world.flush();
 
-            log::debug!("world created");
+            log::debug!("database created");
         }
     }
 
@@ -132,7 +142,7 @@ impl SaveDatabase {
             return;
         };
 
-        log::debug!("world saved");
+        log::debug!("database flushed");
     }
 }
 

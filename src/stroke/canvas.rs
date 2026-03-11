@@ -1,22 +1,26 @@
+use serde_bytes::ByteBuf;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
-    BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, Extent3d, FragmentState,
-    PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPipeline,
-    RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureViewDescriptor, TextureViewDimension, VertexState,
-    util::{BufferInitDescriptor, DeviceExt},
+    BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites,
+    CommandEncoderDescriptor, Extent3d, FragmentState, MapMode, Origin3d, PipelineLayoutDescriptor,
+    PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor, Sampler,
+    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, TexelCopyBufferInfoBase, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
+    Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
+    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
+    util::{BufferInitDescriptor, DeviceExt}, wgt::PollType,
 };
 
 use crate::{
     render::{Render, RenderControl, RenderInformation, vertex::VertexUniform, viewport::Viewport},
-    stroke::CHUNK_SIZE,
+    save::{SaveControl, SaveExpand},
+    stroke::{CHUNK_SIZE, StrokeLayer},
     world::{Element, Handle, World},
 };
 
 pub struct CanvasChunk {
+    pub save: Handle<SaveControl>,
     pub changed: bool,
 
     pub compute: BindGroup,
@@ -33,6 +37,12 @@ pub struct CanvasChunkPipeline {
     pub compute: BindGroupLayout,
     vertex: BindGroupLayout,
     fragment: BindGroupLayout,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Archive {
+    chunk: (i32, i32),
+    bytes: ByteBuf,
 }
 
 impl CanvasChunkPipeline {
@@ -166,7 +176,7 @@ impl CanvasChunkPipeline {
 impl Element for CanvasChunkPipeline {}
 
 impl CanvasChunk {
-    pub fn new(world: &World, chunk: (i32, i32)) -> Self {
+    pub fn new(world: &World, chunk: (i32, i32), control: Handle<SaveControl>) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let viewport = world.single_fetch::<Viewport>().unwrap();
         let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
@@ -267,6 +277,7 @@ impl CanvasChunk {
         });
 
         CanvasChunk {
+            save: control,
             changed: false,
             vertex,
             compute,
@@ -274,6 +285,116 @@ impl CanvasChunk {
             rectangle,
             texture,
             sampler,
+        }
+    }
+
+    pub fn save_expand() -> SaveExpand {
+        SaveExpand {
+            name: "canvas_chunk".into(),
+            expand: Box::new(|world, control| {
+                let stroke = &mut *world.single_fetch_mut::<StrokeLayer>().unwrap();
+                let control = world.fetch(control).unwrap();
+
+                let btyes = control.read(world);
+                let archive = postcard::from_bytes::<Archive>(&btyes).unwrap();
+
+                let canvas = CanvasChunk::new(world, archive.chunk, control.handle());
+                stroke.queue.write_texture(
+                    TexelCopyTextureInfoBase {
+                        texture: &canvas.texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &archive.bytes,
+                    TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(CHUNK_SIZE * 4),
+                        rows_per_image: Some(CHUNK_SIZE),
+                    },
+                    Extent3d {
+                        width: CHUNK_SIZE,
+                        height: CHUNK_SIZE,
+                        depth_or_array_layers: 1,
+                    },
+                );
+
+                let canvas = world.insert(canvas);
+                let ret = stroke.chunks.insert(archive.chunk, canvas);
+                debug_assert!(ret.is_none());
+            }),
+        }
+    }
+
+    pub async fn device_readback(&mut self, world: &World, chunk: (i32, i32)) {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        if !self.changed {
+            return;
+        }
+
+        let render = world.single_fetch::<Render>().unwrap();
+        let device = &render.device;
+        let queue = &render.queue;
+
+        self.changed = false;
+
+        let readback_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("canvas_readback"),
+            size: (CHUNK_SIZE * CHUNK_SIZE * 4) as u64,
+            usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("canvas_readback"),
+        });
+
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfoBase {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfoBase {
+                buffer: &readback_buffer,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(CHUNK_SIZE * 4),
+                    rows_per_image: Some(CHUNK_SIZE),
+                },
+            },
+            Extent3d {
+                width: CHUNK_SIZE,
+                height: CHUNK_SIZE,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let command = encoder.finish();
+
+        queue.submit([command]);
+
+        let inner = readback_buffer.clone();
+        readback_buffer.map_async(MapMode::Read, .., move |ret| {
+            ret.unwrap();
+
+            let view = inner.get_mapped_range(..);
+            tx.send(view.to_vec()).unwrap();
+        });
+
+        device.poll(PollType::wait_indefinitely()).unwrap();
+
+        if let Ok(bytes) = rx.recv() {
+            let archive = Archive {
+                chunk,
+                bytes: bytes.into(),
+            };
+            let bytes = postcard::to_stdvec(&archive).unwrap();
+
+            let control = world.fetch(self.save).unwrap();
+            control.write(world, &bytes);
         }
     }
 }

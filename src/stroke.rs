@@ -72,6 +72,7 @@ pub struct BrushModifier {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
+#[deprecated]
 struct Archive {
     chunks: HashMap<(i32, i32), ByteBuf>,
 }
@@ -101,61 +102,17 @@ impl Element for StrokeLayer {
         });
 
         self.attach_pointer(world, this);
+        StrokeLayer::register_saving(world, this);
     }
 }
 
 impl StrokeLayer {
     pub fn init(world: &mut World) {
-        world.insert(SaveExpand {
-            name: "stroke".into(),
-            expand: Box::new(|world, control| {
-                let mut stroke = StrokeLayer::new(world);
-
-                world.queue(move |world| {
-                    let control = world.fetch(control).unwrap();
-                    let bytes = control.read(world);
-
-                    stroke.archive = postcard::from_bytes::<Archive>(&bytes).unwrap();
-                    for (&chunk, bytes) in &stroke.archive.chunks {
-                        let canvas = CanvasChunk::new(world, chunk);
-                        stroke.queue.write_texture(
-                            TexelCopyTextureInfoBase {
-                                texture: &canvas.texture,
-                                mip_level: 0,
-                                origin: Origin3d::ZERO,
-                                aspect: wgpu::TextureAspect::All,
-                            },
-                            &bytes,
-                            TexelCopyBufferLayout {
-                                offset: 0,
-                                bytes_per_row: Some(CHUNK_SIZE * 4),
-                                rows_per_image: Some(CHUNK_SIZE),
-                            },
-                            Extent3d {
-                                width: CHUNK_SIZE,
-                                height: CHUNK_SIZE,
-                                depth_or_array_layers: 1,
-                            },
-                        );
-
-                        let canvas = world.insert(canvas);
-                        stroke.chunks.insert(chunk, canvas);
-                    }
-
-                    let control = control.handle();
-                    let stroke = world.insert(stroke);
-                    StrokeLayer::register_saving(world, stroke, control);
-                });
-            }),
-        });
-
+        world.insert(StrokeLayer::new(world));
         world.flush();
 
-        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<StrokeLayer>() {
-            let stroke = world.insert(StrokeLayer::new(world));
-            let control = SaveControl::create("stroke".into(), world, &[]);
-            StrokeLayer::register_saving(world, stroke, control);
-        }
+        world.insert(StrokeLayer::save_expand());
+        world.insert(CanvasChunk::save_expand());
     }
 
     pub fn new(world: &World) -> Self {
@@ -231,90 +188,71 @@ impl StrokeLayer {
         }
     }
 
-    fn register_saving(world: &World, this: Handle<Self>, control: Handle<SaveControl>) {
-        let scheduler = world.single::<SaveScheduler>().unwrap();
-        world.observer(scheduler, move |AutosaveRequest, world| {
-            let mut this = world.fetch_mut(this).unwrap();
+    /// FIXME only for forward compatibility
+    fn save_expand() -> SaveExpand {
+        SaveExpand {
+            name: "stroke".into(),
+            expand: Box::new(move |world, control| {
+                let control = world.fetch(control).unwrap();
+                let stroke = &mut *world.single_fetch_mut::<StrokeLayer>().unwrap();
+                let bytes = control.read(world);
 
-            this.device_readback(world);
-            let bytes = postcard::to_stdvec(&this.archive).unwrap();
+                stroke.archive = postcard::from_bytes::<Archive>(&bytes).unwrap();
+                for (&chunk, bytes) in &stroke.archive.chunks {
+                    let control = SaveControl::create("canvas_chunk".into(), world, &[]);
+                    let canvas = CanvasChunk::new(world, chunk, control);
+                    stroke.queue.write_texture(
+                        TexelCopyTextureInfoBase {
+                            texture: &canvas.texture,
+                            mip_level: 0,
+                            origin: Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &bytes,
+                        TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(CHUNK_SIZE * 4),
+                            rows_per_image: Some(CHUNK_SIZE),
+                        },
+                        Extent3d {
+                            width: CHUNK_SIZE,
+                            height: CHUNK_SIZE,
+                            depth_or_array_layers: 1,
+                        },
+                    );
 
-            let control = world.fetch(control).unwrap();
-            control.write(world, &bytes);
-        });
+                    let canvas = world.insert(canvas);
+                    let ret = stroke.chunks.insert(chunk, canvas);
+                    debug_assert!(ret.is_none());
+                }
+            }),
+        }
     }
 
-    fn device_readback(&mut self, world: &World) {
-        let (tx, rx) = std::sync::mpsc::channel();
+    fn register_saving(world: &World, this: Handle<Self>) {
+        let scheduler = world.single::<SaveScheduler>().unwrap();
+        world.observer(scheduler, move |AutosaveRequest, world| {
+            let this = world.fetch(this).unwrap();
 
-        let mut cnt = 0;
-        for (&chunk, &canvas) in &self.chunks {
-            let mut canvas = world.fetch_mut(canvas).unwrap();
+            let mut canvases = Vec::new();
+            let mut tasks = Vec::new();
 
-            if !canvas.changed {
-                continue;
+            for (&chunk, &canvas) in &this.chunks {
+                let canvas = world.fetch_mut(canvas).unwrap();
+                canvases.push((chunk, canvas));
             }
 
-            cnt += 1;
-            canvas.changed = false;
+            for (chunk, canvas) in &mut canvases {
+                let task = canvas.device_readback(world, *chunk);
+                tasks.push(task);
+            }
 
-            let readback_buffer = self.device.create_buffer(&BufferDescriptor {
-                label: Some("canvas_readback"),
-                size: (CHUNK_SIZE * CHUNK_SIZE * 4) as u64,
-                usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-
-            let mut encoder = self
-                .device
-                .create_command_encoder(&CommandEncoderDescriptor {
-                    label: Some("canvas_readback"),
-                });
-
-            encoder.copy_texture_to_buffer(
-                TexelCopyTextureInfoBase {
-                    texture: &canvas.texture,
-                    mip_level: 0,
-                    origin: Origin3d::ZERO,
-                    aspect: TextureAspect::All,
-                },
-                TexelCopyBufferInfoBase {
-                    buffer: &readback_buffer,
-                    layout: TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(CHUNK_SIZE * 4),
-                        rows_per_image: Some(CHUNK_SIZE),
-                    },
-                },
-                Extent3d {
-                    width: CHUNK_SIZE,
-                    height: CHUNK_SIZE,
-                    depth_or_array_layers: 1,
-                },
-            );
-
-            let command = encoder.finish();
-
-            self.queue.submit([command]);
-
-            let inner = readback_buffer.clone();
-            let tx = tx.clone();
-            readback_buffer.map_async(MapMode::Read, .., move |ret| {
-                ret.unwrap();
-
-                let view = inner.get_mapped_range(..);
-                tx.send((chunk, view.to_vec())).unwrap();
-            });
-        }
-
-        self.device.poll(PollType::wait_indefinitely()).unwrap();
-
-        while cnt != 0
-            && let Ok((chunk, bytes)) = rx.recv()
-        {
-            self.archive.chunks.insert(chunk, bytes.into());
-            cnt -= 1;
-        }
+            pollster::block_on(async {
+                for task in tasks {
+                    task.await;
+                }
+            })
+        });
     }
 
     fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
@@ -677,7 +615,8 @@ impl StrokeLayer {
                 chunks.push(match self.chunks.get(&(chunk_x, chunk_y)) {
                     Some(&canvas) => canvas,
                     None => {
-                        let canvas = CanvasChunk::new(world, (chunk_x, chunk_y));
+                        let control = SaveControl::create("canvas_chunk".into(), world, &[]);
+                        let canvas = CanvasChunk::new(world, (chunk_x, chunk_y), control);
 
                         let canvas = world.insert(canvas);
                         self.chunks.insert((chunk_x, chunk_y), canvas);
