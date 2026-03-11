@@ -20,7 +20,7 @@ use crate::{
         viewport::{Viewport, ViewportDescriptor},
         wireframe::WireframeManagerDescriptor,
     },
-    save::{AutosaveRequest, SaveControl, SaveDatabase, SaveExpand, SaveScheduler},
+    save::{AutosaveRequest, SaveControl, SaveDatabase, SaveControlRead, AutosaveScheduler},
     stroke::StrokeLayer,
     theme::Luni,
     tools::{
@@ -86,15 +86,15 @@ impl Element for Lnwindow {
 
         world.queue(|world| {
             SaveDatabase::init(world);
-            world.insert(SaveScheduler {
+            world.insert(AutosaveScheduler {
                 autosave_duration: Duration::from_secs(3),
             });
         });
 
         world.queue(|world| {
-            world.insert(SaveExpand {
+            world.insert(SaveControlRead {
                 name: "viewport".into(),
-                expand: Box::new(move |world, control| {
+                read: Box::new(move |world, control| {
                     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                     let size = lnwindow.window.surface_size();
 
@@ -108,7 +108,7 @@ impl Element for Lnwindow {
                     });
 
                     let control = control.handle();
-                    let scheduler = world.single::<SaveScheduler>().unwrap();
+                    let scheduler = world.single::<AutosaveScheduler>().unwrap();
                     world.observer(scheduler, move |AutosaveRequest, world| {
                         let viewport = world.fetch(viewport).unwrap();
                         let control = world.fetch(control).unwrap();
@@ -137,7 +137,7 @@ impl Element for Lnwindow {
                 });
 
                 let control = SaveControl::create("viewport".into(), world, &[]);
-                let scheduler = world.single::<SaveScheduler>().unwrap();
+                let scheduler = world.single::<AutosaveScheduler>().unwrap();
                 world.observer(scheduler, move |AutosaveRequest, world| {
                     let viewport = world.fetch(viewport).unwrap();
                     let control = world.fetch(control).unwrap();
@@ -170,7 +170,7 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            StrokeLayer::init(world);
+            world.insert(StrokeLayer::new(world));
         });
 
         world.queue(|world| {

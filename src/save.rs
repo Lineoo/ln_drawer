@@ -18,21 +18,24 @@ use crate::{
 /// Will exist between different sessions.
 pub struct SaveControl(String, u64);
 
-pub struct SaveExpand {
+pub struct SaveControlRead {
     pub name: String,
-    pub expand: Box<dyn Fn(&World, Handle<SaveControl>)>,
+    pub read: Box<dyn Fn(&World, Handle<SaveControl>)>,
 }
 
-pub struct SaveScheduler {
+pub struct SaveControlWrite(pub Box<dyn FnMut(&World)>);
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SaveDatabase(HashMap<u64, (String, ByteBuf)>, u64);
+
+pub struct AutosaveScheduler {
     pub autosave_duration: Duration,
 }
 
 /// The event is triggered on [`SaveScheduler`].
 /// TODO use Element instead of Event
+#[deprecated]
 pub struct AutosaveRequest;
-
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct SaveDatabase(HashMap<u64, (String, ByteBuf)>, u64);
 
 impl SaveControl {
     pub fn create(name: String, world: &World, bytes: &[u8]) -> Handle<SaveControl> {
@@ -64,29 +67,33 @@ impl SaveControl {
     }
 }
 
-impl SaveExpand {
+impl SaveControlRead {
     fn expand_foreach(&mut self, world: &World) {
         world.foreach::<SaveControl>(|control| {
             let control = world.fetch(control).unwrap();
             if control.0 == self.name {
                 let handle = control.handle();
                 drop(control);
-                (self.expand)(world, handle);
+                (self.read)(world, handle);
             }
         });
     }
 }
 
-impl SaveScheduler {
+impl AutosaveScheduler {
     fn autosave(&mut self, world: &World, this: Handle<Self>) {
         let start = Instant::now();
 
+        world.foreach_fetch_mut::<SaveControlWrite>(|mut write| {
+            (write.0)(world);
+        });
+
         world.trigger(this, &AutosaveRequest);
-        let db = world.single_fetch::<SaveDatabase>().unwrap();
 
         let cost = Instant::now().duration_since(start);
         log::debug!("autosave request finished in {cost:?}");
 
+        let db = world.single_fetch::<SaveDatabase>().unwrap();
         db.flush(world);
     }
 }
@@ -148,13 +155,15 @@ impl SaveDatabase {
 
 impl Element for SaveControl {}
 
-impl Element for SaveExpand {
+impl Element for SaveControlRead {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
         self.expand_foreach(world);
     }
 }
 
-impl Element for SaveScheduler {
+impl Element for SaveControlWrite {}
+
+impl Element for AutosaveScheduler {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.dependency(this, world.single::<Lnwindow>().unwrap());
 

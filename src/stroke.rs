@@ -84,26 +84,16 @@ struct DrawUniform {
 
 impl Element for StrokeLayer {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.foreach::<StrokeLayer>(|stroke| {
-            // need to keep it singleton
-            if stroke != this {
-                world.remove(stroke).unwrap();
-            }
-        });
+        // ensure singleton
+        world.single::<StrokeLayer>().unwrap();
 
         self.attach_pointer(world, this);
+        world.insert(CanvasChunk::save_read());
+        world.insert(CanvasChunk::save_write());
     }
 }
 
 impl StrokeLayer {
-    pub fn init(world: &mut World) {
-        world.insert(StrokeLayer::new(world));
-        world.flush();
-
-        CanvasChunk::register_saving(world);
-        world.insert(CanvasChunk::save_expand());
-    }
-
     pub fn new(world: &World) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
