@@ -42,9 +42,9 @@ pub struct MultiTouchGroup {
 
 #[derive(Debug, Clone, Copy)]
 pub enum MultiTouchStatus {
-    Pressed,
+    Press,
     Holding,
-    Released,
+    Release,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -75,6 +75,7 @@ impl MultiTouchTool {
 
                 let screen = lnwindow.cursor_to_screen(*position);
                 let position = viewport.screen_to_world_absolute(screen);
+                drop((lnwindow, viewport));
 
                 let target = ToolCollider::intersect(world, position.floor())
                     .first()
@@ -85,7 +86,7 @@ impl MultiTouchTool {
                     let touch = MultiTouch {
                         position: position.floor(),
                         screen,
-                        status: MultiTouchStatus::Pressed,
+                        status: MultiTouchStatus::Press,
                         data: MultiTouchData {
                             force: match button {
                                 ButtonSource::Mouse(_) => Some(1.0),
@@ -141,6 +142,7 @@ impl MultiTouchTool {
 
                 let screen = lnwindow.cursor_to_screen(*position);
                 let position = viewport.screen_to_world_absolute(screen);
+                drop((lnwindow, viewport));
 
                 *touch = MultiTouch {
                     position: position.floor(),
@@ -200,6 +202,7 @@ impl MultiTouchTool {
 
                 let screen = lnwindow.cursor_to_screen(*position);
                 let position = viewport.screen_to_world_absolute(screen);
+                drop((lnwindow, viewport));
 
                 let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
                 let (target, touch) = tool.lut.get_mut(&kind).unwrap();
@@ -207,7 +210,7 @@ impl MultiTouchTool {
                 *touch = MultiTouch {
                     position: position.floor(),
                     screen,
-                    status: MultiTouchStatus::Released,
+                    status: MultiTouchStatus::Release,
                     data: MultiTouchData {
                         force: match button {
                             ButtonSource::Mouse(_) => Some(1.0),
@@ -240,6 +243,9 @@ impl MultiTouchTool {
                 tool.lut.remove(&kind);
                 let idx = list.iter().position(|x| *x == kind).unwrap();
                 list.swap_remove(idx);
+                if list.is_empty() {
+                    tool.blt.remove(&target);
+                }
 
                 group.members.clear();
                 std::mem::swap(&mut tool.buf, &mut group.members);

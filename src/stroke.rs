@@ -27,7 +27,7 @@ use crate::{
         collider::ToolCollider,
         mouse::MouseMenu,
         pointer::{PointerHit, PointerHitStatus},
-        touch::{MultiTouch, MultiTouchGroup},
+        touch::{MultiTouchGroup, MultiTouchStatus},
         viewport::ViewportUtils,
     },
     widgets::{
@@ -88,7 +88,7 @@ impl Element for StrokeLayer {
         // ensure singleton
         world.single::<StrokeLayer>().unwrap();
 
-        self.attach_pointer(world, this);
+        self.attach_touch(world, this);
         world.insert(CanvasChunk::save_read());
         world.insert(CanvasChunk::save_write());
     }
@@ -164,28 +164,60 @@ impl StrokeLayer {
         }
     }
 
-    fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
+    fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
         let collider = world.insert(ToolCollider::fullscreen(-100));
         world.dependency(collider, this);
 
-        world.observer(collider, move |event: &PointerHit, world| {
-            if let PointerKind::Touch(_) = event.pointer {
+        let mut pinch_distance = None;
+        world.observer(collider, move |event: &MultiTouchGroup, world| {
+            let primary = event.members.first().unwrap();
+
+            if matches!(event.active.pointer, PointerKind::Touch(_)) || event.members.len() != 1 {
+                let mut sum = [0f64; 2];
+                for member in &event.members {
+                    sum[0] += member.screen[0];
+                    sum[1] += member.screen[1];
+                }
+
+                let cnt = event.members.len() as f64;
+                let center = [sum[0] / cnt, sum[1] / cnt];
+
                 let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
-                match event.status {
-                    PointerHitStatus::Press => {
-                        viewport_utils.anchor_on_screen(world, event.screen);
+
+                match event.active.status {
+                    MultiTouchStatus::Press => {
+                        viewport_utils.locked(false);
+                        viewport_utils.cursor(world, center);
+                        viewport_utils.anchor_on_screen(world, center);
                         viewport_utils.locked(true);
                     }
-                    PointerHitStatus::Moving => {}
-                    PointerHitStatus::Release => {
+                    MultiTouchStatus::Holding => {
+                        viewport_utils.cursor(world, center);
+                        viewport_utils.locked(true);
+                    }
+                    MultiTouchStatus::Release => {
+                        viewport_utils.cursor(world, center);
                         viewport_utils.locked(false);
                     }
                 }
-            } else if let PointerHitStatus::Moving | PointerHitStatus::Press = event.status {
+
+                if event.members.len() == 2 {
+                    let first = event.members.first().unwrap().screen;
+                    let last = event.members.last().unwrap().screen;
+
+                    let (x, y) = (first[0] - last[0], first[1] - last[1]);
+                    let cur = (x * x + y * y).sqrt();
+                    let prev = pinch_distance.get_or_insert(cur);
+                    viewport_utils.zoom_delta(world, Fract::from_f64((cur - *prev) * 2.0));
+                    *prev = cur;
+                } else {
+                    pinch_distance = None;
+                }
+            } else if let MultiTouchStatus::Holding | MultiTouchStatus::Press = primary.status {
                 let mut this = world.fetch_mut(this).unwrap();
                 let target = BrushInstance {
-                    position: event.position.into_fract(),
-                    force: event.data.force.unwrap_or(1.0),
+                    position: primary.position.into_fract(),
+                    force: primary.data.force.unwrap_or(1.0),
                     step: Fract::ZERO,
                 };
 
