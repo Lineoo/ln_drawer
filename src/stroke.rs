@@ -4,13 +4,11 @@ mod round_brush;
 use cosmic_text::Metrics;
 use hashbrown::HashMap;
 use palette::{Srgba, WithAlpha};
-use serde_bytes::ByteBuf;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, Device,
-    Extent3d, MapMode, Origin3d, Queue, ShaderStages, TexelCopyBufferInfoBase,
-    TexelCopyBufferLayout, TexelCopyTextureInfoBase, TextureAspect, wgt::PollType,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, Queue,
+    ShaderStages,
 };
 use winit::event::PointerKind;
 
@@ -20,7 +18,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{Render, canvas::CanvasDescriptor, text::TextDescriptor},
-    save::{AutosaveRequest, SaveControl, SaveExpand, SaveScheduler},
+    save::SaveControl,
     stroke::{
         canvas::{CanvasChunk, CanvasChunkPipeline},
         round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushStorage},
@@ -38,7 +36,7 @@ use crate::{
         color_picker::ColorPicker,
         menu::{MenuDescriptor, MenuEntryDescriptor},
     },
-    world::{Element, Handle, World, WorldError},
+    world::{Element, Handle, World},
 };
 
 const CHUNK_SIZE: u32 = 512;
@@ -50,13 +48,11 @@ pub struct StrokeLayer {
     pub brush: RoundBrush,
     pub modifier: BrushModifier,
 
-    archive: Archive,
     current: Option<BrushInstance>,
 
     draw: BindGroup,
     draw_data: Buffer,
 
-    device: Device,
     queue: Queue,
 }
 
@@ -69,12 +65,6 @@ pub struct BrushModifier {
     pub flow_force_exp: f32,
     pub softness: f32,
     pub step: Option<f32>,
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-#[deprecated]
-struct Archive {
-    chunks: HashMap<(i32, i32), ByteBuf>,
 }
 
 #[derive(Clone, Copy)]
@@ -102,7 +92,6 @@ impl Element for StrokeLayer {
         });
 
         self.attach_pointer(world, this);
-        StrokeLayer::register_saving(world, this);
     }
 }
 
@@ -111,7 +100,7 @@ impl StrokeLayer {
         world.insert(StrokeLayer::new(world));
         world.flush();
 
-        world.insert(StrokeLayer::save_expand());
+        CanvasChunk::register_saving(world);
         world.insert(CanvasChunk::save_expand());
     }
 
@@ -177,82 +166,11 @@ impl StrokeLayer {
             front_color: palette::named::BLACK.with_alpha(1.0).into_format(),
             brush: default_brush,
             modifier: default_modifier,
-            archive: Archive {
-                chunks: HashMap::new(),
-            },
             current: None,
             draw,
             draw_data,
-            device: render.device.clone(),
             queue: render.queue.clone(),
         }
-    }
-
-    /// FIXME only for forward compatibility
-    fn save_expand() -> SaveExpand {
-        SaveExpand {
-            name: "stroke".into(),
-            expand: Box::new(move |world, control| {
-                let control = world.fetch(control).unwrap();
-                let stroke = &mut *world.single_fetch_mut::<StrokeLayer>().unwrap();
-                let bytes = control.read(world);
-
-                stroke.archive = postcard::from_bytes::<Archive>(&bytes).unwrap();
-                for (&chunk, bytes) in &stroke.archive.chunks {
-                    let control = SaveControl::create("canvas_chunk".into(), world, &[]);
-                    let canvas = CanvasChunk::new(world, chunk, control);
-                    stroke.queue.write_texture(
-                        TexelCopyTextureInfoBase {
-                            texture: &canvas.texture,
-                            mip_level: 0,
-                            origin: Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        &bytes,
-                        TexelCopyBufferLayout {
-                            offset: 0,
-                            bytes_per_row: Some(CHUNK_SIZE * 4),
-                            rows_per_image: Some(CHUNK_SIZE),
-                        },
-                        Extent3d {
-                            width: CHUNK_SIZE,
-                            height: CHUNK_SIZE,
-                            depth_or_array_layers: 1,
-                        },
-                    );
-
-                    let canvas = world.insert(canvas);
-                    let ret = stroke.chunks.insert(chunk, canvas);
-                    debug_assert!(ret.is_none());
-                }
-            }),
-        }
-    }
-
-    fn register_saving(world: &World, this: Handle<Self>) {
-        let scheduler = world.single::<SaveScheduler>().unwrap();
-        world.observer(scheduler, move |AutosaveRequest, world| {
-            let this = world.fetch(this).unwrap();
-
-            let mut canvases = Vec::new();
-            let mut tasks = Vec::new();
-
-            for (&chunk, &canvas) in &this.chunks {
-                let canvas = world.fetch_mut(canvas).unwrap();
-                canvases.push((chunk, canvas));
-            }
-
-            for (chunk, canvas) in &mut canvases {
-                let task = canvas.device_readback(world, *chunk);
-                tasks.push(task);
-            }
-
-            pollster::block_on(async {
-                for task in tasks {
-                    task.await;
-                }
-            })
-        });
     }
 
     fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {

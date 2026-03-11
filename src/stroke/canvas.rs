@@ -1,35 +1,33 @@
 use serde_bytes::ByteBuf;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
+    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBinding,
     BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites,
     CommandEncoderDescriptor, Extent3d, FragmentState, MapMode, Origin3d, PipelineLayoutDescriptor,
-    PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor, Sampler,
+    PollType, PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor,
     SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, TexelCopyBufferInfoBase, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
     Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
     TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
-    util::{BufferInitDescriptor, DeviceExt}, wgt::PollType,
+    util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
     render::{Render, RenderControl, RenderInformation, vertex::VertexUniform, viewport::Viewport},
-    save::{SaveControl, SaveExpand},
+    save::{AutosaveRequest, SaveControl, SaveExpand, SaveScheduler},
     stroke::{CHUNK_SIZE, StrokeLayer},
     world::{Element, Handle, World},
 };
 
 pub struct CanvasChunk {
-    pub save: Handle<SaveControl>,
+    save: Handle<SaveControl>,
     pub changed: bool,
 
     pub compute: BindGroup,
     vertex: BindGroup,
     fragment: BindGroup,
 
-    rectangle: Buffer,
-    pub texture: Texture,
-    sampler: Sampler,
+    texture: Texture,
 }
 
 pub struct CanvasChunkPipeline {
@@ -282,10 +280,34 @@ impl CanvasChunk {
             vertex,
             compute,
             fragment,
-            rectangle,
             texture,
-            sampler,
         }
+    }
+
+    pub fn register_saving(world: &World) {
+        let scheduler = world.single::<SaveScheduler>().unwrap();
+        world.observer(scheduler, move |AutosaveRequest, world| {
+            let stroke = world.single_fetch::<StrokeLayer>().unwrap();
+
+            let mut canvases = Vec::new();
+            let mut tasks = Vec::new();
+
+            for (&chunk, &canvas) in &stroke.chunks {
+                let canvas = world.fetch_mut(canvas).unwrap();
+                canvases.push((chunk, canvas));
+            }
+
+            for (chunk, canvas) in &mut canvases {
+                let task = canvas.device_readback(world, *chunk);
+                tasks.push(task);
+            }
+
+            pollster::block_on(async {
+                for task in tasks {
+                    task.await;
+                }
+            })
+        });
     }
 
     pub fn save_expand() -> SaveExpand {
@@ -326,7 +348,7 @@ impl CanvasChunk {
         }
     }
 
-    pub async fn device_readback(&mut self, world: &World, chunk: (i32, i32)) {
+    async fn device_readback(&mut self, world: &World, chunk: (i32, i32)) {
         let (tx, rx) = std::sync::mpsc::channel();
 
         if !self.changed {
