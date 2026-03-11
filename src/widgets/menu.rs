@@ -3,7 +3,7 @@ use crate::{
     measures::{Position, Rectangle, Size},
     theme::Luni,
     tools::{
-        collider::PointerCollider,
+        collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
     widgets::{
@@ -19,7 +19,7 @@ pub struct Menu {
     pub entry_height: u32,
     pub pad: u32,
     pub hover: Option<i32>,
-    collider: Handle<PointerCollider>,
+    collider: Handle<ToolCollider>,
     entries: Vec<Handle<MenuEntry>>,
 }
 
@@ -61,7 +61,7 @@ impl Descriptor for MenuDescriptor {
             ),
         };
 
-        let collider = world.insert(PointerCollider {
+        let collider = world.insert(ToolCollider {
             rect,
             order: 100,
             enabled: false,

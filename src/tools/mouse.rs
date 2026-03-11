@@ -1,27 +1,20 @@
-use winit::event::{
-    ButtonSource, ElementState, MouseButton, MouseScrollDelta, PointerSource, WindowEvent,
-};
+use winit::event::{ButtonSource, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 
 use crate::{
     lnwin::Lnwindow,
-    measures::{Fract, Position, PositionFract},
+    measures::{Fract, Position},
     render::viewport::Viewport,
-    tools::{collider::PointerCollider, viewport::ViewportUtils},
+    tools::{collider::ToolCollider, viewport::ViewportUtils},
     world::{Element, Handle, World},
 };
 
 /// Mouse-specific operations like right-click and middle-click.
+#[derive(Default)]
 pub struct MouseTool;
 
 /// Right-click events.
 #[derive(Clone, Copy)]
-pub struct PointerMenu(pub Position);
-
-impl MouseTool {
-    pub fn init(world: &mut World) {
-        world.insert(MouseTool);
-    }
-}
+pub struct MouseMenu(pub Position);
 
 impl Element for MouseTool {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
@@ -41,12 +34,12 @@ impl Element for MouseTool {
                 let position = lnwindow.cursor_to_screen(*position);
                 let position = viewport.screen_to_world_absolute(position);
 
-                let target = PointerCollider::intersect(world, position.floor())
+                let target = ToolCollider::intersect(world, position.floor())
                     .first()
                     .copied();
 
                 if let Some(target) = target {
-                    world.trigger(target, &PointerMenu(position.floor()));
+                    world.trigger(target, &MouseMenu(position.floor()));
                 }
             }
 

@@ -20,12 +20,11 @@ use crate::{
         viewport::{Viewport, ViewportDescriptor},
         wireframe::WireframeManagerDescriptor,
     },
-    save::{AutosaveRequest, SaveControl, SaveDatabase, SaveControlRead, AutosaveScheduler},
+    save::{AutosaveRequest, AutosaveScheduler, SaveControl, SaveControlRead, SaveDatabase},
     stroke::StrokeLayer,
     theme::Luni,
     tools::{
-        collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
-        pointer::PointerTool, viewport::ViewportUtils,
+        collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool, pointer::PointerTool, touch::MultiTouchTool, viewport::ViewportUtils
     },
     world::{Element, Handle, World, WorldError},
 };
@@ -163,10 +162,10 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            ToolColliderDispatcher::init(world);
-
-            PointerTool::init(world);
-            MouseTool::init(world);
+            world.insert(ToolColliderDispatcher);
+            world.insert(PointerTool::default());
+            world.insert(MouseTool::default());
+            world.insert(MultiTouchTool::default());
         });
 
         world.queue(|world| {

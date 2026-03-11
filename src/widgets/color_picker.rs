@@ -7,7 +7,7 @@ use crate::{
     render::rounded::RoundedRectDescriptor,
     theme::Luni,
     tools::{
-        collider::PointerCollider,
+        collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
     widgets::{WidgetButton, WidgetClick, WidgetDestroyed, WidgetHover, WidgetRectangle},
@@ -74,7 +74,7 @@ impl ColorPicker {
     }
 
     fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
-        let collider = world.insert(PointerCollider {
+        let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: 10,
             enabled: true,

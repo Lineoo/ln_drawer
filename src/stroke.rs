@@ -24,9 +24,10 @@ use crate::{
         round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushStorage},
     },
     tools::{
-        collider::PointerCollider,
-        mouse::PointerMenu,
+        collider::ToolCollider,
+        mouse::MouseMenu,
         pointer::{PointerHit, PointerHitStatus},
+        touch::{MultiTouch, MultiTouchGroup},
         viewport::ViewportUtils,
     },
     widgets::{
@@ -164,7 +165,7 @@ impl StrokeLayer {
     }
 
     fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
-        let collider = world.insert(PointerCollider::fullscreen(-100));
+        let collider = world.insert(ToolCollider::fullscreen(-100));
         world.dependency(collider, this);
 
         world.observer(collider, move |event: &PointerHit, world| {
@@ -222,10 +223,10 @@ impl StrokeLayer {
         });
 
         world.observer(button, move |WidgetClick, world| {
-            world.trigger(collider, &PointerMenu(Position::new(-90, 30)));
+            world.trigger(collider, &MouseMenu(Position::new(-90, 30)));
         });
 
-        world.observer(collider, move |&PointerMenu(position), world| {
+        world.observer(collider, move |&MouseMenu(position), world| {
             let menu = world.build(MenuDescriptor {
                 position,
                 entry_width: 400,
@@ -233,7 +234,7 @@ impl StrokeLayer {
                 entry_pad: 5,
             });
 
-            let collider = world.insert(PointerCollider::fullscreen(80));
+            let collider = world.insert(ToolCollider::fullscreen(80));
 
             world.dependency(collider, menu);
 
@@ -252,7 +253,7 @@ impl StrokeLayer {
                 }
             });
 
-            world.observer(collider, move |&PointerMenu(_), world| {
+            world.observer(collider, move |&MouseMenu(_), world| {
                 world.queue(move |world| {
                     world.remove(menu).unwrap();
                 });

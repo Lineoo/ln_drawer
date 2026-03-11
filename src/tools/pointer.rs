@@ -11,13 +11,14 @@ use crate::{
     measures::{Position, Rectangle},
     render::viewport::Viewport,
     tools::{
-        collider::{PointerCollider, ToolColliderChanged, ToolColliderDispatcher},
+        collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
         viewport::ViewportUtils,
     },
     world::{Element, Handle, World},
 };
 
 /// Guaranteed for single-pointer operations like mouse cursor or the first-touch finger.
+#[derive(Default)]
 pub struct PointerTool {
     /// the main pointer that takes effect
     pointer: Option<Pointer>,
@@ -70,7 +71,7 @@ struct Pointer {
     position: Position,
     screen: [f64; 2],
     kind: PointerKind,
-    hovering: Option<Handle<PointerCollider>>,
+    hovering: Option<Handle<ToolCollider>>,
     pressed: Option<Press>,
 }
 
@@ -80,10 +81,6 @@ struct Press {
 }
 
 impl PointerTool {
-    pub fn init(world: &mut World) {
-        world.insert(PointerTool { pointer: None });
-    }
-
     fn alloc_pointer(&mut self, kind: PointerKind) -> Option<&mut Pointer> {
         if self.pointer.is_none() {
             self.pointer = Some(Pointer {
@@ -313,7 +310,7 @@ impl Pointer {
         self.recalculate_hovering(world);
     }
 
-    fn update_hovering(&mut self, world: &World, hovering: Option<Handle<PointerCollider>>) {
+    fn update_hovering(&mut self, world: &World, hovering: Option<Handle<ToolCollider>>) {
         let previous = self.hovering;
         self.hovering = hovering;
 
@@ -348,7 +345,7 @@ impl Pointer {
         }
 
         let mut landing = None;
-        for each in PointerCollider::intersect(world, self.position) {
+        for each in ToolCollider::intersect(world, self.position) {
             let check = PointerCheck {
                 position: self.position,
                 occlude: Cell::new(true),
@@ -438,7 +435,7 @@ impl Element for PointerEdgeCollider {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         const EXPAND: i32 = 5;
 
-        let collider = world.insert(PointerCollider {
+        let collider = world.insert(ToolCollider {
             rect: self.rect.expand(EXPAND),
             order: self.order,
             enabled: true,

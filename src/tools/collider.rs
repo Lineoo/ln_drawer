@@ -6,7 +6,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub struct PointerCollider {
+pub struct ToolCollider {
     pub rect: Rectangle,
     pub order: isize,
     pub enabled: bool,
@@ -14,11 +14,11 @@ pub struct PointerCollider {
 
 /// Event node for [`ToolColliderChanged`]
 pub struct ToolColliderDispatcher;
-pub struct ToolColliderChanged(pub Handle<PointerCollider>);
+pub struct ToolColliderChanged(pub Handle<ToolCollider>);
 
-impl PointerCollider {
-    pub const fn fullscreen(order: isize) -> PointerCollider {
-        PointerCollider {
+impl ToolCollider {
+    pub const fn fullscreen(order: isize) -> ToolCollider {
+        ToolCollider {
             rect: Rectangle {
                 origin: Position::MIN,
                 extend: Size::MAX,
@@ -28,9 +28,9 @@ impl PointerCollider {
         }
     }
 
-    pub fn intersect(world: &World, point: Position) -> Vec<Handle<PointerCollider>> {
+    pub fn intersect(world: &World, point: Position) -> Vec<Handle<ToolCollider>> {
         let mut result = Vec::with_capacity(8);
-        world.foreach_fetch::<PointerCollider>(|collider| {
+        world.foreach_fetch::<ToolCollider>(|collider| {
             if collider.enabled && point.within(collider.rect) {
                 result.push((collider.handle(), collider.order));
             }
@@ -41,14 +41,7 @@ impl PointerCollider {
     }
 }
 
-impl ToolColliderDispatcher {
-    pub fn init(world: &mut World) {
-        world.insert(ToolColliderDispatcher);
-        world.flush();
-    }
-}
-
-impl Element for PointerCollider {
+impl Element for ToolCollider {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
         world.trigger(dispatcher, &ToolColliderChanged(this));

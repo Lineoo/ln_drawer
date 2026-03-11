@@ -8,7 +8,7 @@ use crate::{
         wireframe::{Wireframe, WireframeDescriptor},
     },
     stroke::StrokeLayer,
-    tools::{collider::PointerCollider, pointer::PointerHit},
+    tools::{collider::ToolCollider, pointer::PointerHit},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -22,11 +22,11 @@ pub struct Palette {
 
     main: Handle<Canvas>,
     main_knob: Handle<Wireframe>,
-    main_collider: Handle<PointerCollider>,
+    main_collider: Handle<ToolCollider>,
 
     hue: Handle<Canvas>,
     hue_knob: Handle<Wireframe>,
-    hue_collider: Handle<PointerCollider>,
+    hue_collider: Handle<ToolCollider>,
 
     redraw: bool,
     control: Handle<RenderControl>,
@@ -72,7 +72,7 @@ impl Descriptor for PaletteDescriptor {
             visible: true,
         });
 
-        let main_collider = world.insert(PointerCollider {
+        let main_collider = world.insert(ToolCollider {
             rect: main_rect,
             order: 0,
             enabled: true,
@@ -102,7 +102,7 @@ impl Descriptor for PaletteDescriptor {
             visible: true,
         });
 
-        let hue_collider = world.insert(PointerCollider {
+        let hue_collider = world.insert(ToolCollider {
             rect: hue_rect,
             order: 0,
             enabled: true,

@@ -3,7 +3,7 @@ use crate::{
     measures::Rectangle,
     theme::Luni,
     tools::{
-        collider::PointerCollider,
+        collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
     widgets::{Attach, WidgetButton, WidgetChecked, WidgetClick, WidgetHover, WidgetRectangle},
@@ -14,7 +14,7 @@ pub struct CheckButton {
     pub rect: Rectangle,
     pub checked: bool,
     pub order: isize,
-    collider: Handle<PointerCollider>,
+    collider: Handle<ToolCollider>,
 }
 
 pub struct CheckButtonDescriptor {
@@ -37,7 +37,7 @@ impl Descriptor for CheckButtonDescriptor {
     type Target = Handle<CheckButton>;
 
     fn when_build(self, world: &World) -> Self::Target {
-        let collider = world.insert(PointerCollider {
+        let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: self.order,
             enabled: false,

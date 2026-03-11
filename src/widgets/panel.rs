@@ -3,7 +3,7 @@ use crate::{
     measures::Rectangle,
     theme::Luni,
     tools::{
-        collider::PointerCollider,
+        collider::ToolCollider,
         pointer::{PointerHover, PointerHoverStatus},
     },
     widgets::{Attach, WidgetDestroyed, WidgetHover, WidgetRectangle},
@@ -31,7 +31,7 @@ impl Element for Panel {
             target: world.single::<Luni>().unwrap(),
         });
 
-        let collider = world.insert(PointerCollider {
+        let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: self.order,
             enabled: false,

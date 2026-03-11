@@ -3,7 +3,7 @@ use crate::{
     measures::Rectangle,
     theme::Luni,
     tools::{
-        collider::PointerCollider,
+        collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
     widgets::{Attach, WidgetButton, WidgetClick, WidgetHover, WidgetRectangle},
@@ -46,7 +46,7 @@ impl Element for Button {
 
 impl Button {
     fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
-        let collider = world.insert(PointerCollider {
+        let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: self.order,
             enabled: true,
