@@ -305,13 +305,6 @@ impl StrokeLayer {
                     world.build(SimpleNoiseDescriptor { position });
                 }),
                 ("", |_, _| {}),
-                ("  World save", |world, _position| {
-                    crate::save::save_into_file(world);
-                }),
-                ("  World read", |world, _position| {
-                    crate::save::load_from_file(world);
-                }),
-                ("", |_, _| {}),
                 ("Switch transparency", |world, _| {
                     let mut render = world.single_fetch_mut::<Render>().unwrap();
                     if render.clear_color.a == 0.0 {

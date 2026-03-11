@@ -87,7 +87,7 @@ impl Element for Lnwindow {
         world.queue(|world| {
             SaveDatabase::init(world);
             world.insert(AutosaveScheduler {
-                autosave_duration: Duration::from_secs(3),
+                autosave_duration: Duration::from_secs(10),
             });
         });
 

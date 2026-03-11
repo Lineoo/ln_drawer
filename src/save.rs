@@ -90,8 +90,8 @@ impl AutosaveScheduler {
 
         world.trigger(this, &AutosaveRequest);
 
-        let cost = Instant::now().duration_since(start);
-        log::debug!("autosave request finished in {cost:?}");
+        let duration = Instant::now().duration_since(start);
+        log::debug!("autosave request finished in {duration:?}");
 
         let db = world.single_fetch::<SaveDatabase>().unwrap();
         db.flush(world);
@@ -132,6 +132,8 @@ impl SaveDatabase {
     }
 
     pub fn flush(&self, world: &World) {
+        let start = Instant::now();
+
         let target = get_file_path(world, "world.ln-world");
 
         let Ok(()) = std::fs::create_dir_all(target.parent().unwrap()) else {
@@ -149,7 +151,8 @@ impl SaveDatabase {
             return;
         };
 
-        log::debug!("database flushed");
+        let duration = Instant::now().duration_since(start);
+        log::debug!("database flushed in {duration:?}",);
     }
 }
 
@@ -183,94 +186,6 @@ impl Element for SaveDatabase {
     fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
         self.flush(world);
     }
-}
-
-// [ deprecated ] //
-
-pub struct Save {
-    pub period: Duration,
-}
-
-impl Default for Save {
-    fn default() -> Self {
-        Save {
-            period: Duration::from_secs(10),
-        }
-    }
-}
-
-impl Element for Save {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        load_from_file(world);
-        let timer = world.insert(Timer::new(self.period));
-        world.observer(timer, |TimerHit, world| {
-            save_into_file(world);
-        });
-
-        world.dependency(this, world.single::<Lnwindow>().unwrap());
-    }
-
-    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
-        save_into_file(world);
-    }
-}
-
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-struct SaveFile {
-    viewport: Option<ViewportDescriptor>,
-}
-
-pub fn save_into_file(world: &World) {
-    let mut save = SaveFile::default();
-
-    if let Ok(viewport) = world.single_fetch_mut::<Viewport>() {
-        save.viewport = Some(ViewportDescriptor {
-            size: viewport.size,
-            center: viewport.center,
-            zoom: viewport.zoom,
-        });
-    }
-
-    let target = get_file_path(world, "world.ln-world");
-
-    let Ok(()) = std::fs::create_dir_all(target.parent().unwrap()) else {
-        log::warn!("failed to create target folder");
-        return;
-    };
-
-    let Ok(file) = std::fs::File::create(target) else {
-        log::warn!("failed to create save world file");
-        return;
-    };
-
-    let Ok(_) = postcard::to_io(&save, file) else {
-        log::warn!("failed to encode world file through postcard");
-        return;
-    };
-
-    log::debug!("world saved");
-}
-
-pub fn load_from_file(world: &World) {
-    let target = get_file_path(world, "world.ln-world");
-
-    let Ok(file) = std::fs::File::open(target) else {
-        log::debug!("no world file");
-        return;
-    };
-
-    let Ok((save, _)) = postcard::from_io::<SaveFile, _>((file, &mut [0u8; 0xFFFF])) else {
-        log::warn!("failed to decode world file through postcard");
-        return;
-    };
-
-    if let Some(save_viewport) = save.viewport {
-        let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
-        viewport.center = save_viewport.center;
-        viewport.zoom = save_viewport.zoom;
-    }
-
-    log::debug!("world loaded");
 }
 
 pub fn get_file_path(world: &World, filename: &str) -> PathBuf {
