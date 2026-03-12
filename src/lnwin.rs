@@ -17,7 +17,7 @@ use crate::{
         Render,
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
-        rounded::RoundedRectManagerDescriptor,
+        rounded::RoundedRect,
         text::TextManagerDescriptor,
         viewport::{Viewport, ViewportDescriptor},
         wireframe::WireframeManagerDescriptor,
@@ -158,9 +158,9 @@ impl Element for Lnwindow {
 
         world.queue(|world| {
             world.build(CanvasManagerDescriptor);
-            world.build(RoundedRectManagerDescriptor);
             world.build(TextManagerDescriptor);
             world.build(WireframeManagerDescriptor);
+            RoundedRect::init(world);
             RectangleMesh::<PaletteMain>::init(world);
             RectangleMesh::<PaletteHue>::init(world);
             world.insert(Luni::default());

@@ -1,13 +1,12 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
+use crate::render::RenderInformation;
 use crate::{
     measures::Rectangle,
-    render::{Redraw, Render, RenderControl, RenderPortal, viewport::Viewport},
+    render::{Render, RenderControl, viewport::Viewport},
     world::{Descriptor, Element, Handle, World},
 };
-
-pub struct RoundedRectManagerDescriptor;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RoundedRectDescriptor {
@@ -19,24 +18,17 @@ pub struct RoundedRectDescriptor {
     pub order: isize,
 }
 
-pub struct RoundedRectManager {
+pub struct RoundedRectPipeline {
     pipeline: RenderPipeline,
-    bind_layout: BindGroupLayout,
+    bind: BindGroupLayout,
 }
 
 pub struct RoundedRect {
-    pub rect: Rectangle,
-    pub color: palette::Srgba,
-    pub shrink: f32,
-    pub value: f32,
-    pub visible: bool,
-    pub order: isize,
+    pub desc: RoundedRectDescriptor,
 
     bind: BindGroup,
     uniform: Buffer,
     queue: Queue,
-
-    control: Handle<RenderControl>,
 }
 
 #[repr(C)]
@@ -52,82 +44,6 @@ struct RoundedRectUniform {
     _pad: i32,
 }
 
-impl Descriptor for RoundedRectManagerDescriptor {
-    type Target = Handle<RoundedRectManager>;
-
-    fn when_build(self, world: &World) -> Self::Target {
-        let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Viewport>().unwrap();
-
-        let shader = render.device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("rounded_shader"),
-            source: ShaderSource::Wgsl(include_str!("rounded.wgsl").into()),
-        });
-
-        let bind_layout = render
-            .device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("rounded_bind_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::VERTEX_FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
-        let pipeline_layout = render
-            .device
-            .create_pipeline_layout(&PipelineLayoutDescriptor {
-                label: Some("rounded_pipeline_layout"),
-                bind_group_layouts: &[&viewport.layout, &bind_layout],
-                immediate_size: 0,
-            });
-
-        let pipeline = render
-            .device
-            .create_render_pipeline(&RenderPipelineDescriptor {
-                label: Some("rounded_pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                primitive: PrimitiveState {
-                    topology: PrimitiveTopology::TriangleStrip,
-                    ..Default::default()
-                },
-                fragment: Some(FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(ColorTargetState {
-                        format: render.config.format,
-                        blend: Some(BlendState::ALPHA_BLENDING),
-                        write_mask: ColorWrites::ALL,
-                    })],
-                }),
-                depth_stencil: None,
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
-            });
-
-        world.insert(RoundedRectManager {
-            pipeline,
-            bind_layout,
-        })
-    }
-}
-
-impl Element for RoundedRectManager {}
-
 impl Default for RoundedRectDescriptor {
     fn default() -> Self {
         Self {
@@ -141,35 +57,95 @@ impl Default for RoundedRectDescriptor {
     }
 }
 
-impl Descriptor for RoundedRectDescriptor {
-    type Target = Handle<RoundedRect>;
-
-    fn when_build(self, world: &World) -> Self::Target {
+impl RoundedRect {
+    pub fn init(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
-        let manager = world.single_fetch::<RoundedRectManager>().unwrap();
+        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let device = &render.device;
+
+        let shader = render.device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("rounded"),
+            source: ShaderSource::Wgsl(include_str!("rounded.wgsl").into()),
+        });
+
+        let bind = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("rounded"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX_FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("rounded"),
+            bind_group_layouts: &[&viewport.layout, &bind],
+            immediate_size: 0,
+        });
+
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("rounded"),
+            layout: Some(&pipeline),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState {
+                    format: render.config.format,
+                    blend: Some(BlendState::ALPHA_BLENDING),
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            depth_stencil: None,
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        world.insert(RoundedRectPipeline { pipeline, bind });
+    }
+
+    pub fn create(desc: RoundedRectDescriptor, world: &World) -> Self {
+        let render = world.single_fetch::<Render>().unwrap();
+        let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
 
         let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("rounded_buffer"),
+            label: Some("rounded"),
             contents: bytemuck::bytes_of(&RoundedRectUniform {
-                origin: self.rect.origin.into_array(),
-                extend: self.rect.extend.into_array(),
+                origin: desc.rect.origin.into_array(),
+                extend: desc.rect.extend.into_array(),
                 color: [
-                    self.color.red,
-                    self.color.green,
-                    self.color.blue,
-                    self.color.alpha,
+                    desc.color.red,
+                    desc.color.green,
+                    desc.color.blue,
+                    desc.color.alpha,
                 ],
                 vertex_extend: 10,
-                shrink: self.shrink,
-                value: self.value,
+                shrink: desc.shrink,
+                value: desc.value,
                 _pad: 0,
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
         let bind = render.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("rounded_bind_group"),
-            layout: &manager.bind_layout,
+            label: Some("rounded"),
+            layout: &manager.bind,
             entries: &[BindGroupEntry {
                 binding: 0,
                 resource: BindingResource::Buffer(BufferBinding {
@@ -180,68 +156,82 @@ impl Descriptor for RoundedRectDescriptor {
             }],
         });
 
-        let control = world.insert(RenderControl {
-            visible: self.visible,
-            order: self.order,
-            refreshing: false,
-            prepare: None,
-            draw: None,
-        });
-
-        world.insert(RoundedRect {
-            rect: self.rect,
-            color: self.color,
-            shrink: self.shrink,
-            value: self.value,
-            order: self.order,
-            visible: self.visible,
+        RoundedRect {
+            desc,
             bind,
             uniform,
             queue: render.queue.clone(),
-            control,
-        })
+        }
     }
-}
 
-impl Element for RoundedRect {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(self.control, move |Redraw, world| {
-            let manager = world.single_fetch::<RoundedRectManager>().unwrap();
-            let viewport = world.single_fetch::<Viewport>().unwrap();
-            let this = world.fetch(this).unwrap();
+    fn bind_control(&mut self, world: &World, this: Handle<Self>) {
+        let control = world.insert(RenderControl {
+            visible: self.desc.visible,
+            order: self.desc.order,
+            refreshing: false,
+            prepare: Some(Box::new(move |world| {
+                let this = world.fetch(this).unwrap();
+                if !this.desc.visible {
+                    return None;
+                }
 
-            let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
-            let rpass = &mut rportal.active.as_mut().unwrap().rpass;
-            rpass.set_pipeline(&manager.pipeline);
-            rpass.set_bind_group(0, &viewport.bind, &[]);
-            rpass.set_bind_group(1, &this.bind, &[]);
-            rpass.draw(0..4, 0..1);
+                Some(RenderInformation {
+                    render_order: this.desc.order,
+                    keep_redrawing: false,
+                })
+            })),
+            draw: Some(Box::new(move |world, rpass| {
+                let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
+                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let this = world.fetch(this).unwrap();
+
+                rpass.set_pipeline(&manager.pipeline);
+                rpass.set_bind_group(0, &viewport.bind, &[]);
+                rpass.set_bind_group(1, &this.bind, &[]);
+                rpass.draw(0..4, 0..1);
+            })),
         });
 
-        world.dependency(self.control, this);
+        world.dependency(control, this);
     }
 
-    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+    fn update_buffer(&mut self) {
         let uniform = RoundedRectUniform {
-            origin: self.rect.origin.into_array(),
-            extend: self.rect.extend.into_array(),
+            origin: self.desc.rect.origin.into_array(),
+            extend: self.desc.rect.extend.into_array(),
             color: [
-                self.color.red,
-                self.color.green,
-                self.color.blue,
-                self.color.alpha,
+                self.desc.color.red,
+                self.desc.color.green,
+                self.desc.color.blue,
+                self.desc.color.alpha,
             ],
             vertex_extend: 10,
-            shrink: self.shrink,
-            value: self.value,
+            shrink: self.desc.shrink,
+            value: self.desc.value,
             _pad: 0,
         };
 
         let bytes = bytemuck::bytes_of(&uniform);
         self.queue.write_buffer(&self.uniform, 0, bytes);
+    }
+}
 
-        let mut control = world.fetch_mut(self.control).unwrap();
-        control.order = self.order;
-        control.visible = self.visible;
+impl Descriptor for RoundedRectDescriptor {
+    type Target = Handle<RoundedRect>;
+
+    fn when_build(self, world: &World) -> Self::Target {
+        world.insert(RoundedRect::create(self, world))
+    }
+}
+
+impl Element for RoundedRectPipeline {}
+
+impl Element for RoundedRect {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        self.bind_control(world, this);
+    }
+
+    fn when_modify(&mut self, _world: &World, _this: Handle<Self>) {
+        self.update_buffer();
     }
 }

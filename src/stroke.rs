@@ -15,6 +15,7 @@ use winit::event::PointerKind;
 use crate::{
     animation::{AnimationDescriptor, OnceAnimationDescriptor},
     elements::{noise::SimpleNoiseDescriptor, palette::PaletteDescriptor},
+    layout::transform::{Transform, TransformEdge},
     lnwin::Lnwindow,
     measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{Render, canvas::CanvasDescriptor, text::TextDescriptor},
@@ -36,6 +37,8 @@ use crate::{
         check_button::CheckButtonDescriptor,
         color_picker::ColorPicker,
         menu::{MenuDescriptor, MenuEntryDescriptor},
+        panel::Panel,
+        resizable::Resizable,
     },
     world::{Element, Handle, World},
 };
@@ -304,9 +307,49 @@ impl StrokeLayer {
                     });
                 }),
                 ("Palette", |world, position| {
-                    world.build(PaletteDescriptor {
+                    let palette = world.build(PaletteDescriptor {
                         position,
                         ..Default::default()
+                    });
+
+                    let panel = world.insert(Panel {
+                        rect: Rectangle {
+                            origin: position,
+                            extend: Size::splat(256),
+                        }
+                        .expand(10),
+                        order: -100,
+                    });
+
+                    let resize = world.insert(Resizable {
+                        rect: Rectangle {
+                            origin: position,
+                            extend: Size::splat(256),
+                        }
+                        .expand(10),
+                    });
+
+                    world.insert(Transform::copy(resize.untyped(), panel.untyped()));
+
+                    world.insert(Transform {
+                        left: TransformEdge {
+                            anchor: 0.0,
+                            offset: 10,
+                        },
+                        down: TransformEdge {
+                            anchor: 0.0,
+                            offset: 10,
+                        },
+                        right: TransformEdge {
+                            anchor: 1.0,
+                            offset: -10,
+                        },
+                        up: TransformEdge {
+                            anchor: 1.0,
+                            offset: -10,
+                        },
+                        source: resize.untyped(),
+                        target: palette.untyped(),
                     });
                 }),
                 ("Logo", |world, position| {

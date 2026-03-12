@@ -180,6 +180,10 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
             refreshing: false,
             prepare: Some(Box::new(move |world| {
                 let this = world.fetch(this).unwrap();
+                if !this.desc.visible {
+                    return None;
+                }
+
                 Some(RenderInformation {
                     render_order: this.desc.order,
                     keep_redrawing: false,

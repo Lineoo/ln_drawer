@@ -45,7 +45,7 @@ impl Resizable {
     fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
         let collider = world.insert(PointerEdgeCollider {
             rect: self.rect,
-            order: 1000,
+            order: 10,
             enabled: true,
         });
 

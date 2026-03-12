@@ -64,7 +64,7 @@ impl Element for Attach<Button, Luni> {
 
         world.observer(frame_anim_color, move |&AnimationValue(value), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
-            frame.color = value;
+            frame.desc.color = value;
         });
 
         // dependency
@@ -98,7 +98,7 @@ impl Element for Attach<Button, Luni> {
 
         world.observer(button, move |&WidgetRectangle(rect), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
-            frame.rect = rect;
+            frame.desc.rect = rect;
         });
     }
 }
@@ -133,14 +133,14 @@ impl Element for Attach<CheckButton, Luni> {
 
         world.observer(frame_anim_color, move |&AnimationValue(value), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
-            frame.color = value;
+            frame.desc.color = value;
         });
         world.observer(
             frame_anim_roundness,
             move |&AnimationValue(value), world| {
                 let mut frame = world.fetch_mut(frame).unwrap();
-                frame.shrink = value;
-                frame.value = value;
+                frame.desc.shrink = value;
+                frame.desc.value = value;
             },
         );
 
@@ -176,7 +176,7 @@ impl Element for Attach<CheckButton, Luni> {
 
         world.observer(button, move |&WidgetRectangle(rect), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
-            frame.rect = rect;
+            frame.desc.rect = rect;
         });
 
         world.observer(button, move |&WidgetChecked(checked), world| {
@@ -215,7 +215,7 @@ impl Element for Attach<Panel, Luni> {
 
         world.observer(frame_anim_color, move |&AnimationValue(value), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
-            frame.color = value;
+            frame.desc.color = value;
         });
 
         // dependency
@@ -240,7 +240,7 @@ impl Element for Attach<Panel, Luni> {
 
         world.observer(panel, move |&WidgetRectangle(rect), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
-            frame.rect = rect;
+            frame.desc.rect = rect;
         });
     }
 }
@@ -283,19 +283,19 @@ impl Element for Attach<Menu, Luni> {
 
         world.observer(frame_anim_alpha, move |&AnimationValue(value), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
-            frame.color.alpha = value;
+            frame.desc.color.alpha = value;
         });
 
         world.observer(select_anim_alpha, move |&AnimationValue(value), world| {
             let mut select = world.fetch_mut(select).unwrap();
-            select.color.alpha = value;
+            select.desc.color.alpha = value;
         });
 
         let menu = menu.handle();
         world.observer(select_anim_rect, move |&AnimationValue(value), world| {
             let mut select_frame = world.fetch_mut(select).unwrap();
             let menu = world.fetch(menu).unwrap();
-            select_frame.rect = menu.entry_rect(value);
+            select_frame.desc.rect = menu.entry_rect(value);
         });
 
         // dependency
@@ -309,7 +309,7 @@ impl Element for Attach<Menu, Luni> {
 
         world.observer(menu, move |&WidgetRectangle(rect), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
-            frame.rect = rect;
+            frame.desc.rect = rect;
         });
 
         world.observer(menu, move |event: &WidgetSelect, world| match event {

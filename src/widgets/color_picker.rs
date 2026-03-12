@@ -59,7 +59,8 @@ impl ColorPicker {
             ),
             widget: frame,
             action: |mut frame, _, extend| {
-                frame.rect.extend = Size::new(extend[0].floor() as u32, extend[1].floor() as u32);
+                frame.desc.rect.extend =
+                    Size::new(extend[0].floor() as u32, extend[1].floor() as u32);
             },
         });
 
