@@ -1,6 +1,6 @@
 use std::{
     path::PathBuf,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use hashbrown::HashMap;
@@ -107,7 +107,35 @@ impl SaveDatabase {
 
         let target = get_file_path(world, "world.ln-world");
 
-        if let Ok(file) = std::fs::File::open(target) {
+        if let Ok(file) = std::fs::File::open(&target) {
+            let mut slot = 0;
+            let mut oldest = Duration::ZERO;
+            for i in 0..3 {
+                let backup = get_file_path(world, &format!("world.ln-world.{i}.old"));
+                match std::fs::metadata(&backup) {
+                    Ok(metadata) => match metadata.created() {
+                        Ok(creation) => {
+                            let duration = SystemTime::now().duration_since(creation).unwrap();
+                            if duration > oldest {
+                                oldest = duration;
+                                slot = i;
+                            }
+                        }
+                        Err(_) => {
+                            slot = i;
+                            break;
+                        }
+                    },
+                    Err(_) => {
+                        slot = i;
+                        break;
+                    }
+                }
+            }
+
+            let backup = get_file_path(world, &format!("world.ln-world.{slot}.old"));
+            std::fs::copy(target, backup).unwrap();
+
             let mmap = unsafe { memmap2::Mmap::map(&file).unwrap() };
 
             let Ok(db) = postcard::from_bytes::<SaveDatabase>(&mmap) else {

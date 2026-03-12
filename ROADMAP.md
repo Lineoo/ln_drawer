@@ -110,39 +110,49 @@
     - [x] 移动端画笔区分
 - [x] foreach 删除多余的 Handle 提供
 - [x] observer 删除多余的 Handle 提供
-- [ ] 触摸可用性
-    - [ ] 双指缩放
+- [x] 触摸可用性
+    - [x] 双指缩放
         - [x] Pointer 事件提供屏幕空间数据
-        - [ ] 分离 PointerTool, MouseTool 和 MultiTouchTool
+        - [x] 分离 PointerTool, MouseTool 和 MultiTouchTool
     - [x] 触摸可用的按钮/拖曳设计
         - [x] Pointer 事件给到原始屏幕坐标
     - [x] 重新设计相机移动模组
 - [x] 压力感应连续
-- [ ] 存档
+- [x] 存档
     - [x] 笔刷
     - [x] 仅更新
-    - [ ] 切换到 redb
-    - [ ] 存档备份
-    - [ ] 异步保存
-        - [ ] “存档完成！”标识
-    - [ ] 分区保存 流式加载
-        - [ ] 世界视角组
-- [ ] 缩放
-    - [ ] 多指触控工具
-    - [ ] 通过`标记`来允许碰撞穿透
+    - [x] 存档备份
+- [x] 缩放
+    - [x] 多指触控工具
 - **LnDrawer v0.1.3-alpha.1**
 - [ ] 调色板
     - [ ] 排列器
     - [ ] 色彩空间选择
+        - [ ] 下拉菜单
+            - [ ] 排列器
+            - [ ] 动画
         - [ ] srgb 色彩空间转换
         - [ ] 使用 Shader 来进行渲染
         - [ ] 更多色彩空间 Hsl, Hsv, HSI', Oklab, CMYK
-            - [ ] 针对 Shader 编写优化
+            - [ ] 泛型渲染管线
         - [ ] 使用 LUT 索引加速
     - [ ] 色卡、色板
     - [ ] 滑条、宽滑条
+- [ ] 切换 StrokeLayer 实例
+    - [ ] 世界视角组
+    - [ ] SaveControl 与世界视角组
+- [ ] 异步世界任务
+    - [ ] 异步视角锁定
+        - [ ] RefCell 换成原子量
+        - [ ] 世界阻塞类型
+    - [ ] 异步执行器
+- [ ] 异步保存
+    - [ ] 切换到 redb
+    - [ ] “存档完成！”标识
+- [ ] 分区保存 流式加载
 - [ ] 撤回、恢复
 - [ ] 提升 PointerTool 提供的精度
+- [ ] 通过`标记`来允许碰撞穿透
 - [ ] menu 的字也得是 theme 负责吧
     - [ ] menu 改用 Panel -> Layout -> Label
 - [ ] 所有的像现在的 render shader 之类的东西都应该移动到 theme(luni) 下面
