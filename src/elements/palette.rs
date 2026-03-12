@@ -1,10 +1,10 @@
-use palette::{FromColor, Hsl, SetHue, Srgba, WithAlpha};
+use palette::{FromColor, Hsl, SetHue, Srgba};
 
 use crate::{
     measures::{Position, Rectangle, Size},
     render::{
-        LossyPrepare, RenderControl,
-        canvas::{Canvas, CanvasDescriptor},
+        RenderControl,
+        rectangle::{RectangleMesh, RectangleMeshDescriptor, RectangleMeshMaterial},
         wireframe::{Wireframe, WireframeDescriptor},
     },
     stroke::StrokeLayer,
@@ -20,16 +20,13 @@ pub struct Palette {
     pub position: Position,
     hsl: Hsl,
 
-    main: Handle<Canvas>,
+    main: Handle<RectangleMesh<PaletteMain>>,
     main_knob: Handle<Wireframe>,
     main_collider: Handle<ToolCollider>,
 
-    hue: Handle<Canvas>,
+    hue: Handle<RectangleMesh<PaletteHue>>,
     hue_knob: Handle<Wireframe>,
     hue_collider: Handle<ToolCollider>,
-
-    redraw: bool,
-    control: Handle<RenderControl>,
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -38,6 +35,48 @@ pub struct PaletteDescriptor {
     pub hue: f32,
     pub saturation: f32,
     pub lightness: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PaletteMain {
+    h: f32,
+    _pad: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PaletteHue {
+    s: f32,
+    l: f32,
+}
+
+impl RectangleMeshMaterial for PaletteMain {
+    fn label() -> &'static str {
+        "palette"
+    }
+
+    fn fragment() -> wgpu::ShaderSource<'static> {
+        wgpu::ShaderSource::Wgsl(include_str!("palette.wgsl").into())
+    }
+
+    fn entry_point() -> Option<&'static str> {
+        Some("palette_main")
+    }
+}
+
+impl RectangleMeshMaterial for PaletteHue {
+    fn label() -> &'static str {
+        "palette"
+    }
+
+    fn fragment() -> wgpu::ShaderSource<'static> {
+        wgpu::ShaderSource::Wgsl(include_str!("palette.wgsl").into())
+    }
+
+    fn entry_point() -> Option<&'static str> {
+        Some("palette_hue")
+    }
 }
 
 impl Descriptor for PaletteDescriptor {
@@ -55,12 +94,11 @@ impl Descriptor for PaletteDescriptor {
             extend: Size::new(WIDTH, HEIGHT),
         };
 
-        let main = world.build(CanvasDescriptor {
+        let main = world.build(RectangleMeshDescriptor {
             rect: main_rect,
-            width: WIDTH,
-            height: HEIGHT,
             visible: true,
-            ..Default::default()
+            order: 1,
+            material: PaletteMain { h: 20.0, _pad: 0.0 },
         });
 
         let main_knob = world.build(WireframeDescriptor {
@@ -85,12 +123,11 @@ impl Descriptor for PaletteDescriptor {
             extend: Size::new(WIDTH, HUE_HEIGHT),
         };
 
-        let hue = world.build(CanvasDescriptor {
+        let hue = world.build(RectangleMeshDescriptor {
             rect: hue_rect,
-            width: WIDTH,
-            height: HUE_HEIGHT,
             visible: true,
-            ..Default::default()
+            order: 1,
+            material: PaletteHue { s: 1.0, l: 0.5 },
         });
 
         let hue_knob = world.build(WireframeDescriptor {
@@ -108,14 +145,6 @@ impl Descriptor for PaletteDescriptor {
             enabled: true,
         });
 
-        let control = world.insert(RenderControl {
-            visible: true,
-            order: 1,
-            refreshing: false,
-            prepare: None,
-            draw: None,
-        });
-
         world.insert(Palette {
             position: self.position,
             hsl: Hsl::new(self.hue, self.saturation, self.lightness),
@@ -125,8 +154,6 @@ impl Descriptor for PaletteDescriptor {
             hue,
             hue_knob,
             hue_collider,
-            redraw: true,
-            control,
         })
     }
 }
@@ -137,23 +164,24 @@ impl Element for Palette {
 
         world.observer(self.main_collider, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this).unwrap();
+            let mut hue = world.fetch_mut(this.hue).unwrap();
             let main = world.fetch(this.main).unwrap();
 
             let cursor_position = event.position.clamp(Rectangle {
-                origin: main.rect.origin,
-                extend: main.rect.extend - Size::splat(1),
+                origin: main.desc.rect.origin,
+                extend: main.desc.rect.extend - Size::splat(1),
             });
 
-            let saturation = (cursor_position.x - main.rect.left()).rem_euclid(WIDTH as i32);
-            this.hsl.saturation = saturation as f32 / (WIDTH - 1) as f32;
+            let saturation = (cursor_position.x - main.desc.rect.left()).rem_euclid(WIDTH as i32);
+            hue.desc.material.s = saturation as f32 / (WIDTH - 1) as f32;
+            this.hsl.saturation = hue.desc.material.s;
 
-            let lightness = (cursor_position.y - main.rect.down()).rem_euclid(WIDTH as i32);
-            this.hsl.lightness = lightness as f32 / (HEIGHT - 1) as f32;
+            let lightness = (cursor_position.y - main.desc.rect.down()).rem_euclid(WIDTH as i32);
+            hue.desc.material.l = lightness as f32 / (HEIGHT - 1) as f32;
+            this.hsl.lightness = hue.desc.material.l;
 
             let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
             layer.front_color = this.get_color();
-
-            this.redraw = true;
         });
 
         world.dependency(self.main, this);
@@ -164,63 +192,23 @@ impl Element for Palette {
 
         world.observer(self.hue_collider, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this).unwrap();
+            let mut main = world.fetch_mut(this.main).unwrap();
             let hue = world.fetch(this.hue).unwrap();
 
-            let cursor_position = (event.position.x).clamp(hue.rect.left(), hue.rect.right() - 1);
+            let cursor_position =
+                (event.position.x).clamp(hue.desc.rect.left(), hue.desc.rect.right() - 1);
 
-            let hue = (cursor_position - hue.rect.left()).rem_euclid(WIDTH as i32);
-            this.hsl.set_hue((hue as f32 / WIDTH as f32) * 360.0);
+            let hue = (cursor_position - hue.desc.rect.left()).rem_euclid(WIDTH as i32);
+            main.desc.material.h = hue as f32 / WIDTH as f32;
+            this.hsl.set_hue(main.desc.material.h * 360.0);
 
             let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
             layer.front_color = this.get_color();
-
-            this.redraw = true;
         });
 
         world.dependency(self.hue, this);
         world.dependency(self.hue_knob, this);
         world.dependency(self.hue_collider, this);
-
-        // redraw //
-
-        world.observer(self.control, move |LossyPrepare, world| {
-            let mut this = world.fetch_mut(this).unwrap();
-
-            if !this.redraw {
-                return;
-            }
-
-            this.redraw = false;
-
-            let mut main = world.fetch_mut(this.main).unwrap();
-            let mut writer = main.open_writer();
-            for x in 0..WIDTH as i32 {
-                for y in 0..HEIGHT as i32 {
-                    let saturation = x as f32 / WIDTH as f32;
-                    let lightness = 1.0 - (y as f32 / HEIGHT as f32);
-                    let hsl = Hsl::new(this.hsl.hue, saturation, lightness);
-                    let srgba = Srgba::from_color(hsl).with_alpha(1.0);
-
-                    writer.write(x, y, srgba);
-                }
-            }
-
-            let mut hue = world.fetch_mut(this.hue).unwrap();
-            let mut writer = hue.open_writer();
-            for x in 0..WIDTH {
-                let hsl = Hsl::new(
-                    x as f32 / WIDTH as f32 * 360.0,
-                    this.hsl.saturation,
-                    this.hsl.lightness,
-                );
-                let srgba = Srgba::from_color(hsl).with_alpha(1.0);
-                for y in 0..HUE_HEIGHT {
-                    writer.write(x as i32, y as i32, srgba);
-                }
-            }
-        });
-
-        world.dependency(self.control, this);
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
@@ -230,13 +218,13 @@ impl Element for Palette {
         let mut hue_knob = world.fetch_mut(self.hue_knob).unwrap();
 
         let hue = (self.hsl.hue.into_positive_degrees() / 360.0 * WIDTH as f32).floor() as i32;
-        let hx = hue_canvas.rect.left() + hue;
+        let hx = hue_canvas.desc.rect.left() + hue;
 
         let saturation = (self.hsl.saturation * (WIDTH - 1) as f32).floor() as i32;
-        let mx = main_canvas.rect.left() + saturation;
+        let mx = main_canvas.desc.rect.left() + saturation;
 
         let lightness = (self.hsl.lightness * (HEIGHT - 1) as f32).floor() as i32;
-        let my = main_canvas.rect.down() + lightness;
+        let my = main_canvas.desc.rect.down() + lightness;
 
         let hr = hue_knob.rect;
         let mr = main_knob.rect;
@@ -270,7 +258,6 @@ impl Palette {
 
     pub fn set_color(&mut self, color: Srgba) {
         self.set_hsl(Hsl::from_color(color));
-        self.redraw = true;
     }
 
     fn get_hsl(&self) -> Hsl {

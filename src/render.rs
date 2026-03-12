@@ -4,6 +4,7 @@ pub mod text;
 pub mod vertex;
 pub mod viewport;
 pub mod wireframe;
+pub mod rectangle;
 
 use std::time::{Duration, Instant};
 

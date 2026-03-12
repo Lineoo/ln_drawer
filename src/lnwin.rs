@@ -11,10 +11,12 @@ use winit::{
 };
 
 use crate::{
+    elements::palette::{PaletteHue, PaletteMain},
     measures::Size,
     render::{
         Render,
         canvas::CanvasManagerDescriptor,
+        rectangle::RectangleMesh,
         rounded::RoundedRectManagerDescriptor,
         text::TextManagerDescriptor,
         viewport::{Viewport, ViewportDescriptor},
@@ -24,7 +26,8 @@ use crate::{
     stroke::StrokeLayer,
     theme::Luni,
     tools::{
-        collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool, pointer::PointerTool, touch::MultiTouchTool, viewport::ViewportUtils
+        collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
+        pointer::PointerTool, touch::MultiTouchTool, viewport::ViewportUtils,
     },
     world::{Element, Handle, World, WorldError},
 };
@@ -158,6 +161,8 @@ impl Element for Lnwindow {
             world.build(RoundedRectManagerDescriptor);
             world.build(TextManagerDescriptor);
             world.build(WireframeManagerDescriptor);
+            RectangleMesh::<PaletteMain>::init(world);
+            RectangleMesh::<PaletteHue>::init(world);
             world.insert(Luni::default());
         });
 
