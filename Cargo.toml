@@ -48,7 +48,7 @@ lto = "fat"
 codegen-units = 1
 
 [package.metadata.android]
-package = "org.ln_drawer.ln_drawer"
+package = "org.linn.lndrawer"
 resources = "android"
 
 [package.metadata.android.sdk]
