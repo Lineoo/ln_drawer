@@ -117,8 +117,8 @@ impl<T: ?Sized> From<Handle<T>> for HandleInfo {
 pub struct World {
     cell_idx: RefCell<Handle>,
 
-    members: HashMap<Handle, Box<dyn Any>>,
-    typehint: HashMap<TypeId, WorldType>,
+    typetable: HashMap<Handle, TypeId>,
+    storages: HashMap<TypeId, Box<dyn StorageGeneral>>,
 
     occupied: RefCell<HashMap<Handle, isize>>,
     inserted: RefCell<HashSet<Handle>>,
@@ -128,12 +128,22 @@ pub struct World {
     commander: Sender<WorldCommand>,
 }
 
-struct WorldType {
-    cache: HashSet<Handle>,
-    type_name: &'static str,
-    when_insert: fn(&mut dyn Any, &World, Handle),
-    when_modify: fn(&mut dyn Any, &World, Handle),
-    when_remove: fn(&mut dyn Any, &World, Handle),
+struct Storage<T: Element>(HashMap<Handle, T>);
+
+trait StorageGeneral: Any {
+    fn remove(&mut self, handle: Handle);
+    fn when_remove(&mut self, world: &World, handle: Handle);
+}
+
+impl<T: Element> StorageGeneral for Storage<T> {
+    fn remove(&mut self, handle: Handle) {
+        self.0.remove(&handle);
+    }
+
+    fn when_remove(&mut self, world: &World, handle: Handle) {
+        let elem = self.0.get_mut(&handle).unwrap();
+        T::when_remove(elem, world, handle.cast());
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -171,8 +181,8 @@ impl Default for World {
         let (commander, queue) = channel();
         World {
             cell_idx: RefCell::new(Handle(0, PhantomData)),
-            members: HashMap::default(),
-            typehint: HashMap::default(),
+            typetable: HashMap::new(),
+            storages: HashMap::new(),
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
@@ -203,28 +213,19 @@ impl World {
         // delay execution
         self.queue(move |world| {
             // get type table ready
-            let typehint = world.typehint.entry(TypeId::of::<T>()).or_insert_with(|| {
+            let storage = world.storages.entry(TypeId::of::<T>()).or_insert_with(|| {
                 log::debug!("register elements: {}", type_name::<T>());
-                WorldType {
-                    cache: HashSet::new(),
-                    type_name: type_name::<T>(),
-                    when_insert: |elem, world, handle| {
-                        T::when_insert(elem.downcast_mut().unwrap(), world, handle.cast());
-                    },
-                    when_modify: |elem, world, handle| {
-                        T::when_modify(elem.downcast_mut().unwrap(), world, handle.cast());
-                    },
-                    when_remove: |elem, world, handle| {
-                        T::when_remove(elem.downcast_mut().unwrap(), world, handle.cast());
-                    },
-                }
+                Box::new(Storage::<T>(HashMap::new()))
             });
 
             // push into storage
-            world.members.insert(handle.cast(), Box::new(element));
+            let storage = (storage.as_mut() as &mut dyn Any)
+                .downcast_mut::<Storage<T>>()
+                .unwrap();
+            storage.0.insert(handle.cast(), element);
 
-            // update cache
-            typehint.cache.insert(handle.cast());
+            // update typetable
+            world.typetable.insert(handle.cast(), TypeId::of::<T>());
 
             // when_insert
             let mut element = world.fetch_mut(handle).unwrap();
@@ -244,10 +245,10 @@ impl World {
 
         // when_remove
         // SAFETY: we have checked the mutability
-        let element = self.members.get(&handle_any).unwrap().as_ref();
-        let when_remove = self.typehint.get(&element.type_id()).unwrap().when_remove;
-        let element = element as *const dyn Any as *mut dyn Any;
-        when_remove(unsafe { element.as_mut().unwrap() }, self, handle_any);
+        let type_id = *self.typetable.get(&handle_any).unwrap();
+        let storage = self.storages.get(&type_id).unwrap().as_ref() as *const _;
+        let storage = storage as *mut dyn StorageGeneral;
+        unsafe { (*storage).when_remove(self, handle_any) };
 
         // maintain dependency
         let mut cnt = 1;
@@ -282,13 +283,12 @@ impl World {
         drop(removed);
 
         self.queue(move |world| {
-            // update cache
-            let type_id = world.members.get(&handle_any).unwrap().as_ref().type_id();
-            let typehint = world.typehint.get_mut(&type_id).unwrap();
-            typehint.cache.remove(&handle_any);
+            // update typetable
+            world.typetable.remove(&handle.cast());
 
             // pop out storage
-            world.members.remove(&handle_any);
+            let storage = world.storages.get_mut(&type_id).unwrap();
+            storage.remove(handle_any);
 
             log::trace!("remove {:?}", handle);
         });
@@ -304,7 +304,7 @@ impl World {
             return Err(WorldError::JustRemoved(handle.into()));
         }
 
-        if !self.members.contains_key(&handle.cast()) {
+        if !self.typetable.contains_key(&handle.cast()) {
             if self.inserted.borrow().contains(&handle.cast()) {
                 return Err(WorldError::JustInserted(handle.into()));
             }
@@ -370,14 +370,18 @@ impl World {
         let mut occupied = self.occupied.borrow_mut();
         *occupied.entry(handle.cast()).or_default() += 1;
 
-        let element = (self.members)
-            .get(&handle.cast())
-            .ok_or(WorldError::InvalidHandle(handle.into()))?
-            .downcast_ref()
+        let storage = (self.storages)
+            .get(&TypeId::of::<T>())
             .ok_or(WorldError::UnmatchedType(handle.into()))?;
+        let storage = (storage.as_ref() as &dyn Any)
+            .downcast_ref::<Storage<T>>()
+            .unwrap();
+        let element = (storage.0)
+            .get(&handle.cast())
+            .ok_or(WorldError::InvalidHandle(handle.into()))? as *const _;
 
         Ok(Ref {
-            ptr: element as *const T,
+            ptr: element,
             world: self,
             handle,
         })
@@ -389,14 +393,19 @@ impl World {
         let mut occupied = self.occupied.borrow_mut();
         *occupied.entry(handle.cast()).or_default() -= 1;
 
-        let element = (self.members)
-            .get(&handle.cast())
-            .ok_or(WorldError::InvalidHandle(handle.into()))?
-            .downcast_ref()
+        let storage = (self.storages)
+            .get(&TypeId::of::<T>())
             .ok_or(WorldError::UnmatchedType(handle.into()))?;
+        let storage = (storage.as_ref() as &dyn Any)
+            .downcast_ref::<Storage<T>>()
+            .unwrap();
+        let element = (storage.0)
+            .get(&handle.cast())
+            .ok_or(WorldError::InvalidHandle(handle.into()))? as *const _;
+        let element = element as *mut T;
 
         Ok(RefMut {
-            ptr: element as *const T as *mut T,
+            ptr: element,
             world: self,
             handle,
             modified: false,
@@ -406,12 +415,15 @@ impl World {
     // singleton //
 
     pub fn single<T: Element>(&self) -> Result<Handle<T>, WorldError> {
-        let cache = (self.typehint)
+        let storage = (self.storages)
             .get(&TypeId::of::<T>())
             .ok_or(WorldError::SingletonNoSuch(type_name::<T>()))?;
+        let storage = (storage.as_ref() as &dyn Any)
+            .downcast_ref::<Storage<T>>()
+            .unwrap();
 
         let removed = self.removed.borrow();
-        let mut iter = cache.cache.iter().filter(|&x| !removed.contains(x));
+        let mut iter = storage.0.keys().filter(|&x| !removed.contains(x));
 
         let ret = iter
             .next()
@@ -440,17 +452,27 @@ impl World {
     // iteration //
 
     pub fn len<T: Element>(&self) -> usize {
-        (self.typehint.get(&TypeId::of::<T>()))
-            .map(|x| x.cache.len())
+        (self.storages)
+            .get(&TypeId::of::<T>())
+            .map(|storage| {
+                let storage = (storage.as_ref() as &dyn Any)
+                    .downcast_ref::<Storage<T>>()
+                    .unwrap();
+                storage.0.len()
+            })
             .unwrap_or_default()
     }
 
     pub fn foreach<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {
-        let Some(cache) = self.typehint.get(&TypeId::of::<T>()) else {
+        let Some(storage) = self.storages.get(&TypeId::of::<T>()) else {
             return;
         };
 
-        for handle in cache.cache.iter() {
+        let storage = (storage.as_ref() as &dyn Any)
+            .downcast_ref::<Storage<T>>()
+            .unwrap();
+
+        for handle in storage.0.keys() {
             let removed = self.removed.borrow();
             if removed.contains(handle) {
                 continue;
@@ -506,7 +528,7 @@ impl World {
     /// will be removed as well. Useful for keeping handle valid.
     pub fn dependency<T: ?Sized, U: ?Sized>(&self, target: Handle<T>, depend_on: Handle<U>) {
         if self.removed.borrow().contains(&depend_on.cast())
-            || (!self.members.contains_key(&depend_on.cast())
+            || (!self.typetable.contains_key(&depend_on.cast())
                 && !self.inserted.borrow().contains(&depend_on.cast()))
         {
             let err = WorldError::ToxicDependency(target.into(), depend_on.into());
