@@ -385,63 +385,39 @@ that.trigger(that, ElementUpdate);
 
 比如单选框就是这个功能非常典型的应用：只需简单地将同组的其他单选框取消选择，即可实现一定范围内的单选。
 
-### 方案一：使用状态切换
+API 部分
+- World 接口: subview(), enter()
+- 行为：insert 会将元素插入到顶端元素，fetch 等命令会取并集筛选
+- 结构体: WorldView, Entrance
+- Entrance: 配置目标视角组，是否丢弃当前活跃的 view，是否进入 结构只读/完全只读模式
+- 通过 arc 实现多重引用，可以在不同的地方呈现不同的 view
+- World 和 WorldInner, flush 因为需要 arc 回收所以只能在 inner 触发
 
-使用 `Group` 和 `group()` 函数来指定使用的编组：
+每个元素都有唯一的 WorldView
 
-```rust
-// 这是 World 默认使用的编组
-world.group_switch(Group::default());
+### 典型用法
+- 通过 section 来将世界分为多个交叠部分（世界坐标与相机坐标）
+    - Render, Tool 统一通过 SectionBridge 来跨越不同的 View
+        - 开启结构只读以防止意外的插入移除操作
 ```
-
-更多时候会可能会希望进行临时切换：
-
-```rust
-// 会在离开时触发 Drop
-let _guard: GroupGuard<'_> = world.group(Group::default());
+|-----------------------------------------------|
+|           Render, PointerTool (Basic)         |
+|                                               |
+|   SectionBridge           SectionBridge       |
+|---vvvvvvvvvvvvv-------|---vvvvvvvvvvvvv-------|
+|   Viewport (World)    |   Viewport (Camera)   |
+|                       |                       |
+|   RenderControl       |   RenderControl       |
+|   RenderControl       |   ToolCollider        |
+|   ToolCollider        |                       |
+|                       |                       |
+|-----------------------|-----------------------|
 ```
+- 通过不同的交叠组来实现全异步逻辑
+    - 由 World 内部保证不同交叠组不会重叠
+    - 需要多线程安全，内部通过 arc 实现多重引用（为了多个地方不同的 view）
+    - 异步 async_enter() API
 
-接下来的 `single` 和 `foreach` 指令都会使用该 group。
-
-### 方案二：使用编组元素 + 默认编组 shortcut
-
-优点是使用独立编组元素，相比起方案一，侵入性更小，也更加统一。
-
-缺点是没有原生实现，进而引入自指涉/初始化问题，而 `single` 和 `foreach` 等函数会变成单纯的 shortcut。
-
-```rust
-let group = world.insert(Group::default());
-let group = world.group(group);
-group.single_fetch::<Foo>();
-```
-
-### 方案三：完全独立仅元素
-
-类似方案二，但是完全独立，不对 World 原有逻辑作任何修改。
-
-没有自指涉，没有初始化，一切都很简单。
-
-更加精简，而世界层面的指令就类似 root 一样，一定可以看到所有东西。
-
-而且多亏独立与 World 的访问器以及无需 shortcut 的统一层级，我们可以获得额外的 `fetch` 控制。
-
-缺点是元素的启用/禁用等功能要求手动进入默认组，不然就是默认看得到所有东西，这会导致代码量增多。
-
-```rust
-let group = world.insert(Group::default());
-let view: GroupView<'_> = world.view(group);
-view.fetch(foo);
-```
-
-### 新方案：flush 与交互组
-
-这个想法主要是来因为目前大部分控制流都是由 flush 为基础的（除了少数像插入分配这种操作依赖 `RefCell` ），所以 flush 的实际调用是比较少且完全取决于窗口事件循环的，如果在 flush 阶段声明**单次 flush 的交互组**那么就可以利用其特性实现类似子世界与多窗口循环等高级特性！
-- **安全性** World 的所有操作都是依赖 queue 和 flush 指令的
-- **局部性** 只在 flush 时生效，退出时可立刻清除
-- **复合性** 利用 queue 提供的可变世界操作我们可以嵌套子世界
-
-问题：这对于多窗口、子世界等是很方便的，但是对于内部交互（比如单选框、Attach等场景）是不足的，这些场景不常调用 flush
-- 可以简单地使用 `world.view(group, |world| {});` 来表述这类行内切换用户状态的场景
 
 ## 任意位置命令 Commander ##
 
