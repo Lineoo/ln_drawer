@@ -15,6 +15,8 @@ use crate::{
     world::{Element, Handle, World, WorldError},
 };
 
+const BACKUP_SLOT: u32 = 3;
+
 /// Will exist between different sessions.
 pub struct SaveControl(String, u64);
 
@@ -110,12 +112,14 @@ impl SaveDatabase {
         if let Ok(file) = std::fs::File::open(&target) {
             let mut slot = 0;
             let mut oldest = Duration::ZERO;
-            for i in 0..3 {
+            for i in 0..BACKUP_SLOT {
                 let backup = get_file_path(world, &format!("world.ln-world.{i}.old"));
                 match std::fs::metadata(&backup) {
-                    Ok(metadata) => match metadata.created() {
-                        Ok(creation) => {
-                            let duration = SystemTime::now().duration_since(creation).unwrap();
+                    Ok(metadata) => match metadata.modified() {
+                        Ok(modified) => {
+                            let duration = SystemTime::now()
+                                .duration_since(modified)
+                                .unwrap_or_default();
                             if duration > oldest {
                                 oldest = duration;
                                 slot = i;
@@ -123,16 +127,19 @@ impl SaveDatabase {
                         }
                         Err(_) => {
                             slot = i;
+                            log::debug!("cannot get modified");
                             break;
                         }
                     },
                     Err(_) => {
                         slot = i;
+                        log::debug!("cannot get metadata");
                         break;
                     }
                 }
             }
 
+            log::debug!("backup file is written to \"world.ln-world.{slot}.old\"");
             let backup = get_file_path(world, &format!("world.ln-world.{slot}.old"));
             std::fs::copy(target, backup).unwrap();
 
