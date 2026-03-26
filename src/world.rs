@@ -101,7 +101,7 @@ impl fmt::Debug for HandleInfo {
 
 impl fmt::Display for HandleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{}", self.0)
+        write!(f, "#{}", self.0.0)
     }
 }
 
