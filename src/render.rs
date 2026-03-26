@@ -225,7 +225,7 @@ impl Element for Render {
                 {
                     let mut refreshing = false;
 
-                    let mut buf = Vec::with_capacity(world.len::<RenderControl>());
+                    let mut buf = Vec::with_capacity(world.size_hint::<RenderControl>());
                     world.foreach_fetch_mut::<RenderControl>(|mut control| {
                         if let Some(prepare) = &mut control.prepare {
                             let info = prepare(world);

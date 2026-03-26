@@ -539,8 +539,7 @@ impl World {
     // iteration //
 
     /// The actual number of element would be equal or less than this number.
-    /// TODO change symbol name to `size_hint`
-    pub fn len<T: Element>(&self) -> usize {
+    pub fn size_hint<T: Element>(&self) -> usize {
         (self.storages)
             .get(&TypeId::of::<T>())
             .map(|storage| {
