@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use hashbrown::HashMap;
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 use winit::{
@@ -29,39 +30,58 @@ use crate::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool, viewport::ViewportUtils,
     },
-    world::{Element, Handle, World, WorldError},
+    world::{Element, Handle, ViewId, World, WorldError},
 };
 
 #[derive(Default)]
 pub struct Lnwin {
     pub world: World,
+    pub windows: HashMap<WindowId, ViewId>,
 }
 
 impl ApplicationHandler for Lnwin {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
-        if self.world.single::<Lnwindow>().is_err() {
+        if self.windows.is_empty() {
             let lnwindow = Lnwindow::new(event_loop);
-            self.world.insert(lnwindow);
-            self.world.flush();
+            let view = self.world.view();
+            self.windows.insert(lnwindow.window.id(), view);
+
+            self.world.enter(view, || {
+                self.world.insert(lnwindow);
+            });
         } else {
-            let mut render = self.world.single_fetch_mut::<Render>().unwrap();
-            let lnwindow = self.world.single_fetch::<Lnwindow>().unwrap();
-            render.surface_recreate(&lnwindow);
+            for &view in self.windows.values() {
+                self.world.enter(view, || {
+                    let mut render = self.world.single_fetch_mut::<Render>().unwrap();
+                    let lnwindow = self.world.single_fetch::<Lnwindow>().unwrap();
+                    render.surface_recreate(&lnwindow);
+                });
+            }
         }
+
+        self.world.flush();
     }
 
     fn window_event(
         &mut self,
         event_loop: &dyn ActiveEventLoop,
-        _window_id: WindowId,
+        window_id: WindowId,
         event: WindowEvent,
     ) {
-        match self.world.single::<Lnwindow>() {
-            Ok(window) => {
-                self.world.trigger(window, &event);
-                self.world.flush();
-            }
-            Err(_) => event_loop.exit(),
+        if let Some(&view) = self.windows.get(&window_id) {
+            self.world.enter(view, || {
+                if let Ok(lnwindow) = self.world.single::<Lnwindow>() {
+                    self.world.trigger(lnwindow, &event);
+                } else {
+                    self.windows.remove(&window_id);
+                }
+            });
+
+            self.world.flush();
+        }
+
+        if self.windows.is_empty() {
+            event_loop.exit()
         }
     }
 }
@@ -76,6 +96,12 @@ impl Element for Lnwindow {
         world.observer(this, move |event: &WindowEvent, world| {
             if let WindowEvent::CloseRequested = event {
                 world.queue(move |world| {
+                    let autosave = world.single::<AutosaveScheduler>().unwrap();
+                    world.remove(autosave).unwrap();
+                    world.flush();
+
+                    let render = world.single::<Render>().unwrap();
+                    world.remove(render).unwrap();
                     world.remove(this).unwrap();
                 });
             }

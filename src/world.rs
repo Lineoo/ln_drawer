@@ -258,6 +258,7 @@ impl World {
         inserted.insert(handle.cast());
 
         // delay execution
+        let location = self.location.get();
         self.queue(move |world| {
             // get type table ready
             let storage = world.storages.entry(TypeId::of::<T>()).or_insert_with(|| {
@@ -272,7 +273,6 @@ impl World {
             storage.0.insert(handle.cast(), element);
 
             // update typetable
-            let location = *world.location.get_mut();
             world.typetable.insert(handle.cast(), TypeId::of::<T>());
             world.viewtable.insert(handle.cast(), location);
 
@@ -357,12 +357,10 @@ impl World {
     }
 
     /// Enter view.
-    pub fn enter(&self, view: ViewId, f: impl FnOnce(&World)) {
+    pub fn enter(&self, view: ViewId, f: impl FnOnce()) {
         let origin = self.location.get();
         self.location.set(view);
-
-        f(self);
-
+        f();
         self.location.set(origin);
     }
 
@@ -370,23 +368,30 @@ impl World {
 
     pub fn commander(&self) -> Commander {
         Commander {
+            location: self.location.get(),
             inner: self.commander.clone(),
         }
     }
 
     pub fn queue(&self, f: impl FnOnce(&mut World) + 'static) {
-        let result = self.commander.send(Box::new(f));
+        let result = self.commander.send(WorldCommand {
+            location: self.location.get(),
+            action: Box::new(f),
+        });
         if let Err(err) = result {
             log::error!("error in world queue ops: {err}");
         }
     }
 
     pub fn flush(&mut self) {
+        let origin = self.location.get();
         let buf = self.queue.try_iter().collect::<Vec<_>>();
         for cmd in buf {
-            cmd(self);
+            self.location.set(cmd.location);
+            (cmd.action)(self);
             self.flush();
         }
+        self.location.set(origin);
     }
 
     // validation //
@@ -738,17 +743,25 @@ impl<T: Element> RefMut<'_, T> {
 
 // Commander //
 
-type WorldCommand = Box<dyn FnOnce(&mut World)>;
+struct WorldCommand {
+    location: ViewId,
+    action: Box<dyn FnOnce(&mut World)>,
+}
 
 /// A flexible command access to world.
 #[derive(Debug, Clone)]
 pub struct Commander {
+    location: ViewId,
     inner: Sender<WorldCommand>,
 }
 
 impl Commander {
     pub fn queue(&self, f: impl FnOnce(&mut World) + 'static) {
-        let result = self.inner.send(Box::new(f));
+        let result = self.inner.send(WorldCommand {
+            location: self.location,
+            action: Box::new(f),
+        });
+
         if let Err(err) = result {
             log::error!("error in world queue ops: {err}");
         }
