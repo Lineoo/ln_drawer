@@ -148,6 +148,11 @@ impl fmt::Display for ViewId {
     }
 }
 
+pub struct ViewOptions {
+    /// Will be also included in validation.
+    pub refs: Vec<ViewId>,
+}
+
 // World Management //
 
 // Center of multiple accesses in world, which also prevents constructional changes
@@ -156,10 +161,11 @@ pub struct World {
     view_idx: RefCell<ViewId>,
 
     location: Cell<ViewId>,
-
+    
     typetable: HashMap<Handle, TypeId>,
     viewtable: HashMap<Handle, ViewId>,
     storages: HashMap<TypeId, Box<dyn StorageGeneral>>,
+    options: HashMap<ViewId, ViewOptions>,
 
     occupied: RefCell<HashMap<Handle, isize>>,
     inserted: RefCell<HashSet<Handle>>,
@@ -243,6 +249,7 @@ impl Default for World {
             typetable: HashMap::new(),
             viewtable: HashMap::new(),
             storages: HashMap::new(),
+            options: HashMap::new(),
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
@@ -369,6 +376,14 @@ impl World {
         view
     }
 
+    /// Assign options for current location. Need flush.
+    pub fn option(&self, opt: ViewOptions) {
+        let view = self.location.get();
+        self.queue(move |world| {
+            world.options.insert(view, opt);
+        });
+    }
+
     /// Enter view.
     pub fn enter(&self, view: ViewId, f: impl FnOnce()) {
         let origin = self.location.get();
@@ -381,9 +396,12 @@ impl World {
     /// mutable limitations.
     pub fn clear(&self) {
         self.queue(move |world| {
-            for &handle in world.viewtable.keys() {
-                let result = world.validate(handle);
-                if !matches!(result, Ok(_) | Err(WorldError::JustInserted(_))) {
+            for (&handle, &view) in world.viewtable.iter() {
+                if view != world.location.get() {
+                    continue;
+                }
+
+                if world.validate(handle).is_err() {
                     continue;
                 }
 
