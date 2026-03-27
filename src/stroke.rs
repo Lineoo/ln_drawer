@@ -18,14 +18,13 @@ use crate::{
     layout::transform::{Transform, TransformEdge},
     lnwin::Lnwindow,
     measures::{Fract, Position, PositionFract, Rectangle, Size},
-    render::{Render, canvas::CanvasDescriptor, text::TextDescriptor},
+    render::{Render, camera::CameraUtils, canvas::CanvasDescriptor, text::TextDescriptor},
     save::SaveControl,
     stroke::{
         canvas::{CanvasChunk, CanvasChunkPipeline},
         round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushStorage},
     },
     tools::{
-        camera::CameraUtils,
         collider::ToolCollider,
         mouse::MouseMenu,
         pointer::{PointerHit, PointerHitStatus},

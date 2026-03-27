@@ -3,8 +3,8 @@ use winit::event::{ButtonSource, ElementState, MouseButton, MouseScrollDelta, Wi
 use crate::{
     lnwin::Lnwindow,
     measures::{Fract, Position},
-    render::camera::Camera,
-    tools::{collider::ToolCollider, camera::CameraUtils},
+    render::camera::{Camera, CameraUtils},
+    tools::collider::ToolCollider,
     world::{Element, Handle, World},
 };
 

@@ -16,11 +16,11 @@ use crate::{
     measures::Size,
     render::{
         Render,
+        camera::{Camera, CameraDescriptor, CameraUtils},
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
         text::TextManagerDescriptor,
-        camera::{Camera, CameraDescriptor},
         wireframe::WireframeManagerDescriptor,
     },
     save::{AutosaveScheduler, SaveControl, SaveControlRead, SaveControlWrite, SaveDatabase},
@@ -28,7 +28,7 @@ use crate::{
     theme::Luni,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
-        pointer::PointerTool, touch::MultiTouchTool, camera::CameraUtils,
+        pointer::PointerTool, touch::MultiTouchTool,
     },
     world::{Element, Handle, ViewId, World, WorldError},
 };

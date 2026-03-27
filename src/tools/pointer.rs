@@ -9,11 +9,8 @@ use winit::event::{
 use crate::{
     lnwin::Lnwindow,
     measures::{Position, Rectangle},
-    render::camera::Camera,
-    tools::{
-        collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
-        camera::CameraUtils,
-    },
+    render::camera::{Camera, CameraUtils},
+    tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
     world::{Element, Handle, World},
 };
 
