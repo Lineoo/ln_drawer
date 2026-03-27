@@ -29,10 +29,10 @@ impl Element for MouseTool {
                 ..
             } => {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let viewport = world.single_fetch::<Camera>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
 
                 let position = lnwindow.cursor_to_screen(*position);
-                let position = viewport.screen_to_world_absolute(position);
+                let position = camera.screen_to_world_absolute(position);
 
                 let target = ToolCollider::intersect(world, position.floor())
                     .first()
@@ -51,12 +51,12 @@ impl Element for MouseTool {
                 ..
             } => {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let mut viewport_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+                let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                 let cursor = lnwindow.cursor_to_screen(*position);
-                viewport_utils.cursor(world, cursor);
-                viewport_utils.anchor_on_screen(world, cursor);
-                viewport_utils.locked(true);
+                camera_utils.cursor(world, cursor);
+                camera_utils.anchor_on_screen(world, cursor);
+                camera_utils.locked(true);
             }
 
             WindowEvent::PointerButton {
@@ -66,22 +66,22 @@ impl Element for MouseTool {
                 ..
             } => {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let mut viewport_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+                let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                 let cursor = lnwindow.cursor_to_screen(*position);
-                viewport_utils.cursor(world, cursor);
-                viewport_utils.locked(false);
+                camera_utils.cursor(world, cursor);
+                camera_utils.locked(false);
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let mut viewport_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+                let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                 let zoom_delta = match delta {
                     MouseScrollDelta::LineDelta(_rows, lines) => Fract::from_f32(*lines),
                     MouseScrollDelta::PixelDelta(delta) => Fract::from_f64(delta.y / 16.0),
                 };
 
-                viewport_utils.zoom_delta(world, zoom_delta);
+                camera_utils.zoom_delta(world, zoom_delta);
             }
 
             _ => {}

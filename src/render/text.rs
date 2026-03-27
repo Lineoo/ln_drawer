@@ -62,7 +62,7 @@ impl Descriptor for TextManagerDescriptor {
         let swash_cache = SwashCache::new();
 
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Camera>().unwrap();
+        let camera = world.single_fetch::<Camera>().unwrap();
 
         let shader_vs = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("vertex_shader"),
@@ -112,7 +112,7 @@ impl Descriptor for TextManagerDescriptor {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("text_pipeline_layout"),
-                bind_group_layouts: &[&viewport.layout, &bind_layout],
+                bind_group_layouts: &[&camera.layout, &bind_layout],
                 immediate_size: 0
             });
 
@@ -294,13 +294,13 @@ impl Element for Text {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(self.control, move |Redraw, world| {
             let manager = world.single_fetch::<TextManager>().unwrap();
-            let viewport = world.single_fetch::<Camera>().unwrap();
+            let camera = world.single_fetch::<Camera>().unwrap();
             let this = world.fetch(this).unwrap();
 
             let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
             let rpass = &mut rportal.active.as_mut().unwrap().rpass;
             rpass.set_pipeline(&manager.pipeline);
-            rpass.set_bind_group(0, &viewport.bind, &[]);
+            rpass.set_bind_group(0, &camera.bind, &[]);
             rpass.set_bind_group(1, &this.bind, &[]);
             rpass.draw(0..4, 0..1);
         });

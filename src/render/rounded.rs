@@ -60,7 +60,7 @@ impl Default for RoundedRectDescriptor {
 impl RoundedRect {
     pub fn init(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Camera>().unwrap();
+        let camera = world.single_fetch::<Camera>().unwrap();
         let device = &render.device;
 
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
@@ -84,7 +84,7 @@ impl RoundedRect {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("rounded"),
-            bind_group_layouts: &[&viewport.layout, &bind],
+            bind_group_layouts: &[&camera.layout, &bind],
             immediate_size: 0,
         });
 
@@ -182,11 +182,11 @@ impl RoundedRect {
             })),
             draw: Some(Box::new(move |world, rpass| {
                 let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
-                let viewport = world.single_fetch::<Camera>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
                 let this = world.fetch(this).unwrap();
 
                 rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &viewport.bind, &[]);
+                rpass.set_bind_group(0, &camera.bind, &[]);
                 rpass.set_bind_group(1, &this.bind, &[]);
                 rpass.draw(0..4, 0..1);
             })),

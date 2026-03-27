@@ -122,29 +122,29 @@ impl Element for Lnwindow {
 
         world.queue(|world| {
             world.insert(SaveControlRead {
-                name: "viewport".into(),
+                name: "camera".into(),
                 read: Box::new(move |world, control| {
                     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                     let size = lnwindow.window.surface_size();
 
                     let control = world.fetch(control).unwrap();
-                    let viewport_descriptor =
+                    let camera_desc =
                         postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
 
-                    let viewport = world.build(CameraDescriptor {
+                    let camera = world.build(CameraDescriptor {
                         size: Size::new(size.width, size.height),
-                        ..viewport_descriptor
+                        ..camera_desc
                     });
 
                     let control = control.handle();
                     world.insert(SaveControlWrite(Box::new(move |world| {
-                        let viewport = world.fetch(viewport).unwrap();
+                        let camera = world.fetch(camera).unwrap();
                         let control = world.fetch(control).unwrap();
 
                         let bytes = postcard::to_stdvec(&CameraDescriptor {
-                            size: viewport.size,
-                            center: viewport.center,
-                            zoom: viewport.zoom,
+                            size: camera.size,
+                            center: camera.center,
+                            zoom: camera.zoom,
                         })
                         .unwrap();
 
@@ -159,20 +159,20 @@ impl Element for Lnwindow {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let size = lnwindow.window.surface_size();
 
-                let viewport = world.build(CameraDescriptor {
+                let camera = world.build(CameraDescriptor {
                     size: Size::new(size.width, size.height),
                     ..Default::default()
                 });
 
                 let control = SaveControl::create("viewport".into(), world, &[]);
                 world.insert(SaveControlWrite(Box::new(move |world| {
-                    let viewport = world.fetch(viewport).unwrap();
+                    let camera = world.fetch(camera).unwrap();
                     let control = world.fetch(control).unwrap();
 
                     let bytes = postcard::to_stdvec(&CameraDescriptor {
-                        size: viewport.size,
-                        center: viewport.center,
-                        zoom: viewport.zoom,
+                        size: camera.size,
+                        center: camera.center,
+                        zoom: camera.zoom,
                     })
                     .unwrap();
 

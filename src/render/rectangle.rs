@@ -48,7 +48,7 @@ struct RectangleUniform {
 impl<M: RectangleMeshMaterial> RectangleMesh<M> {
     pub fn init(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Camera>().unwrap();
+        let camera = world.single_fetch::<Camera>().unwrap();
         let device = &render.device;
 
         let vertex = device.create_shader_module(ShaderModuleDescriptor {
@@ -89,7 +89,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(M::label()),
-            bind_group_layouts: &[&viewport.layout, &bind],
+            bind_group_layouts: &[&camera.layout, &bind],
             immediate_size: 0,
         });
 
@@ -191,11 +191,11 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
             })),
             draw: Some(Box::new(move |world, rpass| {
                 let pipeline = world.single_fetch::<RectangleMeshPipeline<M>>().unwrap();
-                let viewport = world.single_fetch::<Camera>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
                 let this = world.fetch(this).unwrap();
 
                 rpass.set_pipeline(&pipeline.pipeline);
-                rpass.set_bind_group(0, &viewport.bind, &[]);
+                rpass.set_bind_group(0, &camera.bind, &[]);
                 rpass.set_bind_group(1, &this.bind, &[]);
                 rpass.draw(0..4, 0..1);
             })),

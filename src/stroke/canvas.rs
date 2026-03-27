@@ -176,7 +176,7 @@ impl Element for CanvasChunkPipeline {}
 impl CanvasChunk {
     pub fn new(world: &World, chunk: (i32, i32), control: Handle<SaveControl>) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Camera>().unwrap();
+        let camera = world.single_fetch::<Camera>().unwrap();
         let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
         let device = &render.device;
 
@@ -243,7 +243,7 @@ impl CanvasChunk {
                 BindGroupEntry {
                     binding: 0,
                     resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &viewport.uniform,
+                        buffer: &camera.uniform,
                         offset: 0,
                         size: None,
                     }),

@@ -156,7 +156,7 @@
 - [ ] menu 的字也得是 theme 负责吧
     - [ ] menu 改用 Panel -> Layout -> Label
 - [ ] 所有的像现在的 render shader 之类的东西都应该移动到 theme(luni) 下面
-    - [ ] Render 的职能就是 viewport, sorting, redraw management, clipping
+    - [ ] Render 的职能就是 camera, sorting, redraw management, clipping
     - [ ] 统一 vertex shader
 - [ ] 存档结构设计
     - [ ] 直接使用闭包的渲染阶段
@@ -405,7 +405,7 @@ API 部分
 |                                               |
 |   SectionBridge           SectionBridge       |
 |---vvvvvvvvvvvvv-------|---vvvvvvvvvvvvv-------|
-|   Viewport (World)    |   Viewport (Camera)   |
+|   Camera (Paint)      |   Camera (UI)         |
 |                       |                       |
 |   RenderControl       |   RenderControl       |
 |   RenderControl       |   ToolCollider        |
@@ -607,11 +607,10 @@ world.observer(control, move |Redraw(rpass), world| {
 有时**循环重绘**会发生，即**上一帧的渲染过程中触发了下一帧的重绘**。这会导致渲染*不受控*地无限进行下去。为了避免这种情况的产生，`Render` 会直接忽略重绘阶段产生的重绘指令，并打印一个 `WARNING` 告知潜在的循环重绘被跳过。
 > NOTE: 使用 queue 模式来绕过检测是可行的，但是**绝对不推荐**！请改用 `active` 属性来进行积极重绘！
 
-### 6. Viewport?
+### 6. Viewport & Camera
 
-Viewport 在这个语境下其实是两个东西：
 1. wgpu 负责绘制的那个 viewport，是作用在**窗口**上的
-2. 我们内部给 `render` 模块用的那个 viewport，用来平移用的
+2. 我们内部给 `render` 模块用的那个 camera，用来平移用的
 
 两者的确是对应的（一般来说会保持两个的 width 和 height 相同），但逻辑上来讲，
 - 一个是**世界空间**（或者说可以用 `Size` 来表示）

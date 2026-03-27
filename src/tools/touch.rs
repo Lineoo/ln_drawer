@@ -71,11 +71,11 @@ impl MultiTouchTool {
                 };
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let viewport = world.single_fetch::<Camera>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
 
                 let screen = lnwindow.cursor_to_screen(*position);
-                let position = viewport.screen_to_world_absolute(screen);
-                drop((lnwindow, viewport));
+                let position = camera.screen_to_world_absolute(screen);
+                drop((lnwindow, camera));
 
                 let target = ToolCollider::intersect(world, position.floor())
                     .first()
@@ -138,11 +138,11 @@ impl MultiTouchTool {
                 };
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let viewport = world.single_fetch::<Camera>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
 
                 let screen = lnwindow.cursor_to_screen(*position);
-                let position = viewport.screen_to_world_absolute(screen);
-                drop((lnwindow, viewport));
+                let position = camera.screen_to_world_absolute(screen);
+                drop((lnwindow, camera));
 
                 *touch = MultiTouch {
                     position: position.floor(),
@@ -198,11 +198,11 @@ impl MultiTouchTool {
                 };
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let viewport = world.single_fetch::<Camera>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
 
                 let screen = lnwindow.cursor_to_screen(*position);
-                let position = viewport.screen_to_world_absolute(screen);
-                drop((lnwindow, viewport));
+                let position = camera.screen_to_world_absolute(screen);
+                drop((lnwindow, camera));
 
                 let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
                 let (target, touch) = tool.lut.get_mut(&kind).unwrap();

@@ -108,7 +108,7 @@ impl Element for PointerTool {
         world.observer(lnwindow, move |event: &WindowEvent, world| {
             let mut this = world.fetch_mut(this).unwrap();
             let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-            let viewport = world.single_fetch::<Camera>().unwrap();
+            let camera = world.single_fetch::<Camera>().unwrap();
 
             match event {
                 WindowEvent::PointerMoved {
@@ -121,9 +121,9 @@ impl Element for PointerTool {
                     };
 
                     let screen = lnwindow.cursor_to_screen(*position);
-                    let position = viewport.screen_to_world_absolute(screen).floor();
+                    let position = camera.screen_to_world_absolute(screen).floor();
 
-                    drop((lnwindow, viewport));
+                    drop((lnwindow, camera));
                     if let Some(press) = &mut pointer.pressed {
                         press.force = match source {
                             PointerSource::Mouse => Some(1.0),
@@ -158,9 +158,9 @@ impl Element for PointerTool {
                     };
 
                     let screen = lnwindow.cursor_to_screen(*position);
-                    let position = viewport.screen_to_world_absolute(screen).floor();
+                    let position = camera.screen_to_world_absolute(screen).floor();
 
-                    drop((lnwindow, viewport));
+                    drop((lnwindow, camera));
                     pointer.update_position(world, position, screen);
                     pointer.update_pressed(
                         world,
@@ -188,9 +188,9 @@ impl Element for PointerTool {
                     };
 
                     let screen = lnwindow.cursor_to_screen(*position);
-                    let position = viewport.screen_to_world_absolute(screen).floor();
+                    let position = camera.screen_to_world_absolute(screen).floor();
 
-                    drop((lnwindow, viewport));
+                    drop((lnwindow, camera));
                     pointer.update_position(world, position, screen);
                 }
 
@@ -201,12 +201,12 @@ impl Element for PointerTool {
 
                     if let Some(position) = *position {
                         let screen = lnwindow.cursor_to_screen(position);
-                        let position = viewport.screen_to_world_absolute(screen).floor();
+                        let position = camera.screen_to_world_absolute(screen).floor();
 
-                        drop((lnwindow, viewport));
+                        drop((lnwindow, camera));
                         pointer.update_position(world, position, screen);
                     } else {
-                        drop((lnwindow, viewport));
+                        drop((lnwindow, camera));
                     }
 
                     if let Some(hovering) = pointer.hovering {
@@ -250,9 +250,9 @@ impl Pointer {
 
         self.recalculate_hovering(world);
 
-        let mut viewport_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-        viewport_utils.cursor(world, screen);
-        drop(viewport_utils);
+        let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+        camera_utils.cursor(world, screen);
+        drop(camera_utils);
 
         if let Some(hovering) = self.hovering {
             if let Some(pressed) = self.pressed {

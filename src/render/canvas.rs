@@ -16,8 +16,8 @@ use wgpu::{
 use crate::{
     measures::{Position, Rectangle, Size},
     render::{
-        Redraw, Render, RenderControl, RenderInformation, RenderPortal, vertex::VertexUniform,
-        camera::Camera,
+        Redraw, Render, RenderControl, RenderInformation, RenderPortal, camera::Camera,
+        vertex::VertexUniform,
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -60,7 +60,7 @@ impl Descriptor for CanvasManagerDescriptor {
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Camera>().unwrap();
+        let camera = world.single_fetch::<Camera>().unwrap();
 
         let shader_vs = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("vertex_shader"),
@@ -110,7 +110,7 @@ impl Descriptor for CanvasManagerDescriptor {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("canvas_pipeline_layout"),
-                bind_group_layouts: &[&viewport.layout, &bind_layout],
+                bind_group_layouts: &[&camera.layout, &bind_layout],
                 immediate_size: 0,
             });
 
@@ -274,11 +274,11 @@ impl Element for Canvas {
             })),
             draw: Some(Box::new(move |world, rpass| {
                 let manager = world.single_fetch::<CanvasManager>().unwrap();
-                let viewport = world.single_fetch::<Camera>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
                 let this = world.fetch(this).unwrap();
 
                 rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &viewport.bind, &[]);
+                rpass.set_bind_group(0, &camera.bind, &[]);
                 rpass.set_bind_group(1, &this.bind, &[]);
                 rpass.draw(0..4, 0..1);
             })),
