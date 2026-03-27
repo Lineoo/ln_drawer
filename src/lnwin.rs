@@ -95,15 +95,7 @@ impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(this, move |event: &WindowEvent, world| {
             if let WindowEvent::CloseRequested = event {
-                world.queue(move |world| {
-                    let autosave = world.single::<AutosaveScheduler>().unwrap();
-                    world.remove(autosave).unwrap();
-                    world.flush();
-
-                    let render = world.single::<Render>().unwrap();
-                    world.remove(render).unwrap();
-                    world.remove(this).unwrap();
-                });
+                world.clear();
             }
         });
 

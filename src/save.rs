@@ -204,10 +204,6 @@ impl Element for AutosaveScheduler {
             fetched.autosave(world, this);
         });
     }
-
-    fn when_remove(&mut self, world: &World, this: Handle<Self>) {
-        self.autosave(world, this);
-    }
 }
 
 impl Element for SaveDatabase {

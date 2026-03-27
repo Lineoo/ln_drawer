@@ -367,7 +367,9 @@ impl Element for Render {
 impl Element for RenderPortal {}
 
 impl Element for RenderControl {
-    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.dependency(this, world.single::<RenderPortal>().unwrap());
+        world.dependency(this, world.single::<Lnwindow>().unwrap());
         determine_redraw(self, world);
     }
 

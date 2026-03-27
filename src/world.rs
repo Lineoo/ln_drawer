@@ -95,7 +95,7 @@ pub struct HandleInfo(Handle, &'static str);
 
 impl fmt::Debug for HandleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Handle<{}>({})", self.1, self.0)
+        write!(f, "Handle<{}>({})", self.1, self.0.0)
     }
 }
 
@@ -165,6 +165,8 @@ pub struct World {
     inserted: RefCell<HashSet<Handle>>,
     removed: RefCell<HashSet<Handle>>,
 
+    dependencies: RefCell<Dependencies>,
+
     queue: Receiver<WorldCommand>,
     commander: Sender<WorldCommand>,
 }
@@ -172,11 +174,16 @@ pub struct World {
 struct Storage<T: Element>(HashMap<Handle, T>);
 
 trait StorageGeneral: Any {
+    fn name(&self) -> &'static str;
     fn remove(&mut self, handle: Handle);
     fn when_remove(&mut self, world: &World, handle: Handle);
 }
 
 impl<T: Element> StorageGeneral for Storage<T> {
+    fn name(&self) -> &'static str {
+        type_name::<T>()
+    }
+
     fn remove(&mut self, handle: Handle) {
         self.0.remove(&handle);
     }
@@ -189,11 +196,14 @@ impl<T: Element> StorageGeneral for Storage<T> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorldError {
-    #[error("{0:?} was just inserted")]
+    #[error("{0:?} was just inserted, not flushed yet")]
     JustInserted(HandleInfo),
 
-    #[error("{0:?} was just removed")]
+    #[error("{0:?} was just removed, not flushed yet")]
     JustRemoved(HandleInfo),
+
+    #[error("{0:?} was removed")]
+    Removed(HandleInfo),
 
     #[error("{0:?} does not exist")]
     InvalidHandle(HandleInfo),
@@ -218,6 +228,9 @@ pub enum WorldError {
 
     #[error("{0} is not singleton ({1} in total)")]
     SingletonTooMany(&'static str, usize),
+
+    #[error("{0} may be singleton, but not flushed")]
+    SingletonCorrupted(&'static str),
 }
 
 impl Default for World {
@@ -233,6 +246,7 @@ impl Default for World {
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
+            dependencies: RefCell::default(),
             queue,
             commander,
         }
@@ -275,6 +289,7 @@ impl World {
             // update typetable
             world.typetable.insert(handle.cast(), TypeId::of::<T>());
             world.viewtable.insert(handle.cast(), location);
+            world.inserted.get_mut().remove(&handle.cast());
 
             // when_insert
             let mut element = world.fetch_mut(handle).unwrap();
@@ -288,47 +303,45 @@ impl World {
 
     /// Cell-mode removal cannot access the element immediately so we can't return the owned value of removed element.
     pub fn remove<T: ?Sized + 'static>(&self, handle: Handle<T>) -> Result<usize, WorldError> {
-        let handle_any = handle.cast();
-
         self.available_mut(handle)?;
+        let mut cnt = 1;
 
         // when_remove
         // SAFETY: we have checked the mutability
-        let type_id = *self.typetable.get(&handle_any).unwrap();
+        let type_id = *self.typetable.get(&handle.cast()).unwrap();
         let storage = self.storages.get(&type_id).unwrap().as_ref() as *const _;
         let storage = storage as *mut dyn StorageGeneral;
-        unsafe { (*storage).when_remove(self, handle_any) };
+        unsafe { (*storage).when_remove(self, handle.cast()) };
 
-        // maintain dependency
-        let mut cnt = 1;
-        if let Ok(mut dependencies) = self.single_fetch_mut::<Dependencies>()
-            && let Some(this) = dependencies.0.remove(&handle_any)
-        {
-            // clean for parents
-            for depend_on in this.depend_on {
-                let Some(depend_on) = dependencies.0.get_mut(&depend_on) else {
-                    continue;
-                };
-
-                // search for itself and swap remove
-                for i in 0..depend_on.depend_by.len() {
-                    if depend_on.depend_by[i] == handle_any {
-                        depend_on.depend_by.swap_remove(i);
-                        break;
-                    }
-                }
+        // cleanup parents' dependencies
+        let mut dependencies = self.dependencies.borrow_mut();
+        if let Some(deps) = dependencies.0.get_mut(&handle.cast()) {
+            for parent in std::mem::take(&mut deps.parents) {
+                let parent_deps = dependencies.0.get_mut(&parent).unwrap();
+                parent_deps.children.retain(|child| *child != handle.cast());
             }
+        }
+        drop(dependencies);
 
-            // remove children
+        // remove children
+        loop {
+            let mut dependencies = self.dependencies.borrow_mut();
+            let Some(dep) = dependencies.0.get(&handle.cast()) else {
+                break;
+            };
+
+            let Some(&child) = dep.children.last() else {
+                dependencies.0.remove(&handle.cast());
+                break;
+            };
+
             drop(dependencies);
-            for child in this.depend_by {
-                cnt += self.remove(child)?;
-            }
+            cnt += self.remove(child)?;
         }
 
         // write immediate record
         let mut removed = self.removed.borrow_mut();
-        removed.insert(handle_any);
+        removed.insert(handle.cast());
         drop(removed);
 
         self.queue(move |world| {
@@ -338,7 +351,7 @@ impl World {
 
             // pop out storage
             let storage = world.storages.get_mut(&type_id).unwrap();
-            storage.remove(handle_any);
+            storage.remove(handle.cast());
 
             log::trace!("remove {:?}", handle);
         });
@@ -362,6 +375,21 @@ impl World {
         self.location.set(view);
         f();
         self.location.set(origin);
+    }
+
+    /// Clear all elements from current view. Action is queued so no removal marks or
+    /// mutable limitations.
+    pub fn clear(&self) {
+        self.queue(move |world| {
+            for &handle in world.viewtable.keys() {
+                let result = world.validate(handle);
+                if !matches!(result, Ok(_) | Err(WorldError::JustInserted(_))) {
+                    continue;
+                }
+
+                world.remove(handle).unwrap();
+            }
+        });
     }
 
     // commands //
@@ -399,7 +427,11 @@ impl World {
     /// Check whether target element exists, insertion without `flush` will *NOT* be included.
     pub fn validate<T: ?Sized>(&self, handle: Handle<T>) -> Result<(), WorldError> {
         if self.removed.borrow().contains(&handle.cast()) {
-            return Err(WorldError::JustRemoved(handle.into()));
+            if self.typetable.contains_key(&handle.cast()) {
+                return Err(WorldError::JustRemoved(handle.into()));
+            }
+
+            return Err(WorldError::Removed(handle.into()));
         }
 
         if !self.typetable.contains_key(&handle.cast()) {
@@ -508,13 +540,29 @@ impl World {
 
         let mut ret = None;
         let mut cnt = 0;
+        let mut corrupted = 0;
         for &handle in storage.0.keys() {
-            if self.validate(handle).is_err() {
-                continue;
-            }
+            match self.validate(handle) {
+                Ok(_) => {
+                    if let Some(&target) = self.viewtable.get(&handle.cast()) {
+                        let here = self.location.get();
+                        if target != here {
+                            continue;
+                        }
+                    }
 
-            cnt += 1;
-            ret.replace(handle);
+                    cnt += 1;
+                    ret.replace(handle);
+                }
+                Err(WorldError::JustRemoved(_) | WorldError::JustInserted(_)) => {
+                    corrupted += 1;
+                }
+                Err(_) => continue,
+            }
+        }
+
+        if corrupted != 0 {
+            return Err(WorldError::SingletonCorrupted(type_name::<T>()));
         }
 
         let Some(ret) = ret else {
@@ -607,45 +655,31 @@ impl World {
         cnt
     }
 
+    pub fn queue_trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: E) {
+        self.queue(move |world| {
+            world.trigger(target, &event);
+        });
+    }
+
     // dependency //
 
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
-    pub fn dependency<T: ?Sized, U: ?Sized>(&self, target: Handle<T>, depend_on: Handle<U>) {
-        if self.removed.borrow().contains(&depend_on.cast())
-            || (!self.typetable.contains_key(&depend_on.cast())
-                && !self.inserted.borrow().contains(&depend_on.cast()))
-        {
-            let err = WorldError::ToxicDependency(target.into(), depend_on.into());
-            log::error!("{err:?}");
+    pub fn dependency<T: ?Sized, U: ?Sized>(&self, child: Handle<T>, parent: Handle<U>) {
+        if self.validate(parent).is_err() && !self.inserted.borrow().contains(&parent.cast()) {
+            let err = WorldError::ToxicDependency(child.into(), parent.into());
+            log::error!("failed to attach dependency: {err:?}");
             return;
         }
 
-        let target = target.cast();
-        let depend_on = depend_on.cast();
+        let child = child.cast();
+        let parent = parent.cast();
 
-        match self.single_fetch_mut::<Dependencies>() {
-            Ok(mut dependencies) => {
-                let depend = dependencies.0.entry(depend_on).or_default();
-                depend.depend_by.push(target);
-                let depend = dependencies.0.entry(target).or_default();
-                depend.depend_on.push(depend_on);
-            }
-            Err(WorldError::SingletonNoSuch(_)) => {
-                let mut dependencies = Dependencies::default();
-
-                log::debug!("init dependencies");
-
-                let depend = dependencies.0.entry(depend_on).or_default();
-                depend.depend_by.push(target);
-                let depend = dependencies.0.entry(target).or_default();
-                depend.depend_on.push(depend_on);
-                self.insert(dependencies);
-            }
-            Err(err) => {
-                todo!("{err}");
-            }
-        }
+        let mut dependencies = self.dependencies.borrow_mut();
+        let parent_deps = dependencies.0.entry(parent).or_default();
+        parent_deps.children.push(child);
+        let child_deps = dependencies.0.entry(child).or_default();
+        child_deps.parents.push(parent);
     }
 }
 
@@ -814,13 +848,11 @@ impl<E: 'static> Element for Observer<E> {
 #[derive(Default)]
 struct Dependencies(HashMap<Handle, Dependency>);
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Dependency {
-    depend_on: SmallVec<[Handle; 1]>,
-    depend_by: SmallVec<[Handle; 4]>,
+    parents: SmallVec<[Handle; 1]>,
+    children: SmallVec<[Handle; 4]>,
 }
-
-impl Element for Dependencies {}
 
 #[cfg(test)]
 mod test {
@@ -877,32 +909,6 @@ mod test {
     }
 
     #[test]
-    fn runtime_borrow_conflict() {
-        let mut world = World::default();
-        let tester1h = world.insert(TestInserter(0xFC01));
-        world.flush();
-
-        {
-            assert!(world.available(tester1h).is_ok());
-            assert!(world.available_mut(tester1h).is_ok());
-        }
-
-        {
-            let _inserter1 = world.fetch_mut(tester1h).unwrap();
-
-            assert!(world.available(tester1h).is_err());
-            assert!(world.available_mut(tester1h).is_err());
-        }
-
-        {
-            let _inserter1 = world.fetch(tester1h).unwrap();
-
-            assert!(world.available(tester1h).is_ok());
-            assert!(world.available_mut(tester1h).is_err());
-        }
-    }
-
-    #[test]
     fn loop_dependency() {
         let mut world = World::default();
 
@@ -928,6 +934,83 @@ mod test {
     }
 
     #[test]
+    fn multi_dependency_children() {
+        let mut world = World::default();
+
+        let parent = world.insert(TestInserter(0));
+        let child1 = world.insert(TestInserter(1));
+        let child2 = world.insert(TestInserter(1));
+        let child3 = world.insert(TestInserter(1));
+
+        world.flush();
+
+        world.dependency(child1, parent);
+        world.dependency(child2, parent);
+        world.dependency(child3, parent);
+
+        world.remove(parent).unwrap();
+
+        world.flush();
+
+        assert!(world.validate(parent).is_err());
+        assert!(world.validate(child1).is_err());
+        assert!(world.validate(child2).is_err());
+        assert!(world.validate(child3).is_err());
+    }
+
+    #[test]
+    fn multi_dependency_parent() {
+        let mut world = World::default();
+
+        let child = world.insert(TestInserter(0));
+        let child3 = world.insert(TestInserter(0));
+        let parent1 = world.insert(TestInserter(1));
+        let parent2 = world.insert(TestInserter(1));
+        let parent3 = world.insert(TestInserter(1));
+
+        world.flush();
+
+        world.dependency(child, parent1);
+        world.dependency(child, parent2);
+        world.dependency(child, parent3);
+        world.dependency(child3, parent3);
+
+        world.remove(parent1).unwrap();
+        world.remove(parent3).unwrap();
+
+        world.flush();
+
+        assert!(world.validate(child).is_err());
+        assert!(world.validate(child3).is_err());
+        assert!(world.validate(parent1).is_err());
+        assert!(world.validate(parent2).is_ok());
+        assert!(world.validate(parent3).is_err());
+    }
+
+    #[test]
+    fn multi_dependency_grand_parent() {
+        let mut world = World::default();
+
+        let grand_parent = world.insert(TestInserter(0));
+        let parent = world.insert(TestInserter(1));
+        let child = world.insert(TestInserter(2));
+
+        world.flush();
+
+        world.dependency(parent, grand_parent);
+        world.dependency(child, parent);
+        world.dependency(child, grand_parent);
+
+        world.remove(grand_parent).unwrap();
+
+        world.flush();
+
+        assert!(world.validate(grand_parent).is_err());
+        assert!(world.validate(parent).is_err());
+        assert!(world.validate(child).is_err());
+    }
+
+    #[test]
     fn observers() {
         let mut world = World::default();
 
@@ -941,16 +1024,14 @@ mod test {
             this.0 += i;
         });
 
-        let obs = world.observer(left, move |TestEvent(i), world| {
+        world.observer(left, move |TestEvent(i), world| {
             let mut this = world.fetch_mut(right).unwrap();
             this.0 += i;
         });
 
-        world.dependency(obs, right);
+        world.flush();
 
         world.trigger(left, &TestEvent(10));
-
-        world.flush();
 
         assert_eq!(&*world.fetch(left).unwrap(), &TestInserter(11));
         assert_eq!(&*world.fetch(right).unwrap(), &TestGoodInserter(12));

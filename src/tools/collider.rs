@@ -44,7 +44,8 @@ impl ToolCollider {
 impl Element for ToolCollider {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
-        world.trigger(dispatcher, &ToolColliderChanged(this));
+        world.queue_trigger(dispatcher, ToolColliderChanged(this));
+        world.dependency(this, dispatcher);
 
         world.observer(this, move |&LayoutRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
@@ -54,12 +55,12 @@ impl Element for ToolCollider {
 
     fn when_modify(&mut self, world: &World, this: Handle<Self>) {
         let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
-        world.trigger(dispatcher, &ToolColliderChanged(this));
+        world.queue_trigger(dispatcher, ToolColliderChanged(this));
     }
 
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {
         let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
-        world.trigger(dispatcher, &ToolColliderChanged(this));
+        world.queue_trigger(dispatcher, ToolColliderChanged(this));
     }
 }
 

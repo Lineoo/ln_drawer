@@ -443,6 +443,9 @@ impl Element for CanvasChunk {
             })),
         });
 
+        let layer = world.single::<StrokeLayer>().unwrap();
+        world.dependency(this, layer);
+        world.dependency(self.save, this);
         world.dependency(control, this);
     }
 }
