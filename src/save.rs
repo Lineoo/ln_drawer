@@ -32,11 +32,6 @@ pub struct AutosaveScheduler {
     pub autosave_duration: Duration,
 }
 
-/// The event is triggered on [`SaveScheduler`].
-/// TODO use Element instead of Event
-#[deprecated]
-pub struct AutosaveRequest;
-
 impl SaveControl {
     pub fn create(name: String, world: &World, bytes: &[u8]) -> Handle<SaveControl> {
         let mut db = world.single_fetch_mut::<SaveDatabase>().unwrap();
@@ -84,7 +79,7 @@ impl SaveControl {
 }
 
 impl SaveControlRead {
-    fn expand_foreach(&mut self, world: &World) {
+    fn read_controls(&mut self, world: &World) {
         world.foreach::<SaveControl>(|control| {
             let control = world.fetch(control).unwrap();
             if control.0 == self.name {
@@ -96,15 +91,13 @@ impl SaveControlRead {
     }
 }
 
-impl AutosaveScheduler {
-    fn autosave(&mut self, world: &World, this: Handle<Self>) {
+impl SaveControlWrite {
+    pub fn save_controls(world: &World) {
         let start = Instant::now();
 
         world.foreach_fetch_mut::<SaveControlWrite>(|mut write| {
             (write.0)(world);
         });
-
-        world.trigger(this, &AutosaveRequest);
 
         let duration = Instant::now().duration_since(start);
         log::debug!("autosave request finished in {duration:?}");
@@ -167,7 +160,7 @@ impl SaveDatabase {
             temp.add_extension(&i.to_string());
             temp.add_extension("old");
 
-            let Ok(metadata) = std::fs::metadata(&backup) else {
+            let Ok(metadata) = std::fs::metadata(&temp) else {
                 backup.clone_from(&temp);
                 break;
             };
@@ -196,7 +189,7 @@ impl Element for SaveControl {}
 
 impl Element for SaveControlRead {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
-        self.expand_foreach(world);
+        self.read_controls(world);
     }
 }
 
@@ -208,8 +201,7 @@ impl Element for AutosaveScheduler {
 
         let timer = world.insert(Timer::new(self.autosave_duration));
         world.observer(timer, move |TimerHit, world| {
-            let mut fetched = world.fetch_mut(this).unwrap();
-            fetched.autosave(world, this);
+            SaveControlWrite::save_controls(world);
         });
     }
 }
