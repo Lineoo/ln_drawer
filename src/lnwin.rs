@@ -23,7 +23,7 @@ use crate::{
         camera::{Camera, CameraDescriptor},
         wireframe::WireframeManagerDescriptor,
     },
-    save::{AutosaveRequest, AutosaveScheduler, SaveControl, SaveControlRead, SaveDatabase},
+    save::{AutosaveScheduler, SaveControl, SaveControlRead, SaveControlWrite, SaveDatabase},
     stroke::StrokeLayer,
     theme::Luni,
     tools::{
@@ -84,6 +84,14 @@ impl ApplicationHandler for Lnwin {
             event_loop.exit()
         }
     }
+
+    fn suspended(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        for &view in self.windows.values() {
+            self.world.enter(view, || {
+                SaveControlWrite::save_controls(&self.world);
+            });
+        }
+    }
 }
 
 /// The main window.
@@ -95,6 +103,7 @@ impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(this, move |event: &WindowEvent, world| {
             if let WindowEvent::CloseRequested = event {
+                SaveControlWrite::save_controls(world);
                 world.clear();
             }
         });
@@ -128,8 +137,7 @@ impl Element for Lnwindow {
                     });
 
                     let control = control.handle();
-                    let scheduler = world.single::<AutosaveScheduler>().unwrap();
-                    world.observer(scheduler, move |AutosaveRequest, world| {
+                    world.insert(SaveControlWrite(Box::new(move |world| {
                         let viewport = world.fetch(viewport).unwrap();
                         let control = world.fetch(control).unwrap();
 
@@ -141,7 +149,7 @@ impl Element for Lnwindow {
                         .unwrap();
 
                         control.write(world, &bytes);
-                    });
+                    })));
                 }),
             });
         });
@@ -157,8 +165,7 @@ impl Element for Lnwindow {
                 });
 
                 let control = SaveControl::create("viewport".into(), world, &[]);
-                let scheduler = world.single::<AutosaveScheduler>().unwrap();
-                world.observer(scheduler, move |AutosaveRequest, world| {
+                world.insert(SaveControlWrite(Box::new(move |world| {
                     let viewport = world.fetch(viewport).unwrap();
                     let control = world.fetch(control).unwrap();
 
@@ -170,7 +177,7 @@ impl Element for Lnwindow {
                     .unwrap();
 
                     control.write(world, &bytes);
-                });
+                })));
             }
         });
 

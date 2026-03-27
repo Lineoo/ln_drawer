@@ -1,19 +1,20 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime},
 };
 
-use hashbrown::HashMap;
-use serde_bytes::ByteBuf;
+use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
 use crate::{
     lnwin::Lnwindow,
-    render::camera::{Camera, CameraDescriptor},
     tools::timer::{Timer, TimerHit},
     world::{Element, Handle, World, WorldError},
 };
+
+const BACKUP_SLOT: u32 = 6;
+const CONTROLS_TABLE: TableDefinition<u64, (&str, &[u8])> = TableDefinition::new("controls");
 
 /// Will exist between different sessions.
 pub struct SaveControl(String, u64);
@@ -25,50 +26,60 @@ pub struct SaveControlRead {
 
 pub struct SaveControlWrite(pub Box<dyn FnMut(&World)>);
 
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct SaveDatabase(HashMap<u64, (String, ByteBuf)>, u64);
+pub struct SaveDatabase(Database, u64);
 
 pub struct AutosaveScheduler {
     pub autosave_duration: Duration,
 }
 
-/// The event is triggered on [`SaveScheduler`].
-/// TODO use Element instead of Event
-#[deprecated]
-pub struct AutosaveRequest;
-
 impl SaveControl {
     pub fn create(name: String, world: &World, bytes: &[u8]) -> Handle<SaveControl> {
         let mut db = world.single_fetch_mut::<SaveDatabase>().unwrap();
+        let write = db.0.begin_write().unwrap();
+        let mut table = write.open_table(CONTROLS_TABLE).unwrap();
 
-        while db.0.contains_key(&db.1) {
+        while table.get(&db.1).unwrap().is_some() {
             db.1 += 1;
         }
 
-        let id = db.1;
         let compressed = zstd::encode_all(bytes, 0).unwrap();
-        let ret = db.0.insert(id, (name.clone(), compressed.into()));
-        debug_assert!(ret.is_none());
-        world.insert(SaveControl(name, id))
+        table.insert(db.1, (&name[..], &compressed[..])).unwrap();
+
+        drop(table);
+        write.commit().unwrap();
+
+        world.insert(SaveControl(name, db.1))
     }
 
     pub fn read(&self, world: &World) -> Vec<u8> {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
-        let raw = &db.0.get(&self.1).unwrap().1;
-        zstd::decode_all(raw.as_slice()).unwrap()
+        let read = db.0.begin_read().unwrap();
+        let table = read.open_table(CONTROLS_TABLE).unwrap();
+
+        let access = table.get(&self.1).unwrap().unwrap();
+        let compressed = access.value().1;
+        zstd::decode_all(compressed).unwrap()
     }
 
     pub fn write(&self, world: &World, bytes: &[u8]) {
-        let mut db = world.single_fetch_mut::<SaveDatabase>().unwrap();
-        let buf = &mut *db.0.get_mut(&self.1).unwrap().1;
-        buf.clear();
+        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        let write = db.0.begin_write().unwrap();
+        let mut table = write.open_table(CONTROLS_TABLE).unwrap();
 
-        zstd::stream::copy_encode(bytes, buf, 0).unwrap();
+        let access = table.get(&self.1).unwrap().unwrap();
+        let name = String::from(access.value().0);
+        let compressed = zstd::stream::encode_all(bytes, 0).unwrap();
+
+        drop(access);
+        table.insert(self.1, (&name[..], &compressed[..])).unwrap();
+
+        drop(table);
+        write.commit().unwrap();
     }
 }
 
 impl SaveControlRead {
-    fn expand_foreach(&mut self, world: &World) {
+    fn read_controls(&mut self, world: &World) {
         world.foreach::<SaveControl>(|control| {
             let control = world.fetch(control).unwrap();
             if control.0 == self.name {
@@ -80,21 +91,16 @@ impl SaveControlRead {
     }
 }
 
-impl AutosaveScheduler {
-    fn autosave(&mut self, world: &World, this: Handle<Self>) {
+impl SaveControlWrite {
+    pub fn save_controls(world: &World) {
         let start = Instant::now();
 
         world.foreach_fetch_mut::<SaveControlWrite>(|mut write| {
             (write.0)(world);
         });
 
-        world.trigger(this, &AutosaveRequest);
-
         let duration = Instant::now().duration_since(start);
         log::debug!("autosave request finished in {duration:?}");
-
-        let db = world.single_fetch::<SaveDatabase>().unwrap();
-        db.flush(world);
     }
 }
 
@@ -105,82 +111,77 @@ impl SaveDatabase {
             return;
         };
 
-        let target = get_file_path(world, "world.ln-world");
-
-        if let Ok(file) = std::fs::File::open(&target) {
-            let mut slot = 0;
-            let mut oldest = Duration::ZERO;
-            for i in 0..3 {
-                let backup = get_file_path(world, &format!("world.ln-world.{i}.old"));
-                match std::fs::metadata(&backup) {
-                    Ok(metadata) => match metadata.created() {
-                        Ok(creation) => {
-                            let duration = SystemTime::now().duration_since(creation).unwrap();
-                            if duration > oldest {
-                                oldest = duration;
-                                slot = i;
-                            }
-                        }
-                        Err(_) => {
-                            slot = i;
-                            break;
-                        }
-                    },
-                    Err(_) => {
-                        slot = i;
-                        break;
-                    }
-                }
-            }
-
-            let backup = get_file_path(world, &format!("world.ln-world.{slot}.old"));
-            std::fs::copy(target, backup).unwrap();
-
-            let mmap = unsafe { memmap2::Mmap::map(&file).unwrap() };
-
-            let Ok(db) = postcard::from_bytes::<SaveDatabase>(&mmap) else {
-                log::error!("failed to decode world file through postcard");
-                return;
-            };
-
-            for (id, (name, _)) in &db.0 {
-                world.insert(SaveControl(name.clone(), *id));
-            }
-
-            world.insert(db);
-            world.flush();
-
+        let target = get_file_path(world, "world.lndb");
+        SaveDatabase::create_backup(&target);
+        if let Ok(db) = Database::open(&target)
+            && let Ok(id) = SaveDatabase::read_redb(world, &db)
+        {
+            world.insert(SaveDatabase(db, id));
             log::debug!("database loaded");
         } else {
-            world.insert(SaveDatabase(HashMap::new(), 0));
-            world.flush();
+            let db = Database::create(&target).unwrap();
 
+            world.insert(SaveDatabase(db, 0));
             log::debug!("database created");
         }
+
+        world.flush();
     }
 
-    pub fn flush(&self, world: &World) {
-        let start = Instant::now();
+    fn read_redb(world: &World, db: &Database) -> Result<u64, redb::Error> {
+        let read = db.begin_read()?;
+        let table = read.open_table(CONTROLS_TABLE)?;
+        let mut max_id = 0;
+        for entry in table.range::<u64>(..)? {
+            let entry = entry?;
+            let id = entry.0.value();
+            let name = entry.1.value().0;
+            world.insert(SaveControl(name.into(), id));
 
-        let target = get_file_path(world, "world.ln-world");
+            if id > max_id {
+                max_id = id;
+            }
+        }
 
-        let Ok(()) = std::fs::create_dir_all(target.parent().unwrap()) else {
-            log::warn!("failed to create target folder");
+        Ok(max_id)
+    }
+
+    fn create_backup(target: &Path) {
+        let Ok(true) = std::fs::exists(target) else {
             return;
         };
 
-        let Ok(file) = std::fs::File::create(target) else {
-            log::warn!("failed to create save world file");
-            return;
-        };
+        let mut backup = PathBuf::new();
+        let mut temp = PathBuf::new();
+        let mut oldest = Duration::ZERO;
+        for i in 0..BACKUP_SLOT {
+            temp.clear();
+            temp.push(target);
+            temp.add_extension(&i.to_string());
+            temp.add_extension("old");
 
-        let Ok(_) = postcard::to_io(self, file) else {
-            log::warn!("failed to encode world file through postcard");
-            return;
-        };
+            let Ok(metadata) = std::fs::metadata(&temp) else {
+                backup.clone_from(&temp);
+                break;
+            };
 
-        let duration = Instant::now().duration_since(start);
-        log::debug!("database flushed in {duration:?}",);
+            let Ok(modified) = metadata.modified() else {
+                backup.clone_from(&temp);
+                break;
+            };
+
+            let duration = SystemTime::now()
+                .duration_since(modified)
+                .unwrap_or_default();
+
+            if duration > oldest {
+                backup.clone_from(&temp);
+                oldest = duration;
+            }
+        }
+
+        log::debug!("backup file is written to {backup:?}");
+        std::fs::copy(target, backup).unwrap();
     }
 }
 
@@ -188,7 +189,7 @@ impl Element for SaveControl {}
 
 impl Element for SaveControlRead {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
-        self.expand_foreach(world);
+        self.read_controls(world);
     }
 }
 
@@ -200,17 +201,12 @@ impl Element for AutosaveScheduler {
 
         let timer = world.insert(Timer::new(self.autosave_duration));
         world.observer(timer, move |TimerHit, world| {
-            let mut fetched = world.fetch_mut(this).unwrap();
-            fetched.autosave(world, this);
+            SaveControlWrite::save_controls(world);
         });
     }
 }
 
-impl Element for SaveDatabase {
-    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
-        self.flush(world);
-    }
-}
+impl Element for SaveDatabase {}
 
 pub fn get_file_path(world: &World, filename: &str) -> PathBuf {
     #[cfg(target_os = "android")]
