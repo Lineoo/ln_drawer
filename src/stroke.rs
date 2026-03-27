@@ -29,7 +29,7 @@ use crate::{
         mouse::MouseMenu,
         pointer::{PointerHit, PointerHitStatus},
         touch::{MultiTouchGroup, MultiTouchStatus},
-        viewport::ViewportUtils,
+        camera::CameraUtils,
     },
     widgets::{
         WidgetButton, WidgetClick,
@@ -188,7 +188,7 @@ impl StrokeLayer {
                 let cnt = event.members.len() as f64;
                 let center = [sum[0] / cnt, sum[1] / cnt];
 
-                let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
+                let mut viewport_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                 match event.active.status {
                     MultiTouchStatus::Press => {
@@ -422,7 +422,7 @@ impl StrokeLayer {
                             let current = button.rect.origin;
 
                             let mut viewport_utils =
-                                world.single_fetch_mut::<ViewportUtils>().unwrap();
+                                world.single_fetch_mut::<CameraUtils>().unwrap();
                             viewport_utils.anchor(world, button.rect.origin.into_fract());
                             viewport_utils.locked(true);
 
@@ -446,7 +446,7 @@ impl StrokeLayer {
                                         Position::new(val[0].round() as i32, val[1].round() as i32);
 
                                     let mut viewport_utils =
-                                        world.single_fetch_mut::<ViewportUtils>().unwrap();
+                                        world.single_fetch_mut::<CameraUtils>().unwrap();
                                     viewport_utils.anchor(world, button.rect.origin.into_fract());
                                 },
                             });
@@ -457,7 +457,7 @@ impl StrokeLayer {
                         }
                         WidgetButton::ButtonRelease => {
                             let mut viewport_utils =
-                                world.single_fetch_mut::<ViewportUtils>().unwrap();
+                                world.single_fetch_mut::<CameraUtils>().unwrap();
                             viewport_utils.locked(false);
 
                             if let Some(old) = anim_stock.take() {

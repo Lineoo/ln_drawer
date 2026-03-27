@@ -1,11 +1,11 @@
 use crate::{
     measures::{Fract, PositionFract},
-    render::viewport::Viewport,
+    render::camera::Camera,
     world::{Element, World},
 };
 
 #[derive(Default)]
-pub struct ViewportUtils {
+pub struct CameraUtils {
     cursor: [f64; 2],
 
     // viewport: PositionFract      = viewport.center
@@ -16,10 +16,10 @@ pub struct ViewportUtils {
     locked: bool,
 }
 
-impl ViewportUtils {
+impl CameraUtils {
     /// Adjust zoom value, zooming in/out the anchor.
     pub fn zoom_delta(&mut self, world: &World, delta: Fract) {
-        let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
+        let mut viewport = world.single_fetch_mut::<Camera>().unwrap();
         let zoom_center = viewport.screen_to_world_absolute(self.cursor);
 
         let anchor_origin = self.anchor;
@@ -46,7 +46,7 @@ impl ViewportUtils {
     }
 
     pub fn anchor_on_screen(&mut self, world: &World, anchor_on_screen: [f64; 2]) {
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let viewport = world.single_fetch::<Camera>().unwrap();
         let anchor = viewport.screen_to_world_absolute(anchor_on_screen);
         drop(viewport);
         self.anchor(world, anchor);
@@ -68,7 +68,7 @@ impl ViewportUtils {
 
     /// resolve `viewport.center`
     fn update_locked(&mut self, world: &World) {
-        let mut viewport = world.single_fetch_mut::<Viewport>().unwrap();
+        let mut viewport = world.single_fetch_mut::<Camera>().unwrap();
         let delta = viewport.screen_to_world_relative([
             self.cursor[0] - self.cursor_in_anchor[0],
             self.cursor[1] - self.cursor_in_anchor[1],
@@ -79,11 +79,11 @@ impl ViewportUtils {
 
     /// resolve `cursor_in_anchor`
     fn update_unlocked(&mut self, world: &World) {
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let viewport = world.single_fetch::<Camera>().unwrap();
         let delta = viewport.world_to_screen_relative(self.anchor - viewport.center);
 
         self.cursor_in_anchor = [self.cursor[0] - delta[0], self.cursor[1] - delta[1]];
     }
 }
 
-impl Element for ViewportUtils {}
+impl Element for CameraUtils {}

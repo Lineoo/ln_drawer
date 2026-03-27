@@ -17,7 +17,7 @@ use crate::{
     measures::{Position, Rectangle, Size},
     render::{
         Redraw, Render, RenderControl, RenderInformation, RenderPortal, vertex::VertexUniform,
-        viewport::Viewport,
+        camera::Camera,
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -60,7 +60,7 @@ impl Descriptor for CanvasManagerDescriptor {
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let viewport = world.single_fetch::<Camera>().unwrap();
 
         let shader_vs = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("vertex_shader"),
@@ -274,7 +274,7 @@ impl Element for Canvas {
             })),
             draw: Some(Box::new(move |world, rpass| {
                 let manager = world.single_fetch::<CanvasManager>().unwrap();
-                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let viewport = world.single_fetch::<Camera>().unwrap();
                 let this = world.fetch(this).unwrap();
 
                 rpass.set_pipeline(&manager.pipeline);

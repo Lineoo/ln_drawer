@@ -6,7 +6,7 @@ use winit::event::{
 use crate::{
     lnwin::Lnwindow,
     measures::Position,
-    render::viewport::Viewport,
+    render::camera::Camera,
     tools::collider::ToolCollider,
     world::{Element, Handle, World},
 };
@@ -71,7 +71,7 @@ impl MultiTouchTool {
                 };
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let viewport = world.single_fetch::<Camera>().unwrap();
 
                 let screen = lnwindow.cursor_to_screen(*position);
                 let position = viewport.screen_to_world_absolute(screen);
@@ -138,7 +138,7 @@ impl MultiTouchTool {
                 };
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let viewport = world.single_fetch::<Camera>().unwrap();
 
                 let screen = lnwindow.cursor_to_screen(*position);
                 let position = viewport.screen_to_world_absolute(screen);
@@ -198,7 +198,7 @@ impl MultiTouchTool {
                 };
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let viewport = world.single_fetch::<Camera>().unwrap();
 
                 let screen = lnwindow.cursor_to_screen(*position);
                 let position = viewport.screen_to_world_absolute(screen);

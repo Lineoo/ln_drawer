@@ -10,7 +10,7 @@ use winit::platform::android::activity::AndroidApp;
 
 use crate::{
     lnwin::Lnwindow,
-    render::viewport::{Viewport, ViewportDescriptor},
+    render::camera::{Camera, CameraDescriptor},
     tools::timer::{Timer, TimerHit},
     world::{Element, Handle, World, WorldError},
 };

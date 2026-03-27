@@ -4,7 +4,7 @@ use wgpu::*;
 use crate::render::RenderInformation;
 use crate::{
     measures::Rectangle,
-    render::{Render, RenderControl, viewport::Viewport},
+    render::{Render, RenderControl, camera::Camera},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -60,7 +60,7 @@ impl Default for RoundedRectDescriptor {
 impl RoundedRect {
     pub fn init(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let viewport = world.single_fetch::<Camera>().unwrap();
         let device = &render.device;
 
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
@@ -182,7 +182,7 @@ impl RoundedRect {
             })),
             draw: Some(Box::new(move |world, rpass| {
                 let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
-                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let viewport = world.single_fetch::<Camera>().unwrap();
                 let this = world.fetch(this).unwrap();
 
                 rpass.set_pipeline(&manager.pipeline);

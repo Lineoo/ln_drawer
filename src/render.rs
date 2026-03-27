@@ -2,7 +2,7 @@ pub mod canvas;
 pub mod rounded;
 pub mod text;
 pub mod vertex;
-pub mod viewport;
+pub mod camera;
 pub mod wireframe;
 pub mod rectangle;
 

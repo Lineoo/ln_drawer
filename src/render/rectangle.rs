@@ -7,7 +7,7 @@ use crate::render::RenderInformation;
 use crate::world::Descriptor;
 use crate::{
     measures::Rectangle,
-    render::{Render, RenderControl, viewport::Viewport},
+    render::{Render, RenderControl, camera::Camera},
     world::{Element, Handle, World},
 };
 
@@ -48,7 +48,7 @@ struct RectangleUniform {
 impl<M: RectangleMeshMaterial> RectangleMesh<M> {
     pub fn init(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let viewport = world.single_fetch::<Camera>().unwrap();
         let device = &render.device;
 
         let vertex = device.create_shader_module(ShaderModuleDescriptor {
@@ -191,7 +191,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
             })),
             draw: Some(Box::new(move |world, rpass| {
                 let pipeline = world.single_fetch::<RectangleMeshPipeline<M>>().unwrap();
-                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let viewport = world.single_fetch::<Camera>().unwrap();
                 let this = world.fetch(this).unwrap();
 
                 rpass.set_pipeline(&pipeline.pipeline);

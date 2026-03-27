@@ -10,7 +10,7 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport,
+        Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, camera::Camera,
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -44,7 +44,7 @@ impl Descriptor for WireframeManagerDescriptor {
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let viewport = world.single_fetch::<Camera>().unwrap();
 
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("wireframe_shader"),
@@ -170,7 +170,7 @@ impl Element for Wireframe {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(self.control, move |Redraw, world| {
             let manager = world.single_fetch::<WireframeManager>().unwrap();
-            let viewport = world.single_fetch::<Viewport>().unwrap();
+            let viewport = world.single_fetch::<Camera>().unwrap();
             let this = world.fetch(this).unwrap();
 
             let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();

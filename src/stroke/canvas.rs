@@ -13,7 +13,7 @@ use wgpu::{
 };
 
 use crate::{
-    render::{Render, RenderControl, RenderInformation, vertex::VertexUniform, viewport::Viewport},
+    render::{Render, RenderControl, RenderInformation, vertex::VertexUniform, camera::Camera},
     save::{SaveControl, SaveControlRead, SaveControlWrite},
     stroke::{CHUNK_SIZE, StrokeLayer},
     world::{Element, Handle, World},
@@ -176,7 +176,7 @@ impl Element for CanvasChunkPipeline {}
 impl CanvasChunk {
     pub fn new(world: &World, chunk: (i32, i32), control: Handle<SaveControl>) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let viewport = world.single_fetch::<Camera>().unwrap();
         let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
         let device = &render.device;
 

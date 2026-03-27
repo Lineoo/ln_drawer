@@ -7,7 +7,7 @@ use crate::measures::{Fract, PositionFract, Size};
 use crate::render::{Render, RenderControl};
 use crate::world::{Descriptor, Element, Handle, World};
 
-pub struct Viewport {
+pub struct Camera {
     pub size: Size,
     pub center: PositionFract,
     pub zoom: Fract,
@@ -21,7 +21,7 @@ pub struct Viewport {
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct ViewportDescriptor {
+pub struct CameraDescriptor {
     pub size: Size,
     pub center: PositionFract,
     pub zoom: Fract,
@@ -29,7 +29,7 @@ pub struct ViewportDescriptor {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct ViewportUniform {
+struct CameraUniform {
     size: [u32; 2],
     center: [i32; 2],
     center_fract: [u32; 2],
@@ -37,8 +37,8 @@ struct ViewportUniform {
     zoom_fract: u32,
 }
 
-impl Descriptor for ViewportDescriptor {
-    type Target = Handle<Viewport>;
+impl Descriptor for CameraDescriptor {
+    type Target = Handle<Camera>;
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
@@ -46,7 +46,7 @@ impl Descriptor for ViewportDescriptor {
         let layout = render
             .device
             .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("viewport_bind_layout"),
+                label: Some("camera_bind_layout"),
                 entries: &[BindGroupLayoutEntry {
                     binding: 0,
                     visibility: ShaderStages::VERTEX_FRAGMENT,
@@ -60,8 +60,8 @@ impl Descriptor for ViewportDescriptor {
             });
 
         let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("viewport_uniform"),
-            contents: bytemuck::bytes_of(&ViewportUniform {
+            label: Some("camera_uniform"),
+            contents: bytemuck::bytes_of(&CameraUniform {
                 size: self.size.into_array(),
                 center: self.center.into_array(),
                 center_fract: self.center.into_arrayf(),
@@ -72,7 +72,7 @@ impl Descriptor for ViewportDescriptor {
         });
 
         let bind = render.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("viewport_bind"),
+            label: Some("camera_bind"),
             layout: &layout,
             entries: &[BindGroupEntry {
                 binding: 0,
@@ -92,7 +92,7 @@ impl Descriptor for ViewportDescriptor {
             draw: None,
         });
 
-        world.insert(Viewport {
+        world.insert(Camera {
             size: self.size,
             center: self.center,
             zoom: self.zoom,
@@ -105,15 +105,15 @@ impl Descriptor for ViewportDescriptor {
     }
 }
 
-impl Element for Viewport {
+impl Element for Camera {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
         world.observer(lnwindow, move |event: &WindowEvent, world| {
             if let WindowEvent::SurfaceResized(size) = event {
-                let mut viewport = world.fetch_mut(this).unwrap();
+                let mut camera = world.fetch_mut(this).unwrap();
 
-                viewport.size.w = size.width;
-                viewport.size.h = size.height;
+                camera.size.w = size.width;
+                camera.size.h = size.height;
             }
         });
     }
@@ -122,7 +122,7 @@ impl Element for Viewport {
         self.queue.write_buffer(
             &self.uniform,
             0,
-            bytemuck::bytes_of(&ViewportUniform {
+            bytemuck::bytes_of(&CameraUniform {
                 size: Size::new(self.size.w.max(1), self.size.h.max(1)).into_array(),
                 center: self.center.into_array(),
                 center_fract: self.center.into_arrayf(),
@@ -135,7 +135,7 @@ impl Element for Viewport {
     }
 }
 
-impl Viewport {
+impl Camera {
     #[inline]
     pub fn screen_to_world_absolute(&self, point: [f64; 2]) -> PositionFract {
         self.center + self.screen_to_world_relative(point)

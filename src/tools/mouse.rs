@@ -3,8 +3,8 @@ use winit::event::{ButtonSource, ElementState, MouseButton, MouseScrollDelta, Wi
 use crate::{
     lnwin::Lnwindow,
     measures::{Fract, Position},
-    render::viewport::Viewport,
-    tools::{collider::ToolCollider, viewport::ViewportUtils},
+    render::camera::Camera,
+    tools::{collider::ToolCollider, camera::CameraUtils},
     world::{Element, Handle, World},
 };
 
@@ -29,7 +29,7 @@ impl Element for MouseTool {
                 ..
             } => {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let viewport = world.single_fetch::<Camera>().unwrap();
 
                 let position = lnwindow.cursor_to_screen(*position);
                 let position = viewport.screen_to_world_absolute(position);
@@ -51,7 +51,7 @@ impl Element for MouseTool {
                 ..
             } => {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
+                let mut viewport_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                 let cursor = lnwindow.cursor_to_screen(*position);
                 viewport_utils.cursor(world, cursor);
@@ -66,7 +66,7 @@ impl Element for MouseTool {
                 ..
             } => {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
+                let mut viewport_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                 let cursor = lnwindow.cursor_to_screen(*position);
                 viewport_utils.cursor(world, cursor);
@@ -74,7 +74,7 @@ impl Element for MouseTool {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
+                let mut viewport_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                 let zoom_delta = match delta {
                     MouseScrollDelta::LineDelta(_rows, lines) => Fract::from_f32(*lines),

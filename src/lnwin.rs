@@ -20,7 +20,7 @@ use crate::{
         rectangle::RectangleMesh,
         rounded::RoundedRect,
         text::TextManagerDescriptor,
-        viewport::{Viewport, ViewportDescriptor},
+        camera::{Camera, CameraDescriptor},
         wireframe::WireframeManagerDescriptor,
     },
     save::{AutosaveRequest, AutosaveScheduler, SaveControl, SaveControlRead, SaveDatabase},
@@ -28,7 +28,7 @@ use crate::{
     theme::Luni,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
-        pointer::PointerTool, touch::MultiTouchTool, viewport::ViewportUtils,
+        pointer::PointerTool, touch::MultiTouchTool, camera::CameraUtils,
     },
     world::{Element, Handle, ViewId, World, WorldError},
 };
@@ -120,9 +120,9 @@ impl Element for Lnwindow {
 
                     let control = world.fetch(control).unwrap();
                     let viewport_descriptor =
-                        postcard::from_bytes::<ViewportDescriptor>(&control.read(world)).unwrap();
+                        postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
 
-                    let viewport = world.build(ViewportDescriptor {
+                    let viewport = world.build(CameraDescriptor {
                         size: Size::new(size.width, size.height),
                         ..viewport_descriptor
                     });
@@ -133,7 +133,7 @@ impl Element for Lnwindow {
                         let viewport = world.fetch(viewport).unwrap();
                         let control = world.fetch(control).unwrap();
 
-                        let bytes = postcard::to_stdvec(&ViewportDescriptor {
+                        let bytes = postcard::to_stdvec(&CameraDescriptor {
                             size: viewport.size,
                             center: viewport.center,
                             zoom: viewport.zoom,
@@ -147,11 +147,11 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            if let Err(WorldError::SingletonNoSuch(_)) = world.single::<Viewport>() {
+            if let Err(WorldError::SingletonNoSuch(_)) = world.single::<Camera>() {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let size = lnwindow.window.surface_size();
 
-                let viewport = world.build(ViewportDescriptor {
+                let viewport = world.build(CameraDescriptor {
                     size: Size::new(size.width, size.height),
                     ..Default::default()
                 });
@@ -162,7 +162,7 @@ impl Element for Lnwindow {
                     let viewport = world.fetch(viewport).unwrap();
                     let control = world.fetch(control).unwrap();
 
-                    let bytes = postcard::to_stdvec(&ViewportDescriptor {
+                    let bytes = postcard::to_stdvec(&CameraDescriptor {
                         size: viewport.size,
                         center: viewport.center,
                         zoom: viewport.zoom,
@@ -197,7 +197,7 @@ impl Element for Lnwindow {
 
         world.queue(|world| {
             world.insert(Focus::default());
-            world.insert(ViewportUtils::default());
+            world.insert(CameraUtils::default());
             world.insert(ModifiersTool::default());
         });
     }

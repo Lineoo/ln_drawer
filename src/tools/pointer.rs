@@ -9,10 +9,10 @@ use winit::event::{
 use crate::{
     lnwin::Lnwindow,
     measures::{Position, Rectangle},
-    render::viewport::Viewport,
+    render::camera::Camera,
     tools::{
         collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
-        viewport::ViewportUtils,
+        camera::CameraUtils,
     },
     world::{Element, Handle, World},
 };
@@ -108,7 +108,7 @@ impl Element for PointerTool {
         world.observer(lnwindow, move |event: &WindowEvent, world| {
             let mut this = world.fetch_mut(this).unwrap();
             let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-            let viewport = world.single_fetch::<Viewport>().unwrap();
+            let viewport = world.single_fetch::<Camera>().unwrap();
 
             match event {
                 WindowEvent::PointerMoved {
@@ -250,7 +250,7 @@ impl Pointer {
 
         self.recalculate_hovering(world);
 
-        let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
+        let mut viewport_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
         viewport_utils.cursor(world, screen);
         drop(viewport_utils);
 
