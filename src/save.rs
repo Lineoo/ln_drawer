@@ -71,10 +71,12 @@ impl SaveControl {
         let write = db.0.begin_write().unwrap();
         let mut table = write.open_table(CONTROLS_TABLE).unwrap();
 
-        let mut access = table.get_mut(&self.1).unwrap().unwrap();
+        let access = table.get(&self.1).unwrap().unwrap();
         let name = String::from(access.value().0);
         let compressed = zstd::stream::encode_all(bytes, 0).unwrap();
-        access.insert((&name[..], &compressed[..])).unwrap();
+
+        drop(access);
+        table.insert(self.1, (&name[..], &compressed[..])).unwrap();
 
         drop(table);
         write.commit().unwrap();
