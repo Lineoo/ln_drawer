@@ -92,8 +92,11 @@ impl Element for StrokeLayer {
         world.single::<StrokeLayer>().unwrap();
 
         self.attach_touch(world, this);
-        world.insert(CanvasChunk::save_read());
-        world.insert(CanvasChunk::save_write());
+        let read = world.insert(CanvasChunk::save_read());
+        let write = world.insert(CanvasChunk::save_write());
+
+        world.dependency(read, this);
+        world.dependency(write, this);
     }
 }
 

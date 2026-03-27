@@ -210,9 +210,9 @@ impl Element for PointerTool {
                     }
 
                     if let Some(hovering) = pointer.hovering {
-                        world.trigger(
+                        world.queue_trigger(
                             hovering,
-                            &PointerHover {
+                            PointerHover {
                                 position: pointer.position,
                                 screen: pointer.screen,
                                 status: PointerHoverStatus::Leave,
@@ -229,16 +229,17 @@ impl Element for PointerTool {
         });
 
         let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
-        world.observer(dispatcher, |&ToolColliderChanged(collider), world| {
-            world.queue(move |world| {
-                let mut tool = world.single_fetch_mut::<PointerTool>().unwrap();
-                if let Some(pointer) = &mut tool.pointer
-                    && pointer.hovering == Some(collider)
-                {
-                    pointer.recalculate_hovering(world);
-                }
-            });
+        let ob = world.observer(dispatcher, |&ToolColliderChanged(collider), world| {
+            let mut tool = world.single_fetch_mut::<PointerTool>().unwrap();
+            if let Some(pointer) = &mut tool.pointer
+                && pointer.hovering == Some(collider)
+            {
+                pointer.recalculate_hovering(world);
+            }
         });
+
+        world.dependency(ob, this);
+        world.dependency(this, dispatcher);
     }
 }
 
@@ -255,9 +256,9 @@ impl Pointer {
 
         if let Some(hovering) = self.hovering {
             if let Some(pressed) = self.pressed {
-                world.trigger(
+                world.queue_trigger(
                     hovering,
-                    &PointerHit {
+                    PointerHit {
                         position,
                         screen,
                         status: PointerHitStatus::Moving,
@@ -269,9 +270,9 @@ impl Pointer {
                 );
             }
 
-            world.trigger(
+            world.queue_trigger(
                 hovering,
-                &PointerHover {
+                PointerHover {
                     position,
                     screen,
                     status: PointerHoverStatus::Moving,
@@ -302,7 +303,7 @@ impl Pointer {
             };
 
             if let Some(hit) = hit {
-                world.trigger(hovering, &hit);
+                world.queue_trigger(hovering, hit);
             }
         }
 
@@ -315,9 +316,9 @@ impl Pointer {
         self.hovering = hovering;
 
         if let Some(previous) = previous {
-            world.trigger(
+            world.queue_trigger(
                 previous,
-                &PointerHover {
+                PointerHover {
                     position: self.position,
                     screen: self.screen,
                     status: PointerHoverStatus::Leave,
@@ -327,9 +328,9 @@ impl Pointer {
         }
 
         if let Some(hovering) = hovering {
-            world.trigger(
+            world.queue_trigger(
                 hovering,
-                &PointerHover {
+                PointerHover {
                     position: self.position,
                     screen: self.screen,
                     status: PointerHoverStatus::Enter,
@@ -531,9 +532,9 @@ impl Element for PointerEdgeCollider {
                     };
 
                     lock.edge = Some(edge);
-                    world.trigger(
+                    world.queue_trigger(
                         this,
-                        &PointerHitEdge {
+                        PointerHitEdge {
                             position: event.position,
                             status: event.status,
                             edge,
@@ -542,9 +543,9 @@ impl Element for PointerEdgeCollider {
                 }
 
                 (PointerHitStatus::Moving, Some(edge)) => {
-                    world.trigger(
+                    world.queue_trigger(
                         this,
-                        &PointerHitEdge {
+                        PointerHitEdge {
                             position: event.position,
                             status: event.status,
                             edge,
@@ -554,9 +555,9 @@ impl Element for PointerEdgeCollider {
 
                 (PointerHitStatus::Release, Some(edge)) => {
                     lock.edge = None;
-                    world.trigger(
+                    world.queue_trigger(
                         this,
-                        &PointerHitEdge {
+                        PointerHitEdge {
                             position: event.position,
                             status: event.status,
                             edge,
