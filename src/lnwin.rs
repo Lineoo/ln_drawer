@@ -12,11 +12,12 @@ use winit::{
 };
 
 use crate::{
-    elements::palette::{PaletteHue, PaletteMain},
-    measures::Size,
+    elements::palette::{PaletteDescriptor, PaletteHue, PaletteMain},
+    layout::transform::{Transform, TransformEdge},
+    measures::{Position, Rectangle, Size},
     render::{
         Render,
-        camera::{Camera, CameraDescriptor, CameraUtils},
+        camera::{Camera, CameraDescriptor, CameraUtils, CameraVisits},
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
@@ -30,7 +31,8 @@ use crate::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
     },
-    world::{Element, Handle, ViewId, World, WorldError},
+    widgets::{panel::Panel, resizable::Resizable},
+    world::{Element, Handle, ViewId, ViewOptions, World, WorldError},
 };
 
 #[derive(Default)]
@@ -121,64 +123,14 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            world.insert(SaveControlRead {
-                name: "camera".into(),
-                read: Box::new(move |world, control| {
-                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                    let size = lnwindow.window.surface_size();
-
-                    let control = world.fetch(control).unwrap();
-                    let camera_desc =
-                        postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
-
-                    let camera = world.build(CameraDescriptor {
-                        size: Size::new(size.width, size.height),
-                        ..camera_desc
-                    });
-
-                    let control = control.handle();
-                    world.insert(SaveControlWrite(Box::new(move |world| {
-                        let camera = world.fetch(camera).unwrap();
-                        let control = world.fetch(control).unwrap();
-
-                        let bytes = postcard::to_stdvec(&CameraDescriptor {
-                            size: camera.size,
-                            center: camera.center,
-                            zoom: camera.zoom,
-                        })
-                        .unwrap();
-
-                        control.write(world, &bytes);
-                    })));
-                }),
+            let layer1 = world.view();
+            let here = world.here();
+            world.enter(layer1, || world.option(ViewOptions { refs: vec![here] }));
+            world.option(ViewOptions { refs: vec![layer1] });
+            world.flush();
+            world.enter(layer1, || {
+                world.queue(|world| Camera::init(world, "camera1"));
             });
-        });
-
-        world.queue(|world| {
-            if let Err(WorldError::SingletonNoSuch(_)) = world.single::<Camera>() {
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let size = lnwindow.window.surface_size();
-
-                let camera = world.build(CameraDescriptor {
-                    size: Size::new(size.width, size.height),
-                    ..Default::default()
-                });
-
-                let control = SaveControl::create("viewport".into(), world, &[]);
-                world.insert(SaveControlWrite(Box::new(move |world| {
-                    let camera = world.fetch(camera).unwrap();
-                    let control = world.fetch(control).unwrap();
-
-                    let bytes = postcard::to_stdvec(&CameraDescriptor {
-                        size: camera.size,
-                        center: camera.center,
-                        zoom: camera.zoom,
-                    })
-                    .unwrap();
-
-                    control.write(world, &bytes);
-                })));
-            }
         });
 
         world.queue(|world| {

@@ -5,7 +5,8 @@ use winit::event::WindowEvent;
 use crate::lnwin::Lnwindow;
 use crate::measures::{Fract, PositionFract, Size};
 use crate::render::{Render, RenderControl};
-use crate::world::{Descriptor, Element, Handle, World};
+use crate::save::{SaveControl, SaveControlRead, SaveControlWrite};
+use crate::world::{Descriptor, Element, Handle, ViewId, World, WorldError};
 
 pub struct Camera {
     pub size: Size,
@@ -158,7 +159,73 @@ impl Camera {
         let y = point.y.into_f64() * 2.0 / self.size.h as f64 * scale;
         [x, y]
     }
+
+    pub fn init(world: &mut World, name: &str) {
+        world.insert(Camera::save_read(world, name));
+        world.flush();
+
+        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<Camera>() {
+            Camera::build_default(world, name);
+        }
+    }
+
+    fn build_default(world: &World, name: &str) {
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        let size = lnwindow.window.surface_size();
+
+        let camera = world.build(CameraDescriptor {
+            size: Size::new(size.width, size.height),
+            ..Default::default()
+        });
+
+        let control = SaveControl::create(name.into(), world, &[]);
+        world.insert(Camera::save_write(camera, control));
+    }
+
+    fn save_read(world: &World, name: &str) -> SaveControlRead {
+        SaveControlRead {
+            name: name.into(),
+            read: Box::new(move |world, control| {
+                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let size = lnwindow.window.surface_size();
+
+                let control = world.fetch(control).unwrap();
+                let camera_desc =
+                    postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
+
+                let camera = world.build(CameraDescriptor {
+                    size: Size::new(size.width, size.height),
+                    ..camera_desc
+                });
+
+                let control = control.handle();
+                world.insert(Camera::save_write(camera, control));
+            }),
+        }
+    }
+
+    fn save_write(camera: Handle<Camera>, control: Handle<SaveControl>) -> SaveControlWrite {
+        SaveControlWrite(Box::new(move |world| {
+            let camera = world.fetch(camera).unwrap();
+            let control = world.fetch(control).unwrap();
+
+            let bytes = postcard::to_stdvec(&CameraDescriptor {
+                size: camera.size,
+                center: camera.center,
+                zoom: camera.zoom,
+            })
+            .unwrap();
+
+            control.write(world, &bytes);
+        }))
+    }
 }
+
+pub struct CameraVisits {
+    pub views: Vec<ViewId>,
+}
+
+impl Element for CameraVisits {}
 
 #[derive(Default)]
 pub struct CameraUtils {
