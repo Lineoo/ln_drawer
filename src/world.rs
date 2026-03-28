@@ -666,11 +666,15 @@ impl World {
     pub fn observer<T: ?Sized + 'static, E: 'static>(
         &self,
         target: Handle<T>,
-        mut action: impl FnMut(&E, &World) + 'static,
+        action: impl FnMut(&E, &World) + 'static,
     ) -> Handle {
-        let handle = self.insert(Observer {
-            action: Box::new(move |event, world| action(event, world)),
-            target: target.cast(),
+        let here = self.location.get();
+        let handle = self.enter(ViewId(0), || {
+            self.insert(Observer {
+                action: Box::new(action),
+                view: here,
+                target: target.cast(),
+            })
         });
 
         handle.cast()
@@ -679,14 +683,16 @@ impl World {
     /// Will immediately triggered and acquire mutable access to `target`.
     pub fn trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: &E) -> usize {
         let mut cnt = 0;
-        if let Ok(observers) = self.single_fetch::<Observers<E>>()
-            && let Some(observers) = observers.members.get(&target.cast())
-        {
-            for mut observer in observers.iter().filter_map(|x| self.fetch_mut(*x).ok()) {
-                (observer.action)(event, self);
-                cnt += 1;
+        self.enter(ViewId(0), || {
+            if let Ok(observers) = self.single_fetch::<Observers<E>>()
+                && let Some(observers) = observers.members.get(&target.cast())
+            {
+                for mut observer in observers.iter().filter_map(|x| self.fetch_mut(*x).ok()) {
+                    self.enter(observer.view, || (observer.action)(event, self));
+                    cnt += 1;
+                }
             }
-        }
+        });
 
         cnt
     }
@@ -702,7 +708,9 @@ impl World {
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
     pub fn dependency<T: ?Sized, U: ?Sized>(&self, child: Handle<T>, parent: Handle<U>) {
-        if self.validate(parent).is_err() && !self.inserted.borrow().contains(&parent.cast()) {
+        if let Err(e) = self.validate(parent)
+            && !matches!(e, WorldError::JustInserted(_) | WorldError::Invisible(..))
+        {
             let err = WorldError::ToxicDependency(child.into(), parent.into());
             log::error!("failed to attach dependency: {err:?}");
             return;
@@ -847,6 +855,7 @@ struct Observers<E> {
 #[expect(clippy::type_complexity)]
 struct Observer<E> {
     action: Box<dyn FnMut(&E, &World)>,
+    view: ViewId,
     target: Handle,
 }
 
