@@ -13,6 +13,7 @@ use winit::{
 
 use crate::{
     elements::palette::{PaletteHue, PaletteMain},
+    measures::Rectangle,
     render::{
         Render,
         camera::{Camera, CameraUtils, CameraVisits},
@@ -29,6 +30,7 @@ use crate::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
     },
+    widgets::color_picker::ColorPicker,
     world::{Element, Handle, ViewId, ViewOptions, World},
 };
 
@@ -143,6 +145,7 @@ impl Element for Lnwindow {
 
         world.queue(|world| {
             let layer1 = world.view();
+            let layer2 = world.view();
             let here = world.here();
 
             world.enter(layer1, || {
@@ -156,8 +159,22 @@ impl Element for Lnwindow {
                 });
             });
 
+            world.enter(layer2, || {
+                world.option(ViewOptions { refs: vec![here] });
+
+                world.queue(|world| {
+                    Camera::singleton(world, "camera2");
+                    world.flush();
+                    world.insert(CameraUtils::default());
+                    world.insert(ColorPicker {
+                        rect: Rectangle::new(0, 0, 30, 30),
+                        color: Default::default(),
+                    });
+                });
+            });
+
             world.insert(CameraVisits {
-                views: vec![layer1],
+                views: vec![layer1, layer2],
             });
         });
     }
