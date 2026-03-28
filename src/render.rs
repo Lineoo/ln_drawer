@@ -6,14 +6,14 @@ pub mod text;
 pub mod vertex;
 pub mod wireframe;
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use wgpu::{
-    Adapter, Color, CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, Device,
-    DeviceDescriptor, ExperimentalFeatures, Features, Instance, Limits, LoadOp, MemoryHints,
-    Operations, PowerPreference, PresentMode, Queue, RenderPass, RenderPassColorAttachment,
+    Adapter, Color, CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor,
+    ExperimentalFeatures, Features, Instance, Limits, LoadOp, MemoryHints, Operations,
+    PowerPreference, PresentMode, Queue, RenderPass, RenderPassColorAttachment,
     RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration,
-    TextureFormat, TextureUsages, TextureViewDescriptor, Trace,
+    TextureUsages, TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -44,26 +44,10 @@ pub struct Render {
     last_redraw: Option<Instant>,
 }
 
-#[deprecated]
-struct RenderPortal {
-    active: Option<RenderActive>,
-    redrawing: bool,
-}
-
-#[deprecated]
-struct RenderActive {
-    encoder: CommandEncoder,
-    rpass: RenderPass<'static>,
-}
-
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;
 type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'static>)>;
 
 pub struct RenderControl {
-    pub visible: bool,
-    pub order: isize,
-    pub refreshing: bool,
-
     /// prepare to render and give related information
     pub prepare: Option<RenderPrepareCommand>,
 
@@ -75,11 +59,6 @@ pub struct RenderInformation {
     pub render_order: isize,
     pub keep_redrawing: bool,
 }
-
-#[deprecated]
-pub struct RedrawPrepare;
-#[deprecated]
-pub struct Redraw;
 
 impl Render {
     pub async fn new(lnwindow: &Lnwindow) -> Render {
@@ -218,7 +197,7 @@ impl Render {
 
         // setup render pass
 
-        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        let render = world.single_fetch::<Render>().unwrap();
         let texture = render.surface.get_current_texture().unwrap();
         let view = texture
             .texture
@@ -315,30 +294,4 @@ impl Element for Render {
     }
 }
 
-impl Element for RenderPortal {}
-
-impl Element for RenderControl {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.dependency(this, world.single::<Lnwindow>().unwrap());
-        world.dependency(this, world.single::<Render>().unwrap());
-        determine_redraw(self, world);
-    }
-
-    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        determine_redraw(self, world);
-    }
-
-    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
-        determine_redraw(self, world);
-    }
-}
-
-fn determine_redraw(control: &RenderControl, world: &World) {
-    let render = world.single_fetch::<Render>().unwrap();
-    if render.redrawing {
-        return;
-    }
-
-    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-    lnwindow.window.request_redraw();
-}
+impl Element for RenderControl {}

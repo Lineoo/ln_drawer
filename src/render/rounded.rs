@@ -1,6 +1,7 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
+use crate::lnwin::Lnwindow;
 use crate::render::RenderInformation;
 use crate::render::camera::CameraBind;
 use crate::{
@@ -167,9 +168,6 @@ impl RoundedRect {
 
     fn bind_control(&mut self, world: &World, this: Handle<Self>) {
         let control = world.insert(RenderControl {
-            visible: self.desc.visible,
-            order: self.desc.order,
-            refreshing: false,
             prepare: Some(Box::new(move |world| {
                 let this = world.fetch(this).unwrap();
                 if !this.desc.visible {
@@ -232,7 +230,10 @@ impl Element for RoundedRect {
         self.bind_control(world, this);
     }
 
-    fn when_modify(&mut self, _world: &World, _this: Handle<Self>) {
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         self.update_buffer();
+        
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        lnwindow.window.request_redraw();
     }
 }

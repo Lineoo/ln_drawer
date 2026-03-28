@@ -262,9 +262,6 @@ impl Descriptor for CanvasDescriptor {
 impl Element for Canvas {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let control = world.insert(RenderControl {
-            visible: self.visible,
-            order: self.order,
-            refreshing: false,
             prepare: Some(Box::new(move |world| {
                 let this = world.fetch(this).unwrap();
 

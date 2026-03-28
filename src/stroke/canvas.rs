@@ -423,9 +423,6 @@ impl CanvasChunk {
 impl Element for CanvasChunk {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let control = world.insert(RenderControl {
-            visible: true,
-            order: -100,
-            refreshing: false,
             prepare: Some(Box::new(|_| {
                 Some(RenderInformation {
                     render_order: -100,

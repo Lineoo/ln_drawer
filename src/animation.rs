@@ -3,7 +3,8 @@ use std::time::{Duration, Instant};
 use palette::Srgba;
 
 use crate::{
-    render::{RedrawPrepare, RenderControl},
+    lnwin::Lnwindow,
+    render::{RenderControl, RenderInformation},
     world::{Descriptor, Element, Handle, RefMut, World},
 };
 
@@ -13,9 +14,6 @@ pub struct Animation<T: AnimationEasingType> {
     pub factor: f32,
 
     last_update: Instant,
-
-    control: Handle<RenderControl>,
-    control_active: bool,
 }
 
 pub struct AnimationDescriptor<T: AnimationEasingType> {
@@ -38,21 +36,11 @@ impl<T: AnimationEasingType> Descriptor for AnimationDescriptor<T> {
     type Target = Handle<Animation<T>>;
 
     fn when_build(self, world: &World) -> Self::Target {
-        let control = world.insert(RenderControl {
-            visible: true,
-            order: 0,
-            refreshing: self.src != self.dst,
-            prepare: None,
-            draw: None,
-        });
-
         world.insert(Animation {
             src: self.src,
             dst: self.dst,
             factor: self.factor,
             last_update: Instant::now(),
-            control,
-            control_active: self.src != self.dst,
         })
     }
 }
@@ -128,47 +116,46 @@ where
 
 impl<T: AnimationEasingType> Element for Animation<T> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let control = self.control;
-        world.observer(control, move |RedrawPrepare, world| {
-            let mut this = world.fetch_mut(this).unwrap();
+        let control = world.insert(RenderControl {
+            prepare: Some(Box::new(move |world| {
+                let mut this = world.fetch_mut(this).unwrap();
 
-            // calculate next value
+                // calculate next value
 
-            let now = Instant::now();
+                let now = Instant::now();
 
-            let the = &mut *this;
-            let changed = T::step(
-                &mut the.src,
-                &mut the.dst,
-                the.factor,
-                now - the.last_update,
-            );
+                let the = &mut *this;
+                let changed = T::step(
+                    &mut the.src,
+                    &mut the.dst,
+                    the.factor,
+                    now - the.last_update,
+                );
 
-            this.last_update = now;
+                this.last_update = now;
 
-            // send event and change RenderControl
+                // send event and change RenderControl
 
-            if changed {
-                world.trigger(this.handle(), &AnimationValue(this.src));
-            }
+                if changed {
+                    world.trigger(this.handle(), &AnimationValue(this.src));
+                }
 
-            if this.control_active != changed {
-                this.control_active = changed;
-
-                let mut control = world.fetch_mut(control).unwrap();
-                control.refreshing = changed;
-            }
+                Some(RenderInformation {
+                    render_order: 0,
+                    keep_redrawing: this.src != this.dst,
+                })
+            })),
+            draw: None,
         });
 
-        world.dependency(self.control, this);
+        world.dependency(control, this);
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         if self.src != self.dst {
-            self.control_active = true;
             self.last_update = Instant::now();
-            let mut control = world.fetch_mut(self.control).unwrap();
-            control.refreshing = true;
+            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            lnwindow.window.request_redraw();
         }
     }
 }

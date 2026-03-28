@@ -4,7 +4,7 @@ use winit::event::WindowEvent;
 
 use crate::lnwin::Lnwindow;
 use crate::measures::{Fract, PositionFract, Size};
-use crate::render::{Render, RenderControl};
+use crate::render::Render;
 use crate::save::{SaveControl, SaveControlRead, SaveControlWrite};
 use crate::world::{Descriptor, Element, Handle, ViewId, World, WorldError};
 
@@ -17,7 +17,6 @@ pub struct Camera {
     pub uniform: Buffer,
 
     queue: Queue,
-    control: Handle<RenderControl>,
 }
 
 pub struct CameraBind {
@@ -74,14 +73,6 @@ impl Descriptor for CameraDescriptor {
             }],
         });
 
-        let control = world.insert(RenderControl {
-            visible: true,
-            order: 0,
-            refreshing: false,
-            prepare: None,
-            draw: None,
-        });
-
         world.insert(Camera {
             size: self.size,
             center: self.center,
@@ -89,7 +80,6 @@ impl Descriptor for CameraDescriptor {
             uniform,
             bind,
             queue: render.queue.clone(),
-            control,
         })
     }
 }
@@ -120,7 +110,8 @@ impl Element for Camera {
             }),
         );
 
-        world.fetch_mut(self.control).unwrap().modified();
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        lnwindow.window.request_redraw();
     }
 }
 
