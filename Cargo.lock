@@ -1431,6 +1431,7 @@ dependencies = [
  "parking_lot",
  "pollster",
  "postcard",
+ "redb",
  "rodio",
  "serde",
  "serde_bytes",
@@ -2338,6 +2339,15 @@ checksum = "04ca636dac446b5664bd16c069c00a9621806895b8bb02c2dc68542b23b8f25d"
 dependencies = [
  "bytemuck",
  "font-types",
+]
+
+[[package]]
+name = "redb"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef99362319c782aa4639ad3a306b64c3bb90e12874e99b8df124cb679d988611"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

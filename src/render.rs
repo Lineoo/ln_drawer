@@ -225,7 +225,7 @@ impl Element for Render {
                 {
                     let mut refreshing = false;
 
-                    let mut buf = Vec::with_capacity(world.len::<RenderControl>());
+                    let mut buf = Vec::with_capacity(world.size_hint::<RenderControl>());
                     world.foreach_fetch_mut::<RenderControl>(|mut control| {
                         if let Some(prepare) = &mut control.prepare {
                             let info = prepare(world);
@@ -367,7 +367,9 @@ impl Element for Render {
 impl Element for RenderPortal {}
 
 impl Element for RenderControl {
-    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.dependency(this, world.single::<RenderPortal>().unwrap());
+        world.dependency(this, world.single::<Lnwindow>().unwrap());
         determine_redraw(self, world);
     }
 
