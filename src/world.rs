@@ -214,7 +214,7 @@ pub enum WorldError {
     #[error("{0:?} does not exist")]
     InvalidHandle(HandleInfo),
 
-    #[error("{0:?} is in {1:?}, not here {2:?}")]
+    #[error("{0:?} is invisible in {1:?} from here {2:?}")]
     Invisible(HandleInfo, ViewId, ViewId),
 
     #[error("{0:?} try to depend on {1:?}, which does not exist")]
@@ -343,7 +343,8 @@ impl World {
             };
 
             drop(dependencies);
-            cnt += self.remove(child)?;
+            let child_view = *self.viewtable.get(&child).unwrap();
+            cnt += self.enter(child_view, || self.remove(child))?;
         }
 
         // write immediate record
@@ -374,6 +375,10 @@ impl World {
         let view = *view_idx;
         view_idx.0 += 1;
         view
+    }
+
+    pub fn here(&self) -> ViewId {
+        self.location.get()
     }
 
     /// Assign options for current location. Need flush.
@@ -582,13 +587,6 @@ impl World {
         for &handle in storage.0.keys() {
             match self.validate(handle) {
                 Ok(_) => {
-                    if let Some(&target) = self.viewtable.get(&handle.cast()) {
-                        let here = self.location.get();
-                        if target != here {
-                            continue;
-                        }
-                    }
-
                     cnt += 1;
                     ret.replace(handle);
                 }
@@ -1067,23 +1065,31 @@ mod test {
     }
 
     #[test]
-    fn view_refs() {
+    fn view_refs_deps() {
         let mut world = World::default();
 
         let view1 = world.view();
         let view2 = world.view();
+        let view3 = world.view();
 
         let node1 = world.enter(view1, || world.insert(TestInserter(1)));
         let node2 = world.enter(view2, || world.insert(TestInserter(2)));
+        let node3 = world.enter(view3, || world.insert(TestInserter(3)));
+
+        world.enter(view3, || world.dependency(node3, node1));
 
         world.enter(view2, || world.option(ViewOptions { refs: vec![view1] }));
+        world.enter(view3, || world.option(ViewOptions { refs: vec![view2] }));
 
         world.flush();
 
-        assert!(world.enter(view1, || world.validate(node1).is_ok()));
-        assert!(world.enter(view2, || world.validate(node2).is_ok()));
-        assert!(world.enter(view1, || world.validate(node2).is_err()));
-        assert!(world.enter(view2, || world.validate(node1).is_ok()));
+        world.enter(view1, || world.remove(node1).unwrap());
+
+        world.flush();
+
+        assert!(world.enter(view3, || world.validate(node1).is_err()));
+        assert!(world.enter(view3, || world.validate(node2).is_ok()));
+        assert!(world.enter(view3, || world.validate(node3).is_err()));
     }
 
     #[test]
