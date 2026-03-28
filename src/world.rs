@@ -161,7 +161,7 @@ pub struct World {
     view_idx: RefCell<ViewId>,
 
     location: Cell<ViewId>,
-    
+
     typetable: HashMap<Handle, TypeId>,
     viewtable: HashMap<Handle, ViewId>,
     storages: HashMap<TypeId, Box<dyn StorageGeneral>>,
@@ -385,11 +385,12 @@ impl World {
     }
 
     /// Enter view.
-    pub fn enter(&self, view: ViewId, f: impl FnOnce()) {
+    pub fn enter<T>(&self, view: ViewId, f: impl FnOnce() -> T) -> T {
         let origin = self.location.get();
         self.location.set(view);
-        f();
+        let ret = f();
         self.location.set(origin);
+        ret
     }
 
     /// Clear all elements from current view. Action is queued so no removal marks or
@@ -462,8 +463,27 @@ impl World {
 
         if let Some(&target) = self.viewtable.get(&handle.cast()) {
             let here = self.location.get();
+
             if target != here {
-                return Err(WorldError::Invisible(handle.into(), target, here));
+                let mut refs = HashSet::new();
+                let mut stack = Vec::new();
+                stack.push(here);
+
+                'r: while let Some(opt) = stack.pop().and_then(|view| self.options.get(&view)) {
+                    for &view in &opt.refs {
+                        if refs.insert(view) {
+                            stack.push(view);
+                        }
+
+                        if view == target {
+                            break 'r;
+                        }
+                    }
+                }
+
+                if !refs.contains(&target) {
+                    return Err(WorldError::Invisible(handle.into(), target, here));
+                }
             }
         }
 
@@ -1026,6 +1046,76 @@ mod test {
         assert!(world.validate(grand_parent).is_err());
         assert!(world.validate(parent).is_err());
         assert!(world.validate(child).is_err());
+    }
+
+    #[test]
+    fn views() {
+        let mut world = World::default();
+
+        let view1 = world.view();
+        let view2 = world.view();
+
+        let node1 = world.enter(view1, || world.insert(TestInserter(1)));
+        let node2 = world.enter(view2, || world.insert(TestInserter(2)));
+
+        world.flush();
+
+        assert!(world.enter(view1, || world.validate(node1).is_ok()));
+        assert!(world.enter(view2, || world.validate(node2).is_ok()));
+        assert!(world.enter(view1, || world.validate(node2).is_err()));
+        assert!(world.enter(view2, || world.validate(node1).is_err()));
+    }
+
+    #[test]
+    fn view_refs() {
+        let mut world = World::default();
+
+        let view1 = world.view();
+        let view2 = world.view();
+
+        let node1 = world.enter(view1, || world.insert(TestInserter(1)));
+        let node2 = world.enter(view2, || world.insert(TestInserter(2)));
+
+        world.enter(view2, || world.option(ViewOptions { refs: vec![view1] }));
+
+        world.flush();
+
+        assert!(world.enter(view1, || world.validate(node1).is_ok()));
+        assert!(world.enter(view2, || world.validate(node2).is_ok()));
+        assert!(world.enter(view1, || world.validate(node2).is_err()));
+        assert!(world.enter(view2, || world.validate(node1).is_ok()));
+    }
+
+    #[test]
+    fn view_refs_chain() {
+        let mut world = World::default();
+
+        let view1 = world.view();
+        let view2 = world.view();
+        let view3 = world.view();
+
+        let node1 = world.enter(view1, || world.insert(TestInserter(1)));
+        let node2 = world.enter(view2, || world.insert(TestInserter(2)));
+        let node3 = world.enter(view3, || world.insert(TestInserter(3)));
+
+        let refs2 = vec![view1, view3];
+        let refs3 = vec![view2];
+        world.enter(view2, || world.option(ViewOptions { refs: refs2 }));
+        world.enter(view3, || world.option(ViewOptions { refs: refs3 }));
+
+        world.flush();
+
+        assert!(world.enter(view3, || world.validate(node1).is_ok()));
+        assert!(world.enter(view2, || world.validate(node1).is_ok()));
+        assert!(world.enter(view1, || world.validate(node1).is_ok()));
+
+        assert!(world.enter(view3, || world.validate(node2).is_ok()));
+        assert!(world.enter(view2, || world.validate(node2).is_ok()));
+        assert!(world.enter(view1, || world.validate(node2).is_err()));
+
+        assert!(world.enter(view3, || world.validate(node3).is_ok()));
+        assert!(world.enter(view2, || world.validate(node3).is_ok()));
+        assert!(world.enter(view1, || world.validate(node3).is_err()));
     }
 
     #[test]
