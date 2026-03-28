@@ -15,7 +15,7 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, camera::Camera,
+        Redraw, Render, RenderControl, RenderPortal, camera::{Camera, CameraBind}, vertex::VertexUniform
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -62,7 +62,7 @@ impl Descriptor for TextManagerDescriptor {
         let swash_cache = SwashCache::new();
 
         let render = world.single_fetch::<Render>().unwrap();
-        let camera = world.single_fetch::<Camera>().unwrap();
+        let camera = world.single_fetch::<CameraBind>().unwrap();
 
         let shader_vs = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("vertex_shader"),

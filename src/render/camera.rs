@@ -15,10 +15,13 @@ pub struct Camera {
 
     pub bind: BindGroup,
     pub uniform: Buffer,
-    pub layout: BindGroupLayout,
 
     queue: Queue,
     control: Handle<RenderControl>,
+}
+
+pub struct CameraBind {
+    pub layout: BindGroupLayout,
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -43,24 +46,10 @@ impl Descriptor for CameraDescriptor {
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
+        let binding = world.single_fetch::<CameraBind>().unwrap();
+        let device = &render.device;
 
-        let layout = render
-            .device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("camera_bind_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::VERTEX_FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
-        let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
+        let uniform = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("camera_uniform"),
             contents: bytemuck::bytes_of(&CameraUniform {
                 size: self.size.into_array(),
@@ -72,9 +61,9 @@ impl Descriptor for CameraDescriptor {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let bind = render.device.create_bind_group(&BindGroupDescriptor {
+        let bind = device.create_bind_group(&BindGroupDescriptor {
             label: Some("camera_bind"),
-            layout: &layout,
+            layout: &binding.layout,
             entries: &[BindGroupEntry {
                 binding: 0,
                 resource: BindingResource::Buffer(BufferBinding {
@@ -99,7 +88,6 @@ impl Descriptor for CameraDescriptor {
             zoom: self.zoom,
             uniform,
             bind,
-            layout,
             queue: render.queue.clone(),
             control,
         })
@@ -136,6 +124,8 @@ impl Element for Camera {
     }
 }
 
+impl Element for CameraBind {}
+
 impl Camera {
     #[inline]
     pub fn screen_to_world_absolute(&self, point: [f64; 2]) -> PositionFract {
@@ -160,8 +150,29 @@ impl Camera {
         [x, y]
     }
 
-    pub fn init(world: &mut World, name: &str) {
-        world.insert(Camera::save_read(world, name));
+    pub fn init(world: &mut World) {
+        let render = world.single_fetch::<Render>().unwrap();
+        let device = &render.device;
+
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("camera_bind"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX_FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        world.insert(CameraBind { layout });
+    }
+
+    pub fn singleton(world: &mut World, name: &str) {
+        world.insert(Camera::save_read(name));
         world.flush();
 
         if let Err(WorldError::SingletonNoSuch(_)) = world.single::<Camera>() {
@@ -182,7 +193,7 @@ impl Camera {
         world.insert(Camera::save_write(camera, control));
     }
 
-    fn save_read(world: &World, name: &str) -> SaveControlRead {
+    fn save_read(name: &str) -> SaveControlRead {
         SaveControlRead {
             name: name.into(),
             read: Box::new(move |world, control| {

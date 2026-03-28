@@ -12,27 +12,24 @@ use winit::{
 };
 
 use crate::{
-    elements::palette::{PaletteDescriptor, PaletteHue, PaletteMain},
-    layout::transform::{Transform, TransformEdge},
-    measures::{Position, Rectangle, Size},
+    elements::palette::{PaletteHue, PaletteMain},
     render::{
         Render,
-        camera::{Camera, CameraDescriptor, CameraUtils, CameraVisits},
+        camera::{Camera, CameraUtils, CameraVisits},
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
         text::TextManagerDescriptor,
         wireframe::WireframeManagerDescriptor,
     },
-    save::{AutosaveScheduler, SaveControl, SaveControlRead, SaveControlWrite, SaveDatabase},
+    save::{AutosaveScheduler, SaveControlWrite, SaveDatabase},
     stroke::StrokeLayer,
     theme::Luni,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
     },
-    widgets::{panel::Panel, resizable::Resizable},
-    world::{Element, Handle, ViewId, ViewOptions, World, WorldError},
+    world::{Element, Handle, ViewId, ViewOptions, World},
 };
 
 #[derive(Default)]
@@ -123,17 +120,9 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            let layer1 = world.view();
-            let here = world.here();
-            world.enter(layer1, || world.option(ViewOptions { refs: vec![here] }));
-            world.option(ViewOptions { refs: vec![layer1] });
+            Camera::init(world);
             world.flush();
-            world.enter(layer1, || {
-                world.queue(|world| Camera::init(world, "camera1"));
-            });
-        });
 
-        world.queue(|world| {
             world.build(CanvasManagerDescriptor);
             world.build(TextManagerDescriptor);
             world.build(WireframeManagerDescriptor);
@@ -148,16 +137,28 @@ impl Element for Lnwindow {
             world.insert(PointerTool::default());
             world.insert(MouseTool::default());
             world.insert(MultiTouchTool::default());
-        });
-
-        world.queue(|world| {
-            world.insert(StrokeLayer::new(world));
-        });
-
-        world.queue(|world| {
             world.insert(Focus::default());
-            world.insert(CameraUtils::default());
             world.insert(ModifiersTool::default());
+        });
+
+        world.queue(|world| {
+            let layer1 = world.view();
+            let here = world.here();
+
+            world.enter(layer1, || {
+                world.option(ViewOptions { refs: vec![here] });
+
+                world.queue(|world| {
+                    Camera::singleton(world, "camera1");
+                    world.flush();
+                    world.insert(StrokeLayer::new(world));
+                    world.insert(CameraUtils::default());
+                });
+            });
+
+            world.insert(CameraVisits {
+                views: vec![layer1],
+            });
         });
     }
 }

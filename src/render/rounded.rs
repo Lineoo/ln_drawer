@@ -2,6 +2,7 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
 use crate::render::RenderInformation;
+use crate::render::camera::CameraBind;
 use crate::{
     measures::Rectangle,
     render::{Render, RenderControl, camera::Camera},
@@ -60,7 +61,7 @@ impl Default for RoundedRectDescriptor {
 impl RoundedRect {
     pub fn init(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
-        let camera = world.single_fetch::<Camera>().unwrap();
+        let camera = world.single_fetch::<CameraBind>().unwrap();
         let device = &render.device;
 
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {

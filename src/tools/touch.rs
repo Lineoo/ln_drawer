@@ -8,7 +8,7 @@ use crate::{
     measures::Position,
     render::camera::Camera,
     tools::collider::ToolCollider,
-    world::{Element, Handle, World},
+    world::{Element, Handle, ViewId, World},
 };
 
 /// Multi touch actions that allow inputs with more points than [`PointerTool`] but no hovering
@@ -29,6 +29,7 @@ impl Element for MultiTouchTool {
 pub struct MultiTouch {
     pub position: Position,
     pub screen: [f64; 2],
+    pub view: ViewId,
     pub status: MultiTouchStatus,
     pub data: MultiTouchData,
     pub pointer: PointerKind,
@@ -53,7 +54,7 @@ pub struct MultiTouchData {
 }
 
 impl MultiTouchTool {
-    fn listening_window_event(&mut self, world: &World, this: Handle<Self>) {
+    fn listening_window_event(&mut self, world: &World, _this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
         world.observer(lnwindow, |event, world| match event {
             WindowEvent::PointerButton {
@@ -71,24 +72,24 @@ impl MultiTouchTool {
                 };
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
-
                 let screen = lnwindow.cursor_to_screen(*position);
-                let position = camera.screen_to_world_absolute(screen);
-                drop((lnwindow, camera));
+                drop(lnwindow);
 
-                let target = ToolCollider::intersect(world, position.floor())
-                    .first()
-                    .copied();
-
-                let Some(target) = target else {
+                let Some(&(target, view)) = ToolCollider::intersect(world, screen).first()
+                else {
                     return;
                 };
 
+                let position = world.enter(view, || {
+                    let camera = world.single_fetch::<Camera>().unwrap();
+                    camera.screen_to_world_absolute(screen).floor()
+                });
+
                 let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
                 let touch = MultiTouch {
-                    position: position.floor(),
+                    position,
                     screen,
+                    view,
                     status: MultiTouchStatus::Press,
                     data: MultiTouchData {
                         force: match button {
@@ -140,15 +141,18 @@ impl MultiTouchTool {
                 };
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
-
                 let screen = lnwindow.cursor_to_screen(*position);
-                let position = camera.screen_to_world_absolute(screen);
-                drop((lnwindow, camera));
+                drop(lnwindow);
+
+                let position = world.enter(touch.view, || {
+                    let camera = world.single_fetch::<Camera>().unwrap();
+                    camera.screen_to_world_absolute(screen).floor()
+                });
 
                 *touch = MultiTouch {
-                    position: position.floor(),
+                    position,
                     screen,
+                    view: touch.view,
                     status: MultiTouchStatus::Holding,
                     data: MultiTouchData {
                         force: match source {
@@ -200,21 +204,24 @@ impl MultiTouchTool {
                 };
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
-
                 let screen = lnwindow.cursor_to_screen(*position);
-                let position = camera.screen_to_world_absolute(screen);
-                drop((lnwindow, camera));
+                drop(lnwindow);
 
                 let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
                 let Some((target, touch)) = tool.lut.get_mut(&kind) else {
                     return;
                 };
 
+                let position = world.enter(touch.view, || {
+                    let camera = world.single_fetch::<Camera>().unwrap();
+                    camera.screen_to_world_absolute(screen).floor()
+                });
+
                 let target = *target;
                 *touch = MultiTouch {
-                    position: position.floor(),
+                    position,
                     screen,
+                    view: touch.view,
                     status: MultiTouchStatus::Release,
                     data: MultiTouchData {
                         force: match button {

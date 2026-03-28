@@ -1,10 +1,10 @@
+pub mod camera;
 pub mod canvas;
+pub mod rectangle;
 pub mod rounded;
 pub mod text;
 pub mod vertex;
-pub mod camera;
 pub mod wireframe;
-pub mod rectangle;
 
 use std::time::{Duration, Instant};
 
@@ -19,6 +19,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent};
 
 use crate::{
     lnwin::Lnwindow,
+    render::camera::CameraVisits,
     world::{Element, Handle, World},
 };
 
@@ -37,13 +38,10 @@ pub struct Render {
     pub clear_color: Color,
 
     // render control
-    sequence: Vec<Handle<RenderControl>>,
-    refreshing: bool,
+    redrawing: bool,
 
     // time tracing
     last_redraw: Option<Instant>,
-    last_control: Option<Instant>,
-    last_lossy: Option<Instant>,
 }
 
 #[deprecated]
@@ -77,9 +75,6 @@ pub struct RenderInformation {
     pub render_order: isize,
     pub keep_redrawing: bool,
 }
-
-#[deprecated]
-pub struct LossyPrepare;
 
 #[deprecated]
 pub struct RedrawPrepare;
@@ -127,11 +122,8 @@ impl Render {
             device,
             queue,
             clear_color: Color::WHITE,
-            sequence: Vec::new(),
-            refreshing: false,
+            redrawing: false,
             last_redraw: None,
-            last_control: None,
-            last_lossy: None,
         }
     }
 
@@ -188,15 +180,123 @@ impl Render {
 
         config
     }
+
+    fn redraw(world: &World) {
+        // start rendering
+
+        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        render.redrawing = true;
+        drop(render);
+
+        let now = Instant::now();
+
+        // prepare controls
+
+        let mut refreshing = false;
+        let mut sorting_phase = Vec::with_capacity(world.size_hint::<RenderControl>());
+
+        let visits = world.single_fetch::<CameraVisits>().unwrap();
+        for &view in &visits.views {
+            world.enter(view, || {
+                world.foreach_fetch_mut::<RenderControl>(|mut control| {
+                    if let Some(prepare) = &mut control.prepare {
+                        let info = prepare(world);
+                        if let Some(info) = info {
+                            sorting_phase.push((control.handle(), view, info.render_order));
+                            refreshing |= info.keep_redrawing;
+                        }
+                    };
+                });
+            });
+        }
+
+        sorting_phase.sort_by(|(.., a), (.., b)| a.cmp(b));
+        let mut draw_sequence = Vec::with_capacity(sorting_phase.len());
+        for (control, view, _) in sorting_phase {
+            draw_sequence.push((control, view));
+        }
+
+        // setup render pass
+
+        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        let texture = render.surface.get_current_texture().unwrap();
+        let view = texture
+            .texture
+            .create_view(&TextureViewDescriptor::default());
+
+        let mut encoder = render
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("main_encoder"),
+            });
+
+        let mut rpass = encoder
+            .begin_render_pass(&RenderPassDescriptor {
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(render.clear_color),
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                ..Default::default()
+            })
+            .forget_lifetime();
+
+        // draw and submit
+
+        drop(render);
+        for &(control, view) in &draw_sequence {
+            world.enter(view, || {
+                // FIXME why it's here
+                if world.validate(control).is_err() {
+                    return;
+                }
+
+                let mut control = world.fetch_mut(control).unwrap();
+                if let Some(render) = &mut control.draw {
+                    render(world, &mut rpass);
+                }
+            });
+        }
+
+        drop(rpass);
+        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        render.queue.submit([encoder.finish()]);
+        texture.present();
+
+        // active refreshing
+
+        if refreshing {
+            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            lnwindow.window.request_redraw();
+        }
+
+        // record time
+
+        if let Some(last) = render.last_redraw {
+            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            lnwindow.window.set_title(&format!(
+                "frame time: {:.4} | {}",
+                (now - last).as_secs_f32(),
+                match refreshing {
+                    true => "ACTIVE",
+                    false => "INACTIVE",
+                },
+            ));
+        }
+
+        // stop redrawing
+
+        render.last_redraw = Some(now);
+        render.redrawing = false;
+    }
 }
 
 impl Element for Render {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let portal = world.insert(RenderPortal {
-            active: None,
-            redrawing: false,
-        });
-
         let lnwindow = world.single::<Lnwindow>().unwrap();
         world.observer(lnwindow, move |event: &WindowEvent, world| match event {
             WindowEvent::SurfaceResized(size) => {
@@ -207,156 +307,7 @@ impl Element for Render {
             }
 
             WindowEvent::RedrawRequested => {
-                let mut render = world.fetch_mut(this).unwrap();
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let now = Instant::now();
-
-                // start redrawing
-
-                let mut rportal = world.fetch_mut(portal).unwrap();
-                rportal.redrawing = true;
-                drop(rportal);
-
-                // render control
-
-                if render
-                    .last_control
-                    .is_none_or(|last| now - last > Duration::from_millis(10))
-                {
-                    let mut refreshing = false;
-
-                    let mut buf = Vec::with_capacity(world.size_hint::<RenderControl>());
-                    world.foreach_fetch_mut::<RenderControl>(|mut control| {
-                        if let Some(prepare) = &mut control.prepare {
-                            let info = prepare(world);
-                            if let Some(info) = info {
-                                buf.push((control.handle(), info.render_order));
-                                refreshing |= info.keep_redrawing;
-                            }
-
-                            return;
-                        };
-
-                        if control.visible {
-                            buf.push((control.handle(), control.order));
-                        }
-
-                        if control.refreshing {
-                            refreshing = true;
-                        }
-                    });
-
-                    buf.sort_by(|(_, a), (_, b)| a.cmp(b));
-
-                    render.sequence.clear();
-                    render.sequence.reserve(buf.len());
-                    for (control, _) in buf {
-                        render.sequence.push(control);
-                    }
-
-                    render.refreshing = refreshing;
-                    render.last_control = Some(now);
-                }
-
-                // lossy redraw prepare
-
-                if render
-                    .last_lossy
-                    .is_none_or(|last| now - last > Duration::from_millis(100))
-                {
-                    for control in &render.sequence {
-                        world.trigger(*control, &LossyPrepare);
-                    }
-
-                    render.last_lossy = Some(now);
-                }
-
-                // redraw prepare
-
-                for control in &render.sequence {
-                    world.trigger(*control, &RedrawPrepare);
-                }
-
-                // setup render pass
-
-                let texture = render.surface.get_current_texture().unwrap();
-                let view = texture
-                    .texture
-                    .create_view(&TextureViewDescriptor::default());
-
-                let mut encoder = render
-                    .device
-                    .create_command_encoder(&CommandEncoderDescriptor {
-                        label: Some("main_encoder"),
-                    });
-
-                let mut rpass = encoder
-                    .begin_render_pass(&RenderPassDescriptor {
-                        color_attachments: &[Some(RenderPassColorAttachment {
-                            view: &view,
-                            resolve_target: None,
-                            ops: Operations {
-                                load: LoadOp::Clear(render.clear_color),
-                                store: StoreOp::Store,
-                            },
-                            depth_slice: None,
-                        })],
-                        ..Default::default()
-                    })
-                    .forget_lifetime();
-
-                // call everyone to draw
-
-                // FIXME why it's here
-                render.sequence.retain(|x| world.available_mut(*x).is_ok());
-
-                for control in &render.sequence {
-                    let mut control = world.fetch_mut(*control).unwrap();
-                    if let Some(render) = &mut control.draw {
-                        render(world, &mut rpass);
-                    }
-                }
-
-                let mut rportal = world.fetch_mut(portal).unwrap();
-                rportal.active.replace(RenderActive { encoder, rpass });
-                drop(rportal);
-
-                for control in &render.sequence {
-                    world.trigger(*control, &Redraw);
-                }
-
-                let mut rportal = world.fetch_mut(portal).unwrap();
-                let active = rportal.active.take().unwrap();
-
-                // submit to GPU
-
-                drop(active.rpass);
-                render.queue.submit([active.encoder.finish()]);
-                texture.present();
-
-                // active refreshing
-
-                if render.refreshing {
-                    lnwindow.window.request_redraw();
-                }
-
-                // record time
-
-                if let Some(last) = render.last_redraw {
-                    lnwindow.window.set_title(&format!(
-                        "frame time: {:.4} | {}",
-                        (now - last).as_secs_f32(),
-                        match render.refreshing {
-                            true => "ACTIVE",
-                            false => "INACTIVE",
-                        },
-                    ));
-                }
-
-                // stop redrawing
-
-                render.last_redraw = Some(now);
-                rportal.redrawing = false;
+                Render::redraw(world);
             }
 
             _ => (),
@@ -368,8 +319,8 @@ impl Element for RenderPortal {}
 
 impl Element for RenderControl {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.dependency(this, world.single::<RenderPortal>().unwrap());
         world.dependency(this, world.single::<Lnwindow>().unwrap());
+        world.dependency(this, world.single::<Render>().unwrap());
         determine_redraw(self, world);
     }
 
@@ -383,13 +334,8 @@ impl Element for RenderControl {
 }
 
 fn determine_redraw(control: &RenderControl, world: &World) {
-    let rportal = world.single_fetch::<RenderPortal>().unwrap();
-    if rportal.redrawing {
-        // warn if it's in Redraw phase, ignore if it's in Prepare phase
-        if rportal.active.is_some() {
-            log::warn!("loop redraw detected");
-        }
-
+    let render = world.single_fetch::<Render>().unwrap();
+    if render.redrawing {
         return;
     }
 

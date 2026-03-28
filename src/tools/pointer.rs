@@ -9,9 +9,9 @@ use winit::event::{
 use crate::{
     lnwin::Lnwindow,
     measures::{Position, Rectangle},
-    render::camera::{Camera, CameraUtils},
+    render::camera::Camera,
     tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
-    world::{Element, Handle, World},
+    world::{Element, Handle, ViewId, World},
 };
 
 /// Guaranteed for single-pointer operations like mouse cursor or the first-touch finger.
@@ -65,11 +65,17 @@ pub struct PointerHitData {
 }
 
 struct Pointer {
-    position: Position,
     screen: [f64; 2],
     kind: PointerKind,
-    hovering: Option<Handle<ToolCollider>>,
+    hovering: Option<Hover>,
     pressed: Option<Press>,
+}
+
+#[derive(Clone, Copy)]
+struct Hover {
+    position: Position,
+    view: ViewId,
+    handle: Handle<ToolCollider>,
 }
 
 #[derive(Clone, Copy)]
@@ -81,7 +87,6 @@ impl PointerTool {
     fn alloc_pointer(&mut self, kind: PointerKind) -> Option<&mut Pointer> {
         if self.pointer.is_none() {
             self.pointer = Some(Pointer {
-                position: Position::default(),
                 screen: Default::default(),
                 kind,
                 hovering: None,
@@ -105,7 +110,6 @@ impl Element for PointerTool {
         world.observer(lnwindow, move |event: &WindowEvent, world| {
             let mut this = world.fetch_mut(this).unwrap();
             let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-            let camera = world.single_fetch::<Camera>().unwrap();
 
             match event {
                 WindowEvent::PointerMoved {
@@ -118,9 +122,8 @@ impl Element for PointerTool {
                     };
 
                     let screen = lnwindow.cursor_to_screen(*position);
-                    let position = camera.screen_to_world_absolute(screen).floor();
+                    drop(lnwindow);
 
-                    drop((lnwindow, camera));
                     if let Some(press) = &mut pointer.pressed {
                         press.force = match source {
                             PointerSource::Mouse => Some(1.0),
@@ -133,7 +136,7 @@ impl Element for PointerTool {
                             PointerSource::Unknown => None,
                         };
                     }
-                    pointer.update_position(world, position, screen);
+                    pointer.update_position(world, screen);
                 }
 
                 WindowEvent::PointerButton {
@@ -155,10 +158,9 @@ impl Element for PointerTool {
                     };
 
                     let screen = lnwindow.cursor_to_screen(*position);
-                    let position = camera.screen_to_world_absolute(screen).floor();
+                    drop(lnwindow);
 
-                    drop((lnwindow, camera));
-                    pointer.update_position(world, position, screen);
+                    pointer.update_position(world, screen);
                     pointer.update_pressed(
                         world,
                         match state {
@@ -185,10 +187,9 @@ impl Element for PointerTool {
                     };
 
                     let screen = lnwindow.cursor_to_screen(*position);
-                    let position = camera.screen_to_world_absolute(screen).floor();
+                    drop(lnwindow);
 
-                    drop((lnwindow, camera));
-                    pointer.update_position(world, position, screen);
+                    pointer.update_position(world, screen);
                 }
 
                 WindowEvent::PointerLeft { position, kind, .. } => {
@@ -198,26 +199,14 @@ impl Element for PointerTool {
 
                     if let Some(position) = *position {
                         let screen = lnwindow.cursor_to_screen(position);
-                        let position = camera.screen_to_world_absolute(screen).floor();
+                        drop(lnwindow);
 
-                        drop((lnwindow, camera));
-                        pointer.update_position(world, position, screen);
+                        pointer.update_position(world, screen);
                     } else {
-                        drop((lnwindow, camera));
+                        drop(lnwindow);
                     }
 
-                    if let Some(hovering) = pointer.hovering {
-                        world.queue_trigger(
-                            hovering,
-                            PointerHover {
-                                position: pointer.position,
-                                screen: pointer.screen,
-                                status: PointerHoverStatus::Leave,
-                                pointer: PointerKind::Mouse,
-                            },
-                        );
-                    }
-
+                    pointer.update_hovering(world, None);
                     this.pointer = None;
                 }
 
@@ -229,7 +218,7 @@ impl Element for PointerTool {
         let ob = world.observer(dispatcher, |&ToolColliderChanged(collider), world| {
             let mut tool = world.single_fetch_mut::<PointerTool>().unwrap();
             if let Some(pointer) = &mut tool.pointer
-                && pointer.hovering == Some(collider)
+                && pointer.hovering.is_some_and(|x| x.handle == collider)
             {
                 pointer.recalculate_hovering(world);
             }
@@ -241,41 +230,40 @@ impl Element for PointerTool {
 }
 
 impl Pointer {
-    fn update_position(&mut self, world: &World, position: Position, screen: [f64; 2]) {
-        self.position = position;
+    fn update_position(&mut self, world: &World, screen: [f64; 2]) {
         self.screen = screen;
 
         self.recalculate_hovering(world);
 
-        let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-        camera_utils.cursor(world, screen);
-        drop(camera_utils);
-
         if let Some(hovering) = self.hovering {
             if let Some(pressed) = self.pressed {
-                world.queue_trigger(
-                    hovering,
-                    PointerHit {
-                        position,
-                        screen,
-                        status: PointerHitStatus::Moving,
-                        data: PointerHitData {
-                            force: pressed.force,
+                world.enter(hovering.view, || {
+                    world.queue_trigger(
+                        hovering.handle,
+                        PointerHit {
+                            position: hovering.position,
+                            screen,
+                            status: PointerHitStatus::Moving,
+                            data: PointerHitData {
+                                force: pressed.force,
+                            },
+                            pointer: self.kind,
                         },
+                    );
+                });
+            }
+
+            world.enter(hovering.view, || {
+                world.queue_trigger(
+                    hovering.handle,
+                    PointerHover {
+                        position: hovering.position,
+                        screen,
+                        status: PointerHoverStatus::Moving,
                         pointer: self.kind,
                     },
                 );
-            }
-
-            world.queue_trigger(
-                hovering,
-                PointerHover {
-                    position,
-                    screen,
-                    status: PointerHoverStatus::Moving,
-                    pointer: self.kind,
-                },
-            );
+            });
         }
     }
 
@@ -283,14 +271,14 @@ impl Pointer {
         if let Some(hovering) = self.hovering {
             let hit = match (self.pressed, pressed) {
                 (None, Some(press)) => Some(PointerHit {
-                    position: self.position,
+                    position: hovering.position,
                     screen: self.screen,
                     status: PointerHitStatus::Press,
                     data: PointerHitData { force: press.force },
                     pointer: self.kind,
                 }),
                 (Some(press), None) => Some(PointerHit {
-                    position: self.position,
+                    position: hovering.position,
                     screen: self.screen,
                     status: PointerHitStatus::Release,
                     data: PointerHitData { force: press.force },
@@ -300,7 +288,9 @@ impl Pointer {
             };
 
             if let Some(hit) = hit {
-                world.queue_trigger(hovering, hit);
+                world.enter(hovering.view, || {
+                    world.queue_trigger(hovering.handle, hit);
+                });
             }
         }
 
@@ -308,55 +298,75 @@ impl Pointer {
         self.recalculate_hovering(world);
     }
 
-    fn update_hovering(&mut self, world: &World, hovering: Option<Handle<ToolCollider>>) {
+    fn update_hovering(&mut self, world: &World, hovering: Option<Hover>) {
         let previous = self.hovering;
         self.hovering = hovering;
 
+        if hovering.map(|x| x.handle) == previous.map(|x| x.handle) {
+            return;
+        }
+
         if let Some(previous) = previous {
-            world.queue_trigger(
-                previous,
-                PointerHover {
-                    position: self.position,
-                    screen: self.screen,
-                    status: PointerHoverStatus::Leave,
-                    pointer: self.kind,
-                },
-            );
+            world.enter(previous.view, || {
+                world.queue_trigger(
+                    previous.handle,
+                    PointerHover {
+                        position: previous.position,
+                        screen: self.screen,
+                        status: PointerHoverStatus::Leave,
+                        pointer: self.kind,
+                    },
+                );
+            });
         }
 
         if let Some(hovering) = hovering {
-            world.queue_trigger(
-                hovering,
-                PointerHover {
-                    position: self.position,
-                    screen: self.screen,
-                    status: PointerHoverStatus::Enter,
-                    pointer: self.kind,
-                },
-            );
+            world.enter(hovering.view, || {
+                world.queue_trigger(
+                    hovering.handle,
+                    PointerHover {
+                        position: hovering.position,
+                        screen: self.screen,
+                        status: PointerHoverStatus::Enter,
+                        pointer: self.kind,
+                    },
+                );
+            });
         }
     }
 
     fn recalculate_hovering(&mut self, world: &World) {
         if self.pressed.is_some() {
-            return;
-        }
+            let hovering = self.hovering.unwrap();
+            let position = world.enter(hovering.view, || {
+                let camera = world.single_fetch::<Camera>().unwrap();
+                camera.screen_to_world_absolute(self.screen).floor()
+            });
 
-        let mut landing = None;
-        for each in ToolCollider::intersect(world, self.position) {
-            let check = PointerCheck {
-                position: self.position,
-                occlude: Cell::new(true),
-            };
-            world.trigger(each, &check);
-            if check.occlude.get() {
-                landing = Some(each);
-                break;
-            }
-        }
+            self.update_hovering(
+                world,
+                Some(Hover {
+                    position,
+                    view: hovering.view,
+                    handle: hovering.handle,
+                }),
+            );
+        } else if let Some(&(each, view)) = ToolCollider::intersect(world, self.screen).first() {
+            let position = world.enter(view, || {
+                let camera = world.single_fetch::<Camera>().unwrap();
+                camera.screen_to_world_absolute(self.screen).floor()
+            });
 
-        if self.hovering != landing {
-            self.update_hovering(world, landing);
+            self.update_hovering(
+                world,
+                Some(Hover {
+                    position,
+                    view,
+                    handle: each,
+                }),
+            );
+        } else {
+            self.update_hovering(world, None);
         }
     }
 }

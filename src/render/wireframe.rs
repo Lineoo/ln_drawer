@@ -10,7 +10,7 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, camera::Camera,
+        Redraw, Render, RenderControl, RenderPortal, camera::{Camera, CameraBind}, vertex::VertexUniform
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -44,7 +44,7 @@ impl Descriptor for WireframeManagerDescriptor {
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let camera = world.single_fetch::<Camera>().unwrap();
+        let camera = world.single_fetch::<CameraBind>().unwrap();
 
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("wireframe_shader"),
