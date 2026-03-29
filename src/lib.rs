@@ -30,6 +30,8 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     use android_logger::{Config, FilterBuilder};
     use winit::{event_loop::EventLoop, platform::android::EventLoopBuilderExtAndroid};
 
+    use crate::world::World;
+
     android_logger::init_once(
         Config::default()
             .with_max_level(log::LevelFilter::Debug)
@@ -45,8 +47,13 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
 
     log::info!("This is LnDrawer Mobile. Welcome!");
 
-    let lnwin = lnwin::Lnwin::default();
-    lnwin.world.insert(app.clone());
+    let mut world = World::default();
+    world.insert(app.clone());
+    world.flush();
+    let lnwin = lnwin::Lnwin {
+        world,
+        ..Default::default()
+    };
 
     let event_loop = EventLoop::builder().with_android_app(app).build().unwrap();
     event_loop.run_app(lnwin).unwrap();
