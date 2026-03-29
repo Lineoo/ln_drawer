@@ -13,7 +13,7 @@ use winit::{
 
 use crate::{
     elements::palette::{PaletteHue, PaletteMain},
-    measures::Rectangle,
+    measures::{Position, Rectangle, Size},
     render::{
         Render,
         camera::{Camera, CameraUtils, CameraVisits},
@@ -173,9 +173,17 @@ impl Element for Lnwindow {
                 world.queue(|world| {
                     Camera::singleton(world, "camera2");
                     world.flush();
+
+                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                     world.insert(CameraUtils::default());
                     world.insert(ColorPicker {
-                        rect: Rectangle::new(0, 0, 30, 30),
+                        rect: Rectangle {
+                            origin: Position {
+                                x: -(lnwindow.window.surface_size().width as i32 / 2),
+                                y: -(lnwindow.window.surface_size().height as i32 / 2),
+                            },
+                            extend: Size { w: 30, h: 30 },
+                        },
                         color: Default::default(),
                     });
                 });
