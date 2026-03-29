@@ -44,18 +44,12 @@ impl ApplicationHandler for Lnwin {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.windows.is_empty() {
             let lnwindow = Lnwindow::new(event_loop);
+            let root = self.world.here();
             let view = self.world.view();
             self.windows.insert(lnwindow.window.id(), view);
 
-            #[cfg(target_os = "android")]
-            {
-                let app = self.world.single_fetch::<AndroidApp>().unwrap().clone();
-                self.world.enter(view, || {
-                    self.world.insert(app);
-                });
-            }
-
             self.world.enter(view, || {
+                self.world.option(ViewOptions { refs: vec![root] });
                 self.world.insert(lnwindow);
             });
         } else {
