@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use hashbrown::HashMap;
+use palette::{Hsla, RgbHue};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 use winit::{
@@ -13,7 +14,7 @@ use winit::{
 
 use crate::{
     elements::palette::{PaletteHue, PaletteMain},
-    measures::Size,
+    measures::{Rectangle, Size},
     render::{
         Render,
         canvas::CanvasManagerDescriptor,
@@ -30,6 +31,7 @@ use crate::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool, viewport::ViewportUtils,
     },
+    widgets::palette::hsl::{PaletteHsl, PaletteHslMaterial},
     world::{Element, Handle, ViewId, World, WorldError},
 };
 
@@ -196,6 +198,7 @@ impl Element for Lnwindow {
             RoundedRect::init(world);
             RectangleMesh::<PaletteMain>::init(world);
             RectangleMesh::<PaletteHue>::init(world);
+            RectangleMesh::<PaletteHslMaterial>::init(world);
             world.insert(Luni::default());
         });
 
@@ -214,6 +217,14 @@ impl Element for Lnwindow {
             world.insert(Focus::default());
             world.insert(ViewportUtils::default());
             world.insert(ModifiersTool::default());
+        });
+
+        world.queue(|world| {
+            world.insert(PaletteHsl {
+                rect: Rectangle::new(100, 100, 130, 130),
+                color: Hsla::new(RgbHue::from_degrees(0.0), 0.0, 0.0, 1.0),
+                order: 60,
+            });
         });
     }
 }

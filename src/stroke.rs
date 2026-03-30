@@ -35,7 +35,7 @@ use crate::{
         WidgetButton, WidgetClick,
         button::Button,
         check_button::CheckButtonDescriptor,
-        color_picker::ColorPicker,
+        expandable::ColorPicker,
         menu::{MenuDescriptor, MenuEntryDescriptor},
         panel::Panel,
         resizable::Resizable,
