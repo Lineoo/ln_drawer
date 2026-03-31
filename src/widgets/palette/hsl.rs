@@ -30,6 +30,8 @@ pub struct PaletteHsl {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PaletteHslMaterial {
     band_width: f32,
+    main_knob_size: f32,
+    hue_knob_size: f32,
     hue: f32,
     saturation: f32,
     lightness: f32,
@@ -54,6 +56,8 @@ impl PaletteHsl {
             order: 60,
             material: PaletteHslMaterial {
                 band_width: 0.1,
+                main_knob_size: 0.015,
+                hue_knob_size: 0.005,
                 hue: self.color.hue.into_degrees() / 360.0,
                 saturation: self.color.saturation,
                 lightness: self.color.lightness,
