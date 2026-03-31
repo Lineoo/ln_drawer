@@ -48,14 +48,6 @@ impl ApplicationHandler for Lnwin {
             let view = self.world.view();
             self.windows.insert(lnwindow.window.id(), view);
 
-            #[cfg(target_os = "android")]
-            {
-                let app = self.world.single_fetch::<AndroidApp>().unwrap().clone();
-                self.world.enter(view, || {
-                    self.world.insert(app);
-                });
-            }
-
             self.world.enter(view, || {
                 self.world.option(ViewOptions { refs: vec![root] });
                 self.world.insert(lnwindow);
