@@ -1,5 +1,5 @@
 use crate::{
-    layout::LayoutRectangle,
+    layout::{LayoutControls, LayoutRectangle},
     measures::{Position, Rectangle},
     widgets::WidgetRectangle,
     world::{Element, Handle, World},
@@ -93,6 +93,13 @@ impl Element for Transform {
 
             let layout = LayoutRectangle(Rectangle::new(left, down, right, up));
             world.trigger(this.target, &layout);
+
+            let controls = world.single_fetch::<LayoutControls>().unwrap();
+            if let Some(&control) = controls.0.get(&this.target)
+                && let Some(rect) = &mut world.fetch_mut(control).unwrap().rectangle
+            {
+                (rect)(world, Rectangle::new(left, down, right, up));
+            }
         });
 
         world.dependency(ob, this);

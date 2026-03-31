@@ -2,7 +2,7 @@ use glam::Vec2;
 use palette::{Hsla, RgbHue};
 
 use crate::{
-    layout::LayoutControl,
+    layout::{LayoutControl, LayoutControls},
     measures::Rectangle,
     render::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
     tools::{
@@ -39,7 +39,7 @@ pub struct PaletteHslMaterial {
 
 impl PaletteHsl {
     fn respond_layout(&mut self, world: &World, this: Handle<Self>) {
-        world.insert(LayoutControl {
+        let control = world.insert(LayoutControl {
             rectangle: Some(Box::new(move |world, rect| {
                 let mut this = world.fetch_mut(this).unwrap();
                 this.rect = rect;
@@ -47,6 +47,11 @@ impl PaletteHsl {
                 rect
             })),
         });
+
+        let mut layouts = world.single_fetch_mut::<LayoutControls>().unwrap();
+        layouts.0.insert(this.untyped(), control);
+
+        world.dependency(control, this);
     }
 
     fn attach_luni(&mut self, world: &World, this: Handle<Self>) {
