@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
+use crate::lnwin::Lnwindow;
 use crate::render::RenderInformation;
 use crate::world::Descriptor;
 use crate::{
@@ -232,7 +233,9 @@ impl<M: RectangleMeshMaterial> Element for RectangleMesh<M> {
         self.bind_control(world, this);
     }
 
-    fn when_modify(&mut self, _world: &World, _this: Handle<Self>) {
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         self.update_buffer();
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        lnwindow.window.request_redraw();
     }
 }
