@@ -1,7 +1,7 @@
 use palette::{FromColor, Hsl, Hsla, SetHue, Srgba};
 
 use crate::{
-    layout::LayoutRectangle,
+    layout::{LayoutControl, LayoutRectangle, Layouts},
     measures::{Position, Rectangle, Size},
     render::{
         RenderControl,
@@ -36,10 +36,13 @@ pub struct PaletteHslMaterial {
 
 impl PaletteHsl {
     fn respond_layout(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, move |&LayoutRectangle(rect), world| {
-            world.trigger(this, &WidgetRectangle(rect));
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
+        world.insert(LayoutControl {
+            rectangle: Some(Box::new(move |world, rect| {
+                let mut this = world.fetch_mut(this).unwrap();
+                this.rect = rect;
+                world.queue_trigger(this.handle(), WidgetRectangle(rect));
+                rect
+            })),
         });
     }
 
