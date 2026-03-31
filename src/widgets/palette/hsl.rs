@@ -29,9 +29,10 @@ pub struct PaletteHsl {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PaletteHslMaterial {
-    h: f32,
-    s: f32,
-    l: f32,
+    band_width: f32,
+    hue: f32,
+    saturation: f32,
+    lightness: f32,
 }
 
 impl PaletteHsl {
@@ -52,9 +53,10 @@ impl PaletteHsl {
             visible: true,
             order: 60,
             material: PaletteHslMaterial {
-                h: self.color.hue.into_degrees() / 360.0,
-                s: self.color.saturation,
-                l: self.color.lightness,
+                band_width: 0.1,
+                hue: self.color.hue.into_degrees() / 360.0,
+                saturation: self.color.saturation,
+                lightness: self.color.lightness,
             },
         });
 
@@ -65,7 +67,9 @@ impl PaletteHsl {
 
         world.observer(this, move |&WidgetHsla(hsla), world| {
             let mut rectangle = world.fetch_mut(rectangle).unwrap();
-            rectangle.desc.material.h = hsla.hue.into_degrees() / 360.0;
+            rectangle.desc.material.hue = hsla.hue.into_degrees() / 360.0;
+            rectangle.desc.material.saturation = hsla.saturation;
+            rectangle.desc.material.lightness = hsla.lightness;
         });
 
         world.observer(this, move |&WidgetDestroyed, world| {
@@ -76,7 +80,7 @@ impl PaletteHsl {
     fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
         let collider = world.insert(ToolCollider {
             rect: self.rect,
-            order: 60,
+            order: 100,
             enabled: true,
         });
 
