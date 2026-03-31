@@ -5,7 +5,10 @@ use crate::{
     layout::LayoutControl,
     measures::Rectangle,
     render::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
-    tools::{collider::ToolCollider, pointer::PointerHit},
+    tools::{
+        collider::ToolCollider,
+        pointer::{PointerHit, PointerHitStatus},
+    },
     widgets::{WidgetDestroyed, WidgetHsla, WidgetRectangle},
     world::{Element, Handle, World},
 };
@@ -85,6 +88,7 @@ impl PaletteHsl {
             enabled: true,
         });
 
+        let mut lock = 0;
         world.observer(collider, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this).unwrap();
             let delta = event.position - this.rect.origin;
@@ -99,13 +103,21 @@ impl PaletteHsl {
             let radius = delta.length();
             let angle = f32::atan2(delta.y, delta.x);
 
-            if suv.x > 0. && suv.x < 1. && suv.y > 0. && suv.y < 1. {
-                this.color.saturation = suv.x;
-                this.color.lightness = suv.y;
+            if lock == 1 || (lock == 0 && suv.x > 0. && suv.x < 1. && suv.y > 0. && suv.y < 1.) {
+                lock = 1;
+                this.color.saturation = (suv.x).clamp(0.0, 1.0);
+                this.color.lightness = (suv.y).clamp(0.0, 1.0);
                 world.queue_trigger(this.handle(), WidgetHsla(this.color));
-            } else if radius > 0.5 - BAND_WIDTH && radius < 0.5 {
+            } else if lock == 2 || (lock == 0 && radius > 0.5 - BAND_WIDTH && radius < 0.5) {
+                lock = 2;
                 this.color.hue = RgbHue::from_radians(angle);
                 world.queue_trigger(this.handle(), WidgetHsla(this.color));
+            } else {
+                lock = 3;
+            }
+
+            if let PointerHitStatus::Release = event.status {
+                lock = 0;
             }
         });
     }
