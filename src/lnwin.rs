@@ -221,7 +221,7 @@ impl Element for Lnwindow {
 
         world.queue(|world| {
             world.insert(PaletteHsl {
-                rect: Rectangle::new(100, 100, 130, 130),
+                rect: Rectangle::new(100, 100, 300, 300),
                 color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
             });
         });

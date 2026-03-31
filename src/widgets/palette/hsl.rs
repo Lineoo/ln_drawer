@@ -1,4 +1,5 @@
-use palette::Hsla;
+use glam::Vec2;
+use palette::{Hsla, RgbHue};
 
 use crate::{
     layout::LayoutControl,
@@ -8,6 +9,8 @@ use crate::{
     widgets::{WidgetDestroyed, WidgetHsla, WidgetRectangle},
     world::{Element, Handle, World},
 };
+
+const BAND_WIDTH: f32 = 0.1;
 
 /// Standard palette for picking hsl color. Contains a circle of hue value and a square
 /// whose x axis stands for saturation and y axis stands for lightness.
@@ -49,7 +52,7 @@ impl PaletteHsl {
             visible: true,
             order: 60,
             material: PaletteHslMaterial {
-                band_width: 0.1,
+                band_width: BAND_WIDTH,
                 main_knob_size: 0.015,
                 hue_knob_size: 0.005,
                 hue: self.color.hue.into_degrees() / 360.0,
@@ -65,7 +68,7 @@ impl PaletteHsl {
 
         world.observer(this, move |&WidgetHsla(hsla), world| {
             let mut rectangle = world.fetch_mut(rectangle).unwrap();
-            rectangle.desc.material.hue = hsla.hue.into_degrees() / 360.0;
+            rectangle.desc.material.hue = hsla.hue.into_positive_degrees() / 360.0;
             rectangle.desc.material.saturation = hsla.saturation;
             rectangle.desc.material.lightness = hsla.lightness;
         });
@@ -85,11 +88,25 @@ impl PaletteHsl {
         world.observer(collider, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this).unwrap();
             let delta = event.position - this.rect.origin;
-            let saturation = delta.x as f32 / this.rect.extend.w as f32;
-            let lightness = delta.y as f32 / this.rect.extend.h as f32;
-            let color = Hsla::new(this.color.hue, saturation, lightness, this.color.alpha);
-            this.color = color;
-            world.queue_trigger(this.handle(), WidgetHsla(color));
+
+            let u = delta.x as f32 / this.rect.extend.w as f32;
+            let v = delta.y as f32 / this.rect.extend.h as f32;
+            let uv = Vec2::new(u, v);
+            let size = (0.5 - BAND_WIDTH) * 2f32.sqrt();
+            let suv = (uv - 0.5) / size + 0.5;
+
+            let delta = uv - 0.5;
+            let radius = delta.length();
+            let angle = f32::atan2(delta.y, delta.x);
+
+            if suv.x > 0. && suv.x < 1. && suv.y > 0. && suv.y < 1. {
+                this.color.saturation = suv.x;
+                this.color.lightness = suv.y;
+                world.queue_trigger(this.handle(), WidgetHsla(this.color));
+            } else if radius > 0.5 - BAND_WIDTH && radius < 0.5 {
+                this.color.hue = RgbHue::from_radians(angle);
+                world.queue_trigger(this.handle(), WidgetHsla(this.color));
+            }
         });
     }
 }
