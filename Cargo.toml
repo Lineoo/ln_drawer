@@ -56,5 +56,5 @@ resources = "android"
 min_sdk_version = 26
 
 [package.metadata.android.application]
-icon = "@mipmap/icon"
+icon = "@mipmap/icon-dev"
 label = "LnDrawer Dev"
