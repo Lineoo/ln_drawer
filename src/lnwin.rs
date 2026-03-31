@@ -176,6 +176,23 @@ impl Element for Lnwindow {
                     world.flush();
                     world.insert(StrokeLayer::new(world));
                     world.insert(CameraUtils::default());
+
+                    let palette = world.insert(PaletteHsl {
+                        rect: Rectangle::new(100, 100, 300, 300),
+                        color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
+                    });
+
+                    let expandable = world.insert(Expandable {
+                        rect: Rectangle::new(-100, -100, -50, -50),
+                        transform: TransformValue::scale(10.0, 10.0),
+                        expanded: false,
+                    });
+
+                    world.insert(Transform {
+                        value: TransformValue::scale(0.7, 0.7),
+                        source: expandable.untyped(),
+                        target: palette.untyped(),
+                    });
                 });
             });
 
@@ -191,42 +208,6 @@ impl Element for Lnwindow {
 
             world.insert(CameraVisits {
                 views: vec![layer1, layer2],
-            });
-        });
-
-        world.queue(|world| {
-            let palette = world.insert(PaletteHsl {
-                rect: Rectangle::new(100, 100, 300, 300),
-                color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
-            });
-
-            let expandable = world.insert(Expandable {
-                rect: Rectangle::new(0, 0, 50, 50),
-                transform: TransformValue {
-                    left: TransformEdge {
-                        anchor: 0.0,
-                        offset: -100,
-                    },
-                    down: TransformEdge {
-                        anchor: 0.0,
-                        offset: -100,
-                    },
-                    right: TransformEdge {
-                        anchor: 1.0,
-                        offset: 100,
-                    },
-                    up: TransformEdge {
-                        anchor: 1.0,
-                        offset: 100,
-                    },
-                },
-                expanded: false,
-            });
-
-            world.insert(Transform {
-                value: TransformValue::scale(0.7, 0.7),
-                source: expandable.untyped(),
-                target: palette.untyped(),
             });
         });
     }

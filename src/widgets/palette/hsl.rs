@@ -2,7 +2,10 @@ use glam::Vec2;
 use palette::{Hsla, RgbHue};
 
 use crate::{
-    layout::{LayoutControl, LayoutControls},
+    layout::{
+        LayoutControl, LayoutControls,
+        transform::{Transform, TransformValue},
+    },
     measures::Rectangle,
     render::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
     tools::{
@@ -92,6 +95,14 @@ impl PaletteHsl {
             order: 100,
             enabled: true,
         });
+
+        world.insert(Transform {
+            value: TransformValue::copy(),
+            source: this.untyped(),
+            target: collider.untyped(),
+        });
+
+        world.dependency(collider, this);
 
         let mut lock = 0;
         world.observer(collider, move |event: &PointerHit, world| {

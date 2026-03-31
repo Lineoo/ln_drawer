@@ -15,6 +15,7 @@ pub struct LayoutRectangle(pub Rectangle);
 pub struct LayoutControls(pub HashMap<Handle, Handle<LayoutControl>>);
 
 /// Register layout calculation of different widgets
+#[derive(Default)]
 pub struct LayoutControl {
     /// Calculate rectangle. Input desired rectangle, return final rectangle.
     pub rectangle: Option<Box<dyn FnMut(&World, Rectangle) -> Rectangle>>,
