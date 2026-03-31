@@ -13,9 +13,7 @@ use winit::{
 };
 
 use crate::{
-    elements::palette::{PaletteHue, PaletteMain},
-    measures::{Rectangle, Size},
-    render::{
+    elements::palette::{PaletteHue, PaletteMain}, layout::LayoutControls, measures::{Rectangle, Size}, render::{
         Render,
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
@@ -23,16 +21,10 @@ use crate::{
         text::TextManagerDescriptor,
         viewport::{Viewport, ViewportDescriptor},
         wireframe::WireframeManagerDescriptor,
-    },
-    save::{AutosaveScheduler, SaveControl, SaveControlRead, SaveControlWrite, SaveDatabase},
-    stroke::StrokeLayer,
-    theme::Luni,
-    tools::{
+    }, save::{AutosaveScheduler, SaveControl, SaveControlRead, SaveControlWrite, SaveDatabase}, stroke::StrokeLayer, theme::Luni, tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool, viewport::ViewportUtils,
-    },
-    widgets::palette::hsl::{PaletteHsl, PaletteHslMaterial},
-    world::{Element, Handle, ViewId, World, WorldError},
+    }, widgets::palette::hsl::{PaletteHsl, PaletteHslMaterial}, world::{Element, Handle, ViewId, World, WorldError}
 };
 
 #[derive(Default)]
@@ -199,6 +191,7 @@ impl Element for Lnwindow {
             RectangleMesh::<PaletteMain>::init(world);
             RectangleMesh::<PaletteHue>::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
+            world.insert(LayoutControls::default());
             world.insert(Luni::default());
         });
 

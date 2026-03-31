@@ -11,6 +11,7 @@ pub mod transform;
 pub struct LayoutRectangle(pub Rectangle);
 
 /// Record registration from widgets of their layout controls.
+#[derive(Default)]
 pub struct LayoutControls(pub HashMap<Handle, Handle<LayoutControl>>);
 
 /// Register layout calculation of different widgets

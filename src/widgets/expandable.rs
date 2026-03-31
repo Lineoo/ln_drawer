@@ -26,14 +26,15 @@ impl Expandable {
         let control = world.insert(LayoutControl {
             rectangle: Some(Box::new(move |world, rect| {
                 let mut this = world.fetch_mut(this).unwrap();
+                this.rect = rect;
                 if this.expanded {
-                    this.rect = this.transform.compute(rect);
+                    let rect = this.transform.compute(rect);
+                    world.queue_trigger(this.handle(), WidgetRectangle(rect));
                 } else {
-                    this.rect = rect;
+                    world.queue_trigger(this.handle(), WidgetRectangle(rect));
                 }
 
-                world.queue_trigger(this.handle(), WidgetRectangle(this.rect));
-                this.rect
+                rect
             })),
         });
 
@@ -113,6 +114,15 @@ impl Expandable {
                 PointerHitStatus::Release => {
                     world.trigger(this, &WidgetClick);
                     world.trigger(this, &WidgetButton::ButtonRelease);
+
+                    let mut this = world.fetch_mut(this).unwrap();
+                    this.expanded = !this.expanded;
+                    if this.expanded {
+                        let rect = this.transform.compute(this.rect);
+                        world.queue_trigger(this.handle(), WidgetRectangle(rect));
+                    } else {
+                        world.queue_trigger(this.handle(), WidgetRectangle(this.rect));
+                    }
                 }
                 _ => {}
             }
@@ -130,21 +140,6 @@ impl Expandable {
             }
         });
     }
-
-    fn attach_default_behavior(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, move |&WidgetClick, world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            if this.is_expanded() {
-                this.rect.extend = Size::new(30, 30);
-            } else {
-                this.rect.extend = Size::new(400, 800);
-            }
-        });
-    }
-
-    fn is_expanded(&self) -> bool {
-        self.rect.width() >= 400 && self.rect.height() >= 800
-    }
 }
 
 impl Element for Expandable {
@@ -152,6 +147,5 @@ impl Element for Expandable {
         self.receive_layout(world, this);
         self.attach_luni(world, this);
         self.attach_pointer(world, this);
-        self.attach_default_behavior(world, this);
     }
 }
