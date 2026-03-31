@@ -1,10 +1,12 @@
-use winit::event::{ButtonSource, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{
+    ButtonSource, ElementState, MouseButton, MouseScrollDelta, PointerSource, WindowEvent,
+};
 
 use crate::{
     lnwin::Lnwindow,
     measures::{Fract, Position},
-    render::viewport::Viewport,
-    tools::{collider::ToolCollider, viewport::ViewportUtils},
+    render::camera::{Camera, CameraUtils, CameraVisits},
+    tools::collider::ToolCollider,
     world::{Element, Handle, World},
 };
 
@@ -29,18 +31,19 @@ impl Element for MouseTool {
                 ..
             } => {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let screen = lnwindow.cursor_to_screen(*position);
+                drop(lnwindow);
 
-                let position = lnwindow.cursor_to_screen(*position);
-                let position = viewport.screen_to_world_absolute(position);
+                let Some(&(target, view)) = ToolCollider::intersect(world, screen).first() else {
+                    return;
+                };
 
-                let target = ToolCollider::intersect(world, position.floor())
-                    .first()
-                    .copied();
+                let position = world.enter(view, || {
+                    let camera = world.single_fetch::<Camera>().unwrap();
+                    camera.screen_to_world_absolute(screen).floor()
+                });
 
-                if let Some(target) = target {
-                    world.trigger(target, &MouseMenu(position.floor()));
-                }
+                world.queue_trigger(target, MouseMenu(position));
             }
 
             // middle-click //
@@ -50,13 +53,31 @@ impl Element for MouseTool {
                 button: ButtonSource::Mouse(MouseButton::Middle),
                 ..
             } => {
+                let camera_visits = world.single_fetch::<CameraVisits>().unwrap();
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
-
                 let cursor = lnwindow.cursor_to_screen(*position);
-                viewport_utils.cursor(world, cursor);
-                viewport_utils.anchor_on_screen(world, cursor);
-                viewport_utils.locked(true);
+
+                world.enter(camera_visits.views[0], || {
+                    let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+                    camera_utils.cursor(world, cursor);
+                    camera_utils.anchor_on_screen(world, cursor);
+                    camera_utils.locked(true);
+                });
+            }
+
+            WindowEvent::PointerMoved {
+                position,
+                source: PointerSource::Mouse,
+                ..
+            } => {
+                let camera_visits = world.single_fetch::<CameraVisits>().unwrap();
+                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let cursor = lnwindow.cursor_to_screen(*position);
+
+                world.enter(camera_visits.views[0], || {
+                    let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+                    camera_utils.cursor(world, cursor);
+                });
             }
 
             WindowEvent::PointerButton {
@@ -65,23 +86,30 @@ impl Element for MouseTool {
                 button: ButtonSource::Mouse(MouseButton::Middle),
                 ..
             } => {
+                let camera_visits = world.single_fetch::<CameraVisits>().unwrap();
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
-
                 let cursor = lnwindow.cursor_to_screen(*position);
-                viewport_utils.cursor(world, cursor);
-                viewport_utils.locked(false);
+
+                world.enter(camera_visits.views[0], || {
+                    let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+
+                    camera_utils.cursor(world, cursor);
+                    camera_utils.locked(false);
+                });
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
+                let camera_visits = world.single_fetch::<CameraVisits>().unwrap();
+                world.enter(camera_visits.views[0], || {
+                    let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
-                let zoom_delta = match delta {
-                    MouseScrollDelta::LineDelta(_rows, lines) => Fract::from_f32(*lines),
-                    MouseScrollDelta::PixelDelta(delta) => Fract::from_f64(delta.y / 16.0),
-                };
+                    let zoom_delta = match delta {
+                        MouseScrollDelta::LineDelta(_rows, lines) => Fract::from_f32(*lines),
+                        MouseScrollDelta::PixelDelta(delta) => Fract::from_f64(delta.y / 16.0),
+                    };
 
-                viewport_utils.zoom_delta(world, zoom_delta);
+                    camera_utils.zoom_delta(world, zoom_delta);
+                });
             }
 
             _ => {}

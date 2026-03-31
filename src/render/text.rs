@@ -15,17 +15,19 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport,
+        Render, RenderControl, RenderInformation,
+        camera::{Camera, CameraBind},
+        vertex::VertexUniform,
     },
     world::{Descriptor, Element, Handle, World},
 };
 
 pub struct Text {
+    pub order: isize,
     bind: BindGroup,
     uniform: wgpu::Buffer,
     texture: Texture,
     sampler: Sampler,
-    control: Handle<RenderControl>,
 }
 
 #[derive(Debug)]
@@ -62,7 +64,7 @@ impl Descriptor for TextManagerDescriptor {
         let swash_cache = SwashCache::new();
 
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let camera = world.single_fetch::<CameraBind>().unwrap();
 
         let shader_vs = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("vertex_shader"),
@@ -112,8 +114,8 @@ impl Descriptor for TextManagerDescriptor {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("text_pipeline_layout"),
-                bind_group_layouts: &[&viewport.layout, &bind_layout],
-                immediate_size: 0
+                bind_group_layouts: &[&camera.layout, &bind_layout],
+                immediate_size: 0,
             });
 
         let pipeline = render
@@ -272,40 +274,39 @@ impl Descriptor for TextDescriptor<'_> {
             ],
         });
 
-        let control = world.insert(RenderControl {
-            visible: self.visible,
-            order: self.order,
-            refreshing: false,
-            prepare: None,
-            draw: None,
-        });
-
         world.insert(Text {
+            order: self.order,
             bind,
             uniform,
             texture,
             sampler,
-            control,
         })
     }
 }
 
 impl Element for Text {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(self.control, move |Redraw, world| {
-            let manager = world.single_fetch::<TextManager>().unwrap();
-            let viewport = world.single_fetch::<Viewport>().unwrap();
-            let this = world.fetch(this).unwrap();
+        let control = world.insert(RenderControl {
+            prepare: Some(Box::new(move |world| {
+                let this = world.fetch(this).unwrap();
+                Some(RenderInformation {
+                    render_order: this.order,
+                    keep_redrawing: false,
+                })
+            })),
+            draw: Some(Box::new(move |world, rpass| {
+                let manager = world.single_fetch::<TextManager>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
+                let this = world.fetch(this).unwrap();
 
-            let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
-            let rpass = &mut rportal.active.as_mut().unwrap().rpass;
-            rpass.set_pipeline(&manager.pipeline);
-            rpass.set_bind_group(0, &viewport.bind, &[]);
-            rpass.set_bind_group(1, &this.bind, &[]);
-            rpass.draw(0..4, 0..1);
+                rpass.set_pipeline(&manager.pipeline);
+                rpass.set_bind_group(0, &camera.bind, &[]);
+                rpass.set_bind_group(1, &this.bind, &[]);
+                rpass.draw(0..4, 0..1);
+            })),
         });
 
-        world.dependency(self.control, this);
+        world.dependency(control, this);
     }
 }
 

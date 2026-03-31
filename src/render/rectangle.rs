@@ -3,11 +3,13 @@ use std::marker::PhantomData;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
+use crate::lnwin::Lnwindow;
 use crate::render::RenderInformation;
+use crate::render::camera::CameraBind;
 use crate::world::Descriptor;
 use crate::{
     measures::Rectangle,
-    render::{Render, RenderControl, viewport::Viewport},
+    render::{Render, RenderControl, camera::Camera},
     world::{Element, Handle, World},
 };
 
@@ -48,7 +50,7 @@ struct RectangleUniform {
 impl<M: RectangleMeshMaterial> RectangleMesh<M> {
     pub fn init(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let camera = world.single_fetch::<CameraBind>().unwrap();
         let device = &render.device;
 
         let vertex = device.create_shader_module(ShaderModuleDescriptor {
@@ -89,7 +91,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(M::label()),
-            bind_group_layouts: &[&viewport.layout, &bind],
+            bind_group_layouts: &[&camera.layout, &bind],
             immediate_size: 0,
         });
 
@@ -175,9 +177,6 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
     fn bind_control(&mut self, world: &World, this: Handle<Self>) {
         let control = world.insert(RenderControl {
-            visible: true,
-            order: self.desc.order,
-            refreshing: false,
             prepare: Some(Box::new(move |world| {
                 let this = world.fetch(this).unwrap();
                 if !this.desc.visible {
@@ -191,11 +190,11 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
             })),
             draw: Some(Box::new(move |world, rpass| {
                 let pipeline = world.single_fetch::<RectangleMeshPipeline<M>>().unwrap();
-                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
                 let this = world.fetch(this).unwrap();
 
                 rpass.set_pipeline(&pipeline.pipeline);
-                rpass.set_bind_group(0, &viewport.bind, &[]);
+                rpass.set_bind_group(0, &camera.bind, &[]);
                 rpass.set_bind_group(1, &this.bind, &[]);
                 rpass.draw(0..4, 0..1);
             })),
@@ -232,7 +231,10 @@ impl<M: RectangleMeshMaterial> Element for RectangleMesh<M> {
         self.bind_control(world, this);
     }
 
-    fn when_modify(&mut self, _world: &World, _this: Handle<Self>) {
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         self.update_buffer();
+
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        lnwindow.window.request_redraw();
     }
 }

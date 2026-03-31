@@ -8,11 +8,11 @@ use wgpu::{
 };
 
 use crate::{
-    measures::Rectangle,
-    render::{
-        Redraw, Render, RenderControl, RenderPortal, vertex::VertexUniform, viewport::Viewport,
-    },
-    world::{Descriptor, Element, Handle, World},
+    lnwin::Lnwindow, measures::Rectangle, render::{
+        Render, RenderControl, RenderInformation,
+        camera::{Camera, CameraBind},
+        vertex::VertexUniform,
+    }, world::{Descriptor, Element, Handle, World}
 };
 
 pub struct Wireframe {
@@ -22,7 +22,6 @@ pub struct Wireframe {
     bind: BindGroup,
     uniform: Buffer,
     queue: Queue,
-    control: Handle<RenderControl>,
 }
 
 #[derive(Debug, Default)]
@@ -44,7 +43,7 @@ impl Descriptor for WireframeManagerDescriptor {
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let camera = world.single_fetch::<CameraBind>().unwrap();
 
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("wireframe_shader"),
@@ -71,7 +70,7 @@ impl Descriptor for WireframeManagerDescriptor {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("wireframe_pipeline_layout"),
-                bind_group_layouts: &[&viewport.layout, &bind_layout],
+                bind_group_layouts: &[&camera.layout, &bind_layout],
                 immediate_size: 0,
             });
 
@@ -146,14 +145,6 @@ impl Descriptor for WireframeDescriptor {
             }],
         });
 
-        let control = world.insert(RenderControl {
-            visible: self.visible,
-            order: self.order,
-            refreshing: false,
-            prepare: None,
-            draw: None,
-        });
-
         world.insert(Wireframe {
             rect: self.rect,
             order: self.order,
@@ -161,33 +152,40 @@ impl Descriptor for WireframeDescriptor {
             bind,
             uniform,
             queue: render.queue.clone(),
-            control,
         })
     }
 }
 
 impl Element for Wireframe {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(self.control, move |Redraw, world| {
-            let manager = world.single_fetch::<WireframeManager>().unwrap();
-            let viewport = world.single_fetch::<Viewport>().unwrap();
-            let this = world.fetch(this).unwrap();
+        let control = world.insert(RenderControl {
+            prepare: Some(Box::new(move |world| {
+                let this = world.fetch(this).unwrap();
+                if !this.visible {
+                    return None;
+                }
 
-            let mut rportal = world.single_fetch_mut::<RenderPortal>().unwrap();
-            let rpass = &mut rportal.active.as_mut().unwrap().rpass;
-            rpass.set_pipeline(&manager.pipeline);
-            rpass.set_bind_group(0, &viewport.bind, &[]);
-            rpass.set_bind_group(1, &this.bind, &[]);
-            rpass.draw(0..5, 0..1);
+                Some(RenderInformation {
+                    render_order: this.order,
+                    keep_redrawing: false,
+                })
+            })),
+            draw: Some(Box::new(move |world, rpass| {
+                let manager = world.single_fetch::<WireframeManager>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
+                let this = world.fetch(this).unwrap();
+
+                rpass.set_pipeline(&manager.pipeline);
+                rpass.set_bind_group(0, &camera.bind, &[]);
+                rpass.set_bind_group(1, &this.bind, &[]);
+                rpass.draw(0..5, 0..1);
+            })),
         });
 
-        world.dependency(self.control, this);
+        world.dependency(control, this);
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        let control = self.control;
-        let visible = self.visible;
-        let order = self.order;
         let uniform = VertexUniform {
             origin: self.rect.origin.into_array(),
             extend: self.rect.extend.into_array(),
@@ -196,9 +194,8 @@ impl Element for Wireframe {
         let bytes = bytemuck::bytes_of(&uniform);
         self.queue.write_buffer(&self.uniform, 0, bytes);
 
-        let mut control = world.fetch_mut(control).unwrap();
-        control.order = order;
-        control.visible = visible;
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        lnwindow.window.request_redraw();
     }
 }
 

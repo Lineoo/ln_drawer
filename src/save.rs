@@ -9,6 +9,7 @@ use winit::platform::android::activity::AndroidApp;
 
 use crate::{
     lnwin::Lnwindow,
+    render::camera::CameraVisits,
     tools::timer::{Timer, TimerHit},
     world::{Element, Handle, World, WorldError},
 };
@@ -66,12 +67,10 @@ impl SaveControl {
         let write = db.0.begin_write().unwrap();
         let mut table = write.open_table(CONTROLS_TABLE).unwrap();
 
-        let access = table.get(&self.1).unwrap().unwrap();
-        let name = String::from(access.value().0);
-        let compressed = zstd::stream::encode_all(bytes, 0).unwrap();
-
-        drop(access);
-        table.insert(self.1, (&name[..], &compressed[..])).unwrap();
+        let compressed = zstd::encode_all(bytes, 0).unwrap();
+        table
+            .insert(self.1, (&self.0[..], &compressed[..]))
+            .unwrap();
 
         drop(table);
         write.commit().unwrap();
@@ -79,7 +78,7 @@ impl SaveControl {
 }
 
 impl SaveControlRead {
-    fn read_controls(&mut self, world: &World) {
+    fn expand_controls(&mut self, world: &World) {
         world.foreach::<SaveControl>(|control| {
             let control = world.fetch(control).unwrap();
             if control.0 == self.name {
@@ -95,12 +94,21 @@ impl SaveControlWrite {
     pub fn save_controls(world: &World) {
         let start = Instant::now();
 
-        world.foreach_fetch_mut::<SaveControlWrite>(|mut write| {
-            (write.0)(world);
-        });
+        let visits = world.single_fetch::<CameraVisits>().unwrap();
+        for &view in &visits.views {
+            world.enter(view, || {
+                world.foreach_fetch_mut::<SaveControlWrite>(|mut write| {
+                    (write.0)(world);
+                });
+            })
+        }
 
         let duration = Instant::now().duration_since(start);
         log::debug!("autosave request finished in {duration:?}");
+    }
+
+    fn write_init(&mut self, world: &World) {
+        (self.0)(world);
     }
 }
 
@@ -189,11 +197,15 @@ impl Element for SaveControl {}
 
 impl Element for SaveControlRead {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
-        self.read_controls(world);
+        self.expand_controls(world);
     }
 }
 
-impl Element for SaveControlWrite {}
+impl Element for SaveControlWrite {
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+        self.write_init(world);
+    }
+}
 
 impl Element for AutosaveScheduler {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {

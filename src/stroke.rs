@@ -18,7 +18,7 @@ use crate::{
     layout::transform::{Transform, TransformEdge},
     lnwin::Lnwindow,
     measures::{Fract, Position, PositionFract, Rectangle, Size},
-    render::{Render, canvas::CanvasDescriptor, text::TextDescriptor},
+    render::{Render, camera::CameraUtils, canvas::CanvasDescriptor, text::TextDescriptor},
     save::SaveControl,
     stroke::{
         canvas::{CanvasChunk, CanvasChunkPipeline},
@@ -29,7 +29,6 @@ use crate::{
         mouse::MouseMenu,
         pointer::{PointerHit, PointerHitStatus},
         touch::{MultiTouchGroup, MultiTouchStatus},
-        viewport::ViewportUtils,
     },
     widgets::{
         WidgetButton, WidgetClick,
@@ -188,22 +187,22 @@ impl StrokeLayer {
                 let cnt = event.members.len() as f64;
                 let center = [sum[0] / cnt, sum[1] / cnt];
 
-                let mut viewport_utils = world.single_fetch_mut::<ViewportUtils>().unwrap();
+                let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                 match event.active.status {
                     MultiTouchStatus::Press => {
-                        viewport_utils.locked(false);
-                        viewport_utils.cursor(world, center);
-                        viewport_utils.anchor_on_screen(world, center);
-                        viewport_utils.locked(true);
+                        camera_utils.locked(false);
+                        camera_utils.cursor(world, center);
+                        camera_utils.anchor_on_screen(world, center);
+                        camera_utils.locked(true);
                     }
                     MultiTouchStatus::Holding => {
-                        viewport_utils.cursor(world, center);
-                        viewport_utils.locked(true);
+                        camera_utils.cursor(world, center);
+                        camera_utils.locked(true);
                     }
                     MultiTouchStatus::Release => {
-                        viewport_utils.cursor(world, center);
-                        viewport_utils.locked(false);
+                        camera_utils.cursor(world, center);
+                        camera_utils.locked(false);
                     }
                 }
 
@@ -214,7 +213,7 @@ impl StrokeLayer {
                     let (x, y) = (first[0] - last[0], first[1] - last[1]);
                     let cur = (x * x + y * y).sqrt();
                     let prev = pinch_distance.get_or_insert(cur);
-                    viewport_utils.zoom_delta(world, Fract::from_f64((cur - *prev) * 2.0));
+                    camera_utils.zoom_delta(world, Fract::from_f64((cur - *prev) * 2.0));
                     *prev = cur;
                 } else {
                     pinch_distance = None;
@@ -421,10 +420,9 @@ impl StrokeLayer {
                             let button = world.fetch(button).unwrap();
                             let current = button.rect.origin;
 
-                            let mut viewport_utils =
-                                world.single_fetch_mut::<ViewportUtils>().unwrap();
-                            viewport_utils.anchor(world, button.rect.origin.into_fract());
-                            viewport_utils.locked(true);
+                            let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+                            camera_utils.anchor(world, button.rect.origin.into_fract());
+                            camera_utils.locked(true);
 
                             let anim = world.build(OnceAnimationDescriptor {
                                 animation: AnimationDescriptor {
@@ -445,9 +443,9 @@ impl StrokeLayer {
                                     button.rect.origin =
                                         Position::new(val[0].round() as i32, val[1].round() as i32);
 
-                                    let mut viewport_utils =
-                                        world.single_fetch_mut::<ViewportUtils>().unwrap();
-                                    viewport_utils.anchor(world, button.rect.origin.into_fract());
+                                    let mut camera_utils =
+                                        world.single_fetch_mut::<CameraUtils>().unwrap();
+                                    camera_utils.anchor(world, button.rect.origin.into_fract());
                                 },
                             });
 
@@ -456,9 +454,8 @@ impl StrokeLayer {
                             }
                         }
                         WidgetButton::ButtonRelease => {
-                            let mut viewport_utils =
-                                world.single_fetch_mut::<ViewportUtils>().unwrap();
-                            viewport_utils.locked(false);
+                            let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+                            camera_utils.locked(false);
 
                             if let Some(old) = anim_stock.take() {
                                 let _ = world.remove(old);
