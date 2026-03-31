@@ -1,17 +1,12 @@
-use palette::{FromColor, Hsl, Hsla, SetHue, Srgba};
+use palette::Hsla;
 
 use crate::{
-    layout::{LayoutControl, LayoutRectangle, Layouts},
-    measures::{Position, Rectangle, Size},
-    render::{
-        RenderControl,
-        rectangle::{RectangleMesh, RectangleMeshDescriptor, RectangleMeshMaterial},
-        wireframe::{Wireframe, WireframeDescriptor},
-    },
-    stroke::StrokeLayer,
-    tools::{collider::ToolCollider, pointer::PointerHit, touch::MultiTouchData},
+    layout::LayoutControl,
+    measures::Rectangle,
+    render::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
+    tools::{collider::ToolCollider, pointer::PointerHit},
     widgets::{WidgetDestroyed, WidgetHsla, WidgetRectangle},
-    world::{Descriptor, Element, Handle, World},
+    world::{Element, Handle, World},
 };
 
 /// Standard palette for picking hsl color. Contains a circle of hue value and a square
@@ -23,7 +18,6 @@ use crate::{
 pub struct PaletteHsl {
     pub rect: Rectangle,
     pub color: Hsla,
-    pub order: isize,
 }
 
 #[repr(C)]
