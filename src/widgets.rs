@@ -44,6 +44,9 @@ pub struct WidgetChecked(pub bool);
 /// Send when widget's color data formatted in hsl is changed.
 pub struct WidgetHsla(pub Hsla);
 
+/// Send when widget is folded or expanded.
+pub struct WidgetExpanded(pub bool);
+
 /// Send when widget is enabled or disabled.
 pub struct WidgetEnabled(pub bool);
 

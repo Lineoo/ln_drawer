@@ -11,7 +11,7 @@ use crate::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{WidgetButton, WidgetClick, WidgetDestroyed, WidgetHover, WidgetRectangle},
+    widgets::{WidgetButton, WidgetClick, WidgetDestroyed, WidgetExpanded, WidgetHover, WidgetRectangle},
     world::{Element, Handle, World},
 };
 
@@ -36,6 +36,7 @@ impl Expandable {
 
                 rect
             })),
+            enabled: None,
         });
 
         let mut layouts = world.single_fetch_mut::<LayoutControls>().unwrap();
@@ -120,8 +121,10 @@ impl Expandable {
                     if this.expanded {
                         let rect = this.transform.compute(this.rect);
                         world.queue_trigger(this.handle(), WidgetRectangle(rect));
+                        world.queue_trigger(this.handle(), WidgetExpanded(true));
                     } else {
                         world.queue_trigger(this.handle(), WidgetRectangle(this.rect));
+                        world.queue_trigger(this.handle(), WidgetExpanded(false));
                     }
                 }
                 _ => {}

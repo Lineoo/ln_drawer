@@ -12,7 +12,7 @@ use crate::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus},
     },
-    widgets::{WidgetDestroyed, WidgetHsla, WidgetRectangle},
+    widgets::{WidgetDestroyed, WidgetEnabled, WidgetHsla, WidgetRectangle},
     world::{Element, Handle, World},
 };
 
@@ -49,6 +49,9 @@ impl PaletteHsl {
                 world.queue_trigger(this.handle(), WidgetRectangle(rect));
                 rect
             })),
+            enabled: Some(Box::new(move |world, enabled| {
+                world.queue_trigger(this, WidgetEnabled(enabled));
+            })),
         });
 
         let mut layouts = world.single_fetch_mut::<LayoutControls>().unwrap();
@@ -75,6 +78,11 @@ impl PaletteHsl {
         world.observer(this, move |&WidgetRectangle(rect), world| {
             let mut rectangle = world.fetch_mut(rectangle).unwrap();
             rectangle.desc.rect = rect;
+        });
+
+        world.observer(this, move |&WidgetEnabled(enabled), world| {
+            let mut rectangle = world.fetch_mut(rectangle).unwrap();
+            rectangle.desc.visible = enabled;
         });
 
         world.observer(this, move |&WidgetHsla(hsla), world| {
@@ -135,6 +143,11 @@ impl PaletteHsl {
             if let PointerHitStatus::Release = event.status {
                 lock = 0;
             }
+        });
+
+        world.observer(this, move |&WidgetEnabled(enabled), world| {
+            let mut collider = world.fetch_mut(collider).unwrap();
+            collider.enabled = enabled;
         });
     }
 }

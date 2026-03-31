@@ -1,7 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
 use hashbrown::HashMap;
-use palette::{Hsla, RgbHue};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 use winit::{
@@ -14,11 +13,7 @@ use winit::{
 
 use crate::{
     elements::palette::{PaletteHue, PaletteMain},
-    layout::{
-        LayoutControls,
-        transform::{Transform, TransformEdge, TransformValue},
-    },
-    measures::Rectangle,
+    layout::LayoutControls,
     render::{
         Render,
         camera::{Camera, CameraUtils, CameraVisits},
@@ -35,10 +30,7 @@ use crate::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
     },
-    widgets::{
-        expandable::Expandable,
-        palette::hsl::{PaletteHsl, PaletteHslMaterial},
-    },
+    widgets::palette::{ColorPicker, hsl::PaletteHslMaterial},
     world::{Element, Handle, ViewId, ViewOptions, World},
 };
 
@@ -176,23 +168,7 @@ impl Element for Lnwindow {
                     world.flush();
                     world.insert(StrokeLayer::new(world));
                     world.insert(CameraUtils::default());
-
-                    let palette = world.insert(PaletteHsl {
-                        rect: Rectangle::new(100, 100, 300, 300),
-                        color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
-                    });
-
-                    let expandable = world.insert(Expandable {
-                        rect: Rectangle::new(-100, -100, -50, -50),
-                        transform: TransformValue::scale(10.0, 10.0),
-                        expanded: false,
-                    });
-
-                    world.insert(Transform {
-                        value: TransformValue::scale(0.7, 0.7),
-                        source: expandable.untyped(),
-                        target: palette.untyped(),
-                    });
+                    world.insert(ColorPicker);
                 });
             });
 

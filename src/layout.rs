@@ -19,6 +19,9 @@ pub struct LayoutControls(pub HashMap<Handle, Handle<LayoutControl>>);
 pub struct LayoutControl {
     /// Calculate rectangle. Input desired rectangle, return final rectangle.
     pub rectangle: Option<Box<dyn FnMut(&World, Rectangle) -> Rectangle>>,
+
+    /// Enabled widget.
+    pub enabled: Option<Box<dyn FnMut(&World, bool)>>,
 }
 
 impl Element for LayoutControls {}
