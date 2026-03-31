@@ -13,7 +13,13 @@ use winit::{
 };
 
 use crate::{
-    elements::palette::{PaletteHue, PaletteMain}, layout::LayoutControls, measures::{Rectangle, Size}, render::{
+    elements::palette::{PaletteHue, PaletteMain},
+    layout::{
+        LayoutControls,
+        transform::{Transform, TransformEdge, TransformValue},
+    },
+    measures::{Rectangle, Size},
+    render::{
         Render,
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
@@ -21,10 +27,19 @@ use crate::{
         text::TextManagerDescriptor,
         viewport::{Viewport, ViewportDescriptor},
         wireframe::WireframeManagerDescriptor,
-    }, save::{AutosaveScheduler, SaveControl, SaveControlRead, SaveControlWrite, SaveDatabase}, stroke::StrokeLayer, theme::Luni, tools::{
+    },
+    save::{AutosaveScheduler, SaveControl, SaveControlRead, SaveControlWrite, SaveDatabase},
+    stroke::StrokeLayer,
+    theme::Luni,
+    tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool, viewport::ViewportUtils,
-    }, widgets::palette::hsl::{PaletteHsl, PaletteHslMaterial}, world::{Element, Handle, ViewId, World, WorldError}
+    },
+    widgets::{
+        expandable::Expandable,
+        palette::hsl::{PaletteHsl, PaletteHslMaterial},
+    },
+    world::{Element, Handle, ViewId, World, WorldError},
 };
 
 #[derive(Default)]
@@ -213,9 +228,38 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            world.insert(PaletteHsl {
+            let palette = world.insert(PaletteHsl {
                 rect: Rectangle::new(100, 100, 300, 300),
                 color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
+            });
+
+            let expandable = world.insert(Expandable {
+                rect: Rectangle::new(0, 0, 50, 50),
+                transform: TransformValue {
+                    left: TransformEdge {
+                        anchor: 0.0,
+                        offset: -100,
+                    },
+                    down: TransformEdge {
+                        anchor: 0.0,
+                        offset: -100,
+                    },
+                    right: TransformEdge {
+                        anchor: 1.0,
+                        offset: 100,
+                    },
+                    up: TransformEdge {
+                        anchor: 1.0,
+                        offset: 100,
+                    },
+                },
+                expanded: false,
+            });
+
+            world.insert(Transform {
+                value: TransformValue::scale(0.7, 0.7),
+                source: expandable.untyped(),
+                target: palette.untyped(),
             });
         });
     }

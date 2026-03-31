@@ -239,29 +239,6 @@ impl StrokeLayer {
 
         // test //
 
-        world.insert(Expandable {
-            rect: Rectangle::new(0, 0, 50, 50),
-            transform: TransformValue {
-                left: TransformEdge {
-                    anchor: 0.0,
-                    offset: -100,
-                },
-                down: TransformEdge {
-                    anchor: 0.0,
-                    offset: -100,
-                },
-                right: TransformEdge {
-                    anchor: 1.0,
-                    offset: 100,
-                },
-                up: TransformEdge {
-                    anchor: 1.0,
-                    offset: 100,
-                },
-            },
-            expanded: false,
-        });
-
         let button = world.build(CheckButtonDescriptor {
             rect: Rectangle::new(-60, 0, -30, 30),
             checked: false,

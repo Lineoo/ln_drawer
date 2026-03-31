@@ -66,6 +66,48 @@ impl TransformValue {
         }
     }
 
+    pub const fn shrink(width: i32, height: i32) -> TransformValue {
+        TransformValue {
+            left: TransformEdge {
+                anchor: 0.0,
+                offset: width,
+            },
+            down: TransformEdge {
+                anchor: 0.0,
+                offset: height,
+            },
+            right: TransformEdge {
+                anchor: 1.0,
+                offset: -width,
+            },
+            up: TransformEdge {
+                anchor: 1.0,
+                offset: -height,
+            },
+        }
+    }
+
+    pub const fn scale(width: f32, height: f32) -> TransformValue {
+        TransformValue {
+            left: TransformEdge {
+                anchor: 0.5 - width * 0.5,
+                offset: 0,
+            },
+            down: TransformEdge {
+                anchor: 0.5 - height * 0.5,
+                offset: 0,
+            },
+            right: TransformEdge {
+                anchor: 0.5 + width * 0.5,
+                offset: 0,
+            },
+            up: TransformEdge {
+                anchor: 0.5 + height * 0.5,
+                offset: 0,
+            },
+        }
+    }
+
     pub fn compute(&self, source: Rectangle) -> Rectangle {
         let left = source.extend.w as f32 * self.left.anchor;
         let left = source.origin.x + left.round() as i32 + self.left.offset;
