@@ -1,5 +1,8 @@
 use crate::{
-    layout::{LayoutRectangle, transform::Transform},
+    layout::{
+        LayoutRectangle,
+        transform::{Transform, TransformValue},
+    },
     measures::Rectangle,
     theme::Luni,
     tools::{
@@ -52,7 +55,11 @@ impl Button {
             enabled: true,
         });
 
-        world.insert(Transform::copy(this.untyped(), collider.untyped()));
+        world.insert(Transform {
+            value: TransformValue::copy(),
+            source: this.untyped(),
+            target: collider.untyped(),
+        });
 
         world.observer(collider, move |event: &PointerHit, world| {
             match event.status {

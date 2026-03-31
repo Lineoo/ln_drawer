@@ -1,7 +1,7 @@
 use rodio::{OutputStream, OutputStreamBuilder, Sink, source::noise};
 
 use crate::{
-    layout::transform::Transform,
+    layout::transform::{Transform, TransformValue},
     measures::{Position, Rectangle, Size},
     render::canvas::CanvasDescriptor,
     widgets::{WidgetClick, WidgetRectangle, button::Button, resizable::Resizable},
@@ -56,7 +56,11 @@ impl Element for SimpleNoise {
         );
 
         let resizable = world.insert(Resizable { rect });
-        world.insert(Transform::copy(resizable.untyped(), button.untyped()));
+        world.insert(Transform {
+            value: TransformValue::copy(),
+            source: resizable.untyped(),
+            target: button.untyped(),
+        });
 
         world.observer(button, move |WidgetClick, world| {
             let button = world.fetch(button).unwrap();

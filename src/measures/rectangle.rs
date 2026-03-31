@@ -78,42 +78,42 @@ impl Rectangle {
     }
 
     #[inline]
-    pub fn width(self) -> u32 {
+    pub const fn width(self) -> u32 {
         self.extend.w
     }
 
     #[inline]
-    pub fn height(self) -> u32 {
+    pub const fn height(self) -> u32 {
         self.extend.h
     }
 
     #[inline]
-    pub fn left(self) -> i32 {
+    pub const fn left(self) -> i32 {
         self.origin.x
     }
 
     #[inline]
-    pub fn down(self) -> i32 {
+    pub const fn down(self) -> i32 {
         self.origin.y
     }
 
     #[inline]
-    pub fn right(self) -> i32 {
+    pub const fn right(self) -> i32 {
         self.origin.x.wrapping_add_unsigned(self.extend.w)
     }
 
     #[inline]
-    pub fn up(self) -> i32 {
+    pub const fn up(self) -> i32 {
         self.origin.y.wrapping_add_unsigned(self.extend.h)
     }
 
     #[inline]
-    pub fn left_down(self) -> Position {
+    pub const fn left_down(self) -> Position {
         self.origin
     }
 
     #[inline]
-    pub fn left_up(self) -> Position {
+    pub const fn left_up(self) -> Position {
         Position::new(
             self.origin.x,
             self.origin.y.wrapping_add_unsigned(self.extend.h),
@@ -121,7 +121,7 @@ impl Rectangle {
     }
 
     #[inline]
-    pub fn right_down(self) -> Position {
+    pub const fn right_down(self) -> Position {
         Position::new(
             self.origin.x.wrapping_add_unsigned(self.extend.w),
             self.origin.y,
@@ -129,7 +129,7 @@ impl Rectangle {
     }
 
     #[inline]
-    pub fn right_up(self) -> Position {
+    pub const fn right_up(self) -> Position {
         Position::new(
             self.origin.x.wrapping_add_unsigned(self.extend.w),
             self.origin.y.wrapping_add_unsigned(self.extend.h),

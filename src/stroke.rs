@@ -15,7 +15,7 @@ use winit::event::PointerKind;
 use crate::{
     animation::{AnimationDescriptor, OnceAnimationDescriptor},
     elements::{noise::SimpleNoiseDescriptor, palette::PaletteDescriptor},
-    layout::transform::{Transform, TransformEdge},
+    layout::transform::{Transform, TransformEdge, TransformValue},
     lnwin::Lnwindow,
     measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{Render, canvas::CanvasDescriptor, text::TextDescriptor},
@@ -35,7 +35,7 @@ use crate::{
         WidgetButton, WidgetClick,
         button::Button,
         check_button::CheckButtonDescriptor,
-        expandable::ColorPicker,
+        expandable::Expandable,
         menu::{MenuDescriptor, MenuEntryDescriptor},
         panel::Panel,
         resizable::Resizable,
@@ -239,9 +239,27 @@ impl StrokeLayer {
 
         // test //
 
-        world.insert(ColorPicker {
-            rect: Rectangle::new(0, 0, 30, 30),
-            color: Default::default(),
+        world.insert(Expandable {
+            rect: Rectangle::new(0, 0, 50, 50),
+            transform: TransformValue {
+                left: TransformEdge {
+                    anchor: 0.0,
+                    offset: -100,
+                },
+                down: TransformEdge {
+                    anchor: 0.0,
+                    offset: -100,
+                },
+                right: TransformEdge {
+                    anchor: 1.0,
+                    offset: 100,
+                },
+                up: TransformEdge {
+                    anchor: 1.0,
+                    offset: 100,
+                },
+            },
+            expanded: false,
         });
 
         let button = world.build(CheckButtonDescriptor {
@@ -332,24 +350,30 @@ impl StrokeLayer {
                         .expand(10),
                     });
 
-                    world.insert(Transform::copy(resize.untyped(), panel.untyped()));
+                    world.insert(Transform {
+                        value: TransformValue::copy(),
+                        source: resize.untyped(),
+                        target: panel.untyped(),
+                    });
 
                     world.insert(Transform {
-                        left: TransformEdge {
-                            anchor: 0.0,
-                            offset: 10,
-                        },
-                        down: TransformEdge {
-                            anchor: 0.0,
-                            offset: 10,
-                        },
-                        right: TransformEdge {
-                            anchor: 1.0,
-                            offset: -10,
-                        },
-                        up: TransformEdge {
-                            anchor: 1.0,
-                            offset: -10,
+                        value: TransformValue {
+                            left: TransformEdge {
+                                anchor: 0.0,
+                                offset: 10,
+                            },
+                            down: TransformEdge {
+                                anchor: 0.0,
+                                offset: 10,
+                            },
+                            right: TransformEdge {
+                                anchor: 1.0,
+                                offset: -10,
+                            },
+                            up: TransformEdge {
+                                anchor: 1.0,
+                                offset: -10,
+                            },
                         },
                         source: resize.untyped(),
                         target: palette.untyped(),
@@ -396,15 +420,6 @@ impl StrokeLayer {
                     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                     let decorated = lnwindow.window.is_decorated();
                     lnwindow.window.set_decorations(!decorated);
-                }),
-                ("Color Picker", |world, position| {
-                    world.insert(ColorPicker {
-                        rect: Rectangle {
-                            origin: position,
-                            extend: Size::splat(50),
-                        },
-                        color: Default::default(),
-                    });
                 }),
                 ("Hook!", |world, position| {
                     let button = world.insert(Button {

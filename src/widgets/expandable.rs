@@ -1,8 +1,9 @@
-use palette::Hsla;
-
 use crate::{
     animation::{AnimationDescriptor, SimpleAnimationDescriptor},
-    layout::{LayoutRectangle, transform::Transform},
+    layout::{
+        LayoutControl, LayoutControls,
+        transform::{Transform, TransformValue},
+    },
     measures::{Rectangle, Size},
     render::rounded::RoundedRectDescriptor,
     theme::Luni,
@@ -14,30 +15,31 @@ use crate::{
     world::{Element, Handle, World},
 };
 
-pub struct ColorPicker {
+pub struct Expandable {
     pub rect: Rectangle,
-    pub color: Hsla,
+    pub transform: TransformValue,
+    pub expanded: bool,
 }
 
-impl Element for ColorPicker {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        self.receive_layout(world, this);
-        self.attach_luni(world, this);
-        self.attach_pointer(world, this);
-        self.attach_default_behavior(world, this);
-    }
-
-    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
-        world.trigger(this, &WidgetRectangle(self.rect));
-    }
-}
-
-impl ColorPicker {
+impl Expandable {
     fn receive_layout(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, move |&LayoutRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
+        let control = world.insert(LayoutControl {
+            rectangle: Some(Box::new(move |world, rect| {
+                let mut this = world.fetch_mut(this).unwrap();
+                if this.expanded {
+                    this.rect = this.transform.compute(rect);
+                } else {
+                    this.rect = rect;
+                }
+
+                world.queue_trigger(this.handle(), WidgetRectangle(this.rect));
+                this.rect
+            })),
         });
+
+        let mut layouts = world.single_fetch_mut::<LayoutControls>().unwrap();
+        layouts.0.insert(this.untyped(), control);
+        world.dependency(control, this);
     }
 
     fn attach_luni(&mut self, world: &World, this: Handle<Self>) {
@@ -54,19 +56,33 @@ impl ColorPicker {
 
         let frame_rect = world.build(SimpleAnimationDescriptor {
             animation: AnimationDescriptor::new(
-                [self.rect.width() as f32, self.rect.height() as f32],
+                [
+                    self.rect.left() as f32,
+                    self.rect.down() as f32,
+                    self.rect.right() as f32,
+                    self.rect.up() as f32,
+                ],
                 luni.anim_factor,
             ),
             widget: frame,
-            action: |mut frame, _, extend| {
-                frame.desc.rect.extend =
-                    Size::new(extend[0].floor() as u32, extend[1].floor() as u32);
+            action: |mut frame, _, rect| {
+                frame.desc.rect = Rectangle::new(
+                    rect[0].round() as i32,
+                    rect[1].round() as i32,
+                    rect[2].round() as i32,
+                    rect[3].round() as i32,
+                );
             },
         });
 
         world.observer(this, move |&WidgetRectangle(rect), world| {
             let mut frame_rect = world.fetch_mut(frame_rect).unwrap();
-            frame_rect.dst = [rect.width() as f32, rect.height() as f32];
+            frame_rect.dst = [
+                rect.left() as f32,
+                rect.down() as f32,
+                rect.right() as f32,
+                rect.up() as f32,
+            ];
         });
 
         world.observer(this, move |&WidgetDestroyed, world| {
@@ -81,7 +97,12 @@ impl ColorPicker {
             enabled: true,
         });
 
-        world.insert(Transform::copy(this.untyped(), collider.untyped()));
+        world.insert(Transform {
+            value: TransformValue::copy(),
+            source: this.untyped(),
+            target: collider.untyped(),
+        });
+
         world.dependency(collider, this);
 
         world.observer(collider, move |event: &PointerHit, world| {
@@ -123,5 +144,14 @@ impl ColorPicker {
 
     fn is_expanded(&self) -> bool {
         self.rect.width() >= 400 && self.rect.height() >= 800
+    }
+}
+
+impl Element for Expandable {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        self.receive_layout(world, this);
+        self.attach_luni(world, this);
+        self.attach_pointer(world, this);
+        self.attach_default_behavior(world, this);
     }
 }
