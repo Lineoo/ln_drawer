@@ -18,28 +18,28 @@ use crate::{
         LayoutControls,
         transform::{Transform, TransformEdge, TransformValue},
     },
-    measures::{Rectangle, Size},
+    measures::Rectangle,
     render::{
         Render,
+        camera::{Camera, CameraUtils, CameraVisits},
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
         text::TextManagerDescriptor,
-        viewport::{Viewport, ViewportDescriptor},
         wireframe::WireframeManagerDescriptor,
     },
-    save::{AutosaveScheduler, SaveControl, SaveControlRead, SaveControlWrite, SaveDatabase},
+    save::{AutosaveScheduler, SaveControlWrite, SaveDatabase},
     stroke::StrokeLayer,
     theme::Luni,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
-        pointer::PointerTool, touch::MultiTouchTool, viewport::ViewportUtils,
+        pointer::PointerTool, touch::MultiTouchTool,
     },
     widgets::{
         expandable::Expandable,
         palette::hsl::{PaletteHsl, PaletteHslMaterial},
     },
-    world::{Element, Handle, ViewId, World, WorldError},
+    world::{Element, Handle, ViewId, ViewOptions, World},
 };
 
 #[derive(Default)]
@@ -52,6 +52,7 @@ impl ApplicationHandler for Lnwin {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.windows.is_empty() {
             let lnwindow = Lnwindow::new(event_loop);
+            let root = self.world.here();
             let view = self.world.view();
             self.windows.insert(lnwindow.window.id(), view);
 
@@ -64,6 +65,7 @@ impl ApplicationHandler for Lnwin {
             }
 
             self.world.enter(view, || {
+                self.world.option(ViewOptions { refs: vec![root] });
                 self.world.insert(lnwindow);
             });
         } else {
@@ -138,67 +140,9 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            world.insert(SaveControlRead {
-                name: "viewport".into(),
-                read: Box::new(move |world, control| {
-                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                    let size = lnwindow.window.surface_size();
+            Camera::init(world);
+            world.flush();
 
-                    let control = world.fetch(control).unwrap();
-                    let viewport_descriptor =
-                        postcard::from_bytes::<ViewportDescriptor>(&control.read(world)).unwrap();
-
-                    let viewport = world.build(ViewportDescriptor {
-                        size: Size::new(size.width, size.height),
-                        ..viewport_descriptor
-                    });
-
-                    let control = control.handle();
-                    world.insert(SaveControlWrite(Box::new(move |world| {
-                        let viewport = world.fetch(viewport).unwrap();
-                        let control = world.fetch(control).unwrap();
-
-                        let bytes = postcard::to_stdvec(&ViewportDescriptor {
-                            size: viewport.size,
-                            center: viewport.center,
-                            zoom: viewport.zoom,
-                        })
-                        .unwrap();
-
-                        control.write(world, &bytes);
-                    })));
-                }),
-            });
-        });
-
-        world.queue(|world| {
-            if let Err(WorldError::SingletonNoSuch(_)) = world.single::<Viewport>() {
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let size = lnwindow.window.surface_size();
-
-                let viewport = world.build(ViewportDescriptor {
-                    size: Size::new(size.width, size.height),
-                    ..Default::default()
-                });
-
-                let control = SaveControl::create("viewport".into(), world, &[]);
-                world.insert(SaveControlWrite(Box::new(move |world| {
-                    let viewport = world.fetch(viewport).unwrap();
-                    let control = world.fetch(control).unwrap();
-
-                    let bytes = postcard::to_stdvec(&ViewportDescriptor {
-                        size: viewport.size,
-                        center: viewport.center,
-                        zoom: viewport.zoom,
-                    })
-                    .unwrap();
-
-                    control.write(world, &bytes);
-                })));
-            }
-        });
-
-        world.queue(|world| {
             world.build(CanvasManagerDescriptor);
             world.build(TextManagerDescriptor);
             world.build(WireframeManagerDescriptor);
@@ -215,16 +159,39 @@ impl Element for Lnwindow {
             world.insert(PointerTool::default());
             world.insert(MouseTool::default());
             world.insert(MultiTouchTool::default());
-        });
-
-        world.queue(|world| {
-            world.insert(StrokeLayer::new(world));
-        });
-
-        world.queue(|world| {
             world.insert(Focus::default());
-            world.insert(ViewportUtils::default());
             world.insert(ModifiersTool::default());
+        });
+
+        world.queue(|world| {
+            let layer1 = world.view();
+            let layer2 = world.view();
+            let here = world.here();
+
+            world.enter(layer1, || {
+                world.option(ViewOptions { refs: vec![here] });
+
+                world.queue(|world| {
+                    Camera::singleton(world, "camera1");
+                    world.flush();
+                    world.insert(StrokeLayer::new(world));
+                    world.insert(CameraUtils::default());
+                });
+            });
+
+            world.enter(layer2, || {
+                world.option(ViewOptions { refs: vec![here] });
+
+                world.queue(|world| {
+                    Camera::singleton(world, "camera2");
+                    world.flush();
+                    world.insert(CameraUtils::default());
+                });
+            });
+
+            world.insert(CameraVisits {
+                views: vec![layer1, layer2],
+            });
         });
 
         world.queue(|world| {

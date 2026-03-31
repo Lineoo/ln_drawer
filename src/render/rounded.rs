@@ -1,10 +1,12 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
+use crate::lnwin::Lnwindow;
 use crate::render::RenderInformation;
+use crate::render::camera::CameraBind;
 use crate::{
     measures::Rectangle,
-    render::{Render, RenderControl, viewport::Viewport},
+    render::{Render, RenderControl, camera::Camera},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -60,7 +62,7 @@ impl Default for RoundedRectDescriptor {
 impl RoundedRect {
     pub fn init(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
-        let viewport = world.single_fetch::<Viewport>().unwrap();
+        let camera = world.single_fetch::<CameraBind>().unwrap();
         let device = &render.device;
 
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
@@ -84,7 +86,7 @@ impl RoundedRect {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("rounded"),
-            bind_group_layouts: &[&viewport.layout, &bind],
+            bind_group_layouts: &[&camera.layout, &bind],
             immediate_size: 0,
         });
 
@@ -166,9 +168,6 @@ impl RoundedRect {
 
     fn bind_control(&mut self, world: &World, this: Handle<Self>) {
         let control = world.insert(RenderControl {
-            visible: self.desc.visible,
-            order: self.desc.order,
-            refreshing: false,
             prepare: Some(Box::new(move |world| {
                 let this = world.fetch(this).unwrap();
                 if !this.desc.visible {
@@ -182,11 +181,11 @@ impl RoundedRect {
             })),
             draw: Some(Box::new(move |world, rpass| {
                 let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
-                let viewport = world.single_fetch::<Viewport>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
                 let this = world.fetch(this).unwrap();
 
                 rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &viewport.bind, &[]);
+                rpass.set_bind_group(0, &camera.bind, &[]);
                 rpass.set_bind_group(1, &this.bind, &[]);
                 rpass.draw(0..4, 0..1);
             })),
@@ -231,7 +230,10 @@ impl Element for RoundedRect {
         self.bind_control(world, this);
     }
 
-    fn when_modify(&mut self, _world: &World, _this: Handle<Self>) {
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         self.update_buffer();
+        
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        lnwindow.window.request_redraw();
     }
 }
