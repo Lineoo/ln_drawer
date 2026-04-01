@@ -66,6 +66,8 @@ impl ops::SubAssign for Position {
 }
 
 impl Position {
+    pub const ZERO: Position = Position { x: 0, y: 0 };
+
     pub const MIN: Position = Position {
         x: i32::MIN,
         y: i32::MIN,

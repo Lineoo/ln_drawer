@@ -5,13 +5,11 @@ use crate::{
         LayoutControls,
         transform::{Transform, TransformValue},
     },
-    measures::Rectangle,
-    render::rounded::{RoundedRect, RoundedRectDescriptor},
+    measures::{Position, Rectangle, Size},
     stroke::StrokeLayer,
-    tools::collider::ToolCollider,
     widgets::{
-        WidgetExpanded, WidgetHsla, button::Button, expandable::Expandable,
-        palette::hsl::PaletteHsl,
+        WidgetExpanded, WidgetHsla, expandable::Expandable, palette::hsl::PaletteHsl,
+        translatable::Translatable,
     },
     world::{Element, Handle, World},
 };
@@ -33,10 +31,24 @@ impl ColorPicker {
             expanded: false,
         });
 
+        let translatable = world.insert(Translatable {
+            rect: Rectangle::new(-150, -150, -100, -100),
+        });
+
         world.insert(Transform {
             value: TransformValue::scale(0.7, 0.7),
             source: expandable.untyped(),
             target: palette.untyped(),
+        });
+
+        world.insert(Transform {
+            value: TransformValue::anchor(
+                (-3.0, 3.0),
+                Rectangle::new_half(Position::ZERO, Size::new(25, 25)),
+                Position::ZERO,
+            ),
+            source: translatable.untyped(),
+            target: expandable.untyped(),
         });
 
         world.observer(palette, move |&WidgetHsla(color), world| {
@@ -47,6 +59,13 @@ impl ColorPicker {
         world.observer(expandable, move |&WidgetExpanded(expanded), world| {
             let controls = world.single_fetch::<LayoutControls>().unwrap();
             if let Some(&control) = controls.0.get(&palette.untyped())
+                && let Some(enable) = &mut world.fetch_mut(control).unwrap().enabled
+            {
+                enable(world, expanded);
+            }
+
+            let controls = world.single_fetch::<LayoutControls>().unwrap();
+            if let Some(&control) = controls.0.get(&translatable.untyped())
                 && let Some(enable) = &mut world.fetch_mut(control).unwrap().enabled
             {
                 enable(world, expanded);
