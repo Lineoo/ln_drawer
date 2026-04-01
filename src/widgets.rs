@@ -8,7 +8,6 @@ pub mod expandable;
 pub mod menu;
 pub mod palette;
 pub mod panel;
-pub mod resizable;
 pub mod translatable;
 
 /// Attach a headless widget to a specific element.

@@ -12,7 +12,6 @@ use winit::{
 };
 
 use crate::{
-    elements::palette::{PaletteHue, PaletteMain},
     layout::LayoutControls,
     render::{
         Render,
@@ -131,8 +130,6 @@ impl Element for Lnwindow {
             world.build(TextManagerDescriptor);
             world.build(WireframeManagerDescriptor);
             RoundedRect::init(world);
-            RectangleMesh::<PaletteMain>::init(world);
-            RectangleMesh::<PaletteHue>::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
             world.insert(LayoutControls::default());
             world.insert(Luni::default());

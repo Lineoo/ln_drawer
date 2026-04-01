@@ -14,11 +14,9 @@ use winit::event::PointerKind;
 
 use crate::{
     animation::{AnimationDescriptor, OnceAnimationDescriptor},
-    elements::{noise::SimpleNoiseDescriptor, palette::PaletteDescriptor},
-    layout::transform::{Transform, TransformEdge, TransformValue},
     lnwin::Lnwindow,
     measures::{Fract, Position, PositionFract, Rectangle, Size},
-    render::{Render, camera::CameraUtils, canvas::CanvasDescriptor, text::TextDescriptor},
+    render::{Render, camera::CameraUtils, text::TextDescriptor},
     save::SaveControl,
     stroke::{
         canvas::{CanvasChunk, CanvasChunkPipeline},
@@ -33,11 +31,7 @@ use crate::{
     widgets::{
         WidgetButton, WidgetClick,
         button::Button,
-        check_button::CheckButtonDescriptor,
-        expandable::Expandable,
         menu::{MenuDescriptor, MenuEntryDescriptor},
-        panel::Panel,
-        resizable::Resizable,
     },
     world::{Element, Handle, World},
 };
@@ -238,26 +232,6 @@ impl StrokeLayer {
 
         // test //
 
-        let button = world.build(CheckButtonDescriptor {
-            rect: Rectangle::new(-60, 0, -30, 30),
-            checked: false,
-            order: 10,
-        });
-
-        world.observer(button, move |WidgetClick, world| {
-            let mut button = world.fetch_mut(button).unwrap();
-            button.checked = !button.checked;
-        });
-
-        let button = world.insert(Button {
-            rect: Rectangle::new(-120, 0, -90, 30),
-            order: 10,
-        });
-
-        world.observer(button, move |WidgetClick, world| {
-            world.trigger(collider, &MouseMenu(Position::new(-90, 30)));
-        });
-
         world.observer(collider, move |&MouseMenu(position), world| {
             let menu = world.build(MenuDescriptor {
                 position,
@@ -293,97 +267,6 @@ impl StrokeLayer {
 
             type Entries<const N: usize> = [(&'static str, for<'w> fn(&'w World, Position)); N];
             let entries: Entries<_> = [
-                ("Label", |world: &World, position| {
-                    world.build(TextDescriptor {
-                        rect: Rectangle {
-                            origin: position,
-                            extend: Size::new(300, 40),
-                        },
-                        text: "LnDrawer",
-                        ..Default::default()
-                    });
-                }),
-                ("Palette", |world, position| {
-                    let palette = world.build(PaletteDescriptor {
-                        position,
-                        ..Default::default()
-                    });
-
-                    let panel = world.insert(Panel {
-                        rect: Rectangle {
-                            origin: position,
-                            extend: Size::splat(256),
-                        }
-                        .expand(10),
-                        order: -100,
-                    });
-
-                    let resize = world.insert(Resizable {
-                        rect: Rectangle {
-                            origin: position,
-                            extend: Size::splat(256),
-                        }
-                        .expand(10),
-                    });
-
-                    world.insert(Transform {
-                        value: TransformValue::copy(),
-                        source: resize.untyped(),
-                        target: panel.untyped(),
-                    });
-
-                    world.insert(Transform {
-                        value: TransformValue {
-                            left: TransformEdge {
-                                anchor: 0.0,
-                                offset: 10,
-                            },
-                            down: TransformEdge {
-                                anchor: 0.0,
-                                offset: 10,
-                            },
-                            right: TransformEdge {
-                                anchor: 1.0,
-                                offset: -10,
-                            },
-                            up: TransformEdge {
-                                anchor: 1.0,
-                                offset: -10,
-                            },
-                        },
-                        source: resize.untyped(),
-                        target: palette.untyped(),
-                    });
-                }),
-                ("Logo", |world, position| {
-                    let rect = Rectangle {
-                        origin: position,
-                        extend: Size::splat(100),
-                    };
-
-                    let bytes = include_bytes!("../res/icon_hicolor_lime-512x.png");
-
-                    world.build(CanvasDescriptor::from_bytes(rect, 0, bytes).unwrap());
-                }),
-                ("Check Button", |world, position| {
-                    let button = world.build(CheckButtonDescriptor {
-                        rect: Rectangle {
-                            origin: position,
-                            extend: Size::splat(100),
-                        },
-                        checked: false,
-                        order: 10,
-                    });
-
-                    world.observer(button, move |WidgetClick, world| {
-                        let mut button = world.fetch_mut(button).unwrap();
-                        button.checked = !button.checked;
-                    });
-                }),
-                ("Simple Noise", |world, position| {
-                    world.build(SimpleNoiseDescriptor { position });
-                }),
-                ("", |_, _| {}),
                 ("Switch transparency", |world, _| {
                     let mut render = world.single_fetch_mut::<Render>().unwrap();
                     if render.clear_color.a == 0.0 {
