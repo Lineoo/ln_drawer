@@ -1,3 +1,4 @@
+use hashbrown::HashSet;
 use serde_bytes::ByteBuf;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
@@ -13,7 +14,7 @@ use wgpu::{
 };
 
 use crate::{
-    render::{Render, RenderControl, RenderInformation, vertex::VertexUniform, camera::Camera},
+    render::{Render, RenderControl, RenderInformation, camera::Camera, vertex::VertexUniform},
     save::{SaveControl, SaveControlRead, SaveControlWrite},
     stroke::{CHUNK_SIZE, StrokeLayer},
     world::{Element, Handle, World},
@@ -21,7 +22,6 @@ use crate::{
 
 pub struct CanvasChunk {
     save: Handle<SaveControl>,
-    pub changed: bool,
 
     pub compute: BindGroup,
     vertex: BindGroup,
@@ -35,6 +35,8 @@ pub struct CanvasChunkPipeline {
     pub compute: BindGroupLayout,
     vertex: BindGroupLayout,
     fragment: BindGroupLayout,
+
+    pub changed: HashSet<((i32, i32), Handle<CanvasChunk>)>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -167,6 +169,7 @@ impl CanvasChunkPipeline {
             compute,
             vertex,
             fragment,
+            changed: HashSet::new(),
         }
     }
 }
@@ -276,7 +279,6 @@ impl CanvasChunk {
 
         CanvasChunk {
             save: control,
-            changed: false,
             vertex,
             compute,
             fragment,
@@ -286,12 +288,12 @@ impl CanvasChunk {
 
     pub fn save_write() -> SaveControlWrite {
         SaveControlWrite(Box::new(|world| {
-            let stroke = world.single_fetch::<StrokeLayer>().unwrap();
+            let mut pipeline = world.single_fetch_mut::<CanvasChunkPipeline>().unwrap();
 
             let mut canvases = Vec::new();
             let mut tasks = Vec::new();
 
-            for (&chunk, &canvas) in &stroke.chunks {
+            for &(chunk, canvas) in &pipeline.changed {
                 let canvas = world.fetch_mut(canvas).unwrap();
                 canvases.push((chunk, canvas));
             }
@@ -300,6 +302,8 @@ impl CanvasChunk {
                 let task = canvas.device_readback(world, *chunk);
                 tasks.push(task);
             }
+
+            pipeline.changed.clear();
 
             pollster::block_on(async {
                 for task in tasks {
@@ -350,15 +354,9 @@ impl CanvasChunk {
     async fn device_readback(&mut self, world: &World, chunk: (i32, i32)) {
         let (tx, rx) = std::sync::mpsc::channel();
 
-        if !self.changed {
-            return;
-        }
-
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
         let queue = &render.queue;
-
-        self.changed = false;
 
         let readback_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("canvas_readback"),

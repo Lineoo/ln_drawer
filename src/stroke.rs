@@ -464,7 +464,7 @@ impl StrokeLayer {
         let mut chunks = Vec::new();
         for chunk_x in chunk_src.0..chunk_dst.0 {
             for chunk_y in chunk_src.1..chunk_dst.1 {
-                chunks.push(match self.chunks.get(&(chunk_x, chunk_y)) {
+                let canvas = match self.chunks.get(&(chunk_x, chunk_y)) {
                     Some(&canvas) => canvas,
                     None => {
                         let control = SaveControl::create("canvas_chunk".into(), world, &[]);
@@ -475,7 +475,11 @@ impl StrokeLayer {
 
                         canvas
                     }
-                });
+                };
+
+                chunks.push(canvas);
+                let mut canvas_pipeline = world.single_fetch_mut::<CanvasChunkPipeline>().unwrap();
+                canvas_pipeline.changed.insert(((chunk_x, chunk_y), canvas));
             }
         }
 
@@ -503,8 +507,6 @@ impl StrokeLayer {
         let brush_pipeline = world.single_fetch::<RoundBrushPipeline>().unwrap();
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
-
-        canvas.changed = true;
 
         self.queue
             .write_buffer(&self.draw_data, 0, bytemuck::bytes_of(draw));
