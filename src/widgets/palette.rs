@@ -8,8 +8,8 @@ use crate::{
     measures::{Position, Rectangle, Size},
     stroke::StrokeLayer,
     widgets::{
-        WidgetExpanded, WidgetHsla, expandable::Expandable, palette::hsl::PaletteHsl,
-        translatable::Translatable,
+        WidgetExpanded, WidgetHsla, WidgetRectangle, expandable::Expandable,
+        palette::hsl::PaletteHsl, translatable::Translatable,
     },
     world::{Element, Handle, World},
 };
@@ -23,6 +23,7 @@ impl ColorPicker {
         let palette = world.insert(PaletteHsl {
             rect: Rectangle::new(100, 100, 300, 300),
             color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
+            enabled: false,
         });
 
         let expandable = world.insert(Expandable {
@@ -33,6 +34,7 @@ impl ColorPicker {
 
         let translatable = world.insert(Translatable {
             rect: Rectangle::new(-150, -150, -100, -100),
+            enabled: false,
         });
 
         world.insert(Transform {
@@ -50,6 +52,11 @@ impl ColorPicker {
             source: translatable.untyped(),
             target: expandable.untyped(),
         });
+
+        world.queue_trigger(
+            translatable,
+            WidgetRectangle(Rectangle::new(-150, -150, -100, -100)),
+        );
 
         world.observer(palette, move |&WidgetHsla(color), world| {
             let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();

@@ -13,6 +13,7 @@ use crate::{
 
 pub struct Translatable {
     pub rect: Rectangle,
+    pub enabled: bool,
 }
 
 impl Translatable {
@@ -42,7 +43,7 @@ impl Translatable {
             color: luni.color,
             shrink: luni.roundness,
             value: luni.roundness,
-            visible: true,
+            visible: self.enabled,
             order: 110,
         });
 
@@ -61,7 +62,7 @@ impl Translatable {
         let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: 110,
-            enabled: true,
+            enabled: self.enabled,
         });
 
         world.dependency(collider, this);

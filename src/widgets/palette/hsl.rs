@@ -27,6 +27,7 @@ const BAND_WIDTH: f32 = 0.1;
 pub struct PaletteHsl {
     pub rect: Rectangle,
     pub color: Hsla,
+    pub enabled: bool,
 }
 
 #[repr(C)]
@@ -63,7 +64,7 @@ impl PaletteHsl {
     fn attach_luni(&mut self, world: &World, this: Handle<Self>) {
         let rectangle = world.build(RectangleMeshDescriptor {
             rect: self.rect,
-            visible: true,
+            visible: self.enabled,
             order: 60,
             material: PaletteHslMaterial {
                 band_width: BAND_WIDTH,
@@ -101,7 +102,7 @@ impl PaletteHsl {
         let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: 100,
-            enabled: true,
+            enabled: self.enabled,
         });
 
         world.insert(Transform {
