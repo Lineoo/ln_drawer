@@ -1,18 +1,21 @@
 use crate::{
-    layout::LayoutRectangle,
+    layout::{LayoutControls, LayoutRectangle},
     measures::{Position, Rectangle},
     widgets::WidgetRectangle,
     world::{Element, Handle, World},
 };
 
 pub struct Transform {
+    pub value: TransformValue,
+    pub source: Handle,
+    pub target: Handle,
+}
+
+pub struct TransformValue {
     pub left: TransformEdge,
     pub down: TransformEdge,
     pub right: TransformEdge,
     pub up: TransformEdge,
-
-    pub source: Handle,
-    pub target: Handle,
 }
 
 pub struct TransformEdge {
@@ -20,9 +23,9 @@ pub struct TransformEdge {
     pub offset: i32,
 }
 
-impl Transform {
-    pub const fn copy(source: Handle, target: Handle) -> Transform {
-        Transform {
+impl TransformValue {
+    pub const fn copy() -> TransformValue {
+        TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
                 offset: 0,
@@ -39,19 +42,11 @@ impl Transform {
                 anchor: 1.0,
                 offset: 0,
             },
-            source,
-            target,
         }
     }
 
-    pub fn anchor(
-        anchor: (f32, f32),
-        rect: Rectangle,
-        offset: Position,
-        source: Handle,
-        target: Handle,
-    ) -> Transform {
-        Transform {
+    pub const fn anchor(anchor: (f32, f32), rect: Rectangle, offset: Position) -> TransformValue {
+        TransformValue {
             left: TransformEdge {
                 anchor: anchor.0,
                 offset: offset.x,
@@ -68,9 +63,65 @@ impl Transform {
                 anchor: anchor.1,
                 offset: offset.y + rect.height() as i32,
             },
-            source,
-            target,
         }
+    }
+
+    pub const fn shrink(width: i32, height: i32) -> TransformValue {
+        TransformValue {
+            left: TransformEdge {
+                anchor: 0.0,
+                offset: width,
+            },
+            down: TransformEdge {
+                anchor: 0.0,
+                offset: height,
+            },
+            right: TransformEdge {
+                anchor: 1.0,
+                offset: -width,
+            },
+            up: TransformEdge {
+                anchor: 1.0,
+                offset: -height,
+            },
+        }
+    }
+
+    pub const fn scale(width: f32, height: f32) -> TransformValue {
+        TransformValue {
+            left: TransformEdge {
+                anchor: 0.5 - width * 0.5,
+                offset: 0,
+            },
+            down: TransformEdge {
+                anchor: 0.5 - height * 0.5,
+                offset: 0,
+            },
+            right: TransformEdge {
+                anchor: 0.5 + width * 0.5,
+                offset: 0,
+            },
+            up: TransformEdge {
+                anchor: 0.5 + height * 0.5,
+                offset: 0,
+            },
+        }
+    }
+
+    pub fn compute(&self, source: Rectangle) -> Rectangle {
+        let left = source.extend.w as f32 * self.left.anchor;
+        let left = source.origin.x + left.round() as i32 + self.left.offset;
+
+        let down = source.extend.h as f32 * self.down.anchor;
+        let down = source.origin.y + down.round() as i32 + self.down.offset;
+
+        let right = source.extend.w as f32 * self.right.anchor;
+        let right = source.origin.x + right.round() as i32 + self.right.offset;
+
+        let up = source.extend.h as f32 * self.up.anchor;
+        let up = source.origin.y + up.round() as i32 + self.up.offset;
+
+        Rectangle::new(left, down, right, up)
     }
 }
 
@@ -78,21 +129,15 @@ impl Element for Transform {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let ob = world.observer(self.source, move |&WidgetRectangle(rect), world| {
             let this = world.fetch(this).unwrap();
+            let target = this.value.compute(rect);
+            world.trigger(this.target, &LayoutRectangle(target));
 
-            let left = rect.extend.w as f32 * this.left.anchor;
-            let left = rect.origin.x + left.round() as i32 + this.left.offset;
-
-            let down = rect.extend.h as f32 * this.down.anchor;
-            let down = rect.origin.y + down.round() as i32 + this.down.offset;
-
-            let right = rect.extend.w as f32 * this.right.anchor;
-            let right = rect.origin.x + right.round() as i32 + this.right.offset;
-
-            let up = rect.extend.h as f32 * this.up.anchor;
-            let up = rect.origin.y + up.round() as i32 + this.up.offset;
-
-            let layout = LayoutRectangle(Rectangle::new(left, down, right, up));
-            world.trigger(this.target, &layout);
+            let controls = world.single_fetch::<LayoutControls>().unwrap();
+            if let Some(&control) = controls.0.get(&this.target)
+                && let Some(rect) = &mut world.fetch_mut(control).unwrap().rectangle
+            {
+                (rect)(world, target);
+            }
         });
 
         world.dependency(ob, this);

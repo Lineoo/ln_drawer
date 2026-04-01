@@ -233,7 +233,6 @@ impl<M: RectangleMeshMaterial> Element for RectangleMesh<M> {
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         self.update_buffer();
-
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         lnwindow.window.request_redraw();
     }

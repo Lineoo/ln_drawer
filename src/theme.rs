@@ -6,7 +6,6 @@ use crate::{
     widgets::{
         Attach, WidgetButton, WidgetChecked, WidgetDestroyed, WidgetHover, WidgetRectangle,
         WidgetSelect, button::Button, check_button::CheckButton, menu::Menu, panel::Panel,
-        resizable::Resizable,
     },
     world::{Element, Handle, World},
 };
@@ -339,24 +338,6 @@ impl Element for Attach<Menu, Luni> {
             let mut select_anim_alpha = world.fetch_mut(select_anim_alpha).unwrap();
             frame_anim_alpha.dst = 0.0;
             select_anim_alpha.dst = 0.0;
-        });
-    }
-}
-
-impl Element for Attach<Resizable, Luni> {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let resizable = world.fetch(self.widget).unwrap();
-        let luni = world.fetch(self.target).unwrap();
-
-        let wireframe = world.build(WireframeDescriptor {
-            rect: resizable.rect,
-            order: 100,
-            visible: true,
-        });
-
-        world.observer(self.widget, move |&WidgetRectangle(rect), world| {
-            let mut wireframe = world.fetch_mut(wireframe).unwrap();
-            wireframe.rect = rect;
         });
     }
 }

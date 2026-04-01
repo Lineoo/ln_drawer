@@ -17,5 +17,5 @@ sed -i '/^\[package\.metadata\.android\]/,/^\[/ s/^package = "dev\.\(.*\)"$/pack
 sed -i '/^\[package\.metadata\.android\.application\]/,/^\[/ s/^label = "\(.*\) Dev"$/label = "\1"/' Cargo.toml
 
 # [package.metadata.android.application]
-# icon = "@mipmap/icon-dev"
-sed -i '/^\[package\.metadata\.android\.application\]/,/^\[/ s/^icon = "\(.*\)-dev"$/icon = "\1"/' Cargo.toml
+# icon = "@mipmap/icon_dev"
+sed -i '/^\[package\.metadata\.android\.application\]/,/^\[/ s/^icon = "\(.*\)_dev"$/icon = "\1"/' Cargo.toml

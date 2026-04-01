@@ -12,8 +12,7 @@ use winit::{
 };
 
 use crate::{
-    elements::palette::{PaletteHue, PaletteMain},
-    measures::{Position, Rectangle, Size},
+    layout::LayoutControls,
     render::{
         Render,
         camera::{Camera, CameraUtils, CameraVisits},
@@ -30,7 +29,7 @@ use crate::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
     },
-    widgets::color_picker::ColorPicker,
+    widgets::palette::{ColorPicker, hsl::PaletteHslMaterial},
     world::{Element, Handle, ViewId, ViewOptions, World},
 };
 
@@ -47,14 +46,6 @@ impl ApplicationHandler for Lnwin {
             let root = self.world.here();
             let view = self.world.view();
             self.windows.insert(lnwindow.window.id(), view);
-
-            #[cfg(target_os = "android")]
-            {
-                let app = self.world.single_fetch::<AndroidApp>().unwrap().clone();
-                self.world.enter(view, || {
-                    self.world.insert(app);
-                });
-            }
 
             self.world.enter(view, || {
                 self.world.option(ViewOptions { refs: vec![root] });
@@ -139,8 +130,8 @@ impl Element for Lnwindow {
             world.build(TextManagerDescriptor);
             world.build(WireframeManagerDescriptor);
             RoundedRect::init(world);
-            RectangleMesh::<PaletteMain>::init(world);
-            RectangleMesh::<PaletteHue>::init(world);
+            RectangleMesh::<PaletteHslMaterial>::init(world);
+            world.insert(LayoutControls::default());
             world.insert(Luni::default());
         });
 
@@ -166,6 +157,7 @@ impl Element for Lnwindow {
                     world.flush();
                     world.insert(StrokeLayer::new(world));
                     world.insert(CameraUtils::default());
+                    world.insert(ColorPicker);
                 });
             });
 
@@ -175,19 +167,7 @@ impl Element for Lnwindow {
                 world.queue(|world| {
                     Camera::singleton(world, "camera2");
                     world.flush();
-
-                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                     world.insert(CameraUtils::default());
-                    world.insert(ColorPicker {
-                        rect: Rectangle {
-                            origin: Position {
-                                x: -(lnwindow.window.surface_size().width as i32 / 2),
-                                y: -(lnwindow.window.surface_size().height as i32 / 2),
-                            },
-                            extend: Size { w: 30, h: 30 },
-                        },
-                        color: Default::default(),
-                    });
                 });
             });
 
