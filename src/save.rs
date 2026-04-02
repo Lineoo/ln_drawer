@@ -4,9 +4,7 @@ use std::{
 };
 
 use hashbrown::HashMap;
-use redb::{
-    Database, MultimapTableDefinition, ReadableDatabase, ReadableTable, TableDefinition, TableError,
-};
+use redb::{Database, MultimapTableDefinition, ReadableDatabase, ReadableTable, TableDefinition};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
@@ -29,8 +27,6 @@ const TABLE_CONTROLS_LUT_CLASS: MultimapTableDefinition<&str, u64> =
     MultimapTableDefinition::new("controls_lut_class");
 const TABLE_CONTROLS_LUT_WITHIN: MultimapTableDefinition<(&str, u64), u64> =
     MultimapTableDefinition::new("controls_lut_within");
-
-const CONTROLS_TABLE_LEGACY: TableDefinition<u64, (&str, &[u8])> = TableDefinition::new("controls");
 
 /// Will exist between different sessions. Can use to bind dependency or observers.
 pub struct SaveControl(u64);
@@ -256,16 +252,8 @@ impl SaveDatabase {
     fn read_redb(world: &World, db: &Database) -> Result<(), redb::Error> {
         let mut read = db.begin_read()?;
 
-        // legacy support (will delete soon)
-        let table_metadata = match read.open_table(TABLE_METADATA) {
-            Ok(metadata) => metadata,
-            Err(TableError::TableDoesNotExist(_)) => {
-                return SaveDatabase::migrate_legacy(world, db);
-            }
-            Err(err) => return Err(err.into()),
-        };
-
-        let access = table_metadata.get(0)?.unwrap();
+        let metadata = read.open_table(TABLE_METADATA)?;
+        let access = metadata.get(0)?.unwrap();
         let metadata = bytemuck::from_bytes::<SaveMetadata0>(access.value());
 
         // migration
@@ -306,50 +294,6 @@ impl SaveDatabase {
             }
         }
 
-        Ok(())
-    }
-
-    fn migrate_legacy(world: &World, db: &Database) -> Result<(), redb::Error> {
-        const MIGRATION: TableDefinition<u64, (&str, &[u8])> =
-            TableDefinition::new("__migration_buffer");
-
-        log::warn!("start migration from legacy version");
-
-        let write = db.begin_write()?;
-        write.rename_table(CONTROLS_TABLE_LEGACY, MIGRATION)?;
-
-        let legacy = write.open_table(MIGRATION)?;
-        let mut target = write.open_table(TABLE_CONTROLS)?;
-        let mut lut_class = write.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
-
-        let mut cnt = 0;
-        let mut luts = HashMap::new();
-        for entry in legacy.range::<u64>(..)? {
-            let entry = entry?;
-            let id = entry.0.value();
-            let (class, bytes) = entry.1.value();
-
-            let control = world.insert(SaveControl(id));
-            luts.insert(id, control);
-            target.insert(id, bytes)?;
-            lut_class.insert(class, id)?;
-
-            if id > cnt {
-                cnt = id;
-            }
-        }
-
-        // write metadata
-        let mut metadata = write.open_table(TABLE_METADATA)?;
-        metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
-
-        drop((legacy, target, lut_class, metadata));
-        write.delete_table(MIGRATION)?;
-        write.commit()?;
-
-        log::warn!("migration finished");
-
-        world.insert(SaveDatabaseLuts(cnt, luts));
         Ok(())
     }
 
