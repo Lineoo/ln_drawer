@@ -15,7 +15,7 @@ use crate::{
     world::{Element, Handle, World, WorldError},
 };
 
-/// See [`TABLE_METADATA`] and [`SaveMetadata`].
+/// See [`TABLE_METADATA`] and [`SaveMetadata0`].
 const FORMAT_VERSION: u32 = 0;
 
 /// The number of backup files.
@@ -25,22 +25,17 @@ const TABLE_METADATA: TableDefinition<u32, &[u8]> = TableDefinition::new("metada
 const TABLE_CONTROLS: TableDefinition<u64, &[u8]> = TableDefinition::new("controls");
 const TABLE_CONTROLS_LUT_CLASS: MultimapTableDefinition<&str, u64> =
     MultimapTableDefinition::new("controls_lut_class");
-const TABLE_CONTROLS_LUT_CLASS_WITHIN: MultimapTableDefinition<(&str, u64), u64> =
-    MultimapTableDefinition::new("controls_lut_class_within");
+const TABLE_CONTROLS_LUT_WITHIN: MultimapTableDefinition<(&str, u64), u64> =
+    MultimapTableDefinition::new("controls_lut_within");
 
 const CONTROLS_TABLE_LEGACY: TableDefinition<u64, (&str, &[u8])> = TableDefinition::new("controls");
 
 /// Will exist between different sessions. Can use to bind dependency or observers.
 pub struct SaveControl(u64);
 
-pub struct SaveReadClass {
+pub struct SaveRead {
     pub class: String,
-    pub read: Box<dyn Fn(&World, Handle<SaveControl>)>,
-}
-
-pub struct SaveReadClassWithin {
-    pub class: String,
-    pub within: Handle<SaveControl>,
+    pub within: Option<Handle<SaveControl>>,
     pub read: Box<dyn Fn(&World, Handle<SaveControl>)>,
 }
 
@@ -148,7 +143,7 @@ impl SaveControl {
         let write = db.0.begin_write()?;
         let mut table = write.open_table(TABLE_CONTROLS)?;
         let mut lut_class = write.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
-        let mut lut_class_within = write.open_multimap_table(TABLE_CONTROLS_LUT_CLASS_WITHIN)?;
+        let mut lut_within = write.open_multimap_table(TABLE_CONTROLS_LUT_WITHIN)?;
 
         // Alloc valid save id
         while table.get(&luts.0)?.is_some() {
@@ -159,9 +154,9 @@ impl SaveControl {
         let compressed = zstd::encode_all(bytes, 0).unwrap();
         table.insert(id, &compressed[..])?;
         lut_class.insert(&class[..], id)?;
-        lut_class_within.insert((&class[..], within), id)?;
+        lut_within.insert((&class[..], within), id)?;
 
-        drop((table, lut_class, lut_class_within));
+        drop((table, lut_class, lut_within));
         write.commit()?;
 
         let control = world.insert(SaveControl(id));
@@ -194,15 +189,24 @@ impl SaveControl {
     }
 }
 
-impl SaveReadClass {
+impl SaveRead {
     fn read(&mut self, world: &World) -> Result<(), redb::Error> {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
         let luts = world.single_fetch::<SaveDatabaseLuts>().unwrap();
         let read = db.0.begin_read()?;
-        let lut_class = read.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
-        for id in lut_class.get(&self.class[..])? {
-            let control = *luts.1.get(&id?.value()).unwrap();
-            (self.read)(world, control);
+        if let Some(within) = self.within {
+            let lut_within = read.open_multimap_table(TABLE_CONTROLS_LUT_WITHIN)?;
+            let within = world.fetch(within).unwrap().0;
+            for id in lut_within.get((&self.class[..], within))? {
+                let control = *luts.1.get(&id?.value()).unwrap();
+                (self.read)(world, control);
+            }
+        } else {
+            let lut_class = read.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
+            for id in lut_class.get(&self.class[..])? {
+                let control = *luts.1.get(&id?.value()).unwrap();
+                (self.read)(world, control);
+            }
         }
 
         Ok(())
@@ -390,7 +394,7 @@ pub fn get_file_path(_world: &World, filename: &str) -> PathBuf {
 
 impl Element for SaveControl {}
 
-impl Element for SaveReadClass {
+impl Element for SaveRead {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
         self.read(world).unwrap();
     }
