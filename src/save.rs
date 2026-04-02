@@ -342,9 +342,9 @@ impl SaveDatabase {
         // write metadata
         let mut metadata = write.open_table(TABLE_METADATA)?;
         metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
-        write.delete_table(MIGRATION)?;
 
         drop((legacy, target, lut_class, metadata));
+        write.delete_table(MIGRATION)?;
         write.commit()?;
 
         log::warn!("migration finished");
