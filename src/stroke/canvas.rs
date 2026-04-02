@@ -14,7 +14,7 @@ use wgpu::{
 
 use crate::{
     render::{Render, RenderControl, RenderInformation, vertex::VertexUniform, camera::Camera},
-    save::{SaveControl, SaveControlRead, SaveControlWrite},
+    save::{SaveControl, SaveReadClass, Autosave},
     stroke::{CHUNK_SIZE, StrokeLayer},
     world::{Element, Handle, World},
 };
@@ -284,8 +284,8 @@ impl CanvasChunk {
         }
     }
 
-    pub fn save_write() -> SaveControlWrite {
-        SaveControlWrite(Box::new(|world| {
+    pub fn save_write() -> Autosave {
+        Autosave(Box::new(|world| {
             let stroke = world.single_fetch::<StrokeLayer>().unwrap();
 
             let mut canvases = Vec::new();
@@ -309,9 +309,9 @@ impl CanvasChunk {
         }))
     }
 
-    pub fn save_read() -> SaveControlRead {
-        SaveControlRead {
-            name: "canvas_chunk".into(),
+    pub fn save_read() -> SaveReadClass {
+        SaveReadClass {
+            class: "canvas_chunk".into(),
             read: Box::new(|world, control| {
                 let stroke = &mut *world.single_fetch_mut::<StrokeLayer>().unwrap();
                 let control = world.fetch(control).unwrap();
