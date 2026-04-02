@@ -5,7 +5,7 @@ use winit::event::WindowEvent;
 use crate::lnwin::Lnwindow;
 use crate::measures::{Fract, PositionFract, Size};
 use crate::render::Render;
-use crate::save::{SaveControl, SaveControlRead, SaveControlWrite};
+use crate::save::{SaveControl, SaveRead, Autosave};
 use crate::world::{Descriptor, Element, Handle, ViewId, World, WorldError};
 
 pub struct Camera {
@@ -184,9 +184,10 @@ impl Camera {
         world.insert(Camera::save_write(camera, control));
     }
 
-    fn save_read(name: &str) -> SaveControlRead {
-        SaveControlRead {
-            name: name.into(),
+    fn save_read(name: &str) -> SaveRead {
+        SaveRead {
+            class: name.into(),
+            within: None,
             read: Box::new(move |world, control| {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let size = lnwindow.window.surface_size();
@@ -206,8 +207,8 @@ impl Camera {
         }
     }
 
-    fn save_write(camera: Handle<Camera>, control: Handle<SaveControl>) -> SaveControlWrite {
-        SaveControlWrite(Box::new(move |world| {
+    fn save_write(camera: Handle<Camera>, control: Handle<SaveControl>) -> Autosave {
+        Autosave(Box::new(move |world| {
             let camera = world.fetch(camera).unwrap();
             let control = world.fetch(control).unwrap();
 

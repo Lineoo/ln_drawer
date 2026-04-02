@@ -22,7 +22,7 @@ use crate::{
         text::TextManagerDescriptor,
         wireframe::WireframeManagerDescriptor,
     },
-    save::{AutosaveScheduler, SaveControlWrite, SaveDatabase},
+    save::{Autosave, AutosaveScheduler, SaveControl},
     stroke::StrokeLayer,
     theme::Luni,
     tools::{
@@ -90,7 +90,7 @@ impl ApplicationHandler for Lnwin {
     fn suspended(&mut self, _event_loop: &dyn ActiveEventLoop) {
         for &view in self.windows.values() {
             self.world.enter(view, || {
-                SaveControlWrite::save_controls(&self.world);
+                Autosave::autosave_all(&self.world);
             });
         }
     }
@@ -105,7 +105,7 @@ impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.observer(this, move |event: &WindowEvent, world| {
             if let WindowEvent::CloseRequested = event {
-                SaveControlWrite::save_controls(world);
+                Autosave::autosave_all(world);
                 world.clear();
             }
         });
@@ -116,7 +116,7 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            SaveDatabase::init(world);
+            SaveControl::init_database(world);
             world.insert(AutosaveScheduler {
                 autosave_duration: Duration::from_secs(10),
             });
