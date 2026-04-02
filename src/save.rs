@@ -28,8 +28,6 @@ const TABLE_CONTROLS_LUT_CLASS: MultimapTableDefinition<&str, u64> =
 const TABLE_CONTROLS_LUT_WITHIN: MultimapTableDefinition<(&str, u64), u64> =
     MultimapTableDefinition::new("controls_lut_within");
 
-const CONTROLS_TABLE_LEGACY: TableDefinition<u64, (&str, &[u8])> = TableDefinition::new("controls");
-
 /// Will exist between different sessions. Can use to bind dependency or observers.
 pub struct SaveControl(u64);
 
@@ -66,14 +64,13 @@ impl SaveControl {
         let target = get_file_path(world, "world.lndb");
         SaveDatabase::create_backup(&target);
         if let Ok(db) = Database::open(&target) {
-            let luts = SaveDatabase::read_redb(world, &db).unwrap();
+            SaveDatabase::read_redb(world, &db).unwrap();
             world.insert(SaveDatabase(db));
-            world.insert(luts);
             log::debug!("database loaded");
         } else {
             let db = Database::create(&target).unwrap();
+            SaveDatabase::init_redb(world, &db).unwrap();
             world.insert(SaveDatabase(db));
-            world.insert(SaveDatabaseLuts::default());
             log::debug!("database created");
         }
 
@@ -236,18 +233,30 @@ impl Autosave {
 }
 
 impl SaveDatabase {
-    fn read_redb(world: &World, db: &Database) -> Result<SaveDatabaseLuts, redb::Error> {
+    fn init_redb(world: &World, db: &Database) -> Result<(), redb::Error> {
+        let write = db.begin_write()?;
+
+        let mut table_metadata = write.open_table(TABLE_METADATA)?;
+        table_metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
+
+        write.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
+        write.open_multimap_table(TABLE_CONTROLS_LUT_WITHIN)?;
+
+        drop(table_metadata);
+        write.commit()?;
+
+        world.insert(SaveDatabaseLuts::default());
+        Ok(())
+    }
+
+    fn read_redb(world: &World, db: &Database) -> Result<(), redb::Error> {
         let mut read = db.begin_read()?;
 
-        // check if redb is legacy
-        let Ok(metadata) = read.open_table(TABLE_METADATA) else {
-            return SaveDatabase::migrate_legacy(world, db);
-        };
-
+        let metadata = read.open_table(TABLE_METADATA)?;
         let access = metadata.get(0)?.unwrap();
         let metadata = bytemuck::from_bytes::<SaveMetadata0>(access.value());
 
-        // check if format migration is needed
+        // migration
         if metadata.version > FORMAT_VERSION {
             panic!(
                 "cannot open database from newer version {}",
@@ -273,7 +282,8 @@ impl SaveDatabase {
             }
         }
 
-        Ok(SaveDatabaseLuts(cnt, luts))
+        world.insert(SaveDatabaseLuts(cnt, luts));
+        Ok(())
     }
 
     fn migrate_format(_world: &World, db: &Database, from_format: u32) -> Result<(), redb::Error> {
@@ -285,48 +295,6 @@ impl SaveDatabase {
         }
 
         Ok(())
-    }
-
-    fn migrate_legacy(world: &World, db: &Database) -> Result<SaveDatabaseLuts, redb::Error> {
-        const MIGRATION: TableDefinition<u64, (&str, &[u8])> =
-            TableDefinition::new("__migration_buffer");
-
-        log::warn!("start migration from legacy version");
-
-        let write = db.begin_write()?;
-        write.rename_table(CONTROLS_TABLE_LEGACY, MIGRATION)?;
-
-        let legacy = write.open_table(MIGRATION)?;
-        let mut target = write.open_table(TABLE_CONTROLS)?;
-        let mut lut_class = write.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
-
-        let mut cnt = 0;
-        let mut luts = HashMap::new();
-        for entry in legacy.range::<u64>(..)? {
-            let entry = entry?;
-            let id = entry.0.value();
-            let (class, bytes) = entry.1.value();
-
-            let control = world.insert(SaveControl(id));
-            luts.insert(id, control);
-            target.insert(id, bytes)?;
-            lut_class.insert(class, id)?;
-
-            if id > cnt {
-                cnt = id;
-            }
-        }
-
-        // write metadata
-        let mut metadata = write.open_table(TABLE_METADATA)?;
-        metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
-
-        drop((legacy, target, lut_class, metadata));
-        write.commit()?;
-
-        log::warn!("migration finished");
-
-        Ok(SaveDatabaseLuts(cnt, luts))
     }
 
     fn create_backup(target: &Path) {
