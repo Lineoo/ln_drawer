@@ -4,8 +4,8 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
 use crate::lnwin::Lnwindow;
-use crate::render::RenderInformation;
 use crate::render::camera::CameraBind;
+use crate::render::{MSAA_STATE, RenderInformation};
 use crate::world::Descriptor;
 use crate::{
     measures::Rectangle,
@@ -119,7 +119,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
                 })],
             }),
             depth_stencil: None,
-            multisample: Default::default(),
+            multisample: MSAA_STATE,
             multiview_mask: None,
             cache: None,
         });

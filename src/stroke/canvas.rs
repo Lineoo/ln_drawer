@@ -13,7 +13,9 @@ use wgpu::{
 };
 
 use crate::{
-    render::{Render, RenderControl, RenderInformation, camera::Camera, vertex::VertexUniform},
+    render::{
+        MSAA_STATE, Render, RenderControl, RenderInformation, camera::Camera, vertex::VertexUniform,
+    },
     save::{Autosave, SaveControl, SaveRead},
     stroke::{CHUNK_SIZE, StrokeLayer},
     world::{Element, Handle, World},
@@ -157,7 +159,7 @@ impl CanvasChunkPipeline {
                 })],
             }),
             depth_stencil: None,
-            multisample: Default::default(),
+            multisample: MSAA_STATE,
             multiview_mask: None,
             cache: None,
         });

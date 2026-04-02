@@ -10,8 +10,8 @@ use std::time::Instant;
 
 use wgpu::{
     Adapter, Color, CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor,
-    ExperimentalFeatures, Features, Instance, Limits, LoadOp, MemoryHints, Operations,
-    PowerPreference, PresentMode, Queue, RenderPass, RenderPassColorAttachment,
+    ExperimentalFeatures, Features, Instance, Limits, LoadOp, MemoryHints, MultisampleState,
+    Operations, PowerPreference, PresentMode, Queue, RenderPass, RenderPassColorAttachment,
     RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration,
     TextureUsages, TextureViewDescriptor, Trace,
 };
@@ -21,6 +21,12 @@ use crate::{
     lnwin::Lnwindow,
     render::camera::CameraVisits,
     world::{Element, Handle, World},
+};
+
+pub const MSAA_STATE: MultisampleState = MultisampleState {
+    count: 4,
+    mask: !0,
+    alpha_to_coverage_enabled: false,
 };
 
 pub struct Render {
