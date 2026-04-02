@@ -4,7 +4,9 @@ use std::{
 };
 
 use hashbrown::HashMap;
-use redb::{Database, MultimapTableDefinition, ReadableDatabase, ReadableTable, TableDefinition};
+use redb::{
+    Database, MultimapTableDefinition, ReadableDatabase, ReadableTable, TableDefinition, TableError,
+};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
@@ -66,14 +68,13 @@ impl SaveControl {
         let target = get_file_path(world, "world.lndb");
         SaveDatabase::create_backup(&target);
         if let Ok(db) = Database::open(&target) {
-            let luts = SaveDatabase::read_redb(world, &db).unwrap();
+            SaveDatabase::read_redb(world, &db).unwrap();
             world.insert(SaveDatabase(db));
-            world.insert(luts);
             log::debug!("database loaded");
         } else {
             let db = Database::create(&target).unwrap();
+            SaveDatabase::init_redb(world, &db).unwrap();
             world.insert(SaveDatabase(db));
-            world.insert(SaveDatabaseLuts::default());
             log::debug!("database created");
         }
 
@@ -236,18 +237,38 @@ impl Autosave {
 }
 
 impl SaveDatabase {
-    fn read_redb(world: &World, db: &Database) -> Result<SaveDatabaseLuts, redb::Error> {
+    fn init_redb(world: &World, db: &Database) -> Result<(), redb::Error> {
+        let write = db.begin_write()?;
+
+        let mut table_metadata = write.open_table(TABLE_METADATA)?;
+        table_metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
+
+        write.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
+        write.open_multimap_table(TABLE_CONTROLS_LUT_WITHIN)?;
+
+        drop(table_metadata);
+        write.commit()?;
+
+        world.insert(SaveDatabaseLuts::default());
+        Ok(())
+    }
+
+    fn read_redb(world: &World, db: &Database) -> Result<(), redb::Error> {
         let mut read = db.begin_read()?;
 
-        // check if redb is legacy
-        let Ok(metadata) = read.open_table(TABLE_METADATA) else {
-            return SaveDatabase::migrate_legacy(world, db);
+        // legacy support (will delete soon)
+        let table_metadata = match read.open_table(TABLE_METADATA) {
+            Ok(metadata) => metadata,
+            Err(TableError::TableDoesNotExist(_)) => {
+                return SaveDatabase::migrate_legacy(world, db);
+            }
+            Err(err) => return Err(err.into()),
         };
 
-        let access = metadata.get(0)?.unwrap();
+        let access = table_metadata.get(0)?.unwrap();
         let metadata = bytemuck::from_bytes::<SaveMetadata0>(access.value());
 
-        // check if format migration is needed
+        // migration
         if metadata.version > FORMAT_VERSION {
             panic!(
                 "cannot open database from newer version {}",
@@ -273,7 +294,8 @@ impl SaveDatabase {
             }
         }
 
-        Ok(SaveDatabaseLuts(cnt, luts))
+        world.insert(SaveDatabaseLuts(cnt, luts));
+        Ok(())
     }
 
     fn migrate_format(_world: &World, db: &Database, from_format: u32) -> Result<(), redb::Error> {
@@ -287,7 +309,7 @@ impl SaveDatabase {
         Ok(())
     }
 
-    fn migrate_legacy(world: &World, db: &Database) -> Result<SaveDatabaseLuts, redb::Error> {
+    fn migrate_legacy(world: &World, db: &Database) -> Result<(), redb::Error> {
         const MIGRATION: TableDefinition<u64, (&str, &[u8])> =
             TableDefinition::new("__migration_buffer");
 
@@ -320,13 +342,15 @@ impl SaveDatabase {
         // write metadata
         let mut metadata = write.open_table(TABLE_METADATA)?;
         metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
+        write.delete_table(MIGRATION)?;
 
         drop((legacy, target, lut_class, metadata));
         write.commit()?;
 
         log::warn!("migration finished");
 
-        Ok(SaveDatabaseLuts(cnt, luts))
+        world.insert(SaveDatabaseLuts(cnt, luts));
+        Ok(())
     }
 
     fn create_backup(target: &Path) {
