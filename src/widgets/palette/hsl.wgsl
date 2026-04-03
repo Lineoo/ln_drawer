@@ -60,7 +60,7 @@ fn color_main_knob(uv: vec2f) -> vec4f {
 }
 
 fn color_hue_band(radius: f32, angle: f32) -> vec4f {
-    let r_width = fwidth(radius);
+    let r_width = max(1e-6, fwidth(radius));
     let alpha = min(
         smoothstep(0.5 - palette.band_width - r_width, 0.5 - palette.band_width + r_width, radius),
         smoothstep(0.5 + r_width, 0.5 - r_width, radius),
@@ -71,16 +71,16 @@ fn color_hue_band(radius: f32, angle: f32) -> vec4f {
 }
 
 fn color_hue_knob(radius: f32, angle: f32) -> vec4f {
+    let r_width = max(1e-6, fwidth(radius));
+    let alpha = min(
+        smoothstep(0.5 - r_width, 0.5 + r_width, radius + palette.band_width),
+        smoothstep(0.5 + r_width, 0.5 - r_width, radius),
+    );
+
     let hue = fract(angle / TAU);
     let diff_d = abs(palette.hue - hue);
     let diff = min(diff_d, 1 - diff_d) - palette.hue_knob_size;
     let width = fwidth(diff);
-
-    let r_width = fwidth(radius);
-    let alpha = min(
-        smoothstep(0.5 - palette.band_width - r_width, 0.5 - palette.band_width + r_width, radius),
-        smoothstep(0.5 + r_width, 0.5 - r_width, radius),
-    );
 
     if diff < 0.0005 {
         let factor = smoothstep(-width, width, diff);
