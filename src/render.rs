@@ -10,10 +10,11 @@ use std::time::Instant;
 
 use wgpu::{
     Adapter, Color, CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor,
-    ExperimentalFeatures, Features, Instance, Limits, LoadOp, MemoryHints, MultisampleState,
-    Operations, PowerPreference, PresentMode, Queue, RenderPass, RenderPassColorAttachment,
-    RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration,
-    TextureUsages, TextureViewDescriptor, Trace,
+    ExperimentalFeatures, Extent3d, Features, Instance, Limits, LoadOp, MemoryHints,
+    MultisampleState, Operations, PowerPreference, PresentMode, Queue, RenderPass,
+    RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface,
+    SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension, TextureUsages,
+    TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -23,8 +24,9 @@ use crate::{
     world::{Element, Handle, World},
 };
 
+pub const MSAA_SAMPLE_COUNT: u32 = 4;
 pub const MSAA_STATE: MultisampleState = MultisampleState {
-    count: 4,
+    count: MSAA_SAMPLE_COUNT,
     mask: !0,
     alpha_to_coverage_enabled: false,
 };
@@ -39,6 +41,9 @@ pub struct Render {
     pub adapter: Adapter,
     pub device: Device,
     pub queue: Queue,
+
+    // msaa
+    msaa_texture: Texture,
 
     // render pass
     pub clear_color: Color,
@@ -99,6 +104,8 @@ impl Render {
         let config = Render::configuration(&surface, &adapter, size);
         surface.configure(&device, &config);
 
+        let msaa_texture = device.create_texture(&Render::msaa_texel(size, &config));
+
         Render {
             surface,
             config,
@@ -106,6 +113,7 @@ impl Render {
             adapter,
             device,
             queue,
+            msaa_texture,
             clear_color: Color::WHITE,
             redrawing: false,
             last_redraw: None,
@@ -120,6 +128,35 @@ impl Render {
         let size = lnwindow.window.surface_size();
         self.config = Render::configuration(&self.surface, &self.adapter, size);
         self.surface.configure(&self.device, &self.config);
+
+        let desc = Render::msaa_texel(size, &self.config);
+        self.msaa_texture = self.device.create_texture(&desc);
+    }
+
+    pub fn surface_resize(&mut self, size: PhysicalSize<u32>) {
+        self.config.width = size.width.max(1);
+        self.config.height = size.height.max(1);
+        self.surface.configure(&self.device, &self.config);
+
+        let desc = Render::msaa_texel(size, &self.config);
+        self.msaa_texture = self.device.create_texture(&desc);
+    }
+
+    fn msaa_texel(size: PhysicalSize<u32>, config: &SurfaceConfiguration) -> TextureDescriptor<'_> {
+        TextureDescriptor {
+            label: Some("render_msaa"),
+            size: Extent3d {
+                width: size.width,
+                height: size.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: MSAA_SAMPLE_COUNT,
+            dimension: TextureDimension::D2,
+            format: config.format,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT,
+            view_formats: &[],
+        }
     }
 
     fn configuration(
@@ -208,6 +245,9 @@ impl Render {
         let view = texture
             .texture
             .create_view(&TextureViewDescriptor::default());
+        let msaa_view = render
+            .msaa_texture
+            .create_view(&TextureViewDescriptor::default());
 
         let mut encoder = render
             .device
@@ -218,11 +258,11 @@ impl Render {
         let mut rpass = encoder
             .begin_render_pass(&RenderPassDescriptor {
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
+                    view: &msaa_view,
+                    resolve_target: Some(&view),
                     ops: Operations {
                         load: LoadOp::Clear(render.clear_color),
-                        store: StoreOp::Store,
+                        store: StoreOp::Discard,
                     },
                     depth_slice: None,
                 })],
@@ -286,9 +326,7 @@ impl Element for Render {
         world.observer(lnwindow, move |event: &WindowEvent, world| match event {
             WindowEvent::SurfaceResized(size) => {
                 let mut render = world.fetch_mut(this).unwrap();
-                render.config.width = size.width.max(1);
-                render.config.height = size.height.max(1);
-                render.surface.configure(&render.device, &render.config);
+                render.surface_resize(*size);
             }
 
             WindowEvent::RedrawRequested => {
