@@ -13,7 +13,7 @@ const TAU: f32 = 6.28318530717958647692528676655900577;
 
 struct VertexOutput {
     @builtin(position) pos: vec4f,
-    @location(0) uv: vec2f,
+    @location(0) @interpolate(perspective, sample) uv: vec2f,
 }
 
 @fragment
