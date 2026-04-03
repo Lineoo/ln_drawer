@@ -59,7 +59,11 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
 
     let delta = point - corner;
     let distance = length(max(delta, vec2f(0.0))) + min(max(delta.x, delta.y), 0.0);
-
-    return vec4f(step(distance, rectangle.value)) * rectangle.color;
+    
+    let diff = rectangle.value - distance;
+    let width = fwidth(diff);
+    
+    return vec4f(smoothstep(-width, width, diff)) * rectangle.color;
+    // return vec4f(step(distance, rectangle.value)) * rectangle.color;
     // return vec4f(normalize(vec3f(0.5, 0.5, distance)), fract(distance)) * rectangle.color;
 }
