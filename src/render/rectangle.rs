@@ -3,14 +3,14 @@ use std::marker::PhantomData;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::lnwin::Lnwindow;
-use crate::render::camera::CameraBind;
-use crate::render::{MSAA_STATE, RenderInformation};
-use crate::world::Descriptor;
 use crate::{
+    lnwin::Lnwindow,
     measures::Rectangle,
-    render::{Render, RenderControl, camera::Camera},
-    world::{Element, Handle, World},
+    render::{
+        MSAA_STATE, Render, RenderControl,
+        camera::{Camera, CameraBind},
+    },
+    world::{Descriptor, Element, Handle, World},
 };
 
 pub trait RectangleMeshMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {
@@ -34,7 +34,7 @@ pub struct RectangleMeshDescriptor<M: RectangleMeshMaterial> {
 
 pub struct RectangleMesh<M: RectangleMeshMaterial> {
     pub desc: RectangleMeshDescriptor<M>,
-    bind: BindGroup,
+    control: Handle<RenderControl>,
     rectangle: Buffer,
     material: Buffer,
     queue: Queue,
@@ -166,41 +166,34 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
             ],
         });
 
+        let control = world.insert(RenderControl {
+            prepare: None,
+            draw: Some(Box::new(move |world, rpass| {
+                let pipeline = world.single_fetch::<RectangleMeshPipeline<M>>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
+
+                rpass.set_pipeline(&pipeline.pipeline);
+                rpass.set_bind_group(0, &camera.bind, &[]);
+                rpass.set_bind_group(1, &bind, &[]);
+                rpass.draw(0..4, 0..1);
+            })),
+        });
+
         RectangleMesh {
             desc,
-            bind,
+            control,
             rectangle,
             material,
             queue: render.queue.clone(),
         }
     }
 
-    fn bind_control(&mut self, world: &World, this: Handle<Self>) {
-        let control = world.insert(RenderControl {
-            prepare: Some(Box::new(move |world| {
-                let this = world.fetch(this).unwrap();
-                if !this.desc.visible {
-                    return None;
-                }
-
-                Some(RenderInformation {
-                    render_order: this.desc.order,
-                    keep_redrawing: false,
-                })
-            })),
-            draw: Some(Box::new(move |world, rpass| {
-                let pipeline = world.single_fetch::<RectangleMeshPipeline<M>>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
-                let this = world.fetch(this).unwrap();
-
-                rpass.set_pipeline(&pipeline.pipeline);
-                rpass.set_bind_group(0, &camera.bind, &[]);
-                rpass.set_bind_group(1, &this.bind, &[]);
-                rpass.draw(0..4, 0..1);
-            })),
-        });
-
-        world.dependency(control, this);
+    fn reorder(&mut self, world: &World) {
+        RenderControl::reorder(
+            self.desc.visible.then_some(self.desc.order),
+            world,
+            self.control,
+        );
     }
 
     fn update_buffer(&mut self) {
@@ -228,10 +221,12 @@ impl<M: RectangleMeshMaterial> Element for RectangleMeshPipeline<M> {}
 
 impl<M: RectangleMeshMaterial> Element for RectangleMesh<M> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        self.bind_control(world, this);
+        self.reorder(world);
+        world.dependency(self.control, this);
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+        self.reorder(world);
         self.update_buffer();
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         lnwindow.window.request_redraw();

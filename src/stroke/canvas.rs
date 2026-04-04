@@ -13,9 +13,7 @@ use wgpu::{
 };
 
 use crate::{
-    render::{
-        MSAA_STATE, Render, RenderControl, RenderInformation, camera::Camera, vertex::VertexUniform,
-    },
+    render::{MSAA_STATE, Render, RenderControl, camera::Camera, vertex::VertexUniform},
     save::{Autosave, SaveControl, SaveRead},
     stroke::{CHUNK_SIZE, StrokeLayer},
     world::{Element, Handle, World},
@@ -23,12 +21,9 @@ use crate::{
 
 pub struct CanvasChunk {
     save: Handle<SaveControl>,
+    render: Handle<RenderControl>,
     pub changed: bool,
-
     pub compute: BindGroup,
-    vertex: BindGroup,
-    fragment: BindGroup,
-
     texture: Texture,
 }
 
@@ -176,7 +171,7 @@ impl CanvasChunkPipeline {
 impl Element for CanvasChunkPipeline {}
 
 impl CanvasChunk {
-    pub fn new(world: &World, chunk: (i32, i32), control: Handle<SaveControl>) -> Self {
+    pub fn new(world: &World, chunk: (i32, i32), save_control: Handle<SaveControl>) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let camera = world.single_fetch::<Camera>().unwrap();
         let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
@@ -276,12 +271,23 @@ impl CanvasChunk {
             ],
         });
 
+        let render_control = world.insert(RenderControl {
+            prepare: None,
+            draw: Some(Box::new(move |world, rpass| {
+                let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
+
+                rpass.set_pipeline(&manager.pipeline);
+                rpass.set_bind_group(0, &vertex, &[]);
+                rpass.set_bind_group(1, &fragment, &[]);
+                rpass.draw(0..4, 0..1);
+            })),
+        });
+
         CanvasChunk {
-            save: control,
+            save: save_control,
+            render: render_control,
             changed: false,
-            vertex,
             compute,
-            fragment,
             texture,
         }
     }
@@ -425,27 +431,10 @@ impl CanvasChunk {
 
 impl Element for CanvasChunk {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let control = world.insert(RenderControl {
-            prepare: Some(Box::new(|_| {
-                Some(RenderInformation {
-                    render_order: -100,
-                    keep_redrawing: false,
-                })
-            })),
-            draw: Some(Box::new(move |world, rpass| {
-                let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
-                let this = world.fetch(this).unwrap();
-
-                rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &this.vertex, &[]);
-                rpass.set_bind_group(1, &this.fragment, &[]);
-                rpass.draw(0..4, 0..1);
-            })),
-        });
-
+        RenderControl::reorder(Some(-100), world, self.render);
         let layer = world.single::<StrokeLayer>().unwrap();
         world.dependency(this, layer);
         world.dependency(self.save, this);
-        world.dependency(control, this);
+        world.dependency(self.render, this);
     }
 }

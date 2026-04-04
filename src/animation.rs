@@ -141,7 +141,6 @@ impl<T: AnimationEasingType> Element for Animation<T> {
                 }
 
                 Some(RenderInformation {
-                    render_order: 0,
                     keep_redrawing: this.src != this.dst,
                 })
             })),

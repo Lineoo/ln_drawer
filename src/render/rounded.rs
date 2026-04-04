@@ -1,12 +1,13 @@
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
-use crate::lnwin::Lnwindow;
-use crate::render::camera::CameraBind;
-use crate::render::{MSAA_STATE, RenderInformation};
 use crate::{
+    lnwin::Lnwindow,
     measures::Rectangle,
-    render::{Render, RenderControl, camera::Camera},
+    render::{
+        MSAA_STATE, Render, RenderControl,
+        camera::{Camera, CameraBind},
+    },
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -27,8 +28,7 @@ pub struct RoundedRectPipeline {
 
 pub struct RoundedRect {
     pub desc: RoundedRectDescriptor,
-
-    bind: BindGroup,
+    control: Handle<RenderControl>,
     uniform: Buffer,
     queue: Queue,
 }
@@ -158,40 +158,33 @@ impl RoundedRect {
             }],
         });
 
+        let control = world.insert(RenderControl {
+            prepare: None,
+            draw: Some(Box::new(move |world, rpass| {
+                let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
+
+                rpass.set_pipeline(&manager.pipeline);
+                rpass.set_bind_group(0, &camera.bind, &[]);
+                rpass.set_bind_group(1, &bind, &[]);
+                rpass.draw(0..4, 0..1);
+            })),
+        });
+
         RoundedRect {
             desc,
-            bind,
+            control,
             uniform,
             queue: render.queue.clone(),
         }
     }
 
-    fn bind_control(&mut self, world: &World, this: Handle<Self>) {
-        let control = world.insert(RenderControl {
-            prepare: Some(Box::new(move |world| {
-                let this = world.fetch(this).unwrap();
-                if !this.desc.visible {
-                    return None;
-                }
-
-                Some(RenderInformation {
-                    render_order: this.desc.order,
-                    keep_redrawing: false,
-                })
-            })),
-            draw: Some(Box::new(move |world, rpass| {
-                let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
-                let this = world.fetch(this).unwrap();
-
-                rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &camera.bind, &[]);
-                rpass.set_bind_group(1, &this.bind, &[]);
-                rpass.draw(0..4, 0..1);
-            })),
-        });
-
-        world.dependency(control, this);
+    fn reorder(&mut self, world: &World) {
+        RenderControl::reorder(
+            self.desc.visible.then_some(self.desc.order),
+            world,
+            self.control,
+        );
     }
 
     fn update_buffer(&mut self) {
@@ -227,10 +220,12 @@ impl Element for RoundedRectPipeline {}
 
 impl Element for RoundedRect {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        self.bind_control(world, this);
+        self.reorder(world);
+        world.dependency(self.control, this);
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+        self.reorder(world);
         self.update_buffer();
 
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
