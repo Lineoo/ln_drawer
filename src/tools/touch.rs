@@ -251,7 +251,9 @@ impl MultiTouchTool {
                 world.trigger(target, &group.active);
                 world.trigger(target, &group);
 
-                tool.lut.remove(&kind);
+                let replaced = tool.lut.remove(&kind);
+                debug_assert!(replaced.is_some());
+
                 let idx = list.iter().position(|x| *x == kind).unwrap();
                 list.swap_remove(idx);
                 if list.is_empty() {
