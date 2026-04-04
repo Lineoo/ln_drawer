@@ -22,7 +22,7 @@ struct Rectangle {
 
 struct VertexOutput {
     @builtin(position) pos: vec4f,
-    @location(0) uv: vec2f,
+    @location(0) @interpolate(perspective, sample) uv: vec2f,
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -46,6 +46,6 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
 
 @fragment
-fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-    return textureSample(texture, texture_sampler, uv);
+fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
+    return textureSample(texture, texture_sampler, vertex.uv);
 }
