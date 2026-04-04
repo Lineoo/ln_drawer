@@ -16,9 +16,7 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        Render, RenderControl, RenderInformation,
-        camera::{Camera, CameraBind},
-        vertex::VertexUniform,
+        MSAA_STATE, Render, RenderControl, RenderInformation, camera::{Camera, CameraBind}, vertex::VertexUniform
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -141,7 +139,7 @@ impl Descriptor for CanvasManagerDescriptor {
                     })],
                 }),
                 depth_stencil: None,
-                multisample: Default::default(),
+                multisample: MSAA_STATE,
                 multiview_mask: None,
                 cache: None,
             });

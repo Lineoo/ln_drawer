@@ -2,8 +2,8 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
 use crate::lnwin::Lnwindow;
-use crate::render::RenderInformation;
 use crate::render::camera::CameraBind;
+use crate::render::{MSAA_STATE, RenderInformation};
 use crate::{
     measures::Rectangle,
     render::{Render, RenderControl, camera::Camera},
@@ -114,7 +114,7 @@ impl RoundedRect {
                 })],
             }),
             depth_stencil: None,
-            multisample: Default::default(),
+            multisample: MSAA_STATE,
             multiview_mask: None,
             cache: None,
         });
@@ -232,7 +232,7 @@ impl Element for RoundedRect {
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         self.update_buffer();
-        
+
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         lnwindow.window.request_redraw();
     }

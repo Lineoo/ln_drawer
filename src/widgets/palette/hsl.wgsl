@@ -45,44 +45,54 @@ fn color_main_palette(uv: vec2f) -> vec4f {
 }
 
 fn color_main_knob(uv: vec2f) -> vec4f {
-    let e = distance(uv, vec2f(palette.saturation, palette.lightness));
-    if e < palette.main_knob_size {
-        return vec4f(hsl_to_rgb(palette.hue, palette.saturation, palette.lightness), 1.0);
-    } else if e < palette.main_knob_size + 0.001 {
-        return vec4f(1, 1, 1, 1);
-    } else if e < palette.main_knob_size + 0.002 {
-        return vec4f(0, 0, 0, 1);
+    let diff = distance(uv, vec2f(palette.saturation, palette.lightness)) - palette.main_knob_size;
+    let width = fwidth(diff);
+    if diff < 0.0005 {
+        let factor = smoothstep(-width, width, diff);
+        return mix(vec4f(hsl_to_rgb(palette.hue, palette.saturation, palette.lightness), 1), vec4f(1, 1, 1, 1), factor);
+    } else if diff < 0.0015 {
+        let factor = smoothstep(-width, width, diff - 0.001);
+        return mix(vec4f(1, 1, 1, 1), vec4f(0, 0, 0, 1), factor);
+    } else {
+        let factor = smoothstep(-width, width, diff - 0.002);
+        return mix(vec4f(0, 0, 0, 1), vec4f(), factor);
     }
-
-    return vec4f();
 }
 
 fn color_hue_band(radius: f32, angle: f32) -> vec4f {
-    if radius > 0.5 || radius < 0.5 - palette.band_width {
-        return vec4f();
-    }
+    let r_width = max(1e-6, fwidth(radius));
+    let alpha = min(
+        smoothstep(0.5 - palette.band_width - r_width, 0.5 - palette.band_width + r_width, radius),
+        smoothstep(0.5 + r_width, 0.5 - r_width, radius),
+    );
 
     let hue = fract(angle / TAU + 1);
-    return vec4f(hsl_to_rgb(hue, palette.saturation, palette.lightness), 1.0);
+    return vec4f(hsl_to_rgb(hue, palette.saturation, palette.lightness), alpha);
 }
 
 fn color_hue_knob(radius: f32, angle: f32) -> vec4f {
-    if radius > 0.5 || radius < 0.5 - palette.band_width {
-        return vec4f();
-    }
+    let r_width = max(1e-6, fwidth(radius));
+    let alpha = min(
+        smoothstep(0.5 - r_width, 0.5 + r_width, radius + palette.band_width),
+        smoothstep(0.5 + r_width, 0.5 - r_width, radius),
+    );
 
     let hue = fract(angle / TAU);
-    let diff = abs(palette.hue - hue);
-    let e = min(diff, 1 - diff);
-    if e < palette.hue_knob_size {
-        return vec4f(hsl_to_rgb(palette.hue, palette.saturation, palette.lightness), 1.0);
-    } else if e < palette.hue_knob_size + 0.001 {
-        return vec4f(1, 1, 1, 1);
-    } else if e < palette.hue_knob_size + 0.002 {
-        return vec4f(0, 0, 0, 1);
-    }
+    let diff_d = abs(palette.hue - hue);
+    let diff = min(diff_d, 1 - diff_d) - palette.hue_knob_size;
+    let width = fwidth(diff);
 
-    return vec4f();
+    if diff < 0.0005 {
+        let factor = smoothstep(-width, width, diff);
+        let color = hsl_to_rgb(hue, palette.saturation, palette.lightness);
+        return mix(vec4f(color, alpha), vec4f(vec3f(1), alpha), factor);
+    } else if diff < 0.0015 {
+        let factor = smoothstep(-width, width, diff - 0.001);
+        return vec4f(vec3f(1) - factor, alpha);
+    } else {
+        let factor = smoothstep(-width, width, diff - 0.002);
+        return vec4f(vec3f(0), alpha * (1 - factor));
+    }
 }
 
 fn hsl_to_rgb(h: f32, s: f32, l: f32) -> vec3f {
