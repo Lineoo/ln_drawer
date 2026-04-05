@@ -1,7 +1,8 @@
 use crate::{
-    layout::LayoutRectangle,
+    layout::{LayoutControl, LayoutControls, LayoutRectangle},
     measures::{Position, Rectangle, Size},
     render::camera::{Camera, CameraVisits},
+    widgets::WidgetRectangle,
     world::{Element, Handle, ViewId, World},
 };
 
@@ -46,18 +47,29 @@ impl ToolCollider {
         buf.sort_by(|(.., a), (.., b)| b.cmp(a));
         buf.iter().map(|x| (x.0, x.1)).collect::<Vec<_>>()
     }
+
+    fn attach_layout(&mut self, world: &World, this: Handle<Self>) {
+        let control = world.insert(LayoutControl {
+            rectangle: Some(Box::new(move |world, rect| {
+                let mut this = world.fetch_mut(this).unwrap();
+                this.rect = rect;
+                rect
+            })),
+            enabled: None,
+        });
+
+        let mut layouts = world.single_fetch_mut::<LayoutControls>().unwrap();
+        layouts.0.insert(this.untyped(), control);
+        world.dependency(control, this);
+    }
 }
 
 impl Element for ToolCollider {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        self.attach_layout(world, this);
         let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
         world.queue_trigger(dispatcher, ToolColliderChanged(this));
         world.dependency(this, dispatcher);
-
-        world.observer(this, move |&LayoutRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
-        });
     }
 
     fn when_modify(&mut self, world: &World, this: Handle<Self>) {

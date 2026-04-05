@@ -1,7 +1,7 @@
 use crate::{
     layout::{LayoutControls, LayoutRectangle},
     measures::{Position, Rectangle},
-    widgets::WidgetRectangle,
+    widgets::{WidgetAnimatedRectangle, WidgetRectangle},
     world::{Element, Handle, World},
 };
 
@@ -140,7 +140,20 @@ impl Element for Transform {
             }
         });
 
+        let oba = world.observer(self.source, move |&WidgetAnimatedRectangle(rect), world| {
+            let this = world.fetch(this).unwrap();
+            let target = this.value.compute(rect);
+
+            let controls = world.single_fetch::<LayoutControls>().unwrap();
+            if let Some(&control) = controls.0.get(&this.target)
+                && let Some(rect) = &mut world.fetch_mut(control).unwrap().rectangle
+            {
+                (rect)(world, target);
+            }
+        });
+
         world.dependency(ob, this);
+        world.dependency(oba, this);
         world.dependency(this, self.source);
         world.dependency(this, self.target);
     }

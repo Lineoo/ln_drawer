@@ -4,14 +4,17 @@ use crate::{
         LayoutControl, LayoutControls,
         transform::{Transform, TransformValue},
     },
-    measures::{Rectangle, Size},
+    measures::Rectangle,
     render::rounded::RoundedRectDescriptor,
     theme::Luni,
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{WidgetButton, WidgetClick, WidgetDestroyed, WidgetExpanded, WidgetHover, WidgetRectangle},
+    widgets::{
+        WidgetAnimatedRectangle, WidgetButton, WidgetClick, WidgetDestroyed, WidgetExpanded,
+        WidgetHover, WidgetRectangle,
+    },
     world::{Element, Handle, World},
 };
 
@@ -79,12 +82,27 @@ impl Expandable {
 
         world.observer(this, move |&WidgetRectangle(rect), world| {
             let mut frame_rect = world.fetch_mut(frame_rect).unwrap();
-            frame_rect.dst = [
+            let rect = [
                 rect.left() as f32,
                 rect.down() as f32,
                 rect.right() as f32,
                 rect.up() as f32,
             ];
+
+            frame_rect.src = rect;
+            frame_rect.dst = rect;
+        });
+
+        world.observer(this, move |&WidgetAnimatedRectangle(rect), world| {
+            let mut frame_rect = world.fetch_mut(frame_rect).unwrap();
+            let rect = [
+                rect.left() as f32,
+                rect.down() as f32,
+                rect.right() as f32,
+                rect.up() as f32,
+            ];
+
+            frame_rect.dst = rect;
         });
 
         world.observer(this, move |&WidgetDestroyed, world| {
@@ -120,10 +138,10 @@ impl Expandable {
                     this.expanded = !this.expanded;
                     if this.expanded {
                         let rect = this.transform.compute(this.rect);
-                        world.queue_trigger(this.handle(), WidgetRectangle(rect));
+                        world.queue_trigger(this.handle(), WidgetAnimatedRectangle(rect));
                         world.queue_trigger(this.handle(), WidgetExpanded(true));
                     } else {
-                        world.queue_trigger(this.handle(), WidgetRectangle(this.rect));
+                        world.queue_trigger(this.handle(), WidgetAnimatedRectangle(this.rect));
                         world.queue_trigger(this.handle(), WidgetExpanded(false));
                     }
                 }

@@ -151,7 +151,8 @@ impl<T: AnimationEasingType> Element for Animation<T> {
         world.dependency(control, this);
     }
 
-    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
+        world.queue_trigger(this, AnimationValue(self.src));
         if self.src != self.dst {
             self.last_update = Instant::now();
             let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
