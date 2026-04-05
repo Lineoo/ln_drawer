@@ -49,7 +49,7 @@ pub struct Render {
     pub clear_color: Color,
 
     // render control
-    refreshing: usize,
+    preparing: bool,
     seq_dirty: Vec<(Handle<RenderControl>, ViewId, isize)>,
     seq_remove: Vec<Handle<RenderControl>>,
     sequence: Vec<(Handle<RenderControl>, ViewId, isize)>,
@@ -118,7 +118,7 @@ impl Render {
             queue,
             msaa_texture,
             clear_color: Color::WHITE,
-            refreshing: 0,
+            preparing: false,
             seq_dirty: Vec::new(),
             seq_remove: Vec::new(),
             sequence: Vec::new(),
@@ -212,6 +212,10 @@ impl Render {
     fn redraw(world: &World) {
         // prepare controls
 
+        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        render.preparing = true;
+        drop(render);
+
         let mut refreshing = false;
         let visits = world.single_fetch::<CameraVisits>().unwrap();
         for &view in &visits.views {
@@ -229,6 +233,7 @@ impl Render {
         // start redrawing
 
         let render = &mut *world.single_fetch_mut::<Render>().unwrap();
+        render.preparing = false;
         let now = Instant::now();
 
         // order redraw sequence
@@ -317,6 +322,16 @@ impl Render {
 }
 
 impl RenderControl {
+    /// Safer functions to request redraw.
+    pub fn redraw(world: &World) {
+        let render = world.single_fetch::<Render>().unwrap();
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+
+        if !render.preparing {
+            lnwindow.window.request_redraw();
+        }
+    }
+
     pub fn reorder(order: Option<isize>, world: &World, handle: Handle<Self>) {
         let mut render = world.single_fetch_mut::<Render>().unwrap();
 

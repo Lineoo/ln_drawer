@@ -13,6 +13,7 @@ pub struct Animation<T: AnimationEasingType> {
     pub dst: T,
     pub factor: f32,
 
+    data_pushed: T,
     last_update: Instant,
 }
 
@@ -40,6 +41,7 @@ impl<T: AnimationEasingType> Descriptor for AnimationDescriptor<T> {
             src: self.src,
             dst: self.dst,
             factor: self.factor,
+            data_pushed: self.src,
             last_update: Instant::now(),
         })
     }
@@ -136,8 +138,9 @@ impl<T: AnimationEasingType> Element for Animation<T> {
 
                 // send event and change RenderControl
 
-                if changed {
+                if changed || this.data_pushed != this.src {
                     world.trigger(this.handle(), &AnimationValue(this.src));
+                    this.data_pushed = this.src;
                 }
 
                 Some(RenderInformation {
@@ -150,12 +153,10 @@ impl<T: AnimationEasingType> Element for Animation<T> {
         world.dependency(control, this);
     }
 
-    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
-        world.queue_trigger(this, AnimationValue(self.src));
-        if self.src != self.dst {
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+        if self.src != self.dst || self.src != self.data_pushed {
             self.last_update = Instant::now();
-            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-            lnwindow.window.request_redraw();
+            RenderControl::redraw(world);
         }
     }
 }

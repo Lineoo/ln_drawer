@@ -227,8 +227,6 @@ impl Element for RoundedRect {
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         self.reorder(world);
         self.update_buffer();
-
-        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-        lnwindow.window.request_redraw();
+        RenderControl::redraw(world);
     }
 }
