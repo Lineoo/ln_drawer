@@ -30,13 +30,13 @@ use crate::{
         pointer::PointerTool, touch::MultiTouchTool,
     },
     widgets::palette::{ColorPicker, hsl::PaletteHslMaterial},
-    world::{Element, Handle, ViewId, ViewOptions, World},
+    world::{Element, Handle, ViewOptions, World},
 };
 
 #[derive(Default)]
 pub struct Lnwin {
     pub world: World,
-    pub windows: HashMap<WindowId, ViewId>,
+    pub windows: HashMap<WindowId, Handle>,
 }
 
 impl ApplicationHandler for Lnwin {
@@ -44,12 +44,11 @@ impl ApplicationHandler for Lnwin {
         if self.windows.is_empty() {
             let lnwindow = Lnwindow::new(event_loop);
             let root = self.world.here();
-            let view = self.world.view();
-            self.windows.insert(lnwindow.window.id(), view);
-
-            self.world.enter(view, || {
+            let window_id = lnwindow.window.id();
+            let lnwindow = self.world.insert(lnwindow);
+            self.windows.insert(window_id, lnwindow.untyped());
+            self.world.enter(lnwindow, || {
                 self.world.option(ViewOptions { refs: vec![root] });
-                self.world.insert(lnwindow);
             });
         } else {
             for &view in self.windows.values() {
@@ -145,8 +144,8 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            let layer1 = world.view();
-            let layer2 = world.view();
+            let layer1 = world.insert(());
+            let layer2 = world.insert(());
             let here = world.here();
 
             world.enter(layer1, || {
@@ -172,7 +171,7 @@ impl Element for Lnwindow {
             });
 
             world.insert(CameraVisits {
-                views: vec![layer1, layer2],
+                views: vec![layer1.untyped(), layer2.untyped()],
             });
         });
     }

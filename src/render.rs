@@ -21,7 +21,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent};
 use crate::{
     lnwin::Lnwindow,
     render::camera::CameraVisits,
-    world::{Element, Handle, ViewId, World},
+    world::{Element, Handle, World},
 };
 
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
@@ -50,9 +50,9 @@ pub struct Render {
 
     // render control
     preparing: bool,
-    seq_dirty: Vec<(Handle<RenderControl>, ViewId, isize)>,
+    seq_dirty: Vec<(Handle<RenderControl>, Handle, isize)>,
     seq_remove: Vec<Handle<RenderControl>>,
-    sequence: Vec<(Handle<RenderControl>, ViewId, isize)>,
+    sequence: Vec<(Handle<RenderControl>, Handle, isize)>,
 
     // time tracing
     last_redraw: Option<Instant>,

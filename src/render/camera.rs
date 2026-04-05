@@ -5,8 +5,8 @@ use winit::event::WindowEvent;
 use crate::lnwin::Lnwindow;
 use crate::measures::{Fract, PositionFract, Size};
 use crate::render::Render;
-use crate::save::{SaveControl, SaveRead, Autosave};
-use crate::world::{Descriptor, Element, Handle, ViewId, World, WorldError};
+use crate::save::{Autosave, SaveControl, SaveRead};
+use crate::world::{Descriptor, Element, Handle, World, WorldError};
 
 pub struct Camera {
     pub size: Size,
@@ -224,8 +224,9 @@ impl Camera {
     }
 }
 
+#[deprecated]
 pub struct CameraVisits {
-    pub views: Vec<ViewId>,
+    pub views: Vec<Handle>,
 }
 
 impl Element for CameraVisits {}

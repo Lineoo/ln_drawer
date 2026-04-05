@@ -78,13 +78,13 @@ impl<T: Element> From<Handle<T>> for Handle<dyn Any> {
 }
 
 impl<T: Element> Handle<T> {
-    pub fn untyped(self) -> Handle<dyn Any> {
+    pub const fn untyped(self) -> Handle<dyn Any> {
         self.cast()
     }
 }
 
 impl<T: ?Sized> Handle<T> {
-    fn cast<U: ?Sized>(self) -> Handle<U> {
+    const fn cast<U: ?Sized>(self) -> Handle<U> {
         Handle(self.0, PhantomData)
     }
 }
@@ -111,66 +111,22 @@ impl<T: ?Sized> From<Handle<T>> for HandleInfo {
     }
 }
 
-/// Represent a view of world.
-pub struct ViewId(usize);
-
-impl Clone for ViewId {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl Copy for ViewId {}
-
-impl PartialEq for ViewId {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0)
-    }
-}
-
-impl Eq for ViewId {}
-
-impl Hash for ViewId {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
-impl fmt::Debug for ViewId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "View({})", self.0)
-    }
-}
-
-impl fmt::Display for ViewId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "@{}", self.0)
-    }
-}
-
-pub struct ViewOptions {
-    /// Will be also included in validation.
-    pub refs: Vec<ViewId>,
-}
-
 // World Management //
 
 // Center of multiple accesses in world, which also prevents constructional changes
 pub struct World {
     elem_idx: RefCell<Handle>,
-    view_idx: RefCell<ViewId>,
-
-    location: Cell<ViewId>,
 
     typetable: HashMap<Handle, TypeId>,
-    viewtable: HashMap<Handle, ViewId>,
+    viewtable: HashMap<Handle, Handle>,
     storages: HashMap<TypeId, Box<dyn StorageGeneral>>,
-    options: HashMap<ViewId, ViewOptions>,
+    options: HashMap<Handle, ViewOptions>,
 
     occupied: RefCell<HashMap<Handle, isize>>,
     inserted: RefCell<HashSet<Handle>>,
     removed: RefCell<HashSet<Handle>>,
 
+    location: Cell<Handle>,
     dependencies: RefCell<Dependencies>,
 
     queue: Receiver<WorldCommand>,
@@ -215,7 +171,10 @@ pub enum WorldError {
     InvalidHandle(HandleInfo),
 
     #[error("{0:?} is invisible in {1:?} from here {2:?}")]
-    Invisible(HandleInfo, ViewId, ViewId),
+    Invisible(HandleInfo, Handle, Handle),
+
+    #[error("{0:?} serves as root view element")]
+    Initelem(HandleInfo),
 
     #[error("{0:?} try to depend on {1:?}, which does not exist")]
     ToxicDependency(HandleInfo, HandleInfo),
@@ -239,13 +198,11 @@ pub enum WorldError {
     SingletonCorrupted(&'static str),
 }
 
-impl Default for World {
-    fn default() -> Self {
+impl World {
+    pub fn new() -> Self {
         let (commander, queue) = channel();
         World {
-            elem_idx: RefCell::new(Handle(0, PhantomData)),
-            view_idx: RefCell::new(ViewId(1)),
-            location: Cell::new(ViewId(0)),
+            elem_idx: RefCell::new(Handle(1, PhantomData)),
             typetable: HashMap::new(),
             viewtable: HashMap::new(),
             storages: HashMap::new(),
@@ -253,14 +210,13 @@ impl Default for World {
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
+            location: Cell::new(INITELEM),
             dependencies: RefCell::default(),
             queue,
             commander,
         }
     }
-}
 
-impl World {
     /// Will access data from world to build target object.
     pub fn build<B: Descriptor>(&self, descriptor: B) -> B::Target {
         descriptor.when_build(self)
@@ -369,15 +325,7 @@ impl World {
 
     // views //
 
-    /// Create a new fresh view.
-    pub fn view(&self) -> ViewId {
-        let mut view_idx = self.view_idx.borrow_mut();
-        let view = *view_idx;
-        view_idx.0 += 1;
-        view
-    }
-
-    pub fn here(&self) -> ViewId {
+    pub fn here(&self) -> Handle {
         self.location.get()
     }
 
@@ -390,9 +338,9 @@ impl World {
     }
 
     /// Enter view.
-    pub fn enter<T>(&self, view: ViewId, f: impl FnOnce() -> T) -> T {
+    pub fn enter<T: ?Sized, U>(&self, view: Handle<T>, f: impl FnOnce() -> U) -> U {
         let origin = self.location.get();
-        self.location.set(view);
+        self.location.set(view.cast());
         let ret = f();
         self.location.set(origin);
         ret
@@ -450,6 +398,10 @@ impl World {
 
     /// Check whether target element exists, insertion without `flush` will *NOT* be included.
     pub fn validate<T: ?Sized>(&self, handle: Handle<T>) -> Result<(), WorldError> {
+        if handle.0 == 0 {
+            return Err(WorldError::Initelem(handle.into()));
+        }
+
         if self.removed.borrow().contains(&handle.cast()) {
             if self.typetable.contains_key(&handle.cast()) {
                 return Err(WorldError::JustRemoved(handle.into()));
@@ -469,7 +421,7 @@ impl World {
         if let Some(&target) = self.viewtable.get(&handle.cast()) {
             let here = self.location.get();
 
-            if target != here {
+            if target != here && handle.cast() != here {
                 let mut refs = HashSet::new();
                 let mut stack = Vec::new();
                 stack.push(here);
@@ -669,7 +621,7 @@ impl World {
         action: impl FnMut(&E, &World) + 'static,
     ) -> Handle {
         let here = self.location.get();
-        let handle = self.enter(ViewId(0), || {
+        let handle = self.enter(INITELEM, || {
             self.insert(Observer {
                 action: Box::new(action),
                 view: here,
@@ -683,7 +635,7 @@ impl World {
     /// Will immediately triggered and acquire mutable access to `target`.
     pub fn trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: &E) -> usize {
         let mut cnt = 0;
-        self.enter(ViewId(0), || {
+        self.enter(INITELEM, || {
             if let Ok(observers) = self.single_fetch::<Observers<E>>()
                 && let Some(observers) = observers.members.get(&target.cast())
             {
@@ -724,6 +676,12 @@ impl World {
         parent_deps.children.push(child);
         let child_deps = dependencies.0.entry(child).or_default();
         child_deps.parents.push(parent);
+    }
+}
+
+impl Default for World {
+    fn default() -> Self {
+        World::new()
     }
 }
 
@@ -818,17 +776,28 @@ impl<T: Element> RefMut<'_, T> {
     }
 }
 
+// View //
+
+const INITELEM: Handle = Handle(0, PhantomData);
+
+pub struct ViewOptions {
+    /// Will be also included in validation.
+    pub refs: Vec<Handle>,
+}
+
+impl Element for () {}
+
 // Commander //
 
 struct WorldCommand {
-    location: ViewId,
+    location: Handle,
     action: Box<dyn FnOnce(&mut World)>,
 }
 
 /// A flexible command access to world.
 #[derive(Debug, Clone)]
 pub struct Commander {
-    location: ViewId,
+    location: Handle,
     inner: Sender<WorldCommand>,
 }
 
@@ -855,7 +824,7 @@ struct Observers<E> {
 #[expect(clippy::type_complexity)]
 struct Observer<E> {
     action: Box<dyn FnMut(&E, &World)>,
-    view: ViewId,
+    view: Handle,
     target: Handle,
 }
 
@@ -902,6 +871,10 @@ struct Dependency {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestBlanker;
+    impl Element for TestBlanker {}
 
     #[derive(Debug, PartialEq, Eq)]
     struct TestInserter(usize);
@@ -1059,8 +1032,8 @@ mod test {
     fn views() {
         let mut world = World::default();
 
-        let view1 = world.view();
-        let view2 = world.view();
+        let view1 = world.insert(TestBlanker);
+        let view2 = world.insert(TestBlanker);
 
         let node1 = world.enter(view1, || world.insert(TestInserter(1)));
         let node2 = world.enter(view2, || world.insert(TestInserter(2)));
@@ -1077,9 +1050,9 @@ mod test {
     fn view_refs_deps() {
         let mut world = World::default();
 
-        let view1 = world.view();
-        let view2 = world.view();
-        let view3 = world.view();
+        let view1 = world.insert(TestBlanker);
+        let view2 = world.insert(TestBlanker);
+        let view3 = world.insert(TestBlanker);
 
         let node1 = world.enter(view1, || world.insert(TestInserter(1)));
         let node2 = world.enter(view2, || world.insert(TestInserter(2)));
@@ -1087,8 +1060,10 @@ mod test {
 
         world.enter(view3, || world.dependency(node3, node1));
 
-        world.enter(view2, || world.option(ViewOptions { refs: vec![view1] }));
-        world.enter(view3, || world.option(ViewOptions { refs: vec![view2] }));
+        let refs2 = vec![view1.untyped()];
+        let refs3 = vec![view2.untyped()];
+        world.enter(view2, || world.option(ViewOptions { refs: refs2 }));
+        world.enter(view3, || world.option(ViewOptions { refs: refs3 }));
 
         world.flush();
 
@@ -1105,16 +1080,16 @@ mod test {
     fn view_refs_chain() {
         let mut world = World::default();
 
-        let view1 = world.view();
-        let view2 = world.view();
-        let view3 = world.view();
+        let view1 = world.insert(TestBlanker);
+        let view2 = world.insert(TestBlanker);
+        let view3 = world.insert(TestBlanker);
 
         let node1 = world.enter(view1, || world.insert(TestInserter(1)));
         let node2 = world.enter(view2, || world.insert(TestInserter(2)));
         let node3 = world.enter(view3, || world.insert(TestInserter(3)));
 
-        let refs2 = vec![view1, view3];
-        let refs3 = vec![view2];
+        let refs2 = vec![view1.untyped(), view3.untyped()];
+        let refs3 = vec![view2.untyped()];
         world.enter(view2, || world.option(ViewOptions { refs: refs2 }));
         world.enter(view3, || world.option(ViewOptions { refs: refs3 }));
 

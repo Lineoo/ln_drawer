@@ -1,9 +1,8 @@
 use crate::{
-    layout::{LayoutControl, LayoutControls, LayoutRectangle},
+    layout::{LayoutControl, LayoutControls},
     measures::{Position, Rectangle, Size},
     render::camera::{Camera, CameraVisits},
-    widgets::WidgetRectangle,
-    world::{Element, Handle, ViewId, World},
+    world::{Element, Handle, World},
 };
 
 #[derive(Clone, Copy)]
@@ -29,7 +28,7 @@ impl ToolCollider {
         }
     }
 
-    pub fn intersect(world: &World, screen: [f64; 2]) -> Vec<(Handle<ToolCollider>, ViewId)> {
+    pub fn intersect(world: &World, screen: [f64; 2]) -> Vec<(Handle<ToolCollider>, Handle)> {
         let mut buf = Vec::new();
         let visits = world.single_fetch::<CameraVisits>().unwrap();
         for &view in &visits.views {
