@@ -21,7 +21,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent};
 use crate::{
     lnwin::Lnwindow,
     render::camera::CameraVisits,
-    world::{Element, Handle, World},
+    world::{Element, Handle, ViewId, World},
 };
 
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
@@ -49,7 +49,10 @@ pub struct Render {
     pub clear_color: Color,
 
     // render control
-    redrawing: bool,
+    refreshing: usize,
+    seq_dirty: Vec<(Handle<RenderControl>, ViewId, isize)>,
+    seq_remove: Vec<Handle<RenderControl>>,
+    sequence: Vec<(Handle<RenderControl>, ViewId, isize)>,
 
     // time tracing
     last_redraw: Option<Instant>,
@@ -58,6 +61,7 @@ pub struct Render {
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;
 type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'static>)>;
 
+/// Need to call `RenderControl::reorder` before it can render normally.
 pub struct RenderControl {
     /// prepare to render and give related information
     pub prepare: Option<RenderPrepareCommand>,
@@ -67,7 +71,6 @@ pub struct RenderControl {
 }
 
 pub struct RenderInformation {
-    pub render_order: isize,
     pub keep_redrawing: bool,
 }
 
@@ -115,7 +118,10 @@ impl Render {
             queue,
             msaa_texture,
             clear_color: Color::WHITE,
-            redrawing: false,
+            refreshing: 0,
+            seq_dirty: Vec::new(),
+            seq_remove: Vec::new(),
+            sequence: Vec::new(),
             last_redraw: None,
         }
     }
@@ -204,43 +210,43 @@ impl Render {
     }
 
     fn redraw(world: &World) {
-        // start rendering
-
-        let mut render = world.single_fetch_mut::<Render>().unwrap();
-        render.redrawing = true;
-        drop(render);
-
-        let now = Instant::now();
-
         // prepare controls
 
         let mut refreshing = false;
-        let mut sorting_phase = Vec::with_capacity(world.size_hint::<RenderControl>());
-
         let visits = world.single_fetch::<CameraVisits>().unwrap();
         for &view in &visits.views {
             world.enter(view, || {
                 world.foreach_fetch_mut::<RenderControl>(|mut control| {
-                    if let Some(prepare) = &mut control.prepare {
-                        let info = prepare(world);
-                        if let Some(info) = info {
-                            sorting_phase.push((control.handle(), view, info.render_order));
-                            refreshing |= info.keep_redrawing;
-                        }
+                    if let Some(prepare) = &mut control.prepare
+                        && let Some(info) = prepare(world)
+                    {
+                        refreshing |= info.keep_redrawing;
                     };
                 });
             });
         }
 
-        sorting_phase.sort_by(|(.., a), (.., b)| a.cmp(b));
-        let mut draw_sequence = Vec::with_capacity(sorting_phase.len());
-        for (control, view, _) in sorting_phase {
-            draw_sequence.push((control, view));
+        // start redrawing
+
+        let render = &mut *world.single_fetch_mut::<Render>().unwrap();
+        let now = Instant::now();
+
+        // order redraw sequence
+
+        render.sequence.retain(|(control, ..)| {
+            !render.seq_remove.contains(control)
+                && !render.seq_dirty.iter().any(|(x, ..)| x == control)
+        });
+
+        render.seq_remove.clear();
+        for (dirty, view, ord) in render.seq_dirty.drain(..) {
+            render.sequence.push((dirty, view, ord));
         }
+
+        render.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
 
         // setup render pass
 
-        let render = world.single_fetch::<Render>().unwrap();
         let texture = render.surface.get_current_texture().unwrap();
         let view = texture
             .texture
@@ -272,14 +278,8 @@ impl Render {
 
         // draw and submit
 
-        drop(render);
-        for &(control, view) in &draw_sequence {
+        for &(control, view, _) in &render.sequence {
             world.enter(view, || {
-                // FIXME why it's here
-                if world.validate(control).is_err() {
-                    return;
-                }
-
                 let mut control = world.fetch_mut(control).unwrap();
                 if let Some(render) = &mut control.draw {
                     render(world, &mut rpass);
@@ -288,7 +288,6 @@ impl Render {
         }
 
         drop(rpass);
-        let mut render = world.single_fetch_mut::<Render>().unwrap();
         render.queue.submit([encoder.finish()]);
         texture.present();
 
@@ -299,7 +298,7 @@ impl Render {
             lnwindow.window.request_redraw();
         }
 
-        // record time
+        // time tracing
 
         if let Some(last) = render.last_redraw {
             let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
@@ -313,10 +312,19 @@ impl Render {
             ));
         }
 
-        // stop redrawing
-
         render.last_redraw = Some(now);
-        render.redrawing = false;
+    }
+}
+
+impl RenderControl {
+    pub fn reorder(order: Option<isize>, world: &World, handle: Handle<Self>) {
+        let mut render = world.single_fetch_mut::<Render>().unwrap();
+
+        if let Some(order) = order {
+            render.seq_dirty.push((handle, world.here(), order));
+        } else {
+            render.seq_remove.push(handle);
+        }
     }
 }
 
@@ -338,4 +346,8 @@ impl Element for Render {
     }
 }
 
-impl Element for RenderControl {}
+impl Element for RenderControl {
+    fn when_remove(&mut self, world: &World, this: Handle<Self>) {
+        Self::reorder(None, world, this);
+    }
+}

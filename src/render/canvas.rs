@@ -1,14 +1,13 @@
 use palette::{Srgba, blend::Compose};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
     BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, Extent3d, FragmentState,
     Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPipeline,
-    RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, TexelCopyBufferLayout,
-    TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension,
-    VertexState,
+    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture,
+    TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
+    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
     wgt::TextureDataOrder,
 };
@@ -16,7 +15,9 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        MSAA_STATE, Render, RenderControl, RenderInformation, camera::{Camera, CameraBind}, vertex::VertexUniform
+        MSAA_STATE, Render, RenderControl,
+        camera::{Camera, CameraBind},
+        vertex::VertexUniform,
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -30,10 +31,9 @@ pub struct Canvas {
     width: u32,
     height: u32,
 
-    bind: BindGroup,
-    uniform: Buffer,
-    pub texture: Texture,
-    sampler: Sampler,
+    control: Handle<RenderControl>,
+    vertex: Buffer,
+    texture: Texture,
     queue: Queue,
 }
 
@@ -238,6 +238,19 @@ impl Descriptor for CanvasDescriptor {
             ],
         });
 
+        let control = world.insert(RenderControl {
+            prepare: None,
+            draw: Some(Box::new(move |world, rpass| {
+                let manager = world.single_fetch::<CanvasManager>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
+
+                rpass.set_pipeline(&manager.pipeline);
+                rpass.set_bind_group(0, &camera.bind, &[]);
+                rpass.set_bind_group(1, &bind, &[]);
+                rpass.draw(0..4, 0..1);
+            })),
+        });
+
         world.insert(Canvas {
             data: match self.data {
                 Some(bytes) => bytes.to_vec(),
@@ -248,10 +261,9 @@ impl Descriptor for CanvasDescriptor {
             rect: self.rect,
             order: self.order,
             visible: self.visible,
-            bind,
-            uniform,
+            control,
+            vertex: uniform,
             texture,
-            sampler,
             queue: render.queue.clone(),
         })
     }
@@ -259,38 +271,20 @@ impl Descriptor for CanvasDescriptor {
 
 impl Element for Canvas {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let control = world.insert(RenderControl {
-            prepare: Some(Box::new(move |world| {
-                let this = world.fetch(this).unwrap();
-
-                Some(RenderInformation {
-                    render_order: this.order,
-                    keep_redrawing: false,
-                })
-            })),
-            draw: Some(Box::new(move |world, rpass| {
-                let manager = world.single_fetch::<CanvasManager>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
-                let this = world.fetch(this).unwrap();
-
-                rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &camera.bind, &[]);
-                rpass.set_bind_group(1, &this.bind, &[]);
-                rpass.draw(0..4, 0..1);
-            })),
-        });
-
-        world.dependency(control, this);
+        RenderControl::reorder(self.visible.then_some(self.order), world, self.control);
+        world.dependency(self.control, this);
     }
 
-    fn when_modify(&mut self, _world: &World, _this: Handle<Self>) {
+    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+        RenderControl::reorder(self.visible.then_some(self.order), world, self.control);
+
         let uniform = VertexUniform {
             origin: self.rect.origin.into_array(),
             extend: self.rect.extend.into_array(),
         };
 
         let bytes = bytemuck::bytes_of(&uniform);
-        self.queue.write_buffer(&self.uniform, 0, bytes);
+        self.queue.write_buffer(&self.vertex, 0, bytes);
     }
 }
 

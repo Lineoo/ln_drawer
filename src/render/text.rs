@@ -15,7 +15,9 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        MSAA_STATE, Render, RenderControl, RenderInformation, camera::{Camera, CameraBind}, vertex::VertexUniform
+        MSAA_STATE, Render, RenderControl, RenderInformation,
+        camera::{Camera, CameraBind},
+        vertex::VertexUniform,
     },
     world::{Descriptor, Element, Handle, World},
 };
@@ -285,13 +287,7 @@ impl Descriptor for TextDescriptor<'_> {
 impl Element for Text {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let control = world.insert(RenderControl {
-            prepare: Some(Box::new(move |world| {
-                let this = world.fetch(this).unwrap();
-                Some(RenderInformation {
-                    render_order: this.order,
-                    keep_redrawing: false,
-                })
-            })),
+            prepare: None,
             draw: Some(Box::new(move |world, rpass| {
                 let manager = world.single_fetch::<TextManager>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
