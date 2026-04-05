@@ -38,6 +38,9 @@ pub struct WidgetSelect(pub Option<i32>);
 /// Send when widget's rectangle data is changed.
 pub struct WidgetRectangle(pub Rectangle);
 
+/// Send when widget's rectangle data is changed which needs to be animated.
+pub struct WidgetAnimatedRectangle(pub Rectangle);
+
 /// Send when widget's checked data is changed.
 pub struct WidgetChecked(pub bool);
 
