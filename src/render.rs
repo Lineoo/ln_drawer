@@ -238,15 +238,21 @@ impl Render {
 
         // order redraw sequence
 
-        render.sequence.retain(|(control, ..)| {
-            !render.seq_remove.contains(control)
-                && !render.seq_dirty.iter().any(|(x, ..)| x == control)
-        });
+        'r: for (dirty, view, ord) in render.seq_dirty.drain(..) {
+            for (control, old_view, old_ord) in &mut render.sequence {
+                if *control == dirty {
+                    *old_view = view;
+                    *old_ord = ord;
+                    continue 'r;
+                }
+            }
 
-        render.seq_remove.clear();
-        for (dirty, view, ord) in render.seq_dirty.drain(..) {
+            // if new
             render.sequence.push((dirty, view, ord));
         }
+
+        (render.sequence).retain(|(control, ..)| !render.seq_remove.contains(control));
+        render.seq_remove.clear();
 
         render.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
 
@@ -337,6 +343,7 @@ impl RenderControl {
 
         if let Some(order) = order {
             render.seq_dirty.push((handle, world.here(), order));
+            render.seq_remove.retain(|&x| x != handle);
         } else {
             render.seq_remove.push(handle);
         }
