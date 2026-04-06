@@ -1,7 +1,6 @@
 mod canvas;
 mod round_brush;
 
-use cosmic_text::Metrics;
 use hashbrown::HashMap;
 use palette::{Srgba, WithAlpha};
 use wgpu::{
@@ -13,10 +12,9 @@ use wgpu::{
 use winit::event::PointerKind;
 
 use crate::{
-    animation::{AnimationDescriptor, OnceAnimationDescriptor},
     lnwin::Lnwindow,
-    measures::{Fract, Position, PositionFract, Rectangle, Size},
-    render::{Render, camera::CameraUtils, text::TextDescriptor},
+    measures::{Fract, PositionFract, Rectangle, Size},
+    render::{Render, camera::CameraUtils},
     save::SaveControl,
     stroke::{
         canvas::{CanvasChunk, CanvasChunkPipeline},
@@ -24,14 +22,7 @@ use crate::{
     },
     tools::{
         collider::ToolCollider,
-        mouse::MouseMenu,
-        pointer::{PointerHit, PointerHitStatus},
         touch::{MultiTouchGroup, MultiTouchStatus},
-    },
-    widgets::{
-        WidgetButton, WidgetClick,
-        button::Button,
-        menu::{MenuDescriptor, MenuEntryDescriptor},
     },
     world::{Element, Handle, World},
 };
@@ -226,148 +217,6 @@ impl StrokeLayer {
                 world.queue(move |world| {
                     let mut this = world.fetch_mut(this).unwrap();
                     this.current = None;
-                });
-            }
-        });
-
-        // test //
-
-        world.observer(collider, move |&MouseMenu(position), world| {
-            let menu = world.build(MenuDescriptor {
-                position,
-                entry_width: 400,
-                entry_height: 40,
-                entry_pad: 5,
-            });
-
-            let collider = world.insert(ToolCollider::fullscreen(80));
-
-            world.dependency(collider, menu);
-
-            world.observer(collider, move |event: &PointerHit, world| {
-                if let PointerHitStatus::Press | PointerHitStatus::Moving = event.status {
-                    return;
-                };
-
-                let menu = world.fetch(menu).unwrap();
-
-                if !event.position.within(menu.menu_rect()) {
-                    let menu = menu.handle();
-                    world.queue(move |world| {
-                        world.remove(menu).unwrap();
-                    });
-                }
-            });
-
-            world.observer(collider, move |&MouseMenu(_), world| {
-                world.queue(move |world| {
-                    world.remove(menu).unwrap();
-                });
-            });
-
-            type Entries<const N: usize> = [(&'static str, for<'w> fn(&'w World, Position)); N];
-            let entries: Entries<_> = [
-                ("Switch transparency", |world, _| {
-                    let mut render = world.single_fetch_mut::<Render>().unwrap();
-                    if render.clear_color.a == 0.0 {
-                        render.clear_color.a = 1.0;
-                    } else if render.clear_color.a == 1.0 {
-                        render.clear_color.a = 0.0;
-                    }
-                }),
-                ("Switch title bar", |world, _| {
-                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                    let decorated = lnwindow.window.is_decorated();
-                    lnwindow.window.set_decorations(!decorated);
-                }),
-                ("Hook!", |world, position| {
-                    let button = world.insert(Button {
-                        rect: Rectangle {
-                            origin: position,
-                            extend: Size::splat(50),
-                        },
-                        order: 100,
-                    });
-
-                    let mut anim_stock = None;
-                    world.observer(button, move |event, world| match event {
-                        WidgetButton::ButtonPress => {
-                            let button = world.fetch(button).unwrap();
-                            let current = button.rect.origin;
-
-                            let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-                            camera_utils.anchor(world, button.rect.origin.into_fract());
-                            camera_utils.locked(true);
-
-                            let anim = world.build(OnceAnimationDescriptor {
-                                animation: AnimationDescriptor {
-                                    src: [current.x as f32, current.y as f32],
-                                    dst: if current.x.abs() < 50 && current.y.abs() < 50 {
-                                        if position.x.abs() < 500 && position.y.abs() < 500 {
-                                            [position.x as f32 + 1500.0, position.y as f32]
-                                        } else {
-                                            [position.x as f32, position.y as f32]
-                                        }
-                                    } else {
-                                        [0.0, 0.0]
-                                    },
-                                    factor: 5.0,
-                                },
-                                widget: button.handle(),
-                                action: |mut button, world, val| {
-                                    button.rect.origin =
-                                        Position::new(val[0].round() as i32, val[1].round() as i32);
-
-                                    let mut camera_utils =
-                                        world.single_fetch_mut::<CameraUtils>().unwrap();
-                                    camera_utils.anchor(world, button.rect.origin.into_fract());
-                                },
-                            });
-
-                            if let Some(old) = anim_stock.replace(anim) {
-                                let _ = world.remove(old);
-                            }
-                        }
-                        WidgetButton::ButtonRelease => {
-                            let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-                            camera_utils.locked(false);
-
-                            if let Some(old) = anim_stock.take() {
-                                let _ = world.remove(old);
-                            }
-                        }
-                    });
-                }),
-            ];
-
-            for (i, (desc, action)) in entries.into_iter().enumerate() {
-                let entry = world.build(MenuEntryDescriptor { menu });
-
-                world.queue(move |world| {
-                    let menu = world.fetch(menu).unwrap();
-                    let rect = menu.entry_rect(i as f32).expand(-5);
-                    let rect = rect.with_left(rect.left() + 30);
-
-                    let text = world.build(TextDescriptor {
-                        text: desc,
-                        rect,
-                        order: 120,
-                        metrics: Metrics::new(20.0, menu.entry_height as f32 - 10.0),
-                        ..Default::default()
-                    });
-
-                    world.dependency(text, menu.handle());
-                });
-
-                world.observer(entry, move |WidgetClick, world| {
-                    world.queue(move |world| {
-                        let menu = world.fetch(menu).unwrap();
-                        action(world, menu.position);
-                        let menu = menu.handle();
-                        world.queue(move |world| {
-                            world.remove(menu).unwrap();
-                        });
-                    });
                 });
             }
         });

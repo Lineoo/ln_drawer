@@ -12,7 +12,6 @@ use winit::{
 };
 
 use crate::{
-    layout::LayoutControls,
     render::{
         Render,
         camera::{Camera, CameraUtils, CameraVisits},
@@ -132,7 +131,6 @@ impl Element for Lnwindow {
             world.build(WireframeManagerDescriptor);
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
-            world.insert(LayoutControls::default());
             world.insert(Luni::default());
         });
 

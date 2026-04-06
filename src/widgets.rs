@@ -5,7 +5,6 @@ use crate::{measures::Rectangle, world::Handle};
 pub mod button;
 pub mod check_button;
 pub mod expandable;
-pub mod menu;
 pub mod palette;
 pub mod panel;
 pub mod translatable;

@@ -1,5 +1,4 @@
 use crate::{
-    layout::LayoutRectangle,
     measures::Rectangle,
     theme::Luni,
     tools::{
@@ -52,11 +51,6 @@ impl Element for Panel {
         world.observer(this, move |&WidgetRectangle(rect), world| {
             let mut collider = world.fetch_mut(collider).unwrap();
             collider.rect = rect;
-        });
-
-        world.observer(this, move |&LayoutRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
         });
 
         world.dependency(collider, this);

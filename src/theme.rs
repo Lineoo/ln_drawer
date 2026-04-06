@@ -5,7 +5,7 @@ use crate::{
     render::{rounded::RoundedRectDescriptor, wireframe::WireframeDescriptor},
     widgets::{
         Attach, WidgetButton, WidgetChecked, WidgetDestroyed, WidgetHover, WidgetRectangle,
-        WidgetSelect, button::Button, check_button::CheckButton, menu::Menu, panel::Panel,
+        WidgetSelect, button::Button, check_button::CheckButton, panel::Panel,
     },
     world::{Element, Handle, World},
 };
@@ -240,104 +240,6 @@ impl Element for Attach<Panel, Luni> {
         world.observer(panel, move |&WidgetRectangle(rect), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
             frame.desc.rect = rect;
-        });
-    }
-}
-
-impl Element for Attach<Menu, Luni> {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let menu = world.fetch(self.widget).unwrap();
-        let luni = world.fetch(self.target).unwrap();
-
-        // display
-
-        let frame = world.build(RoundedRectDescriptor {
-            rect: menu.menu_rect(),
-            order: 100,
-            color: luni.color.with_alpha(0.0),
-            shrink: luni.roundness,
-            value: luni.roundness,
-            ..Default::default()
-        });
-
-        let select = world.build(RoundedRectDescriptor {
-            rect: menu.entry_rect(0.0),
-            order: 101,
-            color: luni.active_color.with_alpha(0.0),
-            shrink: luni.roundness,
-            value: luni.roundness,
-            ..Default::default()
-        });
-
-        // anim bind
-
-        let frame_anim_alpha = world.build(AnimationDescriptor {
-            src: 0.0,
-            dst: 1.0,
-            factor: luni.anim_factor,
-        });
-
-        let select_anim_alpha = world.build(AnimationDescriptor::new(0.0, luni.anim_factor));
-        let select_anim_rect = world.build(AnimationDescriptor::new(0.0, luni.anim_factor_menu));
-
-        world.observer(frame_anim_alpha, move |&AnimationValue(value), world| {
-            let mut frame = world.fetch_mut(frame).unwrap();
-            frame.desc.color.alpha = value;
-        });
-
-        world.observer(select_anim_alpha, move |&AnimationValue(value), world| {
-            let mut select = world.fetch_mut(select).unwrap();
-            select.desc.color.alpha = value;
-        });
-
-        let menu = menu.handle();
-        world.observer(select_anim_rect, move |&AnimationValue(value), world| {
-            let mut select_frame = world.fetch_mut(select).unwrap();
-            let menu = world.fetch(menu).unwrap();
-            select_frame.desc.rect = menu.entry_rect(value);
-        });
-
-        // dependency
-
-        world.dependency(frame, this);
-        world.dependency(select, this);
-        world.dependency(select_anim_alpha, this);
-        world.dependency(select_anim_rect, menu);
-
-        // behavior
-
-        world.observer(menu, move |&WidgetRectangle(rect), world| {
-            let mut frame = world.fetch_mut(frame).unwrap();
-            frame.desc.rect = rect;
-        });
-
-        world.observer(menu, move |event: &WidgetSelect, world| match event {
-            WidgetSelect(Some(idx)) => {
-                let mut select_anim_alpha = world.fetch_mut(select_anim_alpha).unwrap();
-                let mut select_anim_rect = world.fetch_mut(select_anim_rect).unwrap();
-                select_anim_alpha.dst = 1.0;
-                select_anim_rect.dst = *idx as f32;
-            }
-            WidgetSelect(None) => {
-                let mut select_anim_alpha = world.fetch_mut(select_anim_alpha).unwrap();
-                select_anim_alpha.dst = 0.0;
-            }
-        });
-
-        world.observer(menu, move |WidgetDestroyed, world| {
-            world.observer(
-                frame_anim_alpha,
-                move |&AnimationValue::<f32>(value), world| {
-                    if value == 0f32 {
-                        world.remove(this).unwrap();
-                    }
-                },
-            );
-
-            let mut frame_anim_alpha = world.fetch_mut(frame_anim_alpha).unwrap();
-            let mut select_anim_alpha = world.fetch_mut(select_anim_alpha).unwrap();
-            frame_anim_alpha.dst = 0.0;
-            select_anim_alpha.dst = 0.0;
         });
     }
 }

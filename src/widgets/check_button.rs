@@ -1,5 +1,4 @@
 use crate::{
-    layout::LayoutRectangle,
     measures::Rectangle,
     theme::Luni,
     tools::{
@@ -94,11 +93,6 @@ impl Element for CheckButton {
                 }
             },
         );
-
-        world.observer(this, move |&LayoutRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
-        });
 
         world.dependency(self.collider, this);
     }

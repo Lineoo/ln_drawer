@@ -1,5 +1,5 @@
 use crate::{
-    layout::{LayoutControl, LayoutControls},
+    layout::LayoutRectangleAction,
     measures::{Position, Rectangle, Size},
     render::camera::{Camera, CameraVisits},
     world::{Element, Handle, World},
@@ -48,18 +48,13 @@ impl ToolCollider {
     }
 
     fn attach_layout(&mut self, world: &World, this: Handle<Self>) {
-        let control = world.insert(LayoutControl {
-            rectangle: Some(Box::new(move |world, rect| {
-                let mut this = world.fetch_mut(this).unwrap();
-                this.rect = rect;
-                rect
-            })),
-            enabled: None,
-        });
+        let action = LayoutRectangleAction(Box::new(move |world, rect| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
+            rect
+        }));
 
-        let mut layouts = world.single_fetch_mut::<LayoutControls>().unwrap();
-        layouts.0.insert(this.untyped(), control);
-        world.dependency(control, this);
+        world.enter_insert(this, action);
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::{
     layout::{
-        LayoutRectangle,
+        LayoutRectangleAction,
         transform::{Transform, TransformValue},
     },
     measures::Rectangle,
@@ -29,10 +29,14 @@ impl Default for Button {
 
 impl Element for Button {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, move |&LayoutRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
-        });
+        world.enter_insert(
+            this,
+            LayoutRectangleAction(Box::new(move |world, rect| {
+                let mut this = world.fetch_mut(this).unwrap();
+                this.rect = rect;
+                rect
+            })),
+        );
 
         world.insert(Attach {
             widget: this,

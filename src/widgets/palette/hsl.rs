@@ -3,7 +3,7 @@ use palette::{Hsla, RgbHue};
 
 use crate::{
     layout::{
-        LayoutControl, LayoutControls,
+        LayoutEnableAction, LayoutRectangleAction,
         transform::{Transform, TransformValue},
     },
     measures::Rectangle,
@@ -43,22 +43,22 @@ pub struct PaletteHslMaterial {
 
 impl PaletteHsl {
     fn respond_layout(&mut self, world: &World, this: Handle<Self>) {
-        let control = world.insert(LayoutControl {
-            rectangle: Some(Box::new(move |world, rect| {
+        world.enter_insert(
+            this,
+            LayoutRectangleAction(Box::new(move |world, rect| {
                 let mut this = world.fetch_mut(this).unwrap();
                 this.rect = rect;
                 world.queue_trigger(this.handle(), WidgetRectangle(rect));
                 rect
             })),
-            enabled: Some(Box::new(move |world, enabled| {
+        );
+
+        world.enter_insert(
+            this,
+            LayoutEnableAction(Box::new(move |world, enabled| {
                 world.queue_trigger(this, WidgetEnabled(enabled));
             })),
-        });
-
-        let mut layouts = world.single_fetch_mut::<LayoutControls>().unwrap();
-        layouts.0.insert(this.untyped(), control);
-
-        world.dependency(control, this);
+        );
     }
 
     fn attach_luni(&mut self, world: &World, this: Handle<Self>) {
