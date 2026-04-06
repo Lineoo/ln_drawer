@@ -14,9 +14,8 @@ use crate::{
 /// Multi touch actions that allow inputs with more points than [`PointerTool`] but no hovering
 #[derive(Default)]
 pub struct MultiTouchTool {
-    lut: HashMap<PointerKind, (Handle<ToolCollider>, MultiTouch)>,
-    blt: HashMap<Handle<ToolCollider>, Vec<PointerKind>>,
-    buf: Vec<MultiTouch>,
+    touches: HashMap<PointerKind, Handle<ToolCollider>>,
+    groups: HashMap<Handle<ToolCollider>, Vec<MultiTouch>>,
 }
 
 impl Element for MultiTouchTool {
@@ -84,7 +83,6 @@ impl MultiTouchTool {
                     camera.screen_to_world_absolute(screen).floor()
                 });
 
-                let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
                 let touch = MultiTouch {
                     position,
                     screen,
@@ -105,27 +103,22 @@ impl MultiTouchTool {
                     pointer: kind,
                 };
 
-                let replaced = tool.lut.insert(kind, (target, touch));
-                let list = tool.blt.entry(target).or_default();
-                list.push(kind);
+                let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
+                let replaced = tool.touches.insert(kind, target);
+                let list = tool.groups.entry(target).or_default();
+                list.push(touch);
 
                 debug_assert!(replaced.is_none());
 
-                tool.buf.reserve(list.len());
                 let mut group = MultiTouchGroup {
                     active: touch,
-                    members: std::mem::take(&mut tool.buf),
+                    members: std::mem::take(list),
                 };
-
-                for member in list {
-                    group.members.push(tool.lut.get(member).unwrap().1);
-                }
 
                 world.trigger(target, &group.active);
                 world.trigger(target, &group);
 
-                group.members.clear();
-                std::mem::swap(&mut tool.buf, &mut group.members);
+                std::mem::swap(list, &mut group.members);
             }
 
             WindowEvent::PointerMoved {
@@ -134,9 +127,16 @@ impl MultiTouchTool {
                 let kind = PointerKind::from(source.clone());
 
                 let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
-
-                let Some((target, touch)) = tool.lut.get_mut(&kind) else {
+                let Some(&target) = tool.touches.get(&kind) else {
                     return;
+                };
+
+                let Some(list) = tool.groups.get_mut(&target) else {
+                    unreachable!();
+                };
+
+                let Some(touch) = list.iter_mut().find(|x| x.pointer == kind) else {
+                    unreachable!();
                 };
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
@@ -168,24 +168,15 @@ impl MultiTouchTool {
                     pointer: kind,
                 };
 
-                let target = *target;
-                let list = tool.blt.get_mut(&target).unwrap();
-
-                tool.buf.reserve(list.len());
                 let mut group = MultiTouchGroup {
                     active: *touch,
-                    members: std::mem::take(&mut tool.buf),
+                    members: std::mem::take(list),
                 };
-
-                for member in &*list {
-                    group.members.push(tool.lut.get(member).unwrap().1);
-                }
 
                 world.trigger(target, &group.active);
                 world.trigger(target, &group);
 
-                group.members.clear();
-                std::mem::swap(&mut tool.buf, &mut group.members);
+                std::mem::swap(list, &mut group.members);
             }
 
             WindowEvent::PointerButton {
@@ -202,21 +193,32 @@ impl MultiTouchTool {
                     ButtonSource::Unknown(_) => PointerKind::Unknown,
                 };
 
+                let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
+                let Some(&target) = tool.touches.get(&kind) else {
+                    return;
+                };
+
+                let Some(list) = tool.groups.get_mut(&target) else {
+                    unreachable!();
+                };
+
+                let Some((idx, touch)) = list
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_, touch)| touch.pointer == kind)
+                else {
+                    unreachable!();
+                };
+
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
-
-                let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
-                let Some((target, touch)) = tool.lut.get_mut(&kind) else {
-                    return;
-                };
 
                 let position = world.enter(touch.view, || {
                     let camera = world.single_fetch::<Camera>().unwrap();
                     camera.screen_to_world_absolute(screen).floor()
                 });
 
-                let target = *target;
                 *touch = MultiTouch {
                     position,
                     screen,
@@ -237,31 +239,20 @@ impl MultiTouchTool {
                     pointer: kind,
                 };
 
-                let list = tool.blt.get_mut(&target).unwrap();
-                tool.buf.reserve(list.len());
                 let mut group = MultiTouchGroup {
                     active: *touch,
-                    members: std::mem::take(&mut tool.buf),
+                    members: std::mem::take(list),
                 };
-
-                for member in &*list {
-                    group.members.push(tool.lut.get(member).unwrap().1);
-                }
 
                 world.trigger(target, &group.active);
                 world.trigger(target, &group);
 
-                let replaced = tool.lut.remove(&kind);
-                debug_assert!(replaced.is_some());
+                std::mem::swap(list, &mut group.members);
 
-                let idx = list.iter().position(|x| *x == kind).unwrap();
                 list.swap_remove(idx);
-                if list.is_empty() {
-                    tool.blt.remove(&target);
-                }
+                let removed = tool.touches.remove(&kind);
 
-                group.members.clear();
-                std::mem::swap(&mut tool.buf, &mut group.members);
+                debug_assert!(removed.is_some());
             }
 
             _ => {}
