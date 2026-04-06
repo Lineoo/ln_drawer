@@ -136,16 +136,11 @@ pub struct World {
 struct Storage<T: Element>(HashMap<Handle, T>);
 
 trait StorageGeneral: Any {
-    fn name(&self) -> &'static str;
     fn remove(&mut self, handle: Handle);
     fn when_remove(&mut self, world: &World, handle: Handle);
 }
 
 impl<T: Element> StorageGeneral for Storage<T> {
-    fn name(&self) -> &'static str {
-        type_name::<T>()
-    }
-
     fn remove(&mut self, handle: Handle) {
         self.0.remove(&handle);
     }

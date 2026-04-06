@@ -1,20 +1,11 @@
 use ::palette::Hsla;
 
-use crate::{measures::Rectangle, world::Handle};
+use crate::measures::Rectangle;
 
 pub mod button;
-pub mod check_button;
 pub mod expandable;
 pub mod palette;
-pub mod panel;
 pub mod translatable;
-
-/// Attach a headless widget to a specific element.
-#[deprecated]
-pub struct Attach<T, U> {
-    pub widget: Handle<T>,
-    pub target: Handle<U>,
-}
 
 /// Send when widget's hovering status is changed.
 pub enum WidgetHover {
