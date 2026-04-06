@@ -387,6 +387,12 @@ impl Element for SaveRead {
     }
 }
 
+impl Element for SaveReadSingleton {
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+        self.read_single(world).unwrap();
+    }
+}
+
 impl Element for Autosave {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
         self.write_init(world);

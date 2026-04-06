@@ -2,11 +2,13 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 use winit::event::WindowEvent;
 
-use crate::lnwin::Lnwindow;
-use crate::measures::{Fract, PositionFract, Size};
-use crate::render::Render;
-use crate::save::{Autosave, SaveControl, SaveRead};
-use crate::world::{Descriptor, Element, Handle, World, WorldError};
+use crate::{
+    lnwin::Lnwindow,
+    measures::{Fract, PositionFract, Size},
+    render::Render,
+    save::{Autosave, SaveControl, SaveReadSingleton},
+    world::{Descriptor, Element, Handle, World},
+};
 
 pub struct Camera {
     pub size: Size,
@@ -162,13 +164,8 @@ impl Camera {
         world.insert(CameraBind { layout });
     }
 
-    pub fn singleton(world: &mut World, name: &str) {
+    pub fn singleton(world: &mut World, name: &'static str) {
         world.insert(Camera::save_read(name));
-        world.flush();
-
-        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<Camera>() {
-            Camera::build_default(world, name);
-        }
     }
 
     fn build_default(world: &World, name: &str) {
@@ -184,24 +181,28 @@ impl Camera {
         world.insert(Camera::save_write(camera, control));
     }
 
-    fn save_read(name: &str) -> SaveRead {
-        SaveRead {
+    fn save_read(name: &'static str) -> SaveReadSingleton {
+        SaveReadSingleton {
             class: name.into(),
             read: Box::new(move |world, control| {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let size = lnwindow.window.surface_size();
 
-                let control = world.fetch(control).unwrap();
-                let camera_desc =
-                    postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
+                if let Some(control) = control {
+                    let control = world.fetch(control).unwrap();
+                    let camera_desc =
+                        postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
 
-                let camera = world.build(CameraDescriptor {
-                    size: Size::new(size.width, size.height),
-                    ..camera_desc
-                });
+                    let camera = world.build(CameraDescriptor {
+                        size: Size::new(size.width, size.height),
+                        ..camera_desc
+                    });
 
-                let control = control.handle();
-                world.insert(Camera::save_write(camera, control));
+                    let control = control.handle();
+                    world.insert(Camera::save_write(camera, control));
+                } else {
+                    Camera::build_default(world, name);
+                }
             }),
         }
     }
