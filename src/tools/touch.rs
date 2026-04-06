@@ -8,7 +8,7 @@ use crate::{
     measures::Position,
     render::camera::Camera,
     tools::collider::ToolCollider,
-    world::{Element, Handle, ViewId, World},
+    world::{Element, Handle, World},
 };
 
 /// Multi touch actions that allow inputs with more points than [`PointerTool`] but no hovering
@@ -29,7 +29,7 @@ impl Element for MultiTouchTool {
 pub struct MultiTouch {
     pub position: Position,
     pub screen: [f64; 2],
-    pub view: ViewId,
+    pub view: Handle<Camera>,
     pub status: MultiTouchStatus,
     pub data: MultiTouchData,
     pub pointer: PointerKind,
@@ -75,8 +75,7 @@ impl MultiTouchTool {
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
-                let Some(&(target, view)) = ToolCollider::intersect(world, screen).first()
-                else {
+                let Some(&(target, view)) = ToolCollider::intersect(world, screen).first() else {
                     return;
                 };
 

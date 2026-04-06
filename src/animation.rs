@@ -3,7 +3,6 @@ use std::time::{Duration, Instant};
 use palette::Srgba;
 
 use crate::{
-    lnwin::Lnwindow,
     render::{RenderControl, RenderInformation},
     world::{Descriptor, Element, Handle, RefMut, World},
 };

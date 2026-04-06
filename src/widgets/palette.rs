@@ -2,7 +2,7 @@ use palette::{Hsla, IntoColor, RgbHue};
 
 use crate::{
     layout::{
-        LayoutControls,
+        LayoutEnableAction,
         transform::{Transform, TransformValue},
     },
     measures::{Position, Rectangle, Size},
@@ -64,25 +64,19 @@ impl ColorPicker {
         });
 
         world.observer(expandable, move |&WidgetExpanded(expanded), world| {
-            let controls = world.single_fetch::<LayoutControls>().unwrap();
-            if let Some(&control) = controls.0.get(&palette.untyped())
-                && let Some(enable) = &mut world.fetch_mut(control).unwrap().enabled
-            {
-                enable(world, expanded);
+            if let Ok(mut f) = world.enter_single_fetch_mut::<LayoutEnableAction>(palette) {
+                (f.0)(world, expanded)
             }
 
-            let controls = world.single_fetch::<LayoutControls>().unwrap();
-            if let Some(&control) = controls.0.get(&translatable.untyped())
-                && let Some(enable) = &mut world.fetch_mut(control).unwrap().enabled
-            {
-                enable(world, expanded);
+            if let Ok(mut f) = world.enter_single_fetch_mut::<LayoutEnableAction>(translatable) {
+                (f.0)(world, expanded)
             }
         });
     }
 }
 
 impl Element for ColorPicker {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
         ColorPicker::insert(world);
     }
 }

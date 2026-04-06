@@ -20,8 +20,8 @@ use winit::{dpi::PhysicalSize, event::WindowEvent};
 
 use crate::{
     lnwin::Lnwindow,
-    render::camera::CameraVisits,
-    world::{Element, Handle, ViewId, World},
+    render::camera::Camera,
+    world::{Element, Handle, World},
 };
 
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
@@ -50,9 +50,9 @@ pub struct Render {
 
     // render control
     preparing: bool,
-    seq_dirty: Vec<(Handle<RenderControl>, ViewId, isize)>,
+    seq_dirty: Vec<(Handle<RenderControl>, Handle, isize)>,
     seq_remove: Vec<Handle<RenderControl>>,
-    sequence: Vec<(Handle<RenderControl>, ViewId, isize)>,
+    sequence: Vec<(Handle<RenderControl>, Handle, isize)>,
 
     // time tracing
     last_redraw: Option<Instant>,
@@ -217,18 +217,15 @@ impl Render {
         drop(render);
 
         let mut refreshing = false;
-        let visits = world.single_fetch::<CameraVisits>().unwrap();
-        for &view in &visits.views {
-            world.enter(view, || {
-                world.foreach_fetch_mut::<RenderControl>(|mut control| {
-                    if let Some(prepare) = &mut control.prepare
-                        && let Some(info) = prepare(world)
-                    {
-                        refreshing |= info.keep_redrawing;
-                    };
-                });
+        world.foreach_enter::<Camera>(|_| {
+            world.foreach_fetch_mut::<RenderControl>(|mut control| {
+                if let Some(prepare) = &mut control.prepare
+                    && let Some(info) = prepare(world)
+                {
+                    refreshing |= info.keep_redrawing;
+                };
             });
-        }
+        });
 
         // start redrawing
 
@@ -369,6 +366,11 @@ impl Element for Render {
 }
 
 impl Element for RenderControl {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let render = world.single::<Render>().unwrap();
+        world.dependency(this, render);
+    }
+
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {
         Self::reorder(None, world, this);
     }

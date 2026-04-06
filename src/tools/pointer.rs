@@ -7,7 +7,7 @@ use crate::{
     measures::Position,
     render::camera::Camera,
     tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
-    world::{Element, Handle, ViewId, World},
+    world::{Element, Handle, World},
 };
 
 /// Guaranteed for single-pointer operations like mouse cursor or the first-touch finger.
@@ -70,7 +70,7 @@ struct Pointer {
 #[derive(Clone, Copy)]
 struct Hover {
     position: Position,
-    view: ViewId,
+    view: Handle<Camera>,
     handle: Handle<ToolCollider>,
 }
 

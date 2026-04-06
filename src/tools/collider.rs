@@ -1,9 +1,8 @@
 use crate::{
-    layout::{LayoutControl, LayoutControls, LayoutRectangle},
+    layout::LayoutRectangleAction,
     measures::{Position, Rectangle, Size},
-    render::camera::{Camera, CameraVisits},
-    widgets::WidgetRectangle,
-    world::{Element, Handle, ViewId, World},
+    render::camera::Camera,
+    world::{Element, Handle, World},
 };
 
 #[derive(Clone, Copy)]
@@ -29,38 +28,33 @@ impl ToolCollider {
         }
     }
 
-    pub fn intersect(world: &World, screen: [f64; 2]) -> Vec<(Handle<ToolCollider>, ViewId)> {
+    pub fn intersect(
+        world: &World,
+        screen: [f64; 2],
+    ) -> Vec<(Handle<ToolCollider>, Handle<Camera>)> {
         let mut buf = Vec::new();
-        let visits = world.single_fetch::<CameraVisits>().unwrap();
-        for &view in &visits.views {
-            world.enter(view, || {
-                let camera = world.single_fetch::<Camera>().unwrap();
-                let position = camera.screen_to_world_absolute(screen).floor();
-                world.foreach_fetch::<ToolCollider>(|collider| {
-                    if collider.enabled && position.within(collider.rect) {
-                        buf.push((collider.handle(), view, collider.order));
-                    }
-                });
+        world.foreach_enter::<Camera>(|camera| {
+            let camera = world.fetch(camera).unwrap();
+            let position = camera.screen_to_world_absolute(screen).floor();
+            world.foreach_fetch::<ToolCollider>(|collider| {
+                if collider.enabled && position.within(collider.rect) {
+                    buf.push((collider.handle(), camera.handle(), collider.order));
+                }
             });
-        }
+        });
 
         buf.sort_by(|(.., a), (.., b)| b.cmp(a));
         buf.iter().map(|x| (x.0, x.1)).collect::<Vec<_>>()
     }
 
     fn attach_layout(&mut self, world: &World, this: Handle<Self>) {
-        let control = world.insert(LayoutControl {
-            rectangle: Some(Box::new(move |world, rect| {
-                let mut this = world.fetch_mut(this).unwrap();
-                this.rect = rect;
-                rect
-            })),
-            enabled: None,
-        });
+        let action = LayoutRectangleAction(Box::new(move |world, rect| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
+            rect
+        }));
 
-        let mut layouts = world.single_fetch_mut::<LayoutControls>().unwrap();
-        layouts.0.insert(this.untyped(), control);
-        world.dependency(control, this);
+        world.enter_insert(this, action);
     }
 }
 

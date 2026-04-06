@@ -320,7 +320,6 @@ impl CanvasChunk {
     pub fn save_read() -> SaveRead {
         SaveRead {
             class: "canvas_chunk".into(),
-            within: None,
             read: Box::new(|world, control| {
                 let stroke = &mut *world.single_fetch_mut::<StrokeLayer>().unwrap();
                 let control = world.fetch(control).unwrap();

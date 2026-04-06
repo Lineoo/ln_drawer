@@ -1,5 +1,5 @@
 use crate::{
-    layout::{LayoutControls, LayoutRectangle},
+    layout::LayoutRectangleAction,
     measures::{Position, Rectangle},
     widgets::{WidgetAnimatedRectangle, WidgetRectangle},
     world::{Element, Handle, World},
@@ -130,13 +130,10 @@ impl Element for Transform {
         let ob = world.observer(self.source, move |&WidgetRectangle(rect), world| {
             let this = world.fetch(this).unwrap();
             let target = this.value.compute(rect);
-            world.trigger(this.target, &LayoutRectangle(target));
 
-            let controls = world.single_fetch::<LayoutControls>().unwrap();
-            if let Some(&control) = controls.0.get(&this.target)
-                && let Some(rect) = &mut world.fetch_mut(control).unwrap().rectangle
-            {
-                (rect)(world, target);
+            let rect = world.enter_single_fetch_mut::<LayoutRectangleAction>(this.target);
+            if let Ok(mut rect) = rect {
+                (rect.0)(world, target);
             }
         });
 
@@ -144,11 +141,9 @@ impl Element for Transform {
             let this = world.fetch(this).unwrap();
             let target = this.value.compute(rect);
 
-            let controls = world.single_fetch::<LayoutControls>().unwrap();
-            if let Some(&control) = controls.0.get(&this.target)
-                && let Some(rect) = &mut world.fetch_mut(control).unwrap().rectangle
-            {
-                (rect)(world, target);
+            let rect = world.enter_single_fetch_mut::<LayoutRectangleAction>(this.target);
+            if let Ok(mut rect) = rect {
+                (rect.0)(world, target);
             }
         });
 

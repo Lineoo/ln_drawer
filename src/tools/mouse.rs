@@ -5,7 +5,7 @@ use winit::event::{
 use crate::{
     lnwin::Lnwindow,
     measures::{Fract, Position},
-    render::camera::{Camera, CameraUtils, CameraVisits},
+    render::camera::{Camera, CameraUtils, MainCamera},
     tools::collider::ToolCollider,
     world::{Element, Handle, World},
 };
@@ -53,11 +53,11 @@ impl Element for MouseTool {
                 button: ButtonSource::Mouse(MouseButton::Middle),
                 ..
             } => {
-                let camera_visits = world.single_fetch::<CameraVisits>().unwrap();
+                let main = world.single_fetch::<MainCamera>().unwrap();
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let cursor = lnwindow.cursor_to_screen(*position);
 
-                world.enter(camera_visits.views[0], || {
+                world.enter(main.0, || {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
                     camera_utils.cursor(world, cursor);
                     camera_utils.anchor_on_screen(world, cursor);
@@ -70,11 +70,11 @@ impl Element for MouseTool {
                 source: PointerSource::Mouse,
                 ..
             } => {
-                let camera_visits = world.single_fetch::<CameraVisits>().unwrap();
+                let main = world.single_fetch::<MainCamera>().unwrap();
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let cursor = lnwindow.cursor_to_screen(*position);
 
-                world.enter(camera_visits.views[0], || {
+                world.enter(main.0, || {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
                     camera_utils.cursor(world, cursor);
                 });
@@ -86,11 +86,11 @@ impl Element for MouseTool {
                 button: ButtonSource::Mouse(MouseButton::Middle),
                 ..
             } => {
-                let camera_visits = world.single_fetch::<CameraVisits>().unwrap();
+                let main = world.single_fetch::<MainCamera>().unwrap();
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let cursor = lnwindow.cursor_to_screen(*position);
 
-                world.enter(camera_visits.views[0], || {
+                world.enter(main.0, || {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                     camera_utils.cursor(world, cursor);
@@ -99,8 +99,8 @@ impl Element for MouseTool {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let camera_visits = world.single_fetch::<CameraVisits>().unwrap();
-                world.enter(camera_visits.views[0], || {
+                let main = world.single_fetch::<MainCamera>().unwrap();
+                world.enter(main.0, || {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                     let zoom_delta = match delta {

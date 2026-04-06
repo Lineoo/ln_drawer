@@ -10,7 +10,7 @@ use winit::platform::android::activity::AndroidApp;
 
 use crate::{
     lnwin::Lnwindow,
-    render::camera::CameraVisits,
+    render::camera::Camera,
     tools::timer::{Timer, TimerHit},
     world::{Element, Handle, World, WorldError},
 };
@@ -33,8 +33,13 @@ pub struct SaveControl(u64);
 
 pub struct SaveRead {
     pub class: String,
-    pub within: Option<Handle<SaveControl>>,
     pub read: Box<dyn Fn(&World, Handle<SaveControl>)>,
+}
+
+// If class contains more than one, what to be chosen will be undefined.
+pub struct SaveReadSingleton {
+    pub class: String,
+    pub read: Box<dyn Fn(&World, Option<Handle<SaveControl>>)>,
 }
 
 pub struct Autosave(pub Box<dyn FnMut(&World)>);
@@ -191,20 +196,34 @@ impl SaveRead {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
         let luts = world.single_fetch::<SaveDatabaseLuts>().unwrap();
         let read = db.0.begin_read()?;
-        if let Some(within) = self.within {
-            let lut_within = read.open_multimap_table(TABLE_CONTROLS_LUT_WITHIN)?;
-            let within = world.fetch(within).unwrap().0;
-            for id in lut_within.get((&self.class[..], within))? {
-                let control = *luts.1.get(&id?.value()).unwrap();
-                (self.read)(world, control);
-            }
-        } else {
-            let lut_class = read.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
-            for id in lut_class.get(&self.class[..])? {
-                let control = *luts.1.get(&id?.value()).unwrap();
-                (self.read)(world, control);
-            }
+        let lut_class = read.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
+        for id in lut_class.get(&self.class[..])? {
+            let control = *luts.1.get(&id?.value()).unwrap();
+            (self.read)(world, control);
         }
+
+        Ok(())
+    }
+}
+
+impl SaveReadSingleton {
+    fn read_single(&mut self, world: &World) -> Result<(), redb::Error> {
+        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        let luts = world.single_fetch::<SaveDatabaseLuts>().unwrap();
+        let read = db.0.begin_read()?;
+        let lut_class = read.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
+
+        let mut single = None;
+        for id in lut_class.get(&self.class[..])? {
+            let control = *luts.1.get(&id?.value()).unwrap();
+            let replaced = single.replace(control);
+            if replaced.is_some() {
+                log::warn!("singleton too many");
+                break;
+            };
+        }
+
+        (self.read)(world, single);
 
         Ok(())
     }
@@ -214,14 +233,11 @@ impl Autosave {
     pub fn autosave_all(world: &World) {
         let start = Instant::now();
 
-        let visits = world.single_fetch::<CameraVisits>().unwrap();
-        for &view in &visits.views {
-            world.enter(view, || {
-                world.foreach_fetch_mut::<Autosave>(|mut write| {
-                    (write.0)(world);
-                });
-            })
-        }
+        world.foreach_enter::<Camera>(|_| {
+            world.foreach_fetch_mut::<Autosave>(|mut write| {
+                (write.0)(world);
+            });
+        });
 
         let duration = Instant::now().duration_since(start);
         log::debug!("autosave request finished in {duration:?}");
@@ -365,6 +381,12 @@ impl Element for SaveControl {}
 impl Element for SaveRead {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
         self.read(world).unwrap();
+    }
+}
+
+impl Element for SaveReadSingleton {
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+        self.read_single(world).unwrap();
     }
 }
 

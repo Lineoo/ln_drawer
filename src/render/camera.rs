@@ -2,11 +2,13 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 use winit::event::WindowEvent;
 
-use crate::lnwin::Lnwindow;
-use crate::measures::{Fract, PositionFract, Size};
-use crate::render::Render;
-use crate::save::{SaveControl, SaveRead, Autosave};
-use crate::world::{Descriptor, Element, Handle, ViewId, World, WorldError};
+use crate::{
+    lnwin::Lnwindow,
+    measures::{Fract, PositionFract, Size},
+    render::Render,
+    save::{Autosave, SaveControl, SaveReadSingleton},
+    world::{Descriptor, Element, Handle, World},
+};
 
 pub struct Camera {
     pub size: Size,
@@ -22,6 +24,8 @@ pub struct Camera {
 pub struct CameraBind {
     pub layout: BindGroupLayout,
 }
+
+pub struct MainCamera(pub Handle<Camera>);
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct CameraDescriptor {
@@ -162,16 +166,15 @@ impl Camera {
         world.insert(CameraBind { layout });
     }
 
-    pub fn singleton(world: &mut World, name: &str) {
-        world.insert(Camera::save_read(name));
-        world.flush();
-
-        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<Camera>() {
-            Camera::build_default(world, name);
-        }
+    pub fn singleton(
+        world: &World,
+        name: &'static str,
+        callback: impl Fn(&World, Handle<Camera>) + 'static,
+    ) {
+        world.insert(Camera::save_read(name, callback));
     }
 
-    fn build_default(world: &World, name: &str) {
+    fn build_default(world: &World, name: &str) -> Handle<Camera> {
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         let size = lnwindow.window.surface_size();
 
@@ -182,27 +185,39 @@ impl Camera {
 
         let control = SaveControl::create(name.into(), world, &[]);
         world.insert(Camera::save_write(camera, control));
+
+        camera
     }
 
-    fn save_read(name: &str) -> SaveRead {
-        SaveRead {
+    fn save_read(
+        name: &'static str,
+        callback: impl Fn(&World, Handle<Camera>) + 'static,
+    ) -> SaveReadSingleton {
+        SaveReadSingleton {
             class: name.into(),
-            within: None,
             read: Box::new(move |world, control| {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let size = lnwindow.window.surface_size();
 
-                let control = world.fetch(control).unwrap();
-                let camera_desc =
-                    postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
+                let camera = if let Some(control) = control {
+                    let control = world.fetch(control).unwrap();
+                    let camera_desc =
+                        postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
 
-                let camera = world.build(CameraDescriptor {
-                    size: Size::new(size.width, size.height),
-                    ..camera_desc
-                });
+                    let camera = world.build(CameraDescriptor {
+                        size: Size::new(size.width, size.height),
+                        ..camera_desc
+                    });
 
-                let control = control.handle();
-                world.insert(Camera::save_write(camera, control));
+                    let control = control.handle();
+                    world.insert(Camera::save_write(camera, control));
+
+                    camera
+                } else {
+                    Camera::build_default(world, name)
+                };
+
+                callback(world, camera);
             }),
         }
     }
@@ -223,12 +238,6 @@ impl Camera {
         }))
     }
 }
-
-pub struct CameraVisits {
-    pub views: Vec<ViewId>,
-}
-
-impl Element for CameraVisits {}
 
 #[derive(Default)]
 pub struct CameraUtils {
@@ -312,4 +321,5 @@ impl CameraUtils {
     }
 }
 
+impl Element for MainCamera {}
 impl Element for CameraUtils {}

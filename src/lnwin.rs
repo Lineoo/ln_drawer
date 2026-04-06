@@ -12,10 +12,9 @@ use winit::{
 };
 
 use crate::{
-    layout::LayoutControls,
     render::{
         Render,
-        camera::{Camera, CameraUtils, CameraVisits},
+        camera::{Camera, CameraUtils, MainCamera},
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
@@ -30,13 +29,13 @@ use crate::{
         pointer::PointerTool, touch::MultiTouchTool,
     },
     widgets::palette::{ColorPicker, hsl::PaletteHslMaterial},
-    world::{Element, Handle, ViewId, ViewOptions, World},
+    world::{Element, Handle, ViewOptions, World},
 };
 
 #[derive(Default)]
 pub struct Lnwin {
     pub world: World,
-    pub windows: HashMap<WindowId, ViewId>,
+    pub windows: HashMap<WindowId, Handle>,
 }
 
 impl ApplicationHandler for Lnwin {
@@ -44,12 +43,11 @@ impl ApplicationHandler for Lnwin {
         if self.windows.is_empty() {
             let lnwindow = Lnwindow::new(event_loop);
             let root = self.world.here();
-            let view = self.world.view();
-            self.windows.insert(lnwindow.window.id(), view);
-
-            self.world.enter(view, || {
+            let window_id = lnwindow.window.id();
+            let lnwindow = self.world.insert(lnwindow);
+            self.windows.insert(window_id, lnwindow.untyped());
+            self.world.enter(lnwindow, || {
                 self.world.option(ViewOptions { refs: vec![root] });
-                self.world.insert(lnwindow);
             });
         } else {
             for &view in self.windows.values() {
@@ -106,7 +104,9 @@ impl Element for Lnwindow {
         world.observer(this, move |event: &WindowEvent, world| {
             if let WindowEvent::CloseRequested = event {
                 Autosave::autosave_all(world);
-                world.clear();
+                world.queue(|world| {
+                    world.clear();
+                });
             }
         });
 
@@ -131,7 +131,6 @@ impl Element for Lnwindow {
             world.build(WireframeManagerDescriptor);
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
-            world.insert(LayoutControls::default());
             world.insert(Luni::default());
         });
 
@@ -145,34 +144,28 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            let layer1 = world.view();
-            let layer2 = world.view();
             let here = world.here();
 
-            world.enter(layer1, || {
-                world.option(ViewOptions { refs: vec![here] });
-
-                world.queue(|world| {
-                    Camera::singleton(world, "camera1");
-                    world.flush();
-                    world.insert(StrokeLayer::new(world));
-                    world.insert(CameraUtils::default());
-                    world.insert(ColorPicker);
+            Camera::singleton(world, "camera1", move |world, camera| {
+                world.enter(camera, || {
+                    world.option(ViewOptions { refs: vec![here] });
+                    world.queue(|world| {
+                        world.insert(StrokeLayer::new(world));
+                        world.insert(CameraUtils::default());
+                        world.insert(ColorPicker);
+                    });
                 });
+
+                world.insert(MainCamera(camera));
             });
 
-            world.enter(layer2, || {
-                world.option(ViewOptions { refs: vec![here] });
-
-                world.queue(|world| {
-                    Camera::singleton(world, "camera2");
-                    world.flush();
-                    world.insert(CameraUtils::default());
+            Camera::singleton(world, "camera2", move |world, camera| {
+                world.enter(camera, || {
+                    world.option(ViewOptions { refs: vec![here] });
+                    world.queue(|world| {
+                        world.insert(CameraUtils::default());
+                    });
                 });
-            });
-
-            world.insert(CameraVisits {
-                views: vec![layer1, layer2],
             });
         });
     }

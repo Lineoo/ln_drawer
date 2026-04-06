@@ -1,28 +1,13 @@
-use hashbrown::HashMap;
-
 use crate::{
     measures::Rectangle,
-    world::{Element, Handle, World},
+    world::{Element, World},
 };
 
 pub mod transform;
 
-#[deprecated]
-pub struct LayoutRectangle(pub Rectangle);
+pub struct LayoutRectangleAction(pub Box<dyn FnMut(&World, Rectangle) -> Rectangle>);
 
-/// Record registration from widgets of their layout controls.
-#[derive(Default)]
-pub struct LayoutControls(pub HashMap<Handle, Handle<LayoutControl>>);
+pub struct LayoutEnableAction(pub Box<dyn FnMut(&World, bool)>);
 
-/// Register layout calculation of different widgets
-#[derive(Default)]
-pub struct LayoutControl {
-    /// Calculate rectangle. Input desired rectangle, return final rectangle.
-    pub rectangle: Option<Box<dyn FnMut(&World, Rectangle) -> Rectangle>>,
-
-    /// Enabled widget.
-    pub enabled: Option<Box<dyn FnMut(&World, bool)>>,
-}
-
-impl Element for LayoutControls {}
-impl Element for LayoutControl {}
+impl Element for LayoutRectangleAction {}
+impl Element for LayoutEnableAction {}

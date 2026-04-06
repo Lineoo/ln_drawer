@@ -78,13 +78,13 @@ impl<T: Element> From<Handle<T>> for Handle<dyn Any> {
 }
 
 impl<T: Element> Handle<T> {
-    pub fn untyped(self) -> Handle<dyn Any> {
+    pub const fn untyped(self) -> Handle<dyn Any> {
         self.cast()
     }
 }
 
 impl<T: ?Sized> Handle<T> {
-    fn cast<U: ?Sized>(self) -> Handle<U> {
+    const fn cast<U: ?Sized>(self) -> Handle<U> {
         Handle(self.0, PhantomData)
     }
 }
@@ -111,66 +111,22 @@ impl<T: ?Sized> From<Handle<T>> for HandleInfo {
     }
 }
 
-/// Represent a view of world.
-pub struct ViewId(usize);
-
-impl Clone for ViewId {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl Copy for ViewId {}
-
-impl PartialEq for ViewId {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0)
-    }
-}
-
-impl Eq for ViewId {}
-
-impl Hash for ViewId {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
-impl fmt::Debug for ViewId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "View({})", self.0)
-    }
-}
-
-impl fmt::Display for ViewId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "@{}", self.0)
-    }
-}
-
-pub struct ViewOptions {
-    /// Will be also included in validation.
-    pub refs: Vec<ViewId>,
-}
-
 // World Management //
 
 // Center of multiple accesses in world, which also prevents constructional changes
 pub struct World {
     elem_idx: RefCell<Handle>,
-    view_idx: RefCell<ViewId>,
-
-    location: Cell<ViewId>,
 
     typetable: HashMap<Handle, TypeId>,
-    viewtable: HashMap<Handle, ViewId>,
+    viewtable: HashMap<Handle, Handle>,
     storages: HashMap<TypeId, Box<dyn StorageGeneral>>,
-    options: HashMap<ViewId, ViewOptions>,
+    options: HashMap<Handle, ViewOptions>,
 
     occupied: RefCell<HashMap<Handle, isize>>,
     inserted: RefCell<HashSet<Handle>>,
     removed: RefCell<HashSet<Handle>>,
 
+    location: Cell<Handle>,
     dependencies: RefCell<Dependencies>,
 
     queue: Receiver<WorldCommand>,
@@ -180,16 +136,11 @@ pub struct World {
 struct Storage<T: Element>(HashMap<Handle, T>);
 
 trait StorageGeneral: Any {
-    fn name(&self) -> &'static str;
     fn remove(&mut self, handle: Handle);
     fn when_remove(&mut self, world: &World, handle: Handle);
 }
 
 impl<T: Element> StorageGeneral for Storage<T> {
-    fn name(&self) -> &'static str {
-        type_name::<T>()
-    }
-
     fn remove(&mut self, handle: Handle) {
         self.0.remove(&handle);
     }
@@ -215,7 +166,10 @@ pub enum WorldError {
     InvalidHandle(HandleInfo),
 
     #[error("{0:?} is invisible in {1:?} from here {2:?}")]
-    Invisible(HandleInfo, ViewId, ViewId),
+    Invisible(HandleInfo, Handle, Handle),
+
+    #[error("{0:?} serves as root view element")]
+    Initelem(HandleInfo),
 
     #[error("{0:?} try to depend on {1:?}, which does not exist")]
     ToxicDependency(HandleInfo, HandleInfo),
@@ -239,13 +193,11 @@ pub enum WorldError {
     SingletonCorrupted(&'static str),
 }
 
-impl Default for World {
-    fn default() -> Self {
+impl World {
+    pub fn new() -> Self {
         let (commander, queue) = channel();
         World {
-            elem_idx: RefCell::new(Handle(0, PhantomData)),
-            view_idx: RefCell::new(ViewId(1)),
-            location: Cell::new(ViewId(0)),
+            elem_idx: RefCell::new(Handle(1, PhantomData)),
             typetable: HashMap::new(),
             viewtable: HashMap::new(),
             storages: HashMap::new(),
@@ -253,14 +205,13 @@ impl Default for World {
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
+            location: Cell::new(INITELEM),
             dependencies: RefCell::default(),
             queue,
             commander,
         }
     }
-}
 
-impl World {
     /// Will access data from world to build target object.
     pub fn build<B: Descriptor>(&self, descriptor: B) -> B::Target {
         descriptor.when_build(self)
@@ -309,7 +260,7 @@ impl World {
     }
 
     /// Cell-mode removal cannot access the element immediately so we can't return the owned value of removed element.
-    pub fn remove<T: ?Sized + 'static>(&self, handle: Handle<T>) -> Result<usize, WorldError> {
+    pub fn remove(&self, handle: Handle<impl ?Sized + 'static>) -> Result<usize, WorldError> {
         self.available_mut(handle)?;
         let mut cnt = 1;
 
@@ -319,6 +270,11 @@ impl World {
         let storage = self.storages.get(&type_id).unwrap().as_ref() as *const _;
         let storage = storage as *mut dyn StorageGeneral;
         unsafe { (*storage).when_remove(self, handle.cast()) };
+
+        // clear view
+        self.enter(handle, || {
+            cnt += self.clear();
+        });
 
         // cleanup parents' dependencies
         let mut dependencies = self.dependencies.borrow_mut();
@@ -357,6 +313,9 @@ impl World {
             world.typetable.remove(&handle.cast());
             world.viewtable.remove(&handle.cast());
 
+            // remove view options
+            world.options.remove(&handle.cast());
+
             // pop out storage
             let storage = world.storages.get_mut(&type_id).unwrap();
             storage.remove(handle.cast());
@@ -369,15 +328,7 @@ impl World {
 
     // views //
 
-    /// Create a new fresh view.
-    pub fn view(&self) -> ViewId {
-        let mut view_idx = self.view_idx.borrow_mut();
-        let view = *view_idx;
-        view_idx.0 += 1;
-        view
-    }
-
-    pub fn here(&self) -> ViewId {
+    pub fn here(&self) -> Handle {
         self.location.get()
     }
 
@@ -390,30 +341,56 @@ impl World {
     }
 
     /// Enter view.
-    pub fn enter<T>(&self, view: ViewId, f: impl FnOnce() -> T) -> T {
+    pub fn enter<R>(&self, view: Handle<impl ?Sized>, f: impl FnOnce() -> R) -> R {
         let origin = self.location.get();
-        self.location.set(view);
+        self.location.set(view.cast());
         let ret = f();
         self.location.set(origin);
         ret
     }
 
+    pub fn enter_insert<T: Element>(&self, view: Handle<impl ?Sized>, element: T) -> Handle<T> {
+        self.enter(view, || self.insert(element))
+    }
+
+    pub fn enter_single_fetch<T: Element>(
+        &self,
+        view: Handle<impl ?Sized>,
+    ) -> Result<Ref<'_, T>, WorldError> {
+        self.enter(view, || self.single_fetch())
+    }
+
+    pub fn enter_single_fetch_mut<T: Element>(
+        &self,
+        view: Handle<impl ?Sized>,
+    ) -> Result<RefMut<'_, T>, WorldError> {
+        self.enter(view, || self.single_fetch_mut())
+    }
+
+    pub fn enter_single_remove<T: Element>(
+        &self,
+        view: Handle<impl ?Sized>,
+    ) -> Result<usize, WorldError> {
+        self.enter(view, || self.single_remove::<T>())
+    }
+
     /// Clear all elements from current view. Action is queued so no removal marks or
     /// mutable limitations.
-    pub fn clear(&self) {
-        self.queue(move |world| {
-            for (&handle, &view) in world.viewtable.iter() {
-                if view != world.location.get() {
-                    continue;
-                }
-
-                if world.validate(handle).is_err() {
-                    continue;
-                }
-
-                world.remove(handle).unwrap();
+    pub fn clear(&self) -> usize {
+        let mut cnt = 0;
+        for (&handle, &view) in self.viewtable.iter() {
+            if view != self.location.get() {
+                continue;
             }
-        });
+
+            if self.validate(handle).is_err() {
+                continue;
+            }
+
+            cnt += self.remove(handle).unwrap();
+        }
+
+        cnt
     }
 
     // commands //
@@ -449,7 +426,11 @@ impl World {
     // validation //
 
     /// Check whether target element exists, insertion without `flush` will *NOT* be included.
-    pub fn validate<T: ?Sized>(&self, handle: Handle<T>) -> Result<(), WorldError> {
+    pub fn validate(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
+        if handle.0 == 0 {
+            return Err(WorldError::Initelem(handle.into()));
+        }
+
         if self.removed.borrow().contains(&handle.cast()) {
             if self.typetable.contains_key(&handle.cast()) {
                 return Err(WorldError::JustRemoved(handle.into()));
@@ -469,7 +450,7 @@ impl World {
         if let Some(&target) = self.viewtable.get(&handle.cast()) {
             let here = self.location.get();
 
-            if target != here {
+            if target != here && handle.cast() != here {
                 let mut refs = HashSet::new();
                 let mut stack = Vec::new();
                 stack.push(here);
@@ -497,7 +478,7 @@ impl World {
 
     /// Check whether target element can be borrowed immutably, insertion without
     /// `flush` will *NOT* be included.
-    pub fn available<T: ?Sized>(&self, handle: Handle<T>) -> Result<(), WorldError> {
+    pub fn available(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         self.validate(handle)?;
 
         let occupied = self.occupied.borrow();
@@ -510,7 +491,7 @@ impl World {
 
     /// Check whether target element can be borrowed mutably, insertion without
     /// `flush` will *NOT* be included.
-    pub fn available_mut<T: ?Sized>(&self, handle: Handle<T>) -> Result<(), WorldError> {
+    pub fn available_mut(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         self.validate(handle)?;
 
         let occupied = self.occupied.borrow();
@@ -574,6 +555,11 @@ impl World {
     // singleton //
 
     pub fn single<T: Element>(&self) -> Result<Handle<T>, WorldError> {
+        // view-root preference shortcut
+        if self.typetable.get(&self.location.get()) == Some(&TypeId::of::<T>()) {
+            return Ok(self.location.get().cast());
+        }
+
         let storage = (self.storages)
             .get(&TypeId::of::<T>())
             .ok_or(WorldError::SingletonNoSuch(type_name::<T>()))?;
@@ -620,6 +606,10 @@ impl World {
         self.fetch_mut(self.single::<T>()?)
     }
 
+    pub fn single_remove<T: Element>(&self) -> Result<usize, WorldError> {
+        self.remove(self.single::<T>()?)
+    }
+
     // iteration //
 
     /// The actual number of element would be equal or less than this number.
@@ -653,6 +643,10 @@ impl World {
         }
     }
 
+    pub fn foreach_enter<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {
+        self.foreach::<T>(|handle| self.enter(handle, || f(handle)));
+    }
+
     pub fn foreach_fetch<T: Element>(&self, mut f: impl FnMut(Ref<T>)) {
         self.foreach::<T>(|handle| f(self.fetch(handle).unwrap()))
     }
@@ -663,13 +657,13 @@ impl World {
 
     // observer & trigger //
 
-    pub fn observer<T: ?Sized + 'static, E: 'static>(
+    pub fn observer<E: 'static>(
         &self,
-        target: Handle<T>,
+        target: Handle<impl ?Sized + 'static>,
         action: impl FnMut(&E, &World) + 'static,
     ) -> Handle {
         let here = self.location.get();
-        let handle = self.enter(ViewId(0), || {
+        let handle = self.enter(INITELEM, || {
             self.insert(Observer {
                 action: Box::new(action),
                 view: here,
@@ -681,9 +675,9 @@ impl World {
     }
 
     /// Will immediately triggered and acquire mutable access to `target`.
-    pub fn trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: &E) -> usize {
+    pub fn trigger<E: 'static>(&self, target: Handle<impl ?Sized + 'static>, event: &E) -> usize {
         let mut cnt = 0;
-        self.enter(ViewId(0), || {
+        self.enter(INITELEM, || {
             if let Ok(observers) = self.single_fetch::<Observers<E>>()
                 && let Some(observers) = observers.members.get(&target.cast())
             {
@@ -697,7 +691,7 @@ impl World {
         cnt
     }
 
-    pub fn queue_trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: E) {
+    pub fn queue_trigger<E: 'static>(&self, target: Handle<impl ?Sized + 'static>, event: E) {
         self.queue(move |world| {
             world.trigger(target, &event);
         });
@@ -707,7 +701,7 @@ impl World {
 
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
-    pub fn dependency<T: ?Sized, U: ?Sized>(&self, child: Handle<T>, parent: Handle<U>) {
+    pub fn dependency(&self, child: Handle<impl ?Sized>, parent: Handle<impl ?Sized>) {
         if let Err(e) = self.validate(parent)
             && !matches!(e, WorldError::JustInserted(_) | WorldError::Invisible(..))
         {
@@ -724,6 +718,12 @@ impl World {
         parent_deps.children.push(child);
         let child_deps = dependencies.0.entry(child).or_default();
         child_deps.parents.push(parent);
+    }
+}
+
+impl Default for World {
+    fn default() -> Self {
+        World::new()
     }
 }
 
@@ -770,12 +770,7 @@ impl<T: Element> DerefMut for RefMut<'_, T> {
 impl<T: Element> Drop for Ref<'_, T> {
     fn drop(&mut self) {
         let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied
-            .get_mut(&{
-                let this = self.handle;
-                this.cast()
-            })
-            .unwrap();
+        let cnt = occupied.get_mut(&self.handle.cast()).unwrap();
         *cnt -= 1;
     }
 }
@@ -792,12 +787,7 @@ impl<T: Element> Drop for RefMut<'_, T> {
         }
 
         let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied
-            .get_mut(&{
-                let this = self.handle;
-                this.cast()
-            })
-            .unwrap();
+        let cnt = occupied.get_mut(&self.handle.cast()).unwrap();
         *cnt += 1;
     }
 }
@@ -818,17 +808,28 @@ impl<T: Element> RefMut<'_, T> {
     }
 }
 
+// View //
+
+const INITELEM: Handle = Handle(0, PhantomData);
+
+pub struct ViewOptions {
+    /// Will be also included in validation.
+    pub refs: Vec<Handle>,
+}
+
+impl Element for () {}
+
 // Commander //
 
 struct WorldCommand {
-    location: ViewId,
+    location: Handle,
     action: Box<dyn FnOnce(&mut World)>,
 }
 
 /// A flexible command access to world.
 #[derive(Debug, Clone)]
 pub struct Commander {
-    location: ViewId,
+    location: Handle,
     inner: Sender<WorldCommand>,
 }
 
@@ -855,7 +856,7 @@ struct Observers<E> {
 #[expect(clippy::type_complexity)]
 struct Observer<E> {
     action: Box<dyn FnMut(&E, &World)>,
-    view: ViewId,
+    view: Handle,
     target: Handle,
 }
 
@@ -902,6 +903,10 @@ struct Dependency {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestBlanker;
+    impl Element for TestBlanker {}
 
     #[derive(Debug, PartialEq, Eq)]
     struct TestInserter(usize);
@@ -1059,8 +1064,8 @@ mod test {
     fn views() {
         let mut world = World::default();
 
-        let view1 = world.view();
-        let view2 = world.view();
+        let view1 = world.insert(TestBlanker);
+        let view2 = world.insert(TestBlanker);
 
         let node1 = world.enter(view1, || world.insert(TestInserter(1)));
         let node2 = world.enter(view2, || world.insert(TestInserter(2)));
@@ -1077,9 +1082,9 @@ mod test {
     fn view_refs_deps() {
         let mut world = World::default();
 
-        let view1 = world.view();
-        let view2 = world.view();
-        let view3 = world.view();
+        let view1 = world.insert(TestBlanker);
+        let view2 = world.insert(TestBlanker);
+        let view3 = world.insert(TestBlanker);
 
         let node1 = world.enter(view1, || world.insert(TestInserter(1)));
         let node2 = world.enter(view2, || world.insert(TestInserter(2)));
@@ -1087,8 +1092,10 @@ mod test {
 
         world.enter(view3, || world.dependency(node3, node1));
 
-        world.enter(view2, || world.option(ViewOptions { refs: vec![view1] }));
-        world.enter(view3, || world.option(ViewOptions { refs: vec![view2] }));
+        let refs2 = vec![view1.untyped()];
+        let refs3 = vec![view2.untyped()];
+        world.enter(view2, || world.option(ViewOptions { refs: refs2 }));
+        world.enter(view3, || world.option(ViewOptions { refs: refs3 }));
 
         world.flush();
 
@@ -1105,16 +1112,16 @@ mod test {
     fn view_refs_chain() {
         let mut world = World::default();
 
-        let view1 = world.view();
-        let view2 = world.view();
-        let view3 = world.view();
+        let view1 = world.insert(TestBlanker);
+        let view2 = world.insert(TestBlanker);
+        let view3 = world.insert(TestBlanker);
 
         let node1 = world.enter(view1, || world.insert(TestInserter(1)));
         let node2 = world.enter(view2, || world.insert(TestInserter(2)));
         let node3 = world.enter(view3, || world.insert(TestInserter(3)));
 
-        let refs2 = vec![view1, view3];
-        let refs3 = vec![view2];
+        let refs2 = vec![view1.untyped(), view3.untyped()];
+        let refs3 = vec![view2.untyped()];
         world.enter(view2, || world.option(ViewOptions { refs: refs2 }));
         world.enter(view3, || world.option(ViewOptions { refs: refs3 }));
 

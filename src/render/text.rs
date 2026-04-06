@@ -4,10 +4,9 @@ use wgpu::{
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBinding,
     BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, Extent3d, FilterMode,
     FragmentState, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPipeline,
-    RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, Texture, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
-    TextureViewDimension, VertexState,
+    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
     wgt::TextureDataOrder,
 };
@@ -15,7 +14,7 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        MSAA_STATE, Render, RenderControl, RenderInformation,
+        MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
         vertex::VertexUniform,
     },
@@ -25,9 +24,6 @@ use crate::{
 pub struct Text {
     pub order: isize,
     bind: BindGroup,
-    uniform: wgpu::Buffer,
-    texture: Texture,
-    sampler: Sampler,
 }
 
 #[derive(Debug)]
@@ -277,9 +273,6 @@ impl Descriptor for TextDescriptor<'_> {
         world.insert(Text {
             order: self.order,
             bind,
-            uniform,
-            texture,
-            sampler,
         })
     }
 }

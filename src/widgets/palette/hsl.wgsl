@@ -84,7 +84,7 @@ fn color_hue_knob(radius: f32, angle: f32) -> vec4f {
 
     if diff < 0.0005 {
         let factor = smoothstep(-width, width, diff);
-        let color = hsl_to_rgb(hue, palette.saturation, palette.lightness);
+        let color = hsl_to_rgb(palette.hue, palette.saturation, palette.lightness);
         return mix(vec4f(color, alpha), vec4f(vec3f(1), alpha), factor);
     } else if diff < 0.0015 {
         let factor = smoothstep(-width, width, diff - 0.001);
