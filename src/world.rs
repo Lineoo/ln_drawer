@@ -265,7 +265,7 @@ impl World {
     }
 
     /// Cell-mode removal cannot access the element immediately so we can't return the owned value of removed element.
-    pub fn remove<T: ?Sized + 'static>(&self, handle: Handle<T>) -> Result<usize, WorldError> {
+    pub fn remove(&self, handle: Handle<impl ?Sized + 'static>) -> Result<usize, WorldError> {
         self.available_mut(handle)?;
         let mut cnt = 1;
 
@@ -275,6 +275,11 @@ impl World {
         let storage = self.storages.get(&type_id).unwrap().as_ref() as *const _;
         let storage = storage as *mut dyn StorageGeneral;
         unsafe { (*storage).when_remove(self, handle.cast()) };
+
+        // clear view
+        self.enter(handle, || {
+            cnt += self.clear();
+        });
 
         // cleanup parents' dependencies
         let mut dependencies = self.dependencies.borrow_mut();
@@ -313,6 +318,9 @@ impl World {
             world.typetable.remove(&handle.cast());
             world.viewtable.remove(&handle.cast());
 
+            // remove view options
+            world.options.remove(&handle.cast());
+
             // pop out storage
             let storage = world.storages.get_mut(&type_id).unwrap();
             storage.remove(handle.cast());
@@ -338,7 +346,7 @@ impl World {
     }
 
     /// Enter view.
-    pub fn enter<T: ?Sized, U>(&self, view: Handle<T>, f: impl FnOnce() -> U) -> U {
+    pub fn enter<R>(&self, view: Handle<impl ?Sized>, f: impl FnOnce() -> R) -> R {
         let origin = self.location.get();
         self.location.set(view.cast());
         let ret = f();
@@ -346,22 +354,48 @@ impl World {
         ret
     }
 
+    pub fn enter_insert<T: Element>(&self, view: Handle<impl ?Sized>, element: T) -> Handle<T> {
+        self.enter(view, || self.insert(element))
+    }
+
+    pub fn enter_single_fetch<T: Element>(
+        &self,
+        view: Handle<impl ?Sized>,
+    ) -> Result<Ref<'_, T>, WorldError> {
+        self.enter(view, || self.single_fetch())
+    }
+
+    pub fn enter_single_fetch_mut<T: Element>(
+        &self,
+        view: Handle<impl ?Sized>,
+    ) -> Result<RefMut<'_, T>, WorldError> {
+        self.enter(view, || self.single_fetch_mut())
+    }
+
+    pub fn enter_single_remove<T: Element>(
+        &self,
+        view: Handle<impl ?Sized>,
+    ) -> Result<usize, WorldError> {
+        self.enter(view, || self.single_remove::<T>())
+    }
+
     /// Clear all elements from current view. Action is queued so no removal marks or
     /// mutable limitations.
-    pub fn clear(&self) {
-        self.queue(move |world| {
-            for (&handle, &view) in world.viewtable.iter() {
-                if view != world.location.get() {
-                    continue;
-                }
-
-                if world.validate(handle).is_err() {
-                    continue;
-                }
-
-                world.remove(handle).unwrap();
+    pub fn clear(&self) -> usize {
+        let mut cnt = 0;
+        for (&handle, &view) in self.viewtable.iter() {
+            if view != self.location.get() {
+                continue;
             }
-        });
+
+            if self.validate(handle).is_err() {
+                continue;
+            }
+
+            cnt += self.remove(handle).unwrap();
+        }
+
+        cnt
     }
 
     // commands //
@@ -397,7 +431,7 @@ impl World {
     // validation //
 
     /// Check whether target element exists, insertion without `flush` will *NOT* be included.
-    pub fn validate<T: ?Sized>(&self, handle: Handle<T>) -> Result<(), WorldError> {
+    pub fn validate(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         if handle.0 == 0 {
             return Err(WorldError::Initelem(handle.into()));
         }
@@ -449,7 +483,7 @@ impl World {
 
     /// Check whether target element can be borrowed immutably, insertion without
     /// `flush` will *NOT* be included.
-    pub fn available<T: ?Sized>(&self, handle: Handle<T>) -> Result<(), WorldError> {
+    pub fn available(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         self.validate(handle)?;
 
         let occupied = self.occupied.borrow();
@@ -462,7 +496,7 @@ impl World {
 
     /// Check whether target element can be borrowed mutably, insertion without
     /// `flush` will *NOT* be included.
-    pub fn available_mut<T: ?Sized>(&self, handle: Handle<T>) -> Result<(), WorldError> {
+    pub fn available_mut(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         self.validate(handle)?;
 
         let occupied = self.occupied.borrow();
@@ -572,6 +606,10 @@ impl World {
         self.fetch_mut(self.single::<T>()?)
     }
 
+    pub fn single_remove<T: Element>(&self) -> Result<usize, WorldError> {
+        self.remove(self.single::<T>()?)
+    }
+
     // iteration //
 
     /// The actual number of element would be equal or less than this number.
@@ -615,9 +653,9 @@ impl World {
 
     // observer & trigger //
 
-    pub fn observer<T: ?Sized + 'static, E: 'static>(
+    pub fn observer<E: 'static>(
         &self,
-        target: Handle<T>,
+        target: Handle<impl ?Sized + 'static>,
         action: impl FnMut(&E, &World) + 'static,
     ) -> Handle {
         let here = self.location.get();
@@ -633,7 +671,7 @@ impl World {
     }
 
     /// Will immediately triggered and acquire mutable access to `target`.
-    pub fn trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: &E) -> usize {
+    pub fn trigger<E: 'static>(&self, target: Handle<impl ?Sized + 'static>, event: &E) -> usize {
         let mut cnt = 0;
         self.enter(INITELEM, || {
             if let Ok(observers) = self.single_fetch::<Observers<E>>()
@@ -649,7 +687,7 @@ impl World {
         cnt
     }
 
-    pub fn queue_trigger<T: ?Sized + 'static, E: 'static>(&self, target: Handle<T>, event: E) {
+    pub fn queue_trigger<E: 'static>(&self, target: Handle<impl ?Sized + 'static>, event: E) {
         self.queue(move |world| {
             world.trigger(target, &event);
         });
@@ -659,7 +697,7 @@ impl World {
 
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
-    pub fn dependency<T: ?Sized, U: ?Sized>(&self, child: Handle<T>, parent: Handle<U>) {
+    pub fn dependency(&self, child: Handle<impl ?Sized>, parent: Handle<impl ?Sized>) {
         if let Err(e) = self.validate(parent)
             && !matches!(e, WorldError::JustInserted(_) | WorldError::Invisible(..))
         {
