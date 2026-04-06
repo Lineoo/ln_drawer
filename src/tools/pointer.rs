@@ -70,7 +70,7 @@ struct Pointer {
 #[derive(Clone, Copy)]
 struct Hover {
     position: Position,
-    view: Handle,
+    view: Handle<Camera>,
     handle: Handle<ToolCollider>,
 }
 

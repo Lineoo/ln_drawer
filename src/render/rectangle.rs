@@ -4,7 +4,6 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 
 use crate::{
-    lnwin::Lnwindow,
     measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderControl,

@@ -76,7 +76,7 @@ impl ColorPicker {
 }
 
 impl Element for ColorPicker {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
         ColorPicker::insert(world);
     }
 }

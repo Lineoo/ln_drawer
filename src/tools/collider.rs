@@ -1,7 +1,7 @@
 use crate::{
     layout::LayoutRectangleAction,
     measures::{Position, Rectangle, Size},
-    render::camera::{Camera, CameraVisits},
+    render::camera::Camera,
     world::{Element, Handle, World},
 };
 
@@ -28,20 +28,20 @@ impl ToolCollider {
         }
     }
 
-    pub fn intersect(world: &World, screen: [f64; 2]) -> Vec<(Handle<ToolCollider>, Handle)> {
+    pub fn intersect(
+        world: &World,
+        screen: [f64; 2],
+    ) -> Vec<(Handle<ToolCollider>, Handle<Camera>)> {
         let mut buf = Vec::new();
-        let visits = world.single_fetch::<CameraVisits>().unwrap();
-        for &view in &visits.views {
-            world.enter(view, || {
-                let camera = world.single_fetch::<Camera>().unwrap();
-                let position = camera.screen_to_world_absolute(screen).floor();
-                world.foreach_fetch::<ToolCollider>(|collider| {
-                    if collider.enabled && position.within(collider.rect) {
-                        buf.push((collider.handle(), view, collider.order));
-                    }
-                });
+        world.foreach_enter::<Camera>(|camera| {
+            let camera = world.fetch(camera).unwrap();
+            let position = camera.screen_to_world_absolute(screen).floor();
+            world.foreach_fetch::<ToolCollider>(|collider| {
+                if collider.enabled && position.within(collider.rect) {
+                    buf.push((collider.handle(), camera.handle(), collider.order));
+                }
             });
-        }
+        });
 
         buf.sort_by(|(.., a), (.., b)| b.cmp(a));
         buf.iter().map(|x| (x.0, x.1)).collect::<Vec<_>>()

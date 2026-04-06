@@ -11,7 +11,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::Rectangle,
     render::{
-        MSAA_STATE, Render, RenderControl, RenderInformation,
+        MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
         vertex::VertexUniform,
     },

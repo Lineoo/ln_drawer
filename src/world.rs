@@ -560,6 +560,11 @@ impl World {
     // singleton //
 
     pub fn single<T: Element>(&self) -> Result<Handle<T>, WorldError> {
+        // view-root preference shortcut
+        if self.typetable.get(&self.location.get()) == Some(&TypeId::of::<T>()) {
+            return Ok(self.location.get().cast());
+        }
+
         let storage = (self.storages)
             .get(&TypeId::of::<T>())
             .ok_or(WorldError::SingletonNoSuch(type_name::<T>()))?;
@@ -641,6 +646,10 @@ impl World {
 
             f(handle.cast());
         }
+    }
+
+    pub fn foreach_enter<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {
+        self.foreach::<T>(|handle| self.enter(handle, || f(handle)));
     }
 
     pub fn foreach_fetch<T: Element>(&self, mut f: impl FnMut(Ref<T>)) {

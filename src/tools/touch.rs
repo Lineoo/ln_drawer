@@ -29,7 +29,7 @@ impl Element for MultiTouchTool {
 pub struct MultiTouch {
     pub position: Position,
     pub screen: [f64; 2],
-    pub view: Handle,
+    pub view: Handle<Camera>,
     pub status: MultiTouchStatus,
     pub data: MultiTouchData,
     pub pointer: PointerKind,

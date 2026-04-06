@@ -20,7 +20,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent};
 
 use crate::{
     lnwin::Lnwindow,
-    render::camera::CameraVisits,
+    render::camera::Camera,
     world::{Element, Handle, World},
 };
 
@@ -217,18 +217,15 @@ impl Render {
         drop(render);
 
         let mut refreshing = false;
-        let visits = world.single_fetch::<CameraVisits>().unwrap();
-        for &view in &visits.views {
-            world.enter(view, || {
-                world.foreach_fetch_mut::<RenderControl>(|mut control| {
-                    if let Some(prepare) = &mut control.prepare
-                        && let Some(info) = prepare(world)
-                    {
-                        refreshing |= info.keep_redrawing;
-                    };
-                });
+        world.foreach_enter::<Camera>(|_| {
+            world.foreach_fetch_mut::<RenderControl>(|mut control| {
+                if let Some(prepare) = &mut control.prepare
+                    && let Some(info) = prepare(world)
+                {
+                    refreshing |= info.keep_redrawing;
+                };
             });
-        }
+        });
 
         // start redrawing
 
@@ -369,6 +366,11 @@ impl Element for Render {
 }
 
 impl Element for RenderControl {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let render = world.single::<Render>().unwrap();
+        world.dependency(this, render);
+    }
+
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {
         Self::reorder(None, world, this);
     }

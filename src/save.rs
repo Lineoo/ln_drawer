@@ -10,7 +10,7 @@ use winit::platform::android::activity::AndroidApp;
 
 use crate::{
     lnwin::Lnwindow,
-    render::camera::CameraVisits,
+    render::camera::Camera,
     tools::timer::{Timer, TimerHit},
     world::{Element, Handle, World, WorldError},
 };
@@ -233,14 +233,11 @@ impl Autosave {
     pub fn autosave_all(world: &World) {
         let start = Instant::now();
 
-        let visits = world.single_fetch::<CameraVisits>().unwrap();
-        for &view in &visits.views {
-            world.enter(view, || {
-                world.foreach_fetch_mut::<Autosave>(|mut write| {
-                    (write.0)(world);
-                });
-            })
-        }
+        world.foreach_enter::<Camera>(|_| {
+            world.foreach_fetch_mut::<Autosave>(|mut write| {
+                (write.0)(world);
+            });
+        });
 
         let duration = Instant::now().duration_since(start);
         log::debug!("autosave request finished in {duration:?}");

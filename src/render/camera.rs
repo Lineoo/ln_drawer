@@ -25,6 +25,8 @@ pub struct CameraBind {
     pub layout: BindGroupLayout,
 }
 
+pub struct MainCamera(pub Handle<Camera>);
+
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct CameraDescriptor {
     pub size: Size,
@@ -164,11 +166,15 @@ impl Camera {
         world.insert(CameraBind { layout });
     }
 
-    pub fn singleton(world: &mut World, name: &'static str) {
-        world.insert(Camera::save_read(name));
+    pub fn singleton(
+        world: &World,
+        name: &'static str,
+        callback: impl Fn(&World, Handle<Camera>) + 'static,
+    ) {
+        world.insert(Camera::save_read(name, callback));
     }
 
-    fn build_default(world: &World, name: &str) {
+    fn build_default(world: &World, name: &str) -> Handle<Camera> {
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         let size = lnwindow.window.surface_size();
 
@@ -179,16 +185,21 @@ impl Camera {
 
         let control = SaveControl::create(name.into(), world, &[]);
         world.insert(Camera::save_write(camera, control));
+
+        camera
     }
 
-    fn save_read(name: &'static str) -> SaveReadSingleton {
+    fn save_read(
+        name: &'static str,
+        callback: impl Fn(&World, Handle<Camera>) + 'static,
+    ) -> SaveReadSingleton {
         SaveReadSingleton {
             class: name.into(),
             read: Box::new(move |world, control| {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let size = lnwindow.window.surface_size();
 
-                if let Some(control) = control {
+                let camera = if let Some(control) = control {
                     let control = world.fetch(control).unwrap();
                     let camera_desc =
                         postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
@@ -200,9 +211,13 @@ impl Camera {
 
                     let control = control.handle();
                     world.insert(Camera::save_write(camera, control));
+
+                    camera
                 } else {
-                    Camera::build_default(world, name);
-                }
+                    Camera::build_default(world, name)
+                };
+
+                callback(world, camera);
             }),
         }
     }
@@ -223,13 +238,6 @@ impl Camera {
         }))
     }
 }
-
-#[deprecated]
-pub struct CameraVisits {
-    pub views: Vec<Handle>,
-}
-
-impl Element for CameraVisits {}
 
 #[derive(Default)]
 pub struct CameraUtils {
@@ -313,4 +321,5 @@ impl CameraUtils {
     }
 }
 
+impl Element for MainCamera {}
 impl Element for CameraUtils {}

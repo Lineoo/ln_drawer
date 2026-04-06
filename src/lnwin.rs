@@ -14,7 +14,7 @@ use winit::{
 use crate::{
     render::{
         Render,
-        camera::{Camera, CameraUtils, CameraVisits},
+        camera::{Camera, CameraUtils, MainCamera},
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
@@ -144,34 +144,28 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            let layer1 = world.insert(());
-            let layer2 = world.insert(());
             let here = world.here();
 
-            world.enter(layer1, || {
-                world.option(ViewOptions { refs: vec![here] });
-
-                world.queue(|world| {
-                    Camera::singleton(world, "camera1");
-                    world.flush();
-                    world.insert(StrokeLayer::new(world));
-                    world.insert(CameraUtils::default());
-                    world.insert(ColorPicker);
+            Camera::singleton(world, "camera1", move |world, camera| {
+                world.enter(camera, || {
+                    world.option(ViewOptions { refs: vec![here] });
+                    world.queue(|world| {
+                        world.insert(StrokeLayer::new(world));
+                        world.insert(CameraUtils::default());
+                        world.insert(ColorPicker);
+                    });
                 });
+
+                world.insert(MainCamera(camera));
             });
 
-            world.enter(layer2, || {
-                world.option(ViewOptions { refs: vec![here] });
-
-                world.queue(|world| {
-                    Camera::singleton(world, "camera2");
-                    world.flush();
-                    world.insert(CameraUtils::default());
+            Camera::singleton(world, "camera2", move |world, camera| {
+                world.enter(camera, || {
+                    world.option(ViewOptions { refs: vec![here] });
+                    world.queue(|world| {
+                        world.insert(CameraUtils::default());
+                    });
                 });
-            });
-
-            world.insert(CameraVisits {
-                views: vec![layer1.untyped(), layer2.untyped()],
             });
         });
     }
