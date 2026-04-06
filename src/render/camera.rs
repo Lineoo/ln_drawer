@@ -187,7 +187,6 @@ impl Camera {
     fn save_read(name: &str) -> SaveRead {
         SaveRead {
             class: name.into(),
-            within: None,
             read: Box::new(move |world, control| {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let size = lnwindow.window.surface_size();
