@@ -105,7 +105,9 @@ impl Element for Lnwindow {
         world.observer(this, move |event: &WindowEvent, world| {
             if let WindowEvent::CloseRequested = event {
                 Autosave::autosave_all(world);
-                world.clear();
+                world.queue(|world| {
+                    world.clear();
+                });
             }
         });
 
