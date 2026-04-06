@@ -728,12 +728,7 @@ impl<T: Element> DerefMut for RefMut<'_, T> {
 impl<T: Element> Drop for Ref<'_, T> {
     fn drop(&mut self) {
         let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied
-            .get_mut(&{
-                let this = self.handle;
-                this.cast()
-            })
-            .unwrap();
+        let cnt = occupied.get_mut(&self.handle.cast()).unwrap();
         *cnt -= 1;
     }
 }
@@ -750,12 +745,7 @@ impl<T: Element> Drop for RefMut<'_, T> {
         }
 
         let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied
-            .get_mut(&{
-                let this = self.handle;
-                this.cast()
-            })
-            .unwrap();
+        let cnt = occupied.get_mut(&self.handle.cast()).unwrap();
         *cnt += 1;
     }
 }
