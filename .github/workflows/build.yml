@@ -62,18 +62,17 @@ jobs:
         CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
       run: echo "$ORG_LINN_KEYSTORE" | base64 -di > "$CARGO_APK_RELEASE_KEYSTORE"
 
-    - name: Build Artifacts x86_64 Windows
-      run: cargo build --release --target x86_64-pc-windows-gnu
-
-    - name: Build Artifacts x86_64 Linux
-      run: cargo build --release --target x86_64-unknown-linux-gnu
-
     - name: Build Artifacts aarch64 Android
       env:
         CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
         CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
       run: cargo apk build --release --lib --target aarch64-linux-android
 
+    - name: Build Artifacts x86_64 Windows
+      run: cargo build --release --target x86_64-pc-windows-gnu
+
+    - name: Build Artifacts x86_64 Linux
+      run: cargo build --release --target x86_64-unknown-linux-gnu
     - uses: actions/upload-artifact@v6
       with:
         name: build-artifacts
