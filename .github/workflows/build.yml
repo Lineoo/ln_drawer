@@ -1,0 +1,26 @@
+name: Build Release
+
+on:
+  push:
+    branches:
+      - releases/**
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Cargo Test
+        run: cargo test --verbose
+
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Prepare Configuration
+      run: ./build/prune.sh
+    - name: Build Artifacts
+      run: ./build/release.sh
