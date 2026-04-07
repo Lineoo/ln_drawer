@@ -1,0 +1,54 @@
+name: Build Release
+
+on:
+  push:
+    branches:
+      - releases/**
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install ALSA Library
+        run: sudo apt-get install libasound2-dev
+
+      - name: Cargo Test
+        run: cargo test --verbose
+
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install ALSA Library
+      run: sudo apt-get install libasound2-dev
+
+    - name: Prepare Configuration
+      run: build/prune.sh
+
+    - name: Prepare Keystore
+      env:
+        ORG_LINN_KEYSTORE: ${{ secrets.ORG_LINN_KEYSTORE }}
+        CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
+      run: echo "$ORG_LINN_KEYSTORE" | base64 -di > "$CARGO_APK_RELEASE_KEYSTORE"
+
+    - name: Build Artifacts
+      env:
+        CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
+        CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
+      run: build/release.sh
+
+    - uses: actions/upload-artifact@v6
+      with:
+        name: build-artifacts
+        path: |
+          target/x86_64-unknown-linux-gnu/release/ln_drawer
+          target/x86_64-pc-windows-gnu/release/ln_drawer.exe
+          target/release/apk/ln_drawer.apk
