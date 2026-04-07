@@ -32,9 +32,12 @@ jobs:
 
     - name: Install Rustup Target x86_64-pc-windows-gnu
       run: rustup target add x86_64-pc-windows-gnu
-    
-    - name: Install Rustup Target aarch64-android-linux
-      run: rustup target add aarch64-android-linux
+
+    - name: Install Rustup Target aarch64-linux-android
+      run: rustup target add aarch64-linux-android
+
+    - name: Install Rustup Target armv7-linux-androideabi
+      run: rustup target add armv7-linux-androideabi
 
     - name: Prepare Configuration
       run: build/prune.sh
