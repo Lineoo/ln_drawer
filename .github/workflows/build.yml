@@ -20,10 +20,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
+
     - name: Prepare Configuration
-      run: ./build/prune.sh
+      run: build/prune.sh
+
+    - name: Prepare Keystore
+      env:
+        ORG_LINN_KEYSTORE: ${{ secrets.ORG_LINN_KEYSTORE }}
+        CARGO_APK_RELEASE_KEYSTORE: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE }}
+      run: echo $ORG_LINN_KEYSTORE | base64 -di > $CARGO_APK_RELEASE_KEYSTORE
+
     - name: Build Artifacts
-      run: ./build/release.sh
+      env:
+        CARGO_APK_RELEASE_KEYSTORE: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE }}
+        CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
+      run: build/release.sh
+
     - uses: actions/upload-artifacts@v6
       with:
         name: build-artifacts
