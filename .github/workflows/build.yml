@@ -72,7 +72,7 @@ jobs:
       env:
         CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
         CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
-      run: cargo build --release --target aarch64-linux-android
+      run: cargo apk build --release --lib --target aarch64-linux-android
 
     - uses: actions/upload-artifact@v6
       with:
