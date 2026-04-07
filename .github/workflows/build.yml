@@ -1,0 +1,96 @@
+name: Build Release
+
+on:
+  push:
+    branches:
+      - releases/**
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/cache@v5
+        with:
+          key: ubuntu-test-all
+          path: |
+            ~/.cargo
+            target
+
+      - name: Install ALSA Library
+        run: sudo apt-get install libasound2-dev
+
+      - name: Cargo Test
+        run: cargo test
+
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: actions/cache@v5
+      with:
+        key: ubuntu-all-cross-build
+        path: |
+          ~/.cargo
+          ~/.rustup
+          target
+
+    - name: Install ALSA Library
+      run: sudo apt-get install libasound2-dev
+
+    - name: Install MinGW-w64 for Win32 & Posix
+      run: sudo apt-get install gcc-mingw-w64-x86-64-win32 gcc-mingw-w64-x86-64-posix
+
+    - name: Install Rustup Target x86_64-pc-windows-gnu
+      run: rustup target add x86_64-pc-windows-gnu
+
+    - name: Install Rustup Target aarch64-linux-android
+      run: rustup target add aarch64-linux-android
+
+    - name: Install Rustup Target armv7-linux-androideabi
+      run: rustup target add armv7-linux-androideabi
+
+    - name: Install Cargo Apk
+      run: cargo install cargo-apk
+
+    - name: Prepare Configuration
+      run: build/prune.sh
+
+    - name: Prepare Keystore
+      env:
+        ORG_LINN_KEYSTORE: ${{ secrets.ORG_LINN_KEYSTORE }}
+        CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
+      run: echo "$ORG_LINN_KEYSTORE" | base64 -di > "$CARGO_APK_RELEASE_KEYSTORE"
+
+    - name: Build Artifacts x86_64 Linux
+      run: cargo build --release --target x86_64-unknown-linux-gnu
+    - uses: actions/upload-artifact@v6
+      with:
+        name: artifacts-x86_64-unknown-linux-gnu
+        path: target/x86_64-unknown-linux-gnu/release/ln_drawer
+
+    - name: Build Artifacts x86_64 Windows
+      run: cargo build --release --target x86_64-pc-windows-gnu
+    - uses: actions/upload-artifact@v6
+      with:
+        name: artifacts-x86_64-pc-windows-gnu
+        path: target/x86_64-pc-windows-gnu/release/ln_drawer.exe
+
+    - name: Build Artifacts aarch64 Android
+      env:
+        CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
+        CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
+      run: cargo apk build --release --lib --target aarch64-linux-android
+    - uses: actions/upload-artifact@v6
+      with:
+        name: artifacts-aarch64-linux-android
+        path: target/release/apk/ln_drawer.apk
+
+
