@@ -22,7 +22,7 @@ jobs:
     - uses: actions/checkout@v6
 
     - name: Install ALSA Library
-      run: sudo apt-get install alsa-tools
+      run: sudo apt-get install libasound2-dev
 
     - name: Prepare Configuration
       run: build/prune.sh
@@ -31,7 +31,7 @@ jobs:
       env:
         ORG_LINN_KEYSTORE: ${{ secrets.ORG_LINN_KEYSTORE }}
         CARGO_APK_RELEASE_KEYSTORE: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE }}
-      run: echo $ORG_LINN_KEYSTORE | base64 -di > $CARGO_APK_RELEASE_KEYSTORE
+      run: echo "$ORG_LINN_KEYSTORE" | base64 -di > "$CARGO_APK_RELEASE_KEYSTORE"
 
     - name: Build Artifacts
       env:
