@@ -54,6 +54,7 @@ resources = "android"
 
 [package.metadata.android.sdk]
 min_sdk_version = 26
+target_sdk_version = 34
 
 [package.metadata.android.application]
 icon = "@mipmap/icon_dev"
