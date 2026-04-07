@@ -30,6 +30,12 @@ jobs:
     - name: Install ALSA Library
       run: sudo apt-get install libasound2-dev
 
+    - name: Install Rustup Target x86_64-pc-windows-gnu
+      run: sudo rustup install target x86_64-pc-windows-gnu
+    
+    - name: Install Rustup Target aarch64-android-linux-gnu
+      run: sudo rustup install target aarch64-android-linux-gnu
+
     - name: Prepare Configuration
       run: build/prune.sh
 
