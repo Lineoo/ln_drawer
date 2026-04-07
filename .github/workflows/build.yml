@@ -21,6 +21,9 @@ jobs:
     steps:
     - uses: actions/checkout@v6
 
+    - name: Install ALSA Library
+      run: sudo apt-get install alsa-tools
+
     - name: Prepare Configuration
       run: build/prune.sh
 
@@ -36,7 +39,7 @@ jobs:
         CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
       run: build/release.sh
 
-    - uses: actions/upload-artifacts@v6
+    - uses: actions/upload-artifact@v6
       with:
         name: build-artifacts
         path: |
