@@ -15,11 +15,18 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: actions/cache@v5
+        with:
+          key: ubuntu-test-all
+          path: |
+            ~/.cargo
+            target
+
       - name: Install ALSA Library
         run: sudo apt-get install libasound2-dev
 
       - name: Cargo Test
-        run: cargo test --verbose
+        run: cargo test
 
   release:
     runs-on: ubuntu-latest
