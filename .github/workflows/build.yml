@@ -1,0 +1,33 @@
+name: Build Release
+
+on:
+  push:
+    branches:
+      - releases/**
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Cargo Test
+        run: cargo test --verbose
+
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Prepare Configuration
+      run: ./build/prune.sh
+    - name: Build Artifacts
+      run: ./build/release.sh
+    - uses: actions/upload-artifacts@v6
+      with:
+        name: build-artifacts
+        path: |
+          target/x86_64-unknown-linux-gnu/release/ln_drawer
+          target/x86_64-pc-windows-gnu/release/ln_drawer.exe
+          target/release/apk/ln_drawer.apk
