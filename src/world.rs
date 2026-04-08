@@ -447,28 +447,33 @@ impl World {
             return Err(WorldError::InvalidHandle(handle.into()));
         }
 
-        if let Some(&target) = self.viewtable.get(&handle.cast()) {
+        if let Some(&handle_view) = self.viewtable.get(&handle.cast()) {
             let here = self.location.get();
 
-            if target != here && handle.cast() != here {
+            if handle_view != here && handle.cast() != here {
+                // visited elems, preventing dead-loop
                 let mut refs = HashSet::new();
-                let mut stack = Vec::new();
-                stack.push(here);
+                // scanning elems, scheduled to visit
+                let mut stack = vec![here];
+                let mut found = false;
 
                 'r: while let Some(opt) = stack.pop().and_then(|view| self.options.get(&view)) {
                     for &view in &opt.refs {
-                        if refs.insert(view) {
-                            stack.push(view);
+                        if !refs.insert(view) {
+                            // skip visited one
+                            continue;
                         }
 
-                        if view == target {
+                        stack.push(view);
+                        if handle_view == view || handle.cast() == view {
+                            found = true;
                             break 'r;
                         }
                     }
                 }
 
-                if !refs.contains(&target) {
-                    return Err(WorldError::Invisible(handle.into(), target, here));
+                if !found {
+                    return Err(WorldError::Invisible(handle.into(), handle_view, here));
                 }
             }
         }

@@ -146,25 +146,27 @@ impl Element for Lnwindow {
         world.queue(|world| {
             let here = world.here();
 
-            Camera::build_from_save(world, "camera1", move |world, camera| {
-                world.enter(camera, || {
-                    world.option(ViewOptions { refs: vec![here] });
-                    world.queue(|world| {
-                        world.insert(StrokeLayer::new(world));
-                        world.insert(CameraUtils::default());
-                        world.insert(ColorPicker);
-                    });
+            let camera1 = Camera::build_from_save(world, "camera1");
+            world.insert(MainCamera(camera1));
+            world.enter(camera1, || {
+                world.option(ViewOptions { refs: vec![here] });
+                world.queue(|world| {
+                    world.insert(StrokeLayer::new(world));
+                    world.insert(CameraUtils::default());
                 });
-
-                world.insert(MainCamera(camera));
             });
 
-            Camera::build_from_save(world, "camera2", move |world, camera| {
-                world.enter(camera, || {
-                    world.option(ViewOptions { refs: vec![here] });
-                    world.queue(|world| {
-                        world.insert(CameraUtils::default());
-                    });
+            world.flush();
+
+            let camera2 = Camera::build_from_save(world, "camera2");
+            world.enter(camera2, || {
+                let stroke = world.enter(camera1, || world.single::<StrokeLayer>().unwrap());
+                world.option(ViewOptions {
+                    refs: vec![here, stroke.untyped()],
+                });
+                world.queue(|world| {
+                    world.insert(ColorPicker);
+                    world.insert(CameraUtils::default());
                 });
             });
         });

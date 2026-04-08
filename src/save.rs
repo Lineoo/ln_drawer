@@ -189,7 +189,7 @@ impl SaveRead {
     pub fn read(
         world: &World,
         class: &str,
-        mut action: impl FnMut(&World, Handle<SaveControl>),
+        mut action: impl FnMut(Handle<SaveControl>),
     ) -> Result<(), redb::Error> {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
         let read = db.0.begin_read()?;
@@ -197,17 +197,17 @@ impl SaveRead {
         for id in lut_class.get(class)? {
             let luts = world.single_fetch::<SaveDatabaseLuts>().unwrap();
             let control = *luts.1.get(&id?.value()).unwrap();
-            action(world, control);
+            action(control);
         }
 
         Ok(())
     }
 
-    pub fn read_single(
+    pub fn read_single<U>(
         world: &World,
         class: &str,
-        action: impl FnOnce(&World, Option<Handle<SaveControl>>),
-    ) -> Result<(), redb::Error> {
+        action: impl FnOnce(Option<Handle<SaveControl>>) -> U,
+    ) -> Result<U, redb::Error> {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
         let read = db.0.begin_read()?;
         let lut_class = read.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
@@ -223,9 +223,7 @@ impl SaveRead {
             };
         }
 
-        action(world, single);
-
-        Ok(())
+        Ok(action(single))
     }
 }
 
@@ -380,7 +378,7 @@ impl Element for SaveControl {}
 
 impl Element for SaveRead {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
-        Self::read(world, &self.class, &self.read).unwrap();
+        Self::read(world, &self.class, |control| (self.read)(world, control)).unwrap();
     }
 }
 

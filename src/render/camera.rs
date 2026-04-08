@@ -166,16 +166,12 @@ impl Camera {
         world.insert(CameraBind { layout });
     }
 
-    pub fn build_from_save(
-        world: &World,
-        name: &'static str,
-        callback: impl FnOnce(&World, Handle<Camera>),
-    ) {
-        SaveRead::read_single(world, name, |world, control| {
+    pub fn build_from_save(world: &World, name: &str) -> Handle<Camera> {
+        SaveRead::read_single(world, name, |control| {
             let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
             let size = lnwindow.window.surface_size();
 
-            let camera = if let Some(control) = control {
+            if let Some(control) = control {
                 let control = world.fetch(control).unwrap();
                 let camera_desc =
                     postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
@@ -191,11 +187,9 @@ impl Camera {
                 camera
             } else {
                 Camera::build_default(world, name)
-            };
-
-            callback(world, camera);
+            }
         })
-        .unwrap();
+        .unwrap()
     }
 
     pub fn build_default(world: &World, name: &str) -> Handle<Camera> {
