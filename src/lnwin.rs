@@ -146,7 +146,7 @@ impl Element for Lnwindow {
         world.queue(|world| {
             let here = world.here();
 
-            Camera::singleton(world, "camera1", move |world, camera| {
+            Camera::build_from_save(world, "camera1", move |world, camera| {
                 world.enter(camera, || {
                     world.option(ViewOptions { refs: vec![here] });
                     world.queue(|world| {
@@ -159,7 +159,7 @@ impl Element for Lnwindow {
                 world.insert(MainCamera(camera));
             });
 
-            Camera::singleton(world, "camera2", move |world, camera| {
+            Camera::build_from_save(world, "camera2", move |world, camera| {
                 world.enter(camera, || {
                     world.option(ViewOptions { refs: vec![here] });
                     world.queue(|world| {

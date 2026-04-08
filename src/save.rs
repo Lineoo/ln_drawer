@@ -36,12 +36,6 @@ pub struct SaveRead {
     pub read: Box<dyn Fn(&World, Handle<SaveControl>)>,
 }
 
-// If class contains more than one, what to be chosen will be undefined.
-pub struct SaveReadSingleton {
-    pub class: String,
-    pub read: Box<dyn Fn(&World, Option<Handle<SaveControl>>)>,
-}
-
 pub struct Autosave(pub Box<dyn FnMut(&World)>);
 
 pub struct AutosaveScheduler {
@@ -192,28 +186,34 @@ impl SaveControl {
 }
 
 impl SaveRead {
-    fn read(&mut self, world: &World) -> Result<(), redb::Error> {
+    pub fn read(
+        world: &World,
+        class: &str,
+        mut action: impl FnMut(&World, Handle<SaveControl>),
+    ) -> Result<(), redb::Error> {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
         let read = db.0.begin_read()?;
         let lut_class = read.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
-        for id in lut_class.get(&self.class[..])? {
+        for id in lut_class.get(class)? {
             let luts = world.single_fetch::<SaveDatabaseLuts>().unwrap();
             let control = *luts.1.get(&id?.value()).unwrap();
-            (self.read)(world, control);
+            action(world, control);
         }
 
         Ok(())
     }
-}
 
-impl SaveReadSingleton {
-    fn read_single(&mut self, world: &World) -> Result<(), redb::Error> {
+    pub fn read_single(
+        world: &World,
+        class: &str,
+        action: impl FnOnce(&World, Option<Handle<SaveControl>>),
+    ) -> Result<(), redb::Error> {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
         let read = db.0.begin_read()?;
         let lut_class = read.open_multimap_table(TABLE_CONTROLS_LUT_CLASS)?;
 
         let mut single = None;
-        for id in lut_class.get(&self.class[..])? {
+        for id in lut_class.get(class)? {
             let luts = world.single_fetch::<SaveDatabaseLuts>().unwrap();
             let control = *luts.1.get(&id?.value()).unwrap();
             let replaced = single.replace(control);
@@ -223,7 +223,7 @@ impl SaveReadSingleton {
             };
         }
 
-        (self.read)(world, single);
+        action(world, single);
 
         Ok(())
     }
@@ -380,13 +380,7 @@ impl Element for SaveControl {}
 
 impl Element for SaveRead {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
-        self.read(world).unwrap();
-    }
-}
-
-impl Element for SaveReadSingleton {
-    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
-        self.read_single(world).unwrap();
+        Self::read(world, &self.class, &self.read).unwrap();
     }
 }
 
