@@ -6,7 +6,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Fract, PositionFract, Size},
     render::Render,
-    save::{Autosave, SaveControl, SaveReadSingleton},
+    save::{Autosave, SaveControl, SaveRead},
     world::{Descriptor, Element, Handle, World},
 };
 
@@ -166,15 +166,33 @@ impl Camera {
         world.insert(CameraBind { layout });
     }
 
-    pub fn singleton(
-        world: &World,
-        name: &'static str,
-        callback: impl Fn(&World, Handle<Camera>) + 'static,
-    ) {
-        world.insert(Camera::save_read(name, callback));
+    pub fn build_from_save(world: &World, name: &str) -> Handle<Camera> {
+        SaveRead::read_single(world, name, |control| {
+            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            let size = lnwindow.window.surface_size();
+
+            if let Some(control) = control {
+                let control = world.fetch(control).unwrap();
+                let camera_desc =
+                    postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
+
+                let camera = world.build(CameraDescriptor {
+                    size: Size::new(size.width, size.height),
+                    ..camera_desc
+                });
+
+                let control = control.handle();
+                world.insert(Camera::save_write(camera, control));
+
+                camera
+            } else {
+                Camera::build_default(world, name)
+            }
+        })
+        .unwrap()
     }
 
-    fn build_default(world: &World, name: &str) -> Handle<Camera> {
+    pub fn build_default(world: &World, name: &str) -> Handle<Camera> {
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         let size = lnwindow.window.surface_size();
 
@@ -187,39 +205,6 @@ impl Camera {
         world.insert(Camera::save_write(camera, control));
 
         camera
-    }
-
-    fn save_read(
-        name: &'static str,
-        callback: impl Fn(&World, Handle<Camera>) + 'static,
-    ) -> SaveReadSingleton {
-        SaveReadSingleton {
-            class: name.into(),
-            read: Box::new(move |world, control| {
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let size = lnwindow.window.surface_size();
-
-                let camera = if let Some(control) = control {
-                    let control = world.fetch(control).unwrap();
-                    let camera_desc =
-                        postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
-
-                    let camera = world.build(CameraDescriptor {
-                        size: Size::new(size.width, size.height),
-                        ..camera_desc
-                    });
-
-                    let control = control.handle();
-                    world.insert(Camera::save_write(camera, control));
-
-                    camera
-                } else {
-                    Camera::build_default(world, name)
-                };
-
-                callback(world, camera);
-            }),
-        }
     }
 
     fn save_write(camera: Handle<Camera>, control: Handle<SaveControl>) -> Autosave {
