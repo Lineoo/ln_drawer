@@ -191,6 +191,8 @@ impl StrokeLayer {
     fn attach_autosave(&mut self, world: &World, this: Handle<Self>) {
         let save = world.insert(Autosave(Box::new(move |world, write| {
             let this = &mut *world.fetch_mut(this).unwrap();
+            let mut table = write.open_multimap_table(TABLE_STROKE).unwrap();
+            let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK).unwrap();
             for chunk_id in this.unsaved.drain() {
                 let Some(&chunk) = this.chunks.get(&chunk_id) else {
                     continue;
@@ -199,8 +201,8 @@ impl StrokeLayer {
                 let chunk = world.fetch(chunk).unwrap();
                 let bytes = chunk.device_readback(world);
                 let compressed = zstd::encode_all(&bytes[..], 0).unwrap();
-                let mut table = write.open_table(TABLE_STROKE_CHUNK).unwrap();
-                table.insert(chunk_id, &compressed[..]).unwrap();
+                table.insert((), chunk_id).unwrap();
+                table_chunk.insert(chunk_id, &compressed[..]).unwrap();
             }
         })));
 
