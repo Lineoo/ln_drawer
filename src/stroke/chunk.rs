@@ -17,31 +17,31 @@ use crate::{
     world::{Element, Handle, World},
 };
 
-pub struct CanvasChunk {
+pub struct StrokeChunk {
     render: Handle<RenderControl>,
     pub compute: BindGroup,
     texture: Texture,
 }
 
-pub struct CanvasChunkPipeline {
+pub struct StrokeChunkPipeline {
     pipeline: RenderPipeline,
     pub compute: BindGroupLayout,
     vertex: BindGroupLayout,
     fragment: BindGroupLayout,
 }
 
-impl CanvasChunkPipeline {
+impl StrokeChunkPipeline {
     pub fn new(world: &World) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("canvas_chunk"),
-            source: ShaderSource::Wgsl(include_str!("canvas.wgsl").into()),
+            label: Some("stroke_chunk"),
+            source: ShaderSource::Wgsl(include_str!("chunk.wgsl").into()),
         });
 
         let compute = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("canvas_chunk_compute"),
+            label: Some("stroke_chunk_compute"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -67,7 +67,7 @@ impl CanvasChunkPipeline {
         });
 
         let vertex = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("canvas_chunk_vertex"),
+            label: Some("stroke_chunk_vertex"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -93,7 +93,7 @@ impl CanvasChunkPipeline {
         });
 
         let fragment = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("canvas_chunk_fragment"),
+            label: Some("stroke_chunk_fragment"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -115,13 +115,13 @@ impl CanvasChunkPipeline {
         });
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("canvas_chunk"),
+            label: Some("stroke_chunk"),
             bind_group_layouts: &[&vertex, &fragment],
             immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("canvas_chunk"),
+            label: Some("stroke_chunk"),
             layout: Some(&pipeline),
             vertex: VertexState {
                 module: &shader,
@@ -149,7 +149,7 @@ impl CanvasChunkPipeline {
             cache: None,
         });
 
-        CanvasChunkPipeline {
+        StrokeChunkPipeline {
             pipeline,
             compute,
             vertex,
@@ -158,17 +158,17 @@ impl CanvasChunkPipeline {
     }
 }
 
-impl Element for CanvasChunkPipeline {}
+impl Element for StrokeChunkPipeline {}
 
-impl CanvasChunk {
+impl StrokeChunk {
     pub fn new(world: &World, chunk: (i32, i32)) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let camera = world.single_fetch::<Camera>().unwrap();
-        let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
+        let manager = world.single_fetch::<StrokeChunkPipeline>().unwrap();
         let device = &render.device;
 
         let rectangle = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("canvas_chunk_rectangle"),
+            label: Some("stroke_chunk_rectangle"),
             contents: bytemuck::bytes_of(&VertexUniform {
                 origin: [chunk.0 * CHUNK_SIZE as i32, chunk.1 * CHUNK_SIZE as i32],
                 extend: [CHUNK_SIZE, CHUNK_SIZE],
@@ -177,7 +177,7 @@ impl CanvasChunk {
         });
 
         let texture = device.create_texture(&TextureDescriptor {
-            label: Some("canvas_chunk_texture"),
+            label: Some("stroke_chunk_texture"),
             size: Extent3d {
                 width: CHUNK_SIZE,
                 height: CHUNK_SIZE,
@@ -195,17 +195,17 @@ impl CanvasChunk {
         });
 
         let texture_view = texture.create_view(&TextureViewDescriptor {
-            label: Some("canvas_chunk_texture_view"),
+            label: Some("stroke_chunk_texture_view"),
             ..Default::default()
         });
 
         let sampler = device.create_sampler(&SamplerDescriptor {
-            label: Some("canvas_chunk_sampler"),
+            label: Some("stroke_chunk_sampler"),
             ..Default::default()
         });
 
         let compute = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("canvas_chunk_compute"),
+            label: Some("stroke_chunk_compute"),
             layout: &manager.compute,
             entries: &[
                 BindGroupEntry {
@@ -224,7 +224,7 @@ impl CanvasChunk {
         });
 
         let vertex = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("canvas_chunk_vertex"),
+            label: Some("stroke_chunk_vertex"),
             layout: &manager.vertex,
             entries: &[
                 BindGroupEntry {
@@ -247,7 +247,7 @@ impl CanvasChunk {
         });
 
         let fragment = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("canvas_chunk_fragment"),
+            label: Some("stroke_chunk_fragment"),
             layout: &manager.fragment,
             entries: &[
                 BindGroupEntry {
@@ -264,7 +264,7 @@ impl CanvasChunk {
         let control = world.insert(RenderControl {
             prepare: None,
             draw: Some(Box::new(move |world, rpass| {
-                let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
+                let manager = world.single_fetch::<StrokeChunkPipeline>().unwrap();
 
                 rpass.set_pipeline(&manager.pipeline);
                 rpass.set_bind_group(0, &vertex, &[]);
@@ -273,7 +273,7 @@ impl CanvasChunk {
             })),
         });
 
-        CanvasChunk {
+        StrokeChunk {
             render: control,
             compute,
             texture,
@@ -363,7 +363,7 @@ impl CanvasChunk {
     }
 }
 
-impl Element for CanvasChunk {
+impl Element for StrokeChunk {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         RenderControl::reorder(Some(-100), world, self.render);
         let layer = world.single::<StrokeLayer>().unwrap();

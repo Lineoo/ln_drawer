@@ -1,4 +1,4 @@
-mod canvas;
+mod chunk;
 mod round_brush;
 
 use hashbrown::{HashMap, HashSet};
@@ -17,7 +17,7 @@ use crate::{
     render::{Render, camera::CameraUtils},
     save::{Autosave, SaveDatabase},
     stroke::{
-        canvas::{CanvasChunk, CanvasChunkPipeline},
+        chunk::{StrokeChunk, StrokeChunkPipeline},
         round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushStorage},
     },
     tools::{
@@ -35,7 +35,7 @@ const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
 const TABLE_STROKE_CHUNK: TableDefinition<(i32, i32), &[u8]> = TableDefinition::new("stroke_chunk");
 
 pub struct StrokeLayer {
-    pub chunks: HashMap<(i32, i32), Handle<CanvasChunk>>,
+    pub chunks: HashMap<(i32, i32), Handle<StrokeChunk>>,
     unsaved: HashSet<(i32, i32)>,
 
     pub front_color: Srgba,
@@ -104,7 +104,7 @@ impl StrokeLayer {
             }],
         });
 
-        let canvas_chunk_pipeline = CanvasChunkPipeline::new(world);
+        let canvas_chunk_pipeline = StrokeChunkPipeline::new(world);
         let round_brush_pipeline =
             RoundBrushPipeline::new(&render, &canvas_chunk_pipeline.compute, &draw);
 
@@ -173,7 +173,7 @@ impl StrokeLayer {
             };
 
             let bytes = zstd::decode_all(chunk.value()).unwrap();
-            let chunk = CanvasChunk::from_bytes(world, chunk_id, &bytes);
+            let chunk = StrokeChunk::from_bytes(world, chunk_id, &bytes);
             self.chunks.insert(chunk_id, world.insert(chunk));
         }
 
@@ -277,11 +277,11 @@ impl StrokeLayer {
         });
     }
 
-    fn chunk_entry(&mut self, chunk: (i32, i32), world: &World) -> Handle<CanvasChunk> {
+    fn chunk_entry(&mut self, chunk: (i32, i32), world: &World) -> Handle<StrokeChunk> {
         match self.chunks.get(&chunk) {
             Some(&canvas) => canvas,
             None => {
-                let canvas = world.insert(CanvasChunk::new(world, chunk));
+                let canvas = world.insert(StrokeChunk::new(world, chunk));
                 self.chunks.insert(chunk, canvas);
                 canvas
             }
@@ -397,7 +397,7 @@ impl StrokeLayer {
         &mut self,
         dirty_box: Rectangle,
         chunk_id: (i32, i32),
-        chunk: &mut CanvasChunk,
+        chunk: &mut StrokeChunk,
         paint: &DrawUniform,
         brushes: &[RoundBrushStorage],
         world: &World,
