@@ -31,7 +31,7 @@ use crate::{
 };
 
 const CHUNK_SIZE: u32 = 512;
-const CHUNK_CAPS: usize = 500;
+const CHUNK_CAPS: usize = 5000;
 const MAX_STROKE: u64 = 1000;
 
 const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
@@ -39,7 +39,7 @@ const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
 const TABLE_STROKE_CHUNK: TableDefinition<(i32, i32), &[u8]> = TableDefinition::new("stroke_chunk");
 
 pub struct StrokeLayer {
-    pub chunks: HashMap<(i32, i32), Handle<StrokeChunk>>,
+    pub chunks: HashMap<(i32, i32), Option<Handle<StrokeChunk>>>,
     unsaved: HashSet<(i32, i32)>,
     stream: SaveStream<(i32, i32)>,
 
@@ -100,25 +100,20 @@ impl Element for StrokeLayer {
                 );
 
                 let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-                let mut buf = Vec::with_capacity(121);
-                for chunk_x in chunk_center_x - 1..=chunk_center_x + 1 {
-                    for chunk_y in chunk_center_y - 1..=chunk_center_y + 1 {
+                let mut buf = Vec::with_capacity(400);
+                for chunk_x in chunk_center_x - 10..chunk_center_x + 10 {
+                    for chunk_y in chunk_center_y - 10..chunk_center_y + 10 {
                         buf.push((chunk_x, chunk_y));
                     }
                 }
 
-                let mut load = Vec::new();
-                let mut unload = Vec::new();
-                stroke
-                    .stream
-                    .load(&buf, |x| load.push(x), |x| unload.push(x));
-
-                for chunk_id in load {
-                    stroke.try_read_chunk(world, chunk_id).unwrap();
-                }
-
-                for chunk_id in unload {
-                    stroke.try_free_chunk(world, chunk_id).unwrap();
+                let seq = stroke.stream.load_filtered(&buf);
+                for (chunk_id, load) in seq {
+                    if load {
+                        stroke.try_read_chunk(world, chunk_id).unwrap();
+                    } else {
+                        stroke.try_free_chunk(world, chunk_id).unwrap();
+                    }
                 }
 
                 Some(RenderInformation {
@@ -220,32 +215,34 @@ impl StrokeLayer {
         if let Some(chunk) = table_chunk.get(chunk_id)? {
             let bytes = zstd::decode_all(chunk.value()).unwrap();
             let chunk = StrokeChunk::from_bytes(world, chunk_id, &bytes);
-            self.chunks.insert(chunk_id, world.insert(chunk));
+            self.chunks.insert(chunk_id, Some(world.insert(chunk)));
         } else {
-            let chunk = StrokeChunk::new(world, chunk_id);
-            self.chunks.insert(chunk_id, world.insert(chunk));
+            self.chunks.insert(chunk_id, None);
         }
 
         Ok(())
     }
 
     fn try_free_chunk(&mut self, world: &World, chunk_id: (i32, i32)) -> Result<(), redb::Error> {
-        let Some(chunk_handle) = self.chunks.remove(&chunk_id) else {
+        let Some(chunk_handle) = self.chunks.remove(&chunk_id).unwrap() else {
             return Ok(());
         };
 
         let db = world.single_fetch::<SaveDatabase>().unwrap();
         let write = db.0.begin_write()?;
-        let mut table = write.open_multimap_table(TABLE_STROKE)?;
-        let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
+        {
+            let mut table = write.open_multimap_table(TABLE_STROKE)?;
+            let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
 
-        if self.unsaved.contains(&chunk_id) {
-            let chunk = world.fetch(chunk_handle).unwrap();
-            let bytes = chunk.device_readback(world);
-            let compressed = zstd::encode_all(&bytes[..], 0).unwrap();
-            table.insert((), chunk_id).unwrap();
-            table_chunk.insert(chunk_id, &compressed[..]).unwrap();
+            if self.unsaved.remove(&chunk_id) {
+                let chunk = world.fetch(chunk_handle).unwrap();
+                let bytes = chunk.device_readback(world);
+                let compressed = zstd::encode_all(&bytes[..], 0).unwrap();
+                table.insert((), chunk_id).unwrap();
+                table_chunk.insert(chunk_id, &compressed[..]).unwrap();
+            }
         }
+        write.commit()?;
 
         world.remove(chunk_handle).unwrap();
         Ok(())
@@ -257,7 +254,7 @@ impl StrokeLayer {
             let mut table = write.open_multimap_table(TABLE_STROKE).unwrap();
             let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK).unwrap();
             for chunk_id in this.unsaved.drain() {
-                let Some(&chunk) = this.chunks.get(&chunk_id) else {
+                let Some(&Some(chunk)) = this.chunks.get(&chunk_id) else {
                     continue;
                 };
 
@@ -437,8 +434,15 @@ impl StrokeLayer {
         }
 
         for (chunk_id, chunk) in chunks {
-            let mut chunk = world.fetch_mut(chunk).unwrap();
-            self.paint_chunk(dirty_box, chunk_id, &mut chunk, &paint, &brushes, world);
+            if let Some(chunk) = chunk {
+                let mut chunk = world.fetch_mut(chunk).unwrap();
+                self.paint_chunk(dirty_box, chunk_id, &mut chunk, &paint, &brushes, world);
+            } else {
+                let mut chunk = StrokeChunk::new(world, chunk_id);
+                self.paint_chunk(dirty_box, chunk_id, &mut chunk, &paint, &brushes, world);
+                let ret = self.chunks.insert(chunk_id, Some(world.insert(chunk)));
+                debug_assert_eq!(ret, Some(None));
+            }
         }
     }
 
