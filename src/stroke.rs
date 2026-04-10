@@ -14,8 +14,11 @@ use winit::event::PointerKind;
 use crate::{
     lnwin::Lnwindow,
     measures::{Fract, PositionFract, Rectangle, Size},
-    render::{Render, camera::CameraUtils},
-    save::{Autosave, SaveDatabase},
+    render::{
+        Render, RenderControl, RenderInformation,
+        camera::{Camera, CameraUtils},
+    },
+    save::{Autosave, SaveDatabase, stream::SaveStream},
     stroke::{
         chunk::{StrokeChunk, StrokeChunkPipeline},
         round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushStorage},
@@ -28,6 +31,7 @@ use crate::{
 };
 
 const CHUNK_SIZE: u32 = 512;
+const CHUNK_CAPS: usize = 500;
 const MAX_STROKE: u64 = 1000;
 
 const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
@@ -37,6 +41,7 @@ const TABLE_STROKE_CHUNK: TableDefinition<(i32, i32), &[u8]> = TableDefinition::
 pub struct StrokeLayer {
     pub chunks: HashMap<(i32, i32), Handle<StrokeChunk>>,
     unsaved: HashSet<(i32, i32)>,
+    stream: SaveStream<(i32, i32)>,
 
     pub front_color: Srgba,
     pub brush: RoundBrush,
@@ -81,7 +86,50 @@ impl Element for StrokeLayer {
 
         self.attach_touch(world, this);
         self.attach_autosave(world, this);
-        self.read_all_chunks(world);
+
+        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        self.database_init(&db.0).unwrap();
+
+        let control = world.insert(RenderControl {
+            prepare: Some(Box::new(|world| {
+                let camera = world.single_fetch::<Camera>().unwrap();
+                let center = camera.center.round();
+                let (chunk_center_x, chunk_center_y) = (
+                    center.x.div_euclid(CHUNK_SIZE as i32),
+                    center.y.div_euclid(CHUNK_SIZE as i32),
+                );
+
+                let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+                let mut buf = Vec::with_capacity(121);
+                for chunk_x in chunk_center_x - 1..=chunk_center_x + 1 {
+                    for chunk_y in chunk_center_y - 1..=chunk_center_y + 1 {
+                        buf.push((chunk_x, chunk_y));
+                    }
+                }
+
+                let mut load = Vec::new();
+                let mut unload = Vec::new();
+                stroke
+                    .stream
+                    .load(&buf, |x| load.push(x), |x| unload.push(x));
+
+                for chunk_id in load {
+                    stroke.try_read_chunk(world, chunk_id).unwrap();
+                }
+
+                for chunk_id in unload {
+                    stroke.try_free_chunk(world, chunk_id).unwrap();
+                }
+
+                Some(RenderInformation {
+                    keep_redrawing: false,
+                })
+            })),
+            draw: None,
+        });
+        RenderControl::reorder(Some(0), world, control);
+
+        world.dependency(control, this);
     }
 }
 
@@ -146,6 +194,7 @@ impl StrokeLayer {
         StrokeLayer {
             chunks: HashMap::new(),
             unsaved: HashSet::new(),
+            stream: SaveStream::new(CHUNK_CAPS),
             front_color: palette::named::BLACK.with_alpha(1.0).into_format(),
             brush: default_brush,
             modifier: default_modifier,
@@ -155,36 +204,50 @@ impl StrokeLayer {
         }
     }
 
-    pub fn read_all_chunks(&mut self, world: &World) {
-        self.try_read_all_chunks(world).unwrap();
+    fn database_init(&mut self, db: &Database) -> Result<(), redb::Error> {
+        let write = db.begin_write()?;
+        write.open_multimap_table(TABLE_STROKE)?;
+        write.open_table(TABLE_STROKE_CHUNK)?;
+        write.commit()?;
+        Ok(())
     }
 
-    fn try_read_all_chunks(&mut self, world: &World) -> Result<(), redb::Error> {
+    fn try_read_chunk(&mut self, world: &World, chunk_id: (i32, i32)) -> Result<(), redb::Error> {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
-        self.read_init(&db.0)?;
         let read = db.0.begin_read()?;
-        let table = read.open_multimap_table(TABLE_STROKE)?;
         let table_chunk = read.open_table(TABLE_STROKE_CHUNK)?;
-        for chunk in table.get(())? {
-            let access = chunk?;
-            let chunk_id = access.value();
-            let Some(chunk) = table_chunk.get(chunk_id)? else {
-                continue;
-            };
 
+        if let Some(chunk) = table_chunk.get(chunk_id)? {
             let bytes = zstd::decode_all(chunk.value()).unwrap();
             let chunk = StrokeChunk::from_bytes(world, chunk_id, &bytes);
+            self.chunks.insert(chunk_id, world.insert(chunk));
+        } else {
+            let chunk = StrokeChunk::new(world, chunk_id);
             self.chunks.insert(chunk_id, world.insert(chunk));
         }
 
         Ok(())
     }
 
-    fn read_init(&mut self, db: &Database) -> Result<(), redb::Error> {
-        let write = db.begin_write()?;
-        write.open_multimap_table(TABLE_STROKE)?;
-        write.open_table(TABLE_STROKE_CHUNK)?;
-        write.commit()?;
+    fn try_free_chunk(&mut self, world: &World, chunk_id: (i32, i32)) -> Result<(), redb::Error> {
+        let Some(chunk_handle) = self.chunks.remove(&chunk_id) else {
+            return Ok(());
+        };
+
+        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        let write = db.0.begin_write()?;
+        let mut table = write.open_multimap_table(TABLE_STROKE)?;
+        let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
+
+        if self.unsaved.contains(&chunk_id) {
+            let chunk = world.fetch(chunk_handle).unwrap();
+            let bytes = chunk.device_readback(world);
+            let compressed = zstd::encode_all(&bytes[..], 0).unwrap();
+            table.insert((), chunk_id).unwrap();
+            table_chunk.insert(chunk_id, &compressed[..]).unwrap();
+        }
+
+        world.remove(chunk_handle).unwrap();
         Ok(())
     }
 
@@ -266,8 +329,7 @@ impl StrokeLayer {
                     step: Fract::ZERO,
                 };
 
-                let handle = this.handle();
-                this.paint(target, world, handle);
+                this.paint(target, world);
             } else {
                 world.queue(move |world| {
                     let mut this = world.fetch_mut(this).unwrap();
@@ -277,18 +339,7 @@ impl StrokeLayer {
         });
     }
 
-    fn chunk_entry(&mut self, chunk: (i32, i32), world: &World) -> Handle<StrokeChunk> {
-        match self.chunks.get(&chunk) {
-            Some(&canvas) => canvas,
-            None => {
-                let canvas = world.insert(StrokeChunk::new(world, chunk));
-                self.chunks.insert(chunk, canvas);
-                canvas
-            }
-        }
-    }
-
-    fn paint(&mut self, target: BrushInstance, world: &World, this: Handle<Self>) {
+    fn paint(&mut self, target: BrushInstance, world: &World) {
         // generate draws //
 
         let previous = *self.current.get_or_insert(target);
@@ -355,7 +406,7 @@ impl StrokeLayer {
             _pad: 0,
         };
 
-        self.paint_batch(dirty_box, draw, brushes, world, this);
+        self.paint_batch(dirty_box, draw, brushes, world);
     }
 
     fn paint_batch(
@@ -364,7 +415,6 @@ impl StrokeLayer {
         paint: DrawUniform,
         brushes: Vec<RoundBrushStorage>,
         world: &World,
-        this: Handle<Self>,
     ) {
         let chunk_src = (
             dirty_box.left().div_euclid(CHUNK_SIZE as i32),
@@ -380,17 +430,16 @@ impl StrokeLayer {
         for chunk_x in chunk_src.0..chunk_dst.0 {
             for chunk_y in chunk_src.1..chunk_dst.1 {
                 let chunk_id = (chunk_x, chunk_y);
-                chunks.push((chunk_id, self.chunk_entry(chunk_id, world)));
+                if let Some(&chunk) = self.chunks.get(&chunk_id) {
+                    chunks.push((chunk_id, chunk));
+                }
             }
         }
 
-        world.queue(move |world| {
-            for (chunk_id, chunk) in chunks {
-                let mut this = world.fetch_mut(this).unwrap();
-                let mut chunk = world.fetch_mut(chunk).unwrap();
-                this.paint_chunk(dirty_box, chunk_id, &mut chunk, &paint, &brushes, world);
-            }
-        });
+        for (chunk_id, chunk) in chunks {
+            let mut chunk = world.fetch_mut(chunk).unwrap();
+            self.paint_chunk(dirty_box, chunk_id, &mut chunk, &paint, &brushes, world);
+        }
     }
 
     fn paint_chunk(
