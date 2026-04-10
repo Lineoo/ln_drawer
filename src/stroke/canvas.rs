@@ -1,4 +1,3 @@
-use serde_bytes::ByteBuf;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBinding,
@@ -14,15 +13,12 @@ use wgpu::{
 
 use crate::{
     render::{MSAA_STATE, Render, RenderControl, camera::Camera, vertex::VertexUniform},
-    save::{Autosave, SaveControl, SaveRead},
     stroke::{CHUNK_SIZE, StrokeLayer},
     world::{Element, Handle, World},
 };
 
 pub struct CanvasChunk {
-    save: Handle<SaveControl>,
     render: Handle<RenderControl>,
-    pub changed: bool,
     pub compute: BindGroup,
     texture: Texture,
 }
@@ -32,12 +28,6 @@ pub struct CanvasChunkPipeline {
     pub compute: BindGroupLayout,
     vertex: BindGroupLayout,
     fragment: BindGroupLayout,
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Archive {
-    chunk: (i32, i32),
-    bytes: ByteBuf,
 }
 
 impl CanvasChunkPipeline {
@@ -171,7 +161,7 @@ impl CanvasChunkPipeline {
 impl Element for CanvasChunkPipeline {}
 
 impl CanvasChunk {
-    pub fn new(world: &World, chunk: (i32, i32), save_control: Handle<SaveControl>) -> Self {
+    pub fn new(world: &World, chunk: (i32, i32)) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let camera = world.single_fetch::<Camera>().unwrap();
         let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
@@ -271,7 +261,7 @@ impl CanvasChunk {
             ],
         });
 
-        let render_control = world.insert(RenderControl {
+        let control = world.insert(RenderControl {
             prepare: None,
             draw: Some(Box::new(move |world, rpass| {
                 let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
@@ -284,89 +274,44 @@ impl CanvasChunk {
         });
 
         CanvasChunk {
-            save: save_control,
-            render: render_control,
-            changed: false,
+            render: control,
             compute,
             texture,
         }
     }
 
-    pub fn save_write() -> Autosave {
-        Autosave(Box::new(|world| {
-            let stroke = world.single_fetch::<StrokeLayer>().unwrap();
+    pub fn from_bytes(world: &World, chunk: (i32, i32), bytes: &[u8]) -> Self {
+        let render = world.single_fetch::<Render>().unwrap();
+        let canvas = Self::new(world, chunk);
+        render.queue.write_texture(
+            TexelCopyTextureInfoBase {
+                texture: &canvas.texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytes,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(CHUNK_SIZE * 4),
+                rows_per_image: Some(CHUNK_SIZE),
+            },
+            Extent3d {
+                width: CHUNK_SIZE,
+                height: CHUNK_SIZE,
+                depth_or_array_layers: 1,
+            },
+        );
 
-            let mut canvases = Vec::new();
-            let mut tasks = Vec::new();
-
-            for (&chunk, &canvas) in &stroke.chunks {
-                let canvas = world.fetch_mut(canvas).unwrap();
-                canvases.push((chunk, canvas));
-            }
-
-            for (chunk, canvas) in &mut canvases {
-                let task = canvas.device_readback(world, *chunk);
-                tasks.push(task);
-            }
-
-            pollster::block_on(async {
-                for task in tasks {
-                    task.await;
-                }
-            })
-        }))
+        canvas
     }
 
-    pub fn save_read() -> SaveRead {
-        SaveRead {
-            class: "canvas_chunk".into(),
-            read: Box::new(|world, control| {
-                let stroke = &mut *world.single_fetch_mut::<StrokeLayer>().unwrap();
-                let control = world.fetch(control).unwrap();
-
-                let btyes = control.read(world);
-                let archive = postcard::from_bytes::<Archive>(&btyes).unwrap();
-
-                let canvas = CanvasChunk::new(world, archive.chunk, control.handle());
-                stroke.queue.write_texture(
-                    TexelCopyTextureInfoBase {
-                        texture: &canvas.texture,
-                        mip_level: 0,
-                        origin: Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &archive.bytes,
-                    TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(CHUNK_SIZE * 4),
-                        rows_per_image: Some(CHUNK_SIZE),
-                    },
-                    Extent3d {
-                        width: CHUNK_SIZE,
-                        height: CHUNK_SIZE,
-                        depth_or_array_layers: 1,
-                    },
-                );
-
-                let canvas = world.insert(canvas);
-                let ret = stroke.chunks.insert(archive.chunk, canvas);
-                debug_assert!(ret.is_none());
-            }),
-        }
-    }
-
-    async fn device_readback(&mut self, world: &World, chunk: (i32, i32)) {
+    pub fn device_readback(&self, world: &World) -> Vec<u8> {
         let (tx, rx) = std::sync::mpsc::channel();
-
-        if !self.changed {
-            return;
-        }
 
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
         let queue = &render.queue;
-
-        self.changed = false;
 
         let readback_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("canvas_readback"),
@@ -414,17 +359,7 @@ impl CanvasChunk {
         });
 
         device.poll(PollType::wait_indefinitely()).unwrap();
-
-        if let Ok(bytes) = rx.recv() {
-            let archive = Archive {
-                chunk,
-                bytes: bytes.into(),
-            };
-            let bytes = postcard::to_stdvec(&archive).unwrap();
-
-            let control = world.fetch(self.save).unwrap();
-            control.write(world, &bytes);
-        }
+        rx.recv().unwrap()
     }
 }
 
@@ -433,7 +368,6 @@ impl Element for CanvasChunk {
         RenderControl::reorder(Some(-100), world, self.render);
         let layer = world.single::<StrokeLayer>().unwrap();
         world.dependency(this, layer);
-        world.dependency(self.save, this);
         world.dependency(self.render, this);
     }
 }

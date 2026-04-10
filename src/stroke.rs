@@ -1,13 +1,13 @@
 mod canvas;
 mod round_brush;
 
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use palette::{Srgba, WithAlpha};
+use redb::{Database, MultimapTableDefinition, ReadableDatabase, TableDefinition};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, Queue,
-    ShaderStages,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, ShaderStages,
 };
 use winit::event::PointerKind;
 
@@ -15,7 +15,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Fract, PositionFract, Rectangle, Size},
     render::{Render, camera::CameraUtils},
-    save::SaveControl,
+    save::{Autosave, SaveDatabase},
     stroke::{
         canvas::{CanvasChunk, CanvasChunkPipeline},
         round_brush::{RoundBrush, RoundBrushPipeline, RoundBrushStorage},
@@ -30,8 +30,14 @@ use crate::{
 const CHUNK_SIZE: u32 = 512;
 const MAX_STROKE: u64 = 1000;
 
+const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
+    MultimapTableDefinition::new("stroke");
+const TABLE_STROKE_CHUNK: TableDefinition<(i32, i32), &[u8]> = TableDefinition::new("stroke_chunk");
+
 pub struct StrokeLayer {
     pub chunks: HashMap<(i32, i32), Handle<CanvasChunk>>,
+    unsaved: HashSet<(i32, i32)>,
+
     pub front_color: Srgba,
     pub brush: RoundBrush,
     pub modifier: BrushModifier,
@@ -40,8 +46,6 @@ pub struct StrokeLayer {
 
     draw: BindGroup,
     draw_data: Buffer,
-
-    queue: Queue,
 }
 
 pub struct BrushModifier {
@@ -76,11 +80,8 @@ impl Element for StrokeLayer {
         world.single::<StrokeLayer>().unwrap();
 
         self.attach_touch(world, this);
-        let read = world.insert(CanvasChunk::save_read());
-        let write = world.insert(CanvasChunk::save_write());
-
-        world.dependency(read, this);
-        world.dependency(write, this);
+        self.attach_autosave(world, this);
+        self.read_all_chunks(world);
     }
 }
 
@@ -144,14 +145,66 @@ impl StrokeLayer {
 
         StrokeLayer {
             chunks: HashMap::new(),
+            unsaved: HashSet::new(),
             front_color: palette::named::BLACK.with_alpha(1.0).into_format(),
             brush: default_brush,
             modifier: default_modifier,
             current: None,
             draw,
             draw_data,
-            queue: render.queue.clone(),
         }
+    }
+
+    pub fn read_all_chunks(&mut self, world: &World) {
+        self.try_read_all_chunks(world).unwrap();
+    }
+
+    fn try_read_all_chunks(&mut self, world: &World) -> Result<(), redb::Error> {
+        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        self.read_init(&db.0)?;
+        let read = db.0.begin_read()?;
+        let table = read.open_multimap_table(TABLE_STROKE)?;
+        let table_chunk = read.open_table(TABLE_STROKE_CHUNK)?;
+        for chunk in table.get(())? {
+            let access = chunk?;
+            let chunk_id = access.value();
+            let Some(chunk) = table_chunk.get(chunk_id)? else {
+                continue;
+            };
+
+            let bytes = zstd::decode_all(chunk.value()).unwrap();
+            let chunk = CanvasChunk::from_bytes(world, chunk_id, &bytes);
+            self.chunks.insert(chunk_id, world.insert(chunk));
+        }
+
+        Ok(())
+    }
+
+    fn read_init(&mut self, db: &Database) -> Result<(), redb::Error> {
+        let write = db.begin_write()?;
+        write.open_multimap_table(TABLE_STROKE)?;
+        write.open_table(TABLE_STROKE_CHUNK)?;
+        write.commit()?;
+        Ok(())
+    }
+
+    fn attach_autosave(&mut self, world: &World, this: Handle<Self>) {
+        let save = world.insert(Autosave(Box::new(move |world, write| {
+            let this = &mut *world.fetch_mut(this).unwrap();
+            for chunk_id in this.unsaved.drain() {
+                let Some(&chunk) = this.chunks.get(&chunk_id) else {
+                    continue;
+                };
+
+                let chunk = world.fetch(chunk).unwrap();
+                let bytes = chunk.device_readback(world);
+                let compressed = zstd::encode_all(&bytes[..], 0).unwrap();
+                let mut table = write.open_table(TABLE_STROKE_CHUNK).unwrap();
+                table.insert(chunk_id, &compressed[..]).unwrap();
+            }
+        })));
+
+        world.dependency(save, this);
     }
 
     fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
@@ -212,7 +265,7 @@ impl StrokeLayer {
                 };
 
                 let handle = this.handle();
-                this.draw(target, world, handle);
+                this.paint(target, world, handle);
             } else {
                 world.queue(move |world| {
                     let mut this = world.fetch_mut(this).unwrap();
@@ -222,7 +275,18 @@ impl StrokeLayer {
         });
     }
 
-    fn draw(&mut self, target: BrushInstance, world: &World, this: Handle<Self>) {
+    fn chunk_entry(&mut self, chunk: (i32, i32), world: &World) -> Handle<CanvasChunk> {
+        match self.chunks.get(&chunk) {
+            Some(&canvas) => canvas,
+            None => {
+                let canvas = world.insert(CanvasChunk::new(world, chunk));
+                self.chunks.insert(chunk, canvas);
+                canvas
+            }
+        }
+    }
+
+    fn paint(&mut self, target: BrushInstance, world: &World, this: Handle<Self>) {
         // generate draws //
 
         let previous = *self.current.get_or_insert(target);
@@ -289,13 +353,13 @@ impl StrokeLayer {
             _pad: 0,
         };
 
-        self.draw_batch(dirty_box, draw, brushes, world, this);
+        self.paint_batch(dirty_box, draw, brushes, world, this);
     }
 
-    fn draw_batch(
+    fn paint_batch(
         &mut self,
         dirty_box: Rectangle,
-        draw: DrawUniform,
+        paint: DrawUniform,
         brushes: Vec<RoundBrushStorage>,
         world: &World,
         this: Handle<Self>,
@@ -313,35 +377,26 @@ impl StrokeLayer {
         let mut chunks = Vec::new();
         for chunk_x in chunk_src.0..chunk_dst.0 {
             for chunk_y in chunk_src.1..chunk_dst.1 {
-                chunks.push(match self.chunks.get(&(chunk_x, chunk_y)) {
-                    Some(&canvas) => canvas,
-                    None => {
-                        let control = SaveControl::create("canvas_chunk".into(), world, &[]);
-                        let canvas = CanvasChunk::new(world, (chunk_x, chunk_y), control);
-
-                        let canvas = world.insert(canvas);
-                        self.chunks.insert((chunk_x, chunk_y), canvas);
-
-                        canvas
-                    }
-                });
+                let chunk_id = (chunk_x, chunk_y);
+                chunks.push((chunk_id, self.chunk_entry(chunk_id, world)));
             }
         }
 
         world.queue(move |world| {
-            for chunk in chunks {
+            for (chunk_id, chunk) in chunks {
                 let mut this = world.fetch_mut(this).unwrap();
                 let mut chunk = world.fetch_mut(chunk).unwrap();
-                this.draw_chunk(dirty_box, &mut chunk, &draw, &brushes, world);
+                this.paint_chunk(dirty_box, chunk_id, &mut chunk, &paint, &brushes, world);
             }
         });
     }
 
-    fn draw_chunk(
+    fn paint_chunk(
         &mut self,
         dirty_box: Rectangle,
-        canvas: &mut CanvasChunk,
-        draw: &DrawUniform,
+        chunk_id: (i32, i32),
+        chunk: &mut CanvasChunk,
+        paint: &DrawUniform,
         brushes: &[RoundBrushStorage],
         world: &World,
     ) {
@@ -349,16 +404,17 @@ impl StrokeLayer {
             return;
         }
 
+        self.unsaved.insert(chunk_id);
+
         let brush_pipeline = world.single_fetch::<RoundBrushPipeline>().unwrap();
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
 
-        canvas.changed = true;
+        render
+            .queue
+            .write_buffer(&self.draw_data, 0, bytemuck::bytes_of(paint));
 
-        self.queue
-            .write_buffer(&self.draw_data, 0, bytemuck::bytes_of(draw));
-
-        self.queue.write_buffer(
+        render.queue.write_buffer(
             &self.brush.brush_data_array,
             0,
             bytemuck::cast_slice(brushes),
@@ -376,7 +432,7 @@ impl StrokeLayer {
         });
 
         cpass.set_pipeline(&brush_pipeline.pipeline);
-        cpass.set_bind_group(0, Some(&canvas.compute), &[]);
+        cpass.set_bind_group(0, Some(&chunk.compute), &[]);
         cpass.set_bind_group(1, Some(&self.draw), &[]);
         cpass.set_bind_group(2, Some(&self.brush.brush), &[]);
 
