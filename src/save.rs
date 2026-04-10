@@ -1,3 +1,5 @@
+pub mod stream;
+
 use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime},
