@@ -3,7 +3,7 @@ mod round_brush;
 
 use hashbrown::{HashMap, HashSet};
 use palette::{Srgba, WithAlpha};
-use redb::{Database, MultimapTableDefinition, ReadableDatabase, TableDefinition};
+use redb::{Database, MultimapTableDefinition, ReadableTable, TableDefinition, WriteTransaction};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
@@ -84,53 +84,12 @@ impl Element for StrokeLayer {
         // ensure singleton
         world.single::<StrokeLayer>().unwrap();
 
-        self.attach_touch(world, this);
-        self.attach_autosave(world, this);
-
         let db = world.single_fetch::<SaveDatabase>().unwrap();
         self.database_init(&db.0).unwrap();
 
-        let control = world.insert(RenderControl {
-            prepare: Some(Box::new(|world| {
-                let camera = world.single_fetch::<Camera>().unwrap();
-                let center = camera.center.round();
-                let (chunk_center_x, chunk_center_y) = (
-                    center.x.div_euclid(CHUNK_SIZE as i32),
-                    center.y.div_euclid(CHUNK_SIZE as i32),
-                );
-
-                let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-                let mut buf = Vec::with_capacity(400);
-                for chunk_x in chunk_center_x - 10..chunk_center_x + 10 {
-                    for chunk_y in chunk_center_y - 10..chunk_center_y + 10 {
-                        buf.push((chunk_x, chunk_y));
-                    }
-                }
-
-                let seq = stroke.stream.load_filtered(&buf);
-                for (chunk_id, load) in seq {
-                    if load {
-                        stroke.try_read_chunk(world, chunk_id).unwrap();
-                    } else {
-                        stroke.try_free_chunk(world, chunk_id).unwrap();
-                    }
-                }
-
-                Some(RenderInformation {
-                    keep_redrawing: false,
-                })
-            })),
-            draw: Some(Box::new(|world, rpass| {
-                let stroke = world.single_fetch::<StrokeLayer>().unwrap();
-                for &chunk in stroke.chunks.values().flatten() {
-                    let chunk = world.fetch(chunk).unwrap();
-                    chunk.redraw(world, rpass);
-                }
-            })),
-        });
-        RenderControl::reorder(Some(-100), world, control);
-
-        world.dependency(control, this);
+        self.attach_touch(world, this);
+        self.attach_autosave(world, this);
+        self.attach_render(world, this);
     }
 }
 
@@ -213,10 +172,48 @@ impl StrokeLayer {
         Ok(())
     }
 
-    fn try_read_chunk(&mut self, world: &World, chunk_id: (i32, i32)) -> Result<(), redb::Error> {
+    fn chunk_autoload(world: &World) -> Option<RenderInformation> {
+        let camera = world.single_fetch::<Camera>().unwrap();
+        let center = camera.center.round();
+        let (chunk_center_x, chunk_center_y) = (
+            center.x.div_euclid(CHUNK_SIZE as i32),
+            center.y.div_euclid(CHUNK_SIZE as i32),
+        );
+
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        let mut buf = Vec::with_capacity(400);
+        for chunk_x in chunk_center_x - 10..chunk_center_x + 10 {
+            for chunk_y in chunk_center_y - 10..chunk_center_y + 10 {
+                buf.push((chunk_x, chunk_y));
+            }
+        }
+
         let db = world.single_fetch::<SaveDatabase>().unwrap();
-        let read = db.0.begin_read()?;
-        let table_chunk = read.open_table(TABLE_STROKE_CHUNK)?;
+        let write = db.0.begin_write().unwrap();
+
+        let seq = stroke.stream.load_filtered(&buf);
+        for (chunk_id, load) in seq {
+            if load {
+                stroke.try_read_chunk(&write, world, chunk_id).unwrap();
+            } else {
+                stroke.try_free_chunk(&write, world, chunk_id).unwrap();
+            }
+        }
+
+        write.commit().unwrap();
+
+        Some(RenderInformation {
+            keep_redrawing: false,
+        })
+    }
+
+    fn try_read_chunk(
+        &mut self,
+        write: &WriteTransaction,
+        world: &World,
+        chunk_id: (i32, i32),
+    ) -> Result<(), redb::Error> {
+        let table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
 
         if let Some(chunk) = table_chunk.get(chunk_id)? {
             let bytes = zstd::decode_all(chunk.value()).unwrap();
@@ -229,26 +226,26 @@ impl StrokeLayer {
         Ok(())
     }
 
-    fn try_free_chunk(&mut self, world: &World, chunk_id: (i32, i32)) -> Result<(), redb::Error> {
+    fn try_free_chunk(
+        &mut self,
+        write: &WriteTransaction,
+        world: &World,
+        chunk_id: (i32, i32),
+    ) -> Result<(), redb::Error> {
         let Some(chunk_handle) = self.chunks.remove(&chunk_id).unwrap() else {
             return Ok(());
         };
 
-        let db = world.single_fetch::<SaveDatabase>().unwrap();
-        let write = db.0.begin_write()?;
-        {
-            let mut table = write.open_multimap_table(TABLE_STROKE)?;
-            let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
+        let mut table = write.open_multimap_table(TABLE_STROKE)?;
+        let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
 
-            if self.unsaved.remove(&chunk_id) {
-                let chunk = world.fetch(chunk_handle).unwrap();
-                let bytes = chunk.device_readback(world);
-                let compressed = zstd::encode_all(&bytes[..], 0).unwrap();
-                table.insert((), chunk_id).unwrap();
-                table_chunk.insert(chunk_id, &compressed[..]).unwrap();
-            }
+        if self.unsaved.remove(&chunk_id) {
+            let chunk = world.fetch(chunk_handle).unwrap();
+            let bytes = chunk.device_readback(world);
+            let compressed = zstd::encode_all(&bytes[..], 0).unwrap();
+            table.insert((), chunk_id).unwrap();
+            table_chunk.insert(chunk_id, &compressed[..]).unwrap();
         }
-        write.commit()?;
 
         world.remove(chunk_handle).unwrap();
         Ok(())
@@ -273,6 +270,21 @@ impl StrokeLayer {
         })));
 
         world.dependency(save, this);
+    }
+
+    fn attach_render(&mut self, world: &World, this: Handle<Self>) {
+        let control = world.insert(RenderControl {
+            prepare: Some(Box::new(Self::chunk_autoload)),
+            draw: Some(Box::new(|world, rpass| {
+                let stroke = world.single_fetch::<StrokeLayer>().unwrap();
+                for &chunk in stroke.chunks.values().flatten() {
+                    let chunk = world.fetch(chunk).unwrap();
+                    chunk.redraw(world, rpass);
+                }
+            })),
+        });
+        RenderControl::reorder(Some(-100), world, control);
+        world.dependency(control, this);
     }
 
     fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
