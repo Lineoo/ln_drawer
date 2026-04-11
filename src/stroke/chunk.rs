@@ -1,57 +1,49 @@
-use serde_bytes::ByteBuf;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBinding,
     BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites,
     CommandEncoderDescriptor, Extent3d, FragmentState, MapMode, Origin3d, PipelineLayoutDescriptor,
-    PollType, PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor,
-    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TexelCopyBufferInfoBase, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
-    Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
-    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
+    PollType, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline,
+    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyBufferInfoBase,
+    TexelCopyBufferLayout, TexelCopyTextureInfoBase, Texture, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
+    TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
-    render::{MSAA_STATE, Render, RenderControl, camera::Camera, vertex::VertexUniform},
-    save::{Autosave, SaveControl, SaveRead},
+    render::{MSAA_STATE, Render, camera::Camera, vertex::VertexUniform},
     stroke::{CHUNK_SIZE, StrokeLayer},
     world::{Element, Handle, World},
 };
 
-pub struct CanvasChunk {
-    save: Handle<SaveControl>,
-    render: Handle<RenderControl>,
-    pub changed: bool,
+pub struct StrokeChunk {
     pub compute: BindGroup,
+    vertex: BindGroup,
+    fragment: BindGroup,
     texture: Texture,
 }
 
-pub struct CanvasChunkPipeline {
+pub struct StrokeChunkPipeline {
     pipeline: RenderPipeline,
     pub compute: BindGroupLayout,
     vertex: BindGroupLayout,
     fragment: BindGroupLayout,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Archive {
-    chunk: (i32, i32),
-    bytes: ByteBuf,
-}
-
-impl CanvasChunkPipeline {
+impl StrokeChunkPipeline {
     pub fn new(world: &World) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("canvas_chunk"),
-            source: ShaderSource::Wgsl(include_str!("canvas.wgsl").into()),
+            label: Some("stroke_chunk"),
+            source: ShaderSource::Wgsl(include_str!("chunk.wgsl").into()),
         });
 
         let compute = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("canvas_chunk_compute"),
+            label: Some("stroke_chunk_compute"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -77,7 +69,7 @@ impl CanvasChunkPipeline {
         });
 
         let vertex = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("canvas_chunk_vertex"),
+            label: Some("stroke_chunk_vertex"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -103,7 +95,7 @@ impl CanvasChunkPipeline {
         });
 
         let fragment = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("canvas_chunk_fragment"),
+            label: Some("stroke_chunk_fragment"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -125,13 +117,13 @@ impl CanvasChunkPipeline {
         });
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("canvas_chunk"),
+            label: Some("stroke_chunk"),
             bind_group_layouts: &[&vertex, &fragment],
             immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("canvas_chunk"),
+            label: Some("stroke_chunk"),
             layout: Some(&pipeline),
             vertex: VertexState {
                 module: &shader,
@@ -159,7 +151,7 @@ impl CanvasChunkPipeline {
             cache: None,
         });
 
-        CanvasChunkPipeline {
+        StrokeChunkPipeline {
             pipeline,
             compute,
             vertex,
@@ -168,17 +160,17 @@ impl CanvasChunkPipeline {
     }
 }
 
-impl Element for CanvasChunkPipeline {}
+impl Element for StrokeChunkPipeline {}
 
-impl CanvasChunk {
-    pub fn new(world: &World, chunk: (i32, i32), save_control: Handle<SaveControl>) -> Self {
+impl StrokeChunk {
+    pub fn new(world: &World, chunk: (i32, i32)) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let camera = world.single_fetch::<Camera>().unwrap();
-        let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
+        let manager = world.single_fetch::<StrokeChunkPipeline>().unwrap();
         let device = &render.device;
 
         let rectangle = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("canvas_chunk_rectangle"),
+            label: Some("stroke_chunk_rectangle"),
             contents: bytemuck::bytes_of(&VertexUniform {
                 origin: [chunk.0 * CHUNK_SIZE as i32, chunk.1 * CHUNK_SIZE as i32],
                 extend: [CHUNK_SIZE, CHUNK_SIZE],
@@ -187,7 +179,7 @@ impl CanvasChunk {
         });
 
         let texture = device.create_texture(&TextureDescriptor {
-            label: Some("canvas_chunk_texture"),
+            label: Some("stroke_chunk_texture"),
             size: Extent3d {
                 width: CHUNK_SIZE,
                 height: CHUNK_SIZE,
@@ -205,17 +197,17 @@ impl CanvasChunk {
         });
 
         let texture_view = texture.create_view(&TextureViewDescriptor {
-            label: Some("canvas_chunk_texture_view"),
+            label: Some("stroke_chunk_texture_view"),
             ..Default::default()
         });
 
         let sampler = device.create_sampler(&SamplerDescriptor {
-            label: Some("canvas_chunk_sampler"),
+            label: Some("stroke_chunk_sampler"),
             ..Default::default()
         });
 
         let compute = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("canvas_chunk_compute"),
+            label: Some("stroke_chunk_compute"),
             layout: &manager.compute,
             entries: &[
                 BindGroupEntry {
@@ -234,7 +226,7 @@ impl CanvasChunk {
         });
 
         let vertex = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("canvas_chunk_vertex"),
+            label: Some("stroke_chunk_vertex"),
             layout: &manager.vertex,
             entries: &[
                 BindGroupEntry {
@@ -257,7 +249,7 @@ impl CanvasChunk {
         });
 
         let fragment = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("canvas_chunk_fragment"),
+            label: Some("stroke_chunk_fragment"),
             layout: &manager.fragment,
             entries: &[
                 BindGroupEntry {
@@ -271,102 +263,55 @@ impl CanvasChunk {
             ],
         });
 
-        let render_control = world.insert(RenderControl {
-            prepare: None,
-            draw: Some(Box::new(move |world, rpass| {
-                let manager = world.single_fetch::<CanvasChunkPipeline>().unwrap();
-
-                rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &vertex, &[]);
-                rpass.set_bind_group(1, &fragment, &[]);
-                rpass.draw(0..4, 0..1);
-            })),
-        });
-
-        CanvasChunk {
-            save: save_control,
-            render: render_control,
-            changed: false,
+        StrokeChunk {
             compute,
+            vertex,
+            fragment,
             texture,
         }
     }
 
-    pub fn save_write() -> Autosave {
-        Autosave(Box::new(|world| {
-            let stroke = world.single_fetch::<StrokeLayer>().unwrap();
+    pub fn from_bytes(world: &World, chunk: (i32, i32), bytes: &[u8]) -> Self {
+        let render = world.single_fetch::<Render>().unwrap();
+        let canvas = Self::new(world, chunk);
+        render.queue.write_texture(
+            TexelCopyTextureInfoBase {
+                texture: &canvas.texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytes,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(CHUNK_SIZE * 4),
+                rows_per_image: Some(CHUNK_SIZE),
+            },
+            Extent3d {
+                width: CHUNK_SIZE,
+                height: CHUNK_SIZE,
+                depth_or_array_layers: 1,
+            },
+        );
 
-            let mut canvases = Vec::new();
-            let mut tasks = Vec::new();
-
-            for (&chunk, &canvas) in &stroke.chunks {
-                let canvas = world.fetch_mut(canvas).unwrap();
-                canvases.push((chunk, canvas));
-            }
-
-            for (chunk, canvas) in &mut canvases {
-                let task = canvas.device_readback(world, *chunk);
-                tasks.push(task);
-            }
-
-            pollster::block_on(async {
-                for task in tasks {
-                    task.await;
-                }
-            })
-        }))
+        canvas
     }
 
-    pub fn save_read() -> SaveRead {
-        SaveRead {
-            class: "canvas_chunk".into(),
-            read: Box::new(|world, control| {
-                let stroke = &mut *world.single_fetch_mut::<StrokeLayer>().unwrap();
-                let control = world.fetch(control).unwrap();
+    pub fn redraw(&self, world: &World, rpass: &mut RenderPass) {
+        let manager = world.single_fetch::<StrokeChunkPipeline>().unwrap();
 
-                let btyes = control.read(world);
-                let archive = postcard::from_bytes::<Archive>(&btyes).unwrap();
-
-                let canvas = CanvasChunk::new(world, archive.chunk, control.handle());
-                stroke.queue.write_texture(
-                    TexelCopyTextureInfoBase {
-                        texture: &canvas.texture,
-                        mip_level: 0,
-                        origin: Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &archive.bytes,
-                    TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(CHUNK_SIZE * 4),
-                        rows_per_image: Some(CHUNK_SIZE),
-                    },
-                    Extent3d {
-                        width: CHUNK_SIZE,
-                        height: CHUNK_SIZE,
-                        depth_or_array_layers: 1,
-                    },
-                );
-
-                let canvas = world.insert(canvas);
-                let ret = stroke.chunks.insert(archive.chunk, canvas);
-                debug_assert!(ret.is_none());
-            }),
-        }
+        rpass.set_pipeline(&manager.pipeline);
+        rpass.set_bind_group(0, &self.vertex, &[]);
+        rpass.set_bind_group(1, &self.fragment, &[]);
+        rpass.draw(0..4, 0..1);
     }
 
-    async fn device_readback(&mut self, world: &World, chunk: (i32, i32)) {
+    pub fn device_readback(&self, world: &World) -> Vec<u8> {
         let (tx, rx) = std::sync::mpsc::channel();
-
-        if !self.changed {
-            return;
-        }
 
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
         let queue = &render.queue;
-
-        self.changed = false;
 
         let readback_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("canvas_readback"),
@@ -414,26 +359,13 @@ impl CanvasChunk {
         });
 
         device.poll(PollType::wait_indefinitely()).unwrap();
-
-        if let Ok(bytes) = rx.recv() {
-            let archive = Archive {
-                chunk,
-                bytes: bytes.into(),
-            };
-            let bytes = postcard::to_stdvec(&archive).unwrap();
-
-            let control = world.fetch(self.save).unwrap();
-            control.write(world, &bytes);
-        }
+        rx.recv().unwrap()
     }
 }
 
-impl Element for CanvasChunk {
+impl Element for StrokeChunk {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        RenderControl::reorder(Some(-100), world, self.render);
         let layer = world.single::<StrokeLayer>().unwrap();
         world.dependency(this, layer);
-        world.dependency(self.save, this);
-        world.dependency(self.render, this);
     }
 }

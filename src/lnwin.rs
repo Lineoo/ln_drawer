@@ -21,7 +21,7 @@ use crate::{
         text::TextManagerDescriptor,
         wireframe::WireframeManagerDescriptor,
     },
-    save::{Autosave, AutosaveScheduler, SaveControl},
+    save::{Autosave, AutosaveScheduler, SaveDatabase},
     stroke::StrokeLayer,
     theme::Luni,
     tools::{
@@ -116,7 +116,7 @@ impl Element for Lnwindow {
         });
 
         world.queue(|world| {
-            SaveControl::init_database(world);
+            SaveDatabase::init(world);
             world.insert(AutosaveScheduler {
                 autosave_duration: Duration::from_secs(10),
             });

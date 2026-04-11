@@ -234,7 +234,7 @@ impl World {
         self.queue(move |world| {
             // get type table ready
             let storage = world.storages.entry(TypeId::of::<T>()).or_insert_with(|| {
-                log::debug!("register elements: {}", type_name::<T>());
+                log::trace!("register elements: {}", type_name::<T>());
                 Box::new(Storage::<T>(HashMap::new()))
             });
 
@@ -252,8 +252,6 @@ impl World {
             // when_insert
             let mut element = world.fetch_mut(handle).unwrap();
             element.when_insert(world, handle);
-
-            log::trace!("insert: {:?}", handle);
         });
 
         handle
@@ -319,8 +317,6 @@ impl World {
             // pop out storage
             let storage = world.storages.get_mut(&type_id).unwrap();
             storage.remove(handle.cast());
-
-            log::trace!("remove {:?}", handle);
         });
 
         Ok(cnt)
@@ -879,7 +875,7 @@ impl<E: 'static> Element for Observer<E> {
                     members: HashMap::new(),
                 };
 
-                log::debug!("register events: {}", type_name::<E>());
+                log::trace!("register events: {}", type_name::<E>());
 
                 let observer = observers.members.entry(self.target).or_default();
                 observer.push(this);

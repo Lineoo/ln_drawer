@@ -1,14 +1,18 @@
+use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 use winit::event::WindowEvent;
 
+use crate::save::SaveDatabase;
 use crate::{
     lnwin::Lnwindow,
     measures::{Fract, PositionFract, Size},
     render::Render,
-    save::{Autosave, SaveControl, SaveRead},
+    save::Autosave,
     world::{Descriptor, Element, Handle, World},
 };
+
+const TABLE_CAMERA: TableDefinition<&str, &[u8]> = TableDefinition::new("camera");
 
 pub struct Camera {
     pub size: Size,
@@ -167,50 +171,51 @@ impl Camera {
     }
 
     pub fn build_from_save(world: &World, name: &str) -> Handle<Camera> {
-        SaveRead::read_single(world, name, |control| {
-            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-            let size = lnwindow.window.surface_size();
-
-            if let Some(control) = control {
-                let control = world.fetch(control).unwrap();
-                let camera_desc =
-                    postcard::from_bytes::<CameraDescriptor>(&control.read(world)).unwrap();
-
-                let camera = world.build(CameraDescriptor {
-                    size: Size::new(size.width, size.height),
-                    ..camera_desc
-                });
-
-                let control = control.handle();
-                world.insert(Camera::save_write(camera, control));
-
-                camera
-            } else {
-                Camera::build_default(world, name)
-            }
-        })
-        .unwrap()
+        Camera::try_build_from_save(world, name).unwrap()
     }
 
-    pub fn build_default(world: &World, name: &str) -> Handle<Camera> {
+    fn try_build_from_save(world: &World, name: &str) -> Result<Handle<Camera>, redb::Error> {
+        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        Camera::build_default_if_empty(&db, name)?;
+
+        let read = db.0.begin_read()?;
+        let table = read.open_table(TABLE_CAMERA)?;
+        let bytes = table.get(name)?.unwrap();
+        let camera_desc = postcard::from_bytes::<CameraDescriptor>(bytes.value()).unwrap();
+
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         let size = lnwindow.window.surface_size();
-
         let camera = world.build(CameraDescriptor {
             size: Size::new(size.width, size.height),
-            ..Default::default()
+            ..camera_desc
         });
 
-        let control = SaveControl::create(name.into(), world, &[]);
-        world.insert(Camera::save_write(camera, control));
+        world.insert(Camera::autosave(camera, name));
 
-        camera
+        Ok(camera)
     }
 
-    fn save_write(camera: Handle<Camera>, control: Handle<SaveControl>) -> Autosave {
-        Autosave(Box::new(move |world| {
+    fn build_default_if_empty(db: &SaveDatabase, name: &str) -> Result<(), redb::Error> {
+        let write = db.0.begin_write()?;
+        {
+            let mut table = write.open_table(TABLE_CAMERA)?;
+            if table.get(name)?.is_some() {
+                return Ok(());
+            }
+
+            let bytes = postcard::to_stdvec(&CameraDescriptor::default()).unwrap();
+
+            table.insert(name, &bytes[..])?;
+        }
+
+        write.commit()?;
+        Ok(())
+    }
+
+    fn autosave(camera: Handle<Camera>, name: &str) -> Autosave {
+        let name_owned = String::from(name);
+        Autosave(Box::new(move |world, write| {
             let camera = world.fetch(camera).unwrap();
-            let control = world.fetch(control).unwrap();
 
             let bytes = postcard::to_stdvec(&CameraDescriptor {
                 size: camera.size,
@@ -219,7 +224,8 @@ impl Camera {
             })
             .unwrap();
 
-            control.write(world, &bytes);
+            let mut table = write.open_table(TABLE_CAMERA).unwrap();
+            table.insert(&name_owned[..], &bytes[..]).unwrap();
         }))
     }
 }
