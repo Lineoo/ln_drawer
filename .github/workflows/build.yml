@@ -39,7 +39,6 @@ jobs:
         key: ubuntu-all-cross-build
         path: |
           ~/.cargo
-          ~/.rustup
           target
 
     - name: Install ALSA Library
