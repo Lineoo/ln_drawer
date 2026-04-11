@@ -3,23 +3,25 @@ use wgpu::{
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBinding,
     BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites,
     CommandEncoderDescriptor, Extent3d, FragmentState, MapMode, Origin3d, PipelineLayoutDescriptor,
-    PollType, PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor,
-    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TexelCopyBufferInfoBase, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
-    Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
-    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
+    PollType, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline,
+    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyBufferInfoBase,
+    TexelCopyBufferLayout, TexelCopyTextureInfoBase, Texture, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
+    TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
-    render::{MSAA_STATE, Render, RenderControl, camera::Camera, vertex::VertexUniform},
+    render::{MSAA_STATE, Render, camera::Camera, vertex::VertexUniform},
     stroke::{CHUNK_SIZE, StrokeLayer},
     world::{Element, Handle, World},
 };
 
 pub struct StrokeChunk {
-    render: Handle<RenderControl>,
     pub compute: BindGroup,
+    vertex: BindGroup,
+    fragment: BindGroup,
     texture: Texture,
 }
 
@@ -261,21 +263,10 @@ impl StrokeChunk {
             ],
         });
 
-        let control = world.insert(RenderControl {
-            prepare: None,
-            draw: Some(Box::new(move |world, rpass| {
-                let manager = world.single_fetch::<StrokeChunkPipeline>().unwrap();
-
-                rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &vertex, &[]);
-                rpass.set_bind_group(1, &fragment, &[]);
-                rpass.draw(0..4, 0..1);
-            })),
-        });
-
         StrokeChunk {
-            render: control,
             compute,
+            vertex,
+            fragment,
             texture,
         }
     }
@@ -304,6 +295,15 @@ impl StrokeChunk {
         );
 
         canvas
+    }
+
+    pub fn redraw(&self, world: &World, rpass: &mut RenderPass) {
+        let manager = world.single_fetch::<StrokeChunkPipeline>().unwrap();
+
+        rpass.set_pipeline(&manager.pipeline);
+        rpass.set_bind_group(0, &self.vertex, &[]);
+        rpass.set_bind_group(1, &self.fragment, &[]);
+        rpass.draw(0..4, 0..1);
     }
 
     pub fn device_readback(&self, world: &World) -> Vec<u8> {
@@ -365,9 +365,7 @@ impl StrokeChunk {
 
 impl Element for StrokeChunk {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        RenderControl::reorder(Some(-100), world, self.render);
         let layer = world.single::<StrokeLayer>().unwrap();
         world.dependency(this, layer);
-        world.dependency(self.render, this);
     }
 }

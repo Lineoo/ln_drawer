@@ -209,7 +209,7 @@ impl Render {
         config
     }
 
-    fn redraw(world: &World) {
+    fn redraw(world: &mut World) {
         // prepare controls
 
         let mut render = world.single_fetch_mut::<Render>().unwrap();
@@ -226,6 +226,8 @@ impl Render {
                 };
             });
         });
+
+        world.flush();
 
         // start redrawing
 
@@ -357,7 +359,9 @@ impl Element for Render {
             }
 
             WindowEvent::RedrawRequested => {
-                Render::redraw(world);
+                world.queue(|world| {
+                    Render::redraw(world);
+                });
             }
 
             _ => (),

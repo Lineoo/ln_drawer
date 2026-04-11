@@ -120,9 +120,15 @@ impl Element for StrokeLayer {
                     keep_redrawing: false,
                 })
             })),
-            draw: None,
+            draw: Some(Box::new(|world, rpass| {
+                let stroke = world.single_fetch::<StrokeLayer>().unwrap();
+                for &chunk in stroke.chunks.values().flatten() {
+                    let chunk = world.fetch(chunk).unwrap();
+                    chunk.redraw(world, rpass);
+                }
+            })),
         });
-        RenderControl::reorder(Some(0), world, control);
+        RenderControl::reorder(Some(-100), world, control);
 
         world.dependency(control, this);
     }
