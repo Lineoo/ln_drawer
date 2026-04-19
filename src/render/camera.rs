@@ -3,6 +3,7 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::*;
 use winit::event::WindowEvent;
 
+use crate::measures::Rectangle;
 use crate::save::SaveDatabase;
 use crate::{
     lnwin::Lnwindow,
@@ -147,6 +148,16 @@ impl Camera {
         let x = point.x.into_f64() * 2.0 / self.size.w as f64 * scale;
         let y = point.y.into_f64() * 2.0 / self.size.h as f64 * scale;
         [x, y]
+    }
+
+    pub fn world_view_rect(&self) -> Rectangle {
+        let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
+        let width = self.size.w as f64 / scale * 0.5;
+        let height = self.size.h as f64 / scale * 0.5;
+        Rectangle::new_half(
+            self.center.round(),
+            Size::new(width.ceil() as u32, height.ceil() as u32),
+        )
     }
 
     pub fn init(world: &mut World) {

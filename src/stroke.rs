@@ -277,9 +277,25 @@ impl StrokeLayer {
             prepare: Some(Box::new(Self::chunk_autoload)),
             draw: Some(Box::new(|world, rpass| {
                 let stroke = world.single_fetch::<StrokeLayer>().unwrap();
-                for &chunk in stroke.chunks.values().flatten() {
-                    let chunk = world.fetch(chunk).unwrap();
-                    chunk.redraw(world, rpass);
+                let camera = world.single_fetch::<Camera>().unwrap();
+
+                let view_rect = camera.world_view_rect();
+                let chunk_src = (
+                    view_rect.left().div_euclid(CHUNK_SIZE as i32),
+                    view_rect.down().div_euclid(CHUNK_SIZE as i32),
+                );
+                let chunk_dst = (
+                    (view_rect.right() - 1).div_euclid(CHUNK_SIZE as i32) + 1,
+                    (view_rect.up() - 1).div_euclid(CHUNK_SIZE as i32) + 1,
+                );
+
+                for chunk_x in chunk_src.0..chunk_dst.0 {
+                    for chunk_y in chunk_src.1..chunk_dst.1 {
+                        if let Some(&Some(chunk)) = stroke.chunks.get(&(chunk_x, chunk_y)) {
+                            let chunk = world.fetch(chunk).unwrap();
+                            chunk.redraw(world, rpass);
+                        }
+                    }
                 }
             })),
         });
