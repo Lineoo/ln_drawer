@@ -1,11 +1,9 @@
 use std::time::{Duration, Instant};
 
+use ln_world::{Descriptor, Element, Handle, RefMut, World};
 use palette::Srgba;
 
-use crate::{
-    render::{RenderControl, RenderInformation},
-    world::{Descriptor, Element, Handle, RefMut, World},
-};
+use crate::render::{RenderControl, RenderInformation};
 
 pub struct Animation<T: AnimationEasingType> {
     pub src: T,

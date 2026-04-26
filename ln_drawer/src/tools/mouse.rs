@@ -1,3 +1,4 @@
+use ln_world::{Element, Handle, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, MouseScrollDelta, PointerSource, WindowEvent,
 };
@@ -7,7 +8,6 @@ use crate::{
     measures::{Fract, Position},
     render::camera::{Camera, CameraUtils, MainCamera},
     tools::collider::ToolCollider,
-    world::{Element, Handle, World},
 };
 
 /// Mouse-specific operations like right-click and middle-click.

@@ -8,6 +8,7 @@ pub mod wireframe;
 
 use std::time::Instant;
 
+use ln_world::{Element, Handle, World};
 use wgpu::{
     Adapter, Color, CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor,
     ExperimentalFeatures, Extent3d, Features, Instance, Limits, LoadOp, MemoryHints,
@@ -18,11 +19,7 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
-use crate::{
-    lnwin::Lnwindow,
-    render::camera::Camera,
-    world::{Element, Handle, World},
-};
+use crate::{lnwin::Lnwindow, render::camera::Camera};
 
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
 pub const MSAA_STATE: MultisampleState = MultisampleState {

@@ -1,3 +1,4 @@
+use ln_world::{Element, Handle, World};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBinding,
@@ -15,7 +16,6 @@ use wgpu::{
 use crate::{
     render::{MSAA_STATE, Render, camera::Camera, vertex::VertexUniform},
     stroke::{CHUNK_SIZE, StrokeLayer},
-    world::{Element, Handle, World},
 };
 
 pub struct StrokeChunk {

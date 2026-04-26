@@ -1,3 +1,4 @@
+use ln_world::{Element, Handle, World};
 use palette::{Hsla, IntoColor, RgbHue};
 
 use crate::{
@@ -11,7 +12,6 @@ use crate::{
         WidgetExpanded, WidgetHsla, WidgetRectangle, expandable::Expandable,
         palette::hsl::PaletteHsl, translatable::Translatable,
     },
-    world::{Element, Handle, World},
 };
 
 pub mod hsl;

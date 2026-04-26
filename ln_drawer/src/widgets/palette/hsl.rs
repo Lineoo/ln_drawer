@@ -1,4 +1,5 @@
 use glam::Vec2;
+use ln_world::{Element, Handle, World};
 use palette::{Hsla, RgbHue};
 
 use crate::{
@@ -13,7 +14,6 @@ use crate::{
         pointer::{PointerHit, PointerHitStatus},
     },
     widgets::{WidgetDestroyed, WidgetEnabled, WidgetHsla, WidgetRectangle},
-    world::{Element, Handle, World},
 };
 
 const BAND_WIDTH: f32 = 0.1;

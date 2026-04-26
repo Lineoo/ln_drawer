@@ -1,9 +1,7 @@
+use ln_world::{Element, Handle, World};
 use winit::event::{Modifiers, WindowEvent};
 
-use crate::{
-    lnwin::Lnwindow,
-    world::{Element, Handle, World},
-};
+use crate::lnwin::Lnwindow;
 
 #[derive(Debug, Default)]
 pub struct ModifiersTool {

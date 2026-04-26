@@ -1,11 +1,9 @@
 use std::time::{Duration, Instant};
 
+use ln_world::{Element, Handle, World, WorldError};
 use winit::event::WindowEvent;
 
-use crate::{
-    lnwin::Lnwindow,
-    world::{Element, Handle, World, WorldError},
-};
+use crate::lnwin::Lnwindow;
 
 pub struct Timer {
     pub rest: Duration,

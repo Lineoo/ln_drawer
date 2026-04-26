@@ -1,3 +1,4 @@
+use ln_world::{Element, Handle, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
 };
@@ -7,7 +8,6 @@ use crate::{
     measures::Position,
     render::camera::Camera,
     tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
-    world::{Element, Handle, World},
 };
 
 /// Guaranteed for single-pointer operations like mouse cursor or the first-touch finger.

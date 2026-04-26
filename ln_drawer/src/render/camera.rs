@@ -1,16 +1,16 @@
+use ln_world::{Descriptor, Element, Handle, World};
 use redb::{ReadableDatabase, ReadableTable, TableDefinition};
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::*;
+use wgpu::{
+    util::{BufferInitDescriptor, DeviceExt},
+    *,
+};
 use winit::event::WindowEvent;
 
-use crate::measures::Rectangle;
-use crate::save::SaveDatabase;
 use crate::{
     lnwin::Lnwindow,
-    measures::{Fract, PositionFract, Size},
+    measures::{Fract, PositionFract, Rectangle, Size},
     render::Render,
-    save::Autosave,
-    world::{Descriptor, Element, Handle, World},
+    save::{Autosave, SaveDatabase},
 };
 
 const TABLE_CAMERA: TableDefinition<&str, &[u8]> = TableDefinition::new("camera");

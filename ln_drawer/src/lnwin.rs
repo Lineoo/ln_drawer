@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use hashbrown::HashMap;
+use ln_world::{Element, Handle, ViewOptions, World};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 use winit::{
@@ -29,7 +30,6 @@ use crate::{
         pointer::PointerTool, touch::MultiTouchTool,
     },
     widgets::palette::{ColorPicker, hsl::PaletteHslMaterial},
-    world::{Element, Handle, ViewOptions, World},
 };
 
 #[derive(Default)]

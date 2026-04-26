@@ -2,6 +2,7 @@ mod chunk;
 mod round_brush;
 
 use hashbrown::{HashMap, HashSet};
+use ln_world::{Element, Handle, World};
 use palette::{Srgba, WithAlpha};
 use redb::{Database, MultimapTableDefinition, ReadableTable, TableDefinition, WriteTransaction};
 use wgpu::{
@@ -27,7 +28,6 @@ use crate::{
         collider::ToolCollider,
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
-    world::{Element, Handle, World},
 };
 
 const CHUNK_SIZE: u32 = 512;

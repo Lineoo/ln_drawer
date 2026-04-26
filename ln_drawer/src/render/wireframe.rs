@@ -1,3 +1,4 @@
+use ln_world::{Descriptor, Element, Handle, World};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
@@ -15,7 +16,6 @@ use crate::{
         camera::{Camera, CameraBind},
         vertex::VertexUniform,
     },
-    world::{Descriptor, Element, Handle, World},
 };
 
 pub struct Wireframe {

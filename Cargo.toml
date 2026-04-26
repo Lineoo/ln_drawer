@@ -1,6 +1,10 @@
 [workspace]
-members = ["ln_drawer"]
+members = ["ln_drawer", "ln_world"]
 resolver = "3"
+
+[workspace.package]
+version = "0.1.3-alpha.2-dev"
+edition = "2024"
 
 [patch.crates-io.winit]
 git = "https://github.com/Lineoo/winit/"

@@ -1,3 +1,4 @@
+use ln_world::Element;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
@@ -5,7 +6,7 @@ use wgpu::{
     PipelineLayoutDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
 };
 
-use crate::{render::Render, world::Element};
+use crate::render::Render;
 
 pub struct RoundBrush {
     pub brush: BindGroup,

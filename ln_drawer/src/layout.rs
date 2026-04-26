@@ -1,7 +1,6 @@
-use crate::{
-    measures::Rectangle,
-    world::{Element, World},
-};
+use ln_world::{Element, World};
+
+use crate::measures::Rectangle;
 
 pub mod transform;
 

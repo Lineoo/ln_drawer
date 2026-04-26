@@ -8,7 +8,6 @@ pub mod stroke;
 pub mod theme;
 pub mod tools;
 pub mod widgets;
-pub mod world;
 
 pub fn desktop_main() {
     use winit::event_loop::EventLoop;

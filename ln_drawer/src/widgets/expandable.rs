@@ -1,3 +1,5 @@
+use ln_world::{Element, Handle, World};
+
 use crate::{
     animation::{AnimationDescriptor, SimpleAnimationDescriptor},
     layout::{
@@ -15,7 +17,6 @@ use crate::{
         WidgetAnimatedRectangle, WidgetButton, WidgetClick, WidgetDestroyed, WidgetExpanded,
         WidgetHover, WidgetRectangle,
     },
-    world::{Element, Handle, World},
 };
 
 pub struct Expandable {

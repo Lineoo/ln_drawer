@@ -1,5 +1,8 @@
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::*;
+use ln_world::{Descriptor, Element, Handle, World};
+use wgpu::{
+    util::{BufferInitDescriptor, DeviceExt},
+    *,
+};
 
 use crate::{
     measures::Rectangle,
@@ -7,7 +10,6 @@ use crate::{
         MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
     },
-    world::{Descriptor, Element, Handle, World},
 };
 
 #[derive(Debug, Clone, Copy)]

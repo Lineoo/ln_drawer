@@ -1,7 +1,7 @@
 [package]
 name = "ln_drawer"
-version = "0.1.3-alpha.2-dev"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [lib]
 name = "ln_drawer"
@@ -31,6 +31,9 @@ thiserror = "2.0.16"
 tokio = "1.47.1"
 wgpu = "28.0"
 zstd = "0.13.3"
+
+[dependencies.ln_world]
+path = "../ln_world"
 
 [dependencies.winit]
 version = "0.31.0-beta.2"

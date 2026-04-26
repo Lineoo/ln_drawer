@@ -1,9 +1,7 @@
+use ln_world::{Element, Handle, World};
 use winit::event::{KeyEvent, WindowEvent};
 
-use crate::{
-    lnwin::Lnwindow,
-    world::{Element, Handle, World},
-};
+use crate::lnwin::Lnwindow;
 
 #[derive(Default)]
 pub struct Focus {

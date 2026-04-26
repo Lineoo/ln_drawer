@@ -73,7 +73,10 @@ impl Size {
     }
 
     pub const fn to_position(self) -> Position {
-        Position { x: self.w as i32, y: self.h as i32 }
+        Position {
+            x: self.w as i32,
+            y: self.h as i32,
+        }
     }
 
     pub const fn splat(n: u32) -> Size {

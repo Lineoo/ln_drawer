@@ -1,3 +1,4 @@
+use ln_world::{Descriptor, Element, Handle, World};
 use palette::{Srgba, blend::Compose};
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
@@ -19,7 +20,6 @@ use crate::{
         camera::{Camera, CameraBind},
         vertex::VertexUniform,
     },
-    world::{Descriptor, Element, Handle, World},
 };
 
 pub struct Canvas {
