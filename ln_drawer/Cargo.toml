@@ -1,5 +1,6 @@
 [package]
 name = "ln_drawer"
+license = "LGPL-3.0-or-later"
 version.workspace = true
 edition.workspace = true
 

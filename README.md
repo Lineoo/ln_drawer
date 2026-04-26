@@ -1,1 +1,1 @@
-/home/lineo/ln_drawer/ln_drawer/README.md
+ln_drawer/README.md
