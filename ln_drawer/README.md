@@ -1,13 +1,8 @@
-<img src="res/icon_hicolor_lime.svg" alt="LnDrawer Icon" height="128" align="right" style="vertical-align: -30px;"/>
-
-# Ln Drawer
-A simple, light-weight on-screen drawer written in Rust with `winit` and `wgpu`.
+# LnDrawer
+The infinite LnDrawer.
 
 ## License
 
-The entire repository is licensed under **GNU Lesser General Public License v3.0 or later**. (LICENSE or https://opensource.org/license/LGPL-3.0)
+This crate is licensed under **LGPL-3.0-or-later** (LICENSE or https://opensource.org/license/LGPL-3.0).
 
-This workspace contains multiple crates with different licenses:
-
-- Crate **ln_drawer** is licensed under **LGPL-3.0-or-later**.
-- Crate **ln_world** is dual-licensed under **MIT OR Apache-2.0**. See the crate level README file and license field for details.
+Note: dual-licenses only apply to current crate `ln_drawer`, not the entire repository. 

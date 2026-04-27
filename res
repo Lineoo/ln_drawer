@@ -1,1 +1,0 @@
-ln_drawer/res
