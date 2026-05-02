@@ -1,7 +1,5 @@
 use crate::measures::{Fract, PositionFract};
 
-const MAX_DRAWS: u64 = 500;
-
 pub struct Interpolation {
     pub step: fn(Draw) -> f32,
 }
@@ -19,7 +17,7 @@ impl Interpolation {
         let mut curr = prev;
         let whole_dist = prev.position.distance(next.position).into_f32();
         while curr.position.distance(next.position).into_f32() >= (self.step)(curr)
-            && buf.len() < MAX_DRAWS as usize
+            && buf.len() < super::MAX_STROKE as usize
         {
             let step = Fract::from_f32((self.step)(curr));
             curr.position = curr.position.move_towards(next.position, step);

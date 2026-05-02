@@ -24,9 +24,10 @@ pub struct DrawProcessed {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct DrawProcessedGPU {
+pub struct DrawProcessedStorage {
     pub color: [f32; 4],
-    pub position: [i32; 4],
+    pub position: [i32; 2],
+    pub position_fract: [u32; 2],
     pub softness: f32,
     pub size: f32,
     pub flow: f32,
@@ -50,5 +51,20 @@ impl Modifier {
 
     pub fn flow(&self, draw: Draw) -> f32 {
         self.min_flow + (self.max_flow - self.min_flow) * draw.force.powf(self.flow_force_exp)
+    }
+}
+
+impl DrawProcessed {
+    pub fn into_storage(self) -> DrawProcessedStorage {
+        let color = self.color.into_components();
+        DrawProcessedStorage {
+            color: [color.0, color.1, color.2, color.3],
+            position: self.position.into_array(),
+            position_fract: self.position.into_arrayf(),
+            softness: self.softness,
+            size: self.size,
+            flow: self.flow,
+            _pad: 0,
+        }
     }
 }

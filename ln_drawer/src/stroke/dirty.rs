@@ -1,5 +1,5 @@
 use crate::{
-    measures::{Rectangle, Size},
+    measures::{Position, Rectangle, Size},
     stroke::{CHUNK_SIZE, modifier::DrawProcessed},
 };
 
@@ -8,14 +8,14 @@ pub struct Dirty {
 }
 
 pub struct DrawDirty {
-    pub dirty: Rectangle,
+    pub bounding: Rectangle,
     pub chunk_src: (i32, i32),
     pub chunk_dst: (i32, i32),
 }
 
 impl Dirty {
-    pub fn compute(&self, buf: &[DrawProcessed]) -> DrawDirty {
-        let mut dirty = Rectangle::new_half(buf[0].position.round(), Size::splat(0));
+    pub fn compute(&self, start: Position, buf: &[DrawProcessed]) -> DrawDirty {
+        let mut dirty = Rectangle::new_half(start, Size::splat(0));
 
         for draw in buf {
             // dirty = dirty.grow(Rectangle::new_half(
@@ -36,7 +36,7 @@ impl Dirty {
         );
 
         DrawDirty {
-            dirty,
+            bounding: dirty,
             chunk_src,
             chunk_dst,
         }

@@ -60,7 +60,7 @@ impl ColorPicker {
 
         world.observer(palette, move |&WidgetHsla(color), world| {
             let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
-            layer.front_color = color.into_color();
+            // layer.front_color = color.into_color();
         });
 
         world.observer(expandable, move |&WidgetExpanded(expanded), world| {
