@@ -1,5 +1,9 @@
 mod chunk;
+mod dirty;
+mod interpolate;
+mod modifier;
 mod round_brush;
+mod shape;
 
 use hashbrown::{HashMap, HashSet};
 use ln_world::{Element, Handle, World};

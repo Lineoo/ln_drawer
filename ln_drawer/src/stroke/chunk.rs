@@ -273,10 +273,10 @@ impl StrokeChunk {
 
     pub fn from_bytes(world: &World, chunk: (i32, i32), bytes: &[u8]) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
-        let canvas = Self::new(world, chunk);
+        let chunk = Self::new(world, chunk);
         render.queue.write_texture(
             TexelCopyTextureInfoBase {
-                texture: &canvas.texture,
+                texture: &chunk.texture,
                 mip_level: 0,
                 origin: Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -294,7 +294,7 @@ impl StrokeChunk {
             },
         );
 
-        canvas
+        chunk
     }
 
     pub fn redraw(&self, world: &World, rpass: &mut RenderPass) {
@@ -314,14 +314,14 @@ impl StrokeChunk {
         let queue = &render.queue;
 
         let readback_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("canvas_readback"),
+            label: Some("chunk_readback"),
             size: (CHUNK_SIZE * CHUNK_SIZE * 4) as u64,
             usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("canvas_readback"),
+            label: Some("chunk_readback"),
         });
 
         encoder.copy_texture_to_buffer(
