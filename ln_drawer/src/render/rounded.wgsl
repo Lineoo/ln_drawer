@@ -61,7 +61,7 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
     let distance = length(max(delta, vec2f(0.0))) + min(max(delta.x, delta.y), 0.0);
     
     let diff = rectangle.value - distance;
-    let width = fwidth(diff);
+    let width = fwidth(diff) * 0.5;
     
     return vec4f(smoothstep(-width, width, diff)) * rectangle.color;
     // return vec4f(step(distance, rectangle.value)) * rectangle.color;
