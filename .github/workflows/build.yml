@@ -66,7 +66,7 @@ jobs:
       run: cargo install cargo-apk
 
     - name: Prepare Configuration
-      run: ln_drawer/build/release.sh
+      run: build/release.sh
 
     - name: Prepare Keystore
       env:
