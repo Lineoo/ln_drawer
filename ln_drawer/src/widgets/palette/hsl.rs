@@ -116,10 +116,10 @@ impl PaletteHsl {
         let mut lock = 0;
         world.observer(collider, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this).unwrap();
-            let delta = event.position - this.rect.origin;
+            let delta = event.position - this.rect.origin.into_fract();
 
-            let u = delta.x as f32 / this.rect.extend.w as f32;
-            let v = delta.y as f32 / this.rect.extend.h as f32;
+            let u = delta.x.into_f32() / this.rect.extend.w as f32;
+            let v = delta.y.into_f32() / this.rect.extend.h as f32;
             let uv = Vec2::new(u, v);
             let size = (0.5 - BAND_WIDTH) * 2f32.sqrt();
             let suv = (uv - 0.5) / size + 0.5;

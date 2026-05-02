@@ -5,7 +5,7 @@ use winit::event::{
 };
 
 use crate::{
-    lnwin::Lnwindow, measures::Position, render::camera::Camera, tools::collider::ToolCollider,
+    lnwin::Lnwindow, measures::PositionFract, render::camera::Camera, tools::collider::ToolCollider,
 };
 
 /// Multi touch actions that allow inputs with more points than [`PointerTool`] but no hovering
@@ -23,7 +23,7 @@ impl Element for MultiTouchTool {
 
 #[derive(Debug, Clone, Copy)]
 pub struct MultiTouch {
-    pub position: Position,
+    pub position: PositionFract,
     pub screen: [f64; 2],
     pub view: Handle<Camera>,
     pub status: MultiTouchStatus,
@@ -73,7 +73,7 @@ impl MultiTouchTool {
 
                 let position = world.enter(view, || {
                     let camera = world.single_fetch::<Camera>().unwrap();
-                    camera.screen_to_world_absolute(screen).floor()
+                    camera.screen_to_world_absolute(screen)
                 });
 
                 let touch = MultiTouch {
@@ -151,7 +151,7 @@ impl MultiTouchTool {
 
                 let position = world.enter(touch.view, || {
                     let camera = world.single_fetch::<Camera>().unwrap();
-                    camera.screen_to_world_absolute(screen).floor()
+                    camera.screen_to_world_absolute(screen)
                 });
 
                 *touch = MultiTouch {
@@ -202,7 +202,7 @@ impl MultiTouchTool {
 
                 let position = world.enter(touch.view, || {
                     let camera = world.single_fetch::<Camera>().unwrap();
-                    camera.screen_to_world_absolute(screen).floor()
+                    camera.screen_to_world_absolute(screen)
                 });
 
                 *touch = MultiTouch {

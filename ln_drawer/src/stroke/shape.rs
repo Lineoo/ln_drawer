@@ -10,12 +10,12 @@ pub struct RoundBrush {
 }
 
 impl RoundBrush {
-    pub fn new(render: &Render, chunk: &BindGroupLayout, dispatch: &BindGroupLayout) -> Self {
+    pub fn new(render: &Render, dispatch: &BindGroupLayout, chunk: &BindGroupLayout) -> Self {
         let device = &render.device;
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("round_brush"),
-            bind_group_layouts: &[chunk, dispatch],
+            bind_group_layouts: &[dispatch, chunk],
             immediate_size: 0,
         });
 

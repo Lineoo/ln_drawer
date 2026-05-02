@@ -38,14 +38,14 @@ use crate::{
 
 const CHUNK_SIZE: u32 = 512;
 const CHUNK_CAPS: usize = 5000;
-const MAX_STROKE: u64 = 1000;
+const MAX_STROKE: u64 = 200;
 
 const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
     MultimapTableDefinition::new("stroke");
 const TABLE_STROKE_CHUNK: TableDefinition<(i32, i32), &[u8]> = TableDefinition::new("stroke_chunk");
 
 const DEFAULT_INTERPOLATION: Interpolation = Interpolation {
-    step: |draw| DEFAULT_MODIFIER.size(draw) / 5.0,
+    step: |draw| draw.size / 5.0,
 };
 const DEFAULT_MODIFIER: Modifier = Modifier {
     min_size: 0.5,
@@ -71,8 +71,11 @@ pub struct StrokeLayer {
     unsaved: HashSet<(i32, i32)>,
     stream: SaveStream<(i32, i32)>,
 
-    brush_round: RoundBrush,
-    current: Option<Draw>,
+    pub interpolation: Interpolation,
+    pub modifier: Modifier,
+    pub dirty: Dirty,
+    pub brush: RoundBrush,
+    prev: Option<Draw>,
 
     dispatch: BindGroup,
     dispatch_meta: Buffer,
@@ -119,7 +122,7 @@ impl StrokeLayer {
         });
 
         let canvas_chunk_pipeline = StrokeChunkPipeline::new(world);
-        let brush_round = RoundBrush::new(&render, &canvas_chunk_pipeline.compute, &dispatch);
+        let brush = RoundBrush::new(&render, &dispatch, &canvas_chunk_pipeline.compute);
         world.insert(canvas_chunk_pipeline);
 
         let dispatch_meta = device.create_buffer(&BufferDescriptor {
@@ -163,8 +166,11 @@ impl StrokeLayer {
             chunks: HashMap::new(),
             unsaved: HashSet::new(),
             stream: SaveStream::new(CHUNK_CAPS),
-            brush_round,
-            current: None,
+            interpolation: DEFAULT_INTERPOLATION,
+            modifier: DEFAULT_MODIFIER,
+            dirty: DEFAULT_DIRTY,
+            brush,
+            prev: None,
             dispatch,
             dispatch_meta,
             draws_array,
@@ -358,7 +364,7 @@ impl StrokeLayer {
             } else if let MultiTouchStatus::Holding | MultiTouchStatus::Press = primary.status {
                 let mut this = world.fetch_mut(this).unwrap();
                 let target = Draw {
-                    position: primary.position.into_fract(),
+                    position: primary.position,
                     force: primary.data.force.unwrap_or(1.0),
                 };
 
@@ -366,7 +372,7 @@ impl StrokeLayer {
             } else {
                 world.queue(move |world| {
                     let mut this = world.fetch_mut(this).unwrap();
-                    this.current = None;
+                    this.prev = None;
                 });
             }
         });
@@ -375,22 +381,13 @@ impl StrokeLayer {
     fn paint(&mut self, next: Draw, world: &World) {
         // generate draws //
 
-        let prev = self.current.get_or_insert(next);
-
         let mut draw_buf = Vec::new();
-        DEFAULT_INTERPOLATION.interpolate(*prev, next, &mut draw_buf);
+        let curr = self
+            .interpolation
+            .interpolate(self.prev, next, &self.modifier, &mut draw_buf);
+        self.prev = Some(curr);
 
-        if let Some(last) = draw_buf.last() {
-            *prev = *last;
-        }
-
-        let mut proc_buf = Vec::with_capacity(draw_buf.len());
-        for draw in draw_buf {
-            proc_buf.push(DEFAULT_MODIFIER.process(draw));
-        }
-
-        let dirty = DEFAULT_DIRTY.compute(next.position.round(), &proc_buf);
-
+        let dirty = self.dirty.compute(curr.position.round(), &draw_buf);
         if dirty.bounding.extend.w == 0 || dirty.bounding.extend.h == 0 {
             return;
         }
@@ -412,7 +409,7 @@ impl StrokeLayer {
 
         let dispatch = DispatchUniform {
             dirty_coords: dirty.bounding.origin.into_array(),
-            stroke_count: proc_buf.len() as u32,
+            stroke_count: draw_buf.len() as u32,
             _pad: 0,
         };
 
@@ -420,13 +417,13 @@ impl StrokeLayer {
         let queue = &render.queue;
         let device = &render.device;
 
-        let mut proc_stg = Vec::with_capacity(proc_buf.len());
-        for proc in proc_buf {
-            proc_stg.push(proc.into_storage());
+        let mut draw_stg = Vec::with_capacity(draw_buf.len());
+        for draw in draw_buf {
+            draw_stg.push(draw.into_storage());
         }
 
         queue.write_buffer(&self.dispatch_meta, 0, bytemuck::bytes_of(&dispatch));
-        queue.write_buffer(&self.draws_array, 0, bytemuck::cast_slice(&proc_stg));
+        queue.write_buffer(&self.draws_array, 0, bytemuck::cast_slice(&draw_stg));
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("stroke"),
@@ -437,13 +434,13 @@ impl StrokeLayer {
             timestamp_writes: None,
         });
 
-        cpass.set_pipeline(&self.brush_round.pipeline);
-        cpass.set_bind_group(1, Some(&self.dispatch), &[]);
+        cpass.set_pipeline(&self.brush.pipeline);
+        cpass.set_bind_group(0, Some(&self.dispatch), &[]);
 
         for chunk in chunks {
             let chunk = self.chunks.get(&chunk).unwrap().as_ref().unwrap();
 
-            cpass.set_bind_group(0, Some(&chunk.compute), &[]);
+            cpass.set_bind_group(1, Some(&chunk.compute), &[]);
 
             const WORKGROUP_SIZE: Size = Size::new(16, 16);
             cpass.dispatch_workgroups(

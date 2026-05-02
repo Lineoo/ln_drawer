@@ -90,13 +90,13 @@ impl Translatable {
             match (hit.status, start) {
                 (PointerHitStatus::Press, None) => {
                     start = Some(Start {
-                        cursor: hit.position,
+                        cursor: hit.position.round(),
                         rect: this.rect,
                     });
                 }
 
                 (PointerHitStatus::Moving, Some(start)) => {
-                    let delta = hit.position - start.cursor;
+                    let delta = hit.position.round() - start.cursor;
                     this.rect = start.rect + delta;
                     world.queue_trigger(this.handle(), WidgetRectangle(this.rect));
                 }

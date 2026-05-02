@@ -5,7 +5,7 @@ use winit::event::{
 
 use crate::{
     lnwin::Lnwindow,
-    measures::Position,
+    measures::PositionFract,
     render::camera::Camera,
     tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
 };
@@ -19,7 +19,7 @@ pub struct PointerTool {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHit {
-    pub position: Position,
+    pub position: PositionFract,
     pub screen: [f64; 2],
     pub status: PointerHitStatus,
     pub data: PointerHitData,
@@ -28,7 +28,7 @@ pub struct PointerHit {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHover {
-    pub position: Position,
+    pub position: PositionFract,
     pub screen: [f64; 2],
     pub status: PointerHoverStatus,
     pub pointer: PointerKind,
@@ -50,7 +50,7 @@ pub enum PointerHoverStatus {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerData {
-    pub position: Position,
+    pub position: PositionFract,
     pub screen: [f64; 2],
     pub pointer: PointerKind,
 }
@@ -69,7 +69,7 @@ struct Pointer {
 
 #[derive(Clone, Copy)]
 struct Hover {
-    position: Position,
+    position: PositionFract,
     view: Handle<Camera>,
     handle: Handle<ToolCollider>,
 }
@@ -336,7 +336,7 @@ impl Pointer {
             let hovering = self.hovering.unwrap();
             let position = world.enter(hovering.view, || {
                 let camera = world.single_fetch::<Camera>().unwrap();
-                camera.screen_to_world_absolute(self.screen).floor()
+                camera.screen_to_world_absolute(self.screen)
             });
 
             self.update_hovering(
@@ -350,7 +350,7 @@ impl Pointer {
         } else if let Some(&(each, view)) = ToolCollider::intersect(world, self.screen).first() {
             let position = world.enter(view, || {
                 let camera = world.single_fetch::<Camera>().unwrap();
-                camera.screen_to_world_absolute(self.screen).floor()
+                camera.screen_to_world_absolute(self.screen)
             });
 
             self.update_hovering(

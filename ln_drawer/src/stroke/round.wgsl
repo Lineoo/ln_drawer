@@ -17,11 +17,11 @@ struct Draw {
     flow: f32,
 }
 
-@group(0) @binding(0) var texture: texture_storage_2d<rgba8unorm, read_write>;
-@group(0) @binding(1) var<uniform> rect: Rectangle;
+@group(0) @binding(0) var<uniform> dispatch: DispatchMeta;
+@group(0) @binding(1) var<storage, read> draws_array: array<Draw>;
 
-@group(1) @binding(0) var<uniform> dispatch: DispatchMeta;
-@group(1) @binding(1) var<storage, read> draws_array: array<Draw>;
+@group(1) @binding(0) var texture: texture_storage_2d<rgba8unorm, read_write>;
+@group(1) @binding(1) var<uniform> rect: Rectangle;
 
 @compute @workgroup_size(16, 16)
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
@@ -36,7 +36,10 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
         let alpha_a = a.a * draws_array[i].flow * smoothstep(
             1.0 + draws_array[i].softness,
             1.0 - draws_array[i].softness,
-            length(vec2f(center - coords)) / draws_array[i].size,
+            length(
+                vec2f(center - coords) - vec2f(0.5) +
+                vec2f(draws_array[i].position_fract) / vec2f(0xffffffff)
+            ) / draws_array[i].size,
         );
 
         if alpha_a < 1e-6 {
@@ -53,4 +56,5 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     }
 
     textureStore(texture, coords, working_color);
+    // textureStore(texture, coords, vec4f(f32(dispatch.stroke_count) / 200, 0, 0, 1));
 }
