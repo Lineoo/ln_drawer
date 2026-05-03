@@ -24,7 +24,7 @@ use crate::{
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     stroke::StrokeLayer,
-    theme::Luni,
+    theme::ColorScheme,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
@@ -131,7 +131,7 @@ impl Element for Lnwindow {
             world.build(WireframeManagerDescriptor);
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
-            world.insert(Luni::default());
+            world.insert(ColorScheme::default());
         });
 
         world.queue(|world| {

@@ -9,12 +9,12 @@ use crate::{
     },
     measures::Rectangle,
     render::rounded::RoundedRectDescriptor,
-    theme::Luni,
+    theme::ColorScheme,
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{WidgetButton, WidgetClick, WidgetHover, WidgetRectangle},
+    widgets::{WidgetButton, WidgetClick, WidgetEnabled, WidgetHover, WidgetRectangle},
 };
 
 pub struct Button {
@@ -24,7 +24,7 @@ pub struct Button {
 
 impl Button {
     fn attach_luni(&mut self, world: &World, this: Handle<Self>) {
-        let luni = world.single_fetch::<Luni>().unwrap();
+        let luni = world.single_fetch::<ColorScheme>().unwrap();
 
         // display
 
@@ -56,7 +56,7 @@ impl Button {
         // behavior
 
         world.observer(this, move |event: &WidgetHover, world| {
-            let luni = world.single_fetch::<Luni>().unwrap();
+            let luni = world.single_fetch::<ColorScheme>().unwrap();
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
                 WidgetHover::HoverEnter => frame_anim_color.dst = luni.active_color,
@@ -65,7 +65,7 @@ impl Button {
         });
 
         world.observer(this, move |event: &WidgetButton, world| {
-            let luni = world.single_fetch::<Luni>().unwrap();
+            let luni = world.single_fetch::<ColorScheme>().unwrap();
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
                 WidgetButton::ButtonPress => frame_anim_color.dst = luni.press_color,
@@ -76,6 +76,11 @@ impl Button {
         world.observer(this, move |&WidgetRectangle(rect), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
             frame.desc.rect = rect;
+        });
+
+        world.observer(this, move |&WidgetEnabled(enabled), world| {
+            let mut frame = world.fetch_mut(frame).unwrap();
+            frame.desc.visible = enabled;
         });
     }
 
@@ -115,6 +120,11 @@ impl Button {
                 }
                 _ => {}
             }
+        });
+
+        world.observer(this, move |&WidgetEnabled(enabled), world| {
+            let mut collider = world.fetch_mut(collider).unwrap();
+            collider.enabled = enabled;
         });
 
         world.dependency(collider, this);

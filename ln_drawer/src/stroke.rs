@@ -1,8 +1,8 @@
-mod chunk;
-mod dirty;
-mod interpolate;
-mod modifier;
-mod shape;
+pub mod chunk;
+pub mod dirty;
+pub mod interpolate;
+pub mod modifier;
+pub mod shape;
 
 use hashbrown::{HashMap, HashSet};
 use ln_world::{Element, Handle, World};
@@ -401,6 +401,7 @@ impl StrokeLayer {
                 if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
                     chunk.get_or_insert_with(|| StrokeChunk::new(world, chunk_id));
                     chunks.push(chunk_id);
+                    self.unsaved.insert(chunk_id);
                 }
             }
         }

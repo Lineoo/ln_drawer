@@ -8,7 +8,7 @@ use crate::{
     },
     measures::Rectangle,
     render::rounded::RoundedRectDescriptor,
-    theme::Luni,
+    theme::ColorScheme,
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
@@ -45,11 +45,11 @@ impl Expandable {
     }
 
     fn attach_luni(&mut self, world: &World, this: Handle<Self>) {
-        let luni = world.single_fetch::<Luni>().unwrap();
+        let luni = world.single_fetch::<ColorScheme>().unwrap();
 
         let frame = world.build(RoundedRectDescriptor {
             rect: self.rect,
-            color: luni.color,
+            color: luni.press_color,
             shrink: luni.roundness,
             value: luni.roundness,
             visible: true,
