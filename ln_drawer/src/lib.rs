@@ -26,9 +26,8 @@ pub fn desktop_main() {
 #[unsafe(no_mangle)]
 pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     use android_logger::{Config, FilterBuilder};
+    use ln_world::World;
     use winit::{event_loop::EventLoop, platform::android::EventLoopBuilderExtAndroid};
-
-    use crate::world::World;
 
     android_logger::init_once(
         Config::default()
@@ -46,7 +45,7 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     log::info!("This is LnDrawer Mobile. Welcome!");
 
     let mut world = World::default();
-    world.insert(app.clone());
+    world.insert(lnwin::LnAndroid(app.clone()));
     world.flush();
     let lnwin = lnwin::Lnwin {
         world,

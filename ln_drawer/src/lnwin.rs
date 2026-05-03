@@ -194,4 +194,7 @@ impl Lnwindow {
 }
 
 #[cfg(target_os = "android")]
-impl Element for AndroidApp {}
+pub struct LnAndroid(pub AndroidApp);
+
+#[cfg(target_os = "android")]
+impl Element for LnAndroid {}
