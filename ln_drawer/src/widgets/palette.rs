@@ -78,12 +78,12 @@ impl ColorPicker {
             layer.modifier.color = color.into_color();
         });
 
-        let mut harder = false;
+        let mut kind = 2;
         world.observer(button, move |&WidgetClick, world| {
-            harder = !harder;
+            kind = (kind + 1) % 3;
             let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-            stroke.modifier = if harder {
-                Modifier {
+            stroke.modifier = match kind {
+                0 => Modifier {
                     min_size: 0.0,
                     max_size: 6.0,
                     size_force_exp: 1.0,
@@ -92,9 +92,8 @@ impl ColorPicker {
                     flow_force_exp: 2.0,
                     softness: 0.2,
                     ..stroke.modifier
-                }
-            } else {
-                Modifier {
+                },
+                1 => Modifier {
                     min_size: 1.0,
                     max_size: 25.0,
                     size_force_exp: 1.0,
@@ -103,7 +102,23 @@ impl ColorPicker {
                     flow_force_exp: 1.0,
                     softness: 0.5,
                     ..stroke.modifier
-                }
+                },
+                2 => Modifier {
+                    min_size: 0.5,
+                    max_size: 0.5,
+                    size_force_exp: 0.0,
+                    min_flow: 1.0,
+                    max_flow: 1.0,
+                    flow_force_exp: 0.0,
+                    softness: 0.0,
+                    ..stroke.modifier
+                },
+                _ => unreachable!(),
+            };
+            stroke.shape = match kind {
+                0 | 1 => 0,
+                2 => 1,
+                _ => unreachable!(),
             };
         });
         world.queue_trigger(button, WidgetClick);

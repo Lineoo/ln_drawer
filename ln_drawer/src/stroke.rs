@@ -28,7 +28,7 @@ use crate::{
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
         modifier::{DrawProcessedStorage, Modifier},
-        shape::RoundBrush,
+        shape::{PixelBrush, RoundBrush},
     },
     tools::{
         collider::ToolCollider,
@@ -74,7 +74,9 @@ pub struct StrokeLayer {
     pub interpolation: Interpolation,
     pub modifier: Modifier,
     pub dirty: Dirty,
-    pub brush: RoundBrush,
+    pub shape: u32,
+    pub brush_round: RoundBrush,
+    pub brush_pixel: PixelBrush,
     prev: Option<Draw>,
 
     dispatch: BindGroup,
@@ -122,7 +124,8 @@ impl StrokeLayer {
         });
 
         let canvas_chunk_pipeline = StrokeChunkPipeline::new(world);
-        let brush = RoundBrush::new(&render, &dispatch, &canvas_chunk_pipeline.compute);
+        let brush_round = RoundBrush::new(&render, &dispatch, &canvas_chunk_pipeline.compute);
+        let brush_pixel = PixelBrush::new(&render, &dispatch, &canvas_chunk_pipeline.compute);
         world.insert(canvas_chunk_pipeline);
 
         let dispatch_meta = device.create_buffer(&BufferDescriptor {
@@ -169,7 +172,9 @@ impl StrokeLayer {
             interpolation: DEFAULT_INTERPOLATION,
             modifier: DEFAULT_MODIFIER,
             dirty: DEFAULT_DIRTY,
-            brush,
+            shape: 0,
+            brush_round,
+            brush_pixel,
             prev: None,
             dispatch,
             dispatch_meta,
@@ -435,7 +440,12 @@ impl StrokeLayer {
             timestamp_writes: None,
         });
 
-        cpass.set_pipeline(&self.brush.pipeline);
+        match self.shape {
+            0 => cpass.set_pipeline(&self.brush_round.pipeline),
+            1 => cpass.set_pipeline(&self.brush_pixel.pipeline),
+            _ => unreachable!(),
+        }
+
         cpass.set_bind_group(0, Some(&self.dispatch), &[]);
 
         for chunk in chunks {
