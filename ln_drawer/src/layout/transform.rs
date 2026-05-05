@@ -1,7 +1,6 @@
 use ln_world::{Element, Handle, World};
 
 use crate::{
-    layout::LayoutRectangleAction,
     measures::{Position, Rectangle},
     widgets::{WidgetAnimatedRectangle, WidgetRectangle},
 };
@@ -132,20 +131,14 @@ impl Element for Transform {
             let this = world.fetch(this).unwrap();
             let target = this.value.compute(rect);
 
-            let rect = world.enter_single_fetch_mut::<LayoutRectangleAction>(this.target);
-            if let Ok(mut rect) = rect {
-                (rect.0)(world, target);
-            }
+            world.queue_trigger(this.target, WidgetRectangle(target));
         });
 
         let oba = world.observer(self.source, move |&WidgetAnimatedRectangle(rect), world| {
             let this = world.fetch(this).unwrap();
             let target = this.value.compute(rect);
 
-            let rect = world.enter_single_fetch_mut::<LayoutRectangleAction>(this.target);
-            if let Ok(mut rect) = rect {
-                (rect.0)(world, target);
-            }
+            world.queue_trigger(this.target, WidgetRectangle(target));
         });
 
         world.dependency(ob, this);

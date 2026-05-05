@@ -1,9 +1,9 @@
 use ln_world::{Element, Handle, World};
 
 use crate::{
-    layout::LayoutRectangleAction,
     measures::{Position, Rectangle, Size},
     render::camera::Camera,
+    widgets::WidgetRectangle,
 };
 
 #[derive(Clone, Copy)]
@@ -49,13 +49,10 @@ impl ToolCollider {
     }
 
     fn attach_layout(&mut self, world: &World, this: Handle<Self>) {
-        let action = LayoutRectangleAction(Box::new(move |world, rect| {
+        world.observer(this, move |&WidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.rect = rect;
-            rect
-        }));
-
-        world.enter_insert(this, action);
+        });
     }
 }
 
