@@ -80,7 +80,7 @@ struct Press {
 }
 
 impl PointerTool {
-    fn alloc_pointer(&mut self, kind: PointerKind) -> Option<&mut Pointer> {
+    fn acquire_pointer(&mut self, kind: PointerKind) -> Option<&mut Pointer> {
         if self.pointer.is_none() {
             self.pointer = Some(Pointer {
                 screen: Default::default(),
@@ -98,6 +98,26 @@ impl PointerTool {
             None
         }
     }
+
+    fn acquire_pointer_forceful(&mut self, kind: PointerKind, world: &World) -> &mut Pointer {
+        if let Some(pointer) = &self.pointer
+            && pointer.kind == kind
+        {
+            return self.pointer.as_mut().unwrap();
+        }
+
+        if let Some(old_pointer) = &mut self.pointer {
+            old_pointer.update_pressed(world, None);
+            old_pointer.update_hovering(world, None);
+        }
+
+        self.pointer.insert(Pointer {
+            screen: Default::default(),
+            kind,
+            hovering: None,
+            pressed: None,
+        })
+    }
 }
 
 impl Element for PointerTool {
@@ -113,7 +133,7 @@ impl Element for PointerTool {
                 } => {
                     let kind = PointerKind::from(source.clone());
 
-                    let Some(pointer) = this.alloc_pointer(kind) else {
+                    let Some(pointer) = this.acquire_pointer(kind) else {
                         return;
                     };
 
@@ -149,9 +169,7 @@ impl Element for PointerTool {
                         ButtonSource::Unknown(_) => PointerKind::Unknown,
                     };
 
-                    let Some(pointer) = this.alloc_pointer(kind) else {
-                        return;
-                    };
+                    let pointer = this.acquire_pointer_forceful(kind, world);
 
                     let screen = lnwindow.cursor_to_screen(*position);
                     drop(lnwindow);
@@ -178,7 +196,7 @@ impl Element for PointerTool {
                 }
 
                 WindowEvent::PointerEntered { position, kind, .. } => {
-                    let Some(pointer) = this.alloc_pointer(*kind) else {
+                    let Some(pointer) = this.acquire_pointer(*kind) else {
                         return;
                     };
 
@@ -189,7 +207,7 @@ impl Element for PointerTool {
                 }
 
                 WindowEvent::PointerLeft { position, kind, .. } => {
-                    let Some(pointer) = this.alloc_pointer(*kind) else {
+                    let Some(pointer) = this.acquire_pointer(*kind) else {
                         return;
                     };
 
