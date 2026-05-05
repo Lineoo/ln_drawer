@@ -19,7 +19,6 @@ struct RoundedRect {
     origin: vec2i,
     extend: vec2u,
     color: vec4f,
-    vertex_extend: i32,
     shrink: f32,
     value: f32,
 }
@@ -32,6 +31,8 @@ struct VertexOutput {
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var<uniform> rectangle: RoundedRect;
 
+const vertex_extend: i32 = 10;
+
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
     let world_space = vec2i(
@@ -41,8 +42,8 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
     // extend 10 pixels to render shadow
     let world_space_extend = world_space + vec2i(
-        ((i32(index) / 2) * 2 - 1) * rectangle.vertex_extend,
-        ((i32(index) % 2) * 2 - 1) * rectangle.vertex_extend,
+        ((i32(index) / 2) * 2 - 1) * vertex_extend,
+        ((i32(index) % 2) * 2 - 1) * vertex_extend,
     );
 
     var ret: VertexOutput;
@@ -53,17 +54,44 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
-    // use SDF to calculate rectangle
+    let rect_color = panel(vertex);
+    let shadow_color = shadow(vertex);
+
+    return vec4f(
+        rect_color.rgb * rect_color.a + shadow_color.rgb * (1.0 - rect_color.a),
+        rect_color.a + shadow_color.a * (1.0 - rect_color.a)
+    );
+    // return vec4f(step(distance, rectangle.value)) * rectangle.color;
+    // return vec4f(normalize(vec3f(0.5, 0.5, distance)), fract(distance)) * rectangle.color;
+}
+
+fn panel(vertex: VertexOutput) -> vec4f {
     let point = abs(vertex.relative - vec2f(rectangle.extend) / 2.0);
     let corner = vec2f(rectangle.extend) / 2.0 - rectangle.shrink;
 
     let delta = point - corner;
     let distance = length(max(delta, vec2f(0.0))) + min(max(delta.x, delta.y), 0.0);
-    
+
     let diff = rectangle.value - distance;
     let width = fwidth(diff) * 0.5;
-    
+
     return vec4f(rectangle.color.rgb, rectangle.color.a * smoothstep(-width, width, diff));
-    // return vec4f(step(distance, rectangle.value)) * rectangle.color;
-    // return vec4f(normalize(vec3f(0.5, 0.5, distance)), fract(distance)) * rectangle.color;
+}
+
+fn shadow(vertex: VertexOutput) -> vec4f {
+    const shadow_offset = vec2f(0.0, -4.0);
+    const shadow_blur = 10.0;
+    const shadow_color = vec4f(0.0, 0.0, 0.0, 0.5);
+
+    let shadow_pos = vertex.relative - shadow_offset;
+
+    let point = abs(shadow_pos - vec2f(rectangle.extend) / 2.0);
+    let corner = vec2f(rectangle.extend) / 2.0 - rectangle.shrink;
+
+    let delta = point - corner;
+    let distance = length(max(delta, vec2f(0.0))) + min(max(delta.x, delta.y), 0.0);
+
+    let diff = rectangle.value - distance;
+
+    return vec4f(shadow_color.rgb, shadow_color.a * smoothstep(-shadow_blur, shadow_blur, diff));
 }

@@ -40,11 +40,10 @@ struct RoundedRectUniform {
     origin: [i32; 2],
     extend: [u32; 2],
     color: [f32; 4],
-    vertex_extend: i32,
     shrink: f32,
     value: f32,
 
-    _pad: i32,
+    _pad: u64,
 }
 
 impl Default for RoundedRectDescriptor {
@@ -138,7 +137,6 @@ impl RoundedRect {
                     desc.color.blue,
                     desc.color.alpha,
                 ],
-                vertex_extend: 10,
                 shrink: desc.shrink,
                 value: desc.value,
                 _pad: 0,
@@ -198,7 +196,6 @@ impl RoundedRect {
                 self.desc.color.blue,
                 self.desc.color.alpha,
             ],
-            vertex_extend: 10,
             shrink: self.desc.shrink,
             value: self.desc.value,
             _pad: 0,
