@@ -165,7 +165,7 @@ impl Element for Lnwindow {
                     refs: vec![here, stroke.untyped()],
                 });
                 world.queue(|world| {
-                    world.insert(ColorPicker);
+                    world.insert(ColorPicker::default());
                     world.insert(CameraUtils::default());
                 });
             });
