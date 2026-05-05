@@ -4,7 +4,7 @@ use crate::{
     layout::{LayoutEnableAction, LayoutRectangleAction},
     measures::{Position, Rectangle},
     render::rounded::RoundedRectDescriptor,
-    theme::Luni,
+    theme::ColorScheme,
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus},
@@ -38,7 +38,7 @@ impl Translatable {
     }
 
     fn attach_luni(&mut self, world: &World, this: Handle<Self>) {
-        let luni = world.single_fetch::<Luni>().unwrap();
+        let luni = world.single_fetch::<ColorScheme>().unwrap();
         let frame = world.build(RoundedRectDescriptor {
             rect: self.rect,
             color: luni.color,
@@ -90,13 +90,13 @@ impl Translatable {
             match (hit.status, start) {
                 (PointerHitStatus::Press, None) => {
                     start = Some(Start {
-                        cursor: hit.position,
+                        cursor: hit.position.round(),
                         rect: this.rect,
                     });
                 }
 
                 (PointerHitStatus::Moving, Some(start)) => {
-                    let delta = hit.position - start.cursor;
+                    let delta = hit.position.round() - start.cursor;
                     this.rect = start.rect + delta;
                     world.queue_trigger(this.handle(), WidgetRectangle(this.rect));
                 }

@@ -1,8 +1,7 @@
 use ln_world::Element;
 use palette::Srgba;
 
-/// `Luni` stands for `ln_ui`. It's this basic widgets' render implementation of ln_drawer.
-pub struct Luni {
+pub struct ColorScheme {
     pub color: Srgba,
     pub active_color: Srgba,
     pub press_color: Srgba,
@@ -13,12 +12,12 @@ pub struct Luni {
     pub pad: i32,
 }
 
-impl Default for Luni {
+impl Default for ColorScheme {
     fn default() -> Self {
         Self {
-            color: Srgba::new(0.1, 0.1, 0.1, 0.9),
-            active_color: Srgba::new(0.3, 0.3, 0.3, 1.0),
-            press_color: Srgba::new(0.2, 0.2, 0.2, 1.0),
+            color: Srgba::new(0.863, 0.863, 0.863, 1.0),
+            active_color: Srgba::new(0.808, 0.808, 0.808, 1.0),
+            press_color: Srgba::new(0.737, 0.737, 0.737, 1.0),
             roundness: 5.0,
             press_roundness: 15.0,
             anim_factor: 30.0,
@@ -28,4 +27,4 @@ impl Default for Luni {
     }
 }
 
-impl Element for Luni {}
+impl Element for ColorScheme {}

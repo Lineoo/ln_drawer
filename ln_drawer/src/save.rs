@@ -8,9 +8,9 @@ use std::{
 
 use ln_world::{Element, Handle, World, WorldError};
 use redb::{Database, ReadableTable, TableDefinition, WriteTransaction};
-#[cfg(target_os = "android")]
-use winit::platform::android::activity::AndroidApp;
 
+#[cfg(target_os = "android")]
+use crate::lnwin::LnAndroid;
 use crate::{
     lnwin::Lnwindow,
     render::camera::Camera,
@@ -190,8 +190,8 @@ impl Autosave {
 
 #[cfg(target_os = "android")]
 pub fn get_file_path(world: &World, filename: &str) -> PathBuf {
-    let app = world.single_fetch::<AndroidApp>().unwrap();
-    let mut path = app.external_data_path().unwrap();
+    let app = world.single_fetch::<LnAndroid>().unwrap();
+    let mut path = app.0.external_data_path().unwrap();
     path.push(filename);
     path
 }

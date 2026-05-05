@@ -5,7 +5,7 @@ use winit::event::{
 
 use crate::{
     lnwin::Lnwindow,
-    measures::Position,
+    measures::PositionFract,
     render::camera::Camera,
     tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
 };
@@ -19,7 +19,7 @@ pub struct PointerTool {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHit {
-    pub position: Position,
+    pub position: PositionFract,
     pub screen: [f64; 2],
     pub status: PointerHitStatus,
     pub data: PointerHitData,
@@ -28,7 +28,7 @@ pub struct PointerHit {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHover {
-    pub position: Position,
+    pub position: PositionFract,
     pub screen: [f64; 2],
     pub status: PointerHoverStatus,
     pub pointer: PointerKind,
@@ -50,7 +50,7 @@ pub enum PointerHoverStatus {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerData {
-    pub position: Position,
+    pub position: PositionFract,
     pub screen: [f64; 2],
     pub pointer: PointerKind,
 }
@@ -69,7 +69,7 @@ struct Pointer {
 
 #[derive(Clone, Copy)]
 struct Hover {
-    position: Position,
+    position: PositionFract,
     view: Handle<Camera>,
     handle: Handle<ToolCollider>,
 }
@@ -80,7 +80,7 @@ struct Press {
 }
 
 impl PointerTool {
-    fn alloc_pointer(&mut self, kind: PointerKind) -> Option<&mut Pointer> {
+    fn acquire_pointer(&mut self, kind: PointerKind) -> Option<&mut Pointer> {
         if self.pointer.is_none() {
             self.pointer = Some(Pointer {
                 screen: Default::default(),
@@ -98,6 +98,26 @@ impl PointerTool {
             None
         }
     }
+
+    fn acquire_pointer_forceful(&mut self, kind: PointerKind, world: &World) -> &mut Pointer {
+        if let Some(pointer) = &self.pointer
+            && pointer.kind == kind
+        {
+            return self.pointer.as_mut().unwrap();
+        }
+
+        if let Some(old_pointer) = &mut self.pointer {
+            old_pointer.update_pressed(world, None);
+            old_pointer.update_hovering(world, None);
+        }
+
+        self.pointer.insert(Pointer {
+            screen: Default::default(),
+            kind,
+            hovering: None,
+            pressed: None,
+        })
+    }
 }
 
 impl Element for PointerTool {
@@ -113,7 +133,7 @@ impl Element for PointerTool {
                 } => {
                     let kind = PointerKind::from(source.clone());
 
-                    let Some(pointer) = this.alloc_pointer(kind) else {
+                    let Some(pointer) = this.acquire_pointer(kind) else {
                         return;
                     };
 
@@ -149,9 +169,7 @@ impl Element for PointerTool {
                         ButtonSource::Unknown(_) => PointerKind::Unknown,
                     };
 
-                    let Some(pointer) = this.alloc_pointer(kind) else {
-                        return;
-                    };
+                    let pointer = this.acquire_pointer_forceful(kind, world);
 
                     let screen = lnwindow.cursor_to_screen(*position);
                     drop(lnwindow);
@@ -178,7 +196,7 @@ impl Element for PointerTool {
                 }
 
                 WindowEvent::PointerEntered { position, kind, .. } => {
-                    let Some(pointer) = this.alloc_pointer(*kind) else {
+                    let Some(pointer) = this.acquire_pointer(*kind) else {
                         return;
                     };
 
@@ -189,7 +207,7 @@ impl Element for PointerTool {
                 }
 
                 WindowEvent::PointerLeft { position, kind, .. } => {
-                    let Some(pointer) = this.alloc_pointer(*kind) else {
+                    let Some(pointer) = this.acquire_pointer(*kind) else {
                         return;
                     };
 
@@ -336,7 +354,7 @@ impl Pointer {
             let hovering = self.hovering.unwrap();
             let position = world.enter(hovering.view, || {
                 let camera = world.single_fetch::<Camera>().unwrap();
-                camera.screen_to_world_absolute(self.screen).floor()
+                camera.screen_to_world_absolute(self.screen)
             });
 
             self.update_hovering(
@@ -350,7 +368,7 @@ impl Pointer {
         } else if let Some(&(each, view)) = ToolCollider::intersect(world, self.screen).first() {
             let position = world.enter(view, || {
                 let camera = world.single_fetch::<Camera>().unwrap();
-                camera.screen_to_world_absolute(self.screen).floor()
+                camera.screen_to_world_absolute(self.screen)
             });
 
             self.update_hovering(
