@@ -1,12 +1,10 @@
+use glam::DVec2;
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
 
 use crate::{
     animation::{AnimationDescriptor, AnimationValue},
-    layout::{
-        LayoutRectangleAction,
-        transform::{Transform, TransformValue},
-    },
+    layout::transform::{Transform, TransformValue},
     measures::Rectangle,
     render::rounded::RoundedRectDescriptor,
     theme::ColorScheme,
@@ -22,25 +20,38 @@ pub struct Button {
     pub order: isize,
 }
 
+pub struct ButtonDrag {
+    pub from: PointerHit,
+    pub here: PointerHit,
+    pub status: ButtonDragStatus,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ButtonDragStatus {
+    Start,
+    Dragging,
+    End,
+}
+
 impl Button {
-    fn attach_luni(&mut self, world: &World, this: Handle<Self>) {
-        let luni = world.single_fetch::<ColorScheme>().unwrap();
+    fn attach_render(&mut self, world: &World, this: Handle<Self>) {
+        let scheme = world.single_fetch::<ColorScheme>().unwrap();
 
         // display
 
         let frame = world.build(RoundedRectDescriptor {
             rect: self.rect,
             order: self.order,
-            color: luni.color,
-            shrink: luni.roundness,
-            value: luni.roundness,
+            color: scheme.color,
+            shrink: scheme.roundness,
+            value: scheme.roundness,
             ..Default::default()
         });
 
         let frame_anim_color = world.build(AnimationDescriptor {
             src: Srgba::new(0.0, 0.0, 0.0, 0.0),
-            dst: luni.color,
-            factor: luni.anim_factor,
+            dst: scheme.color,
+            factor: scheme.anim_factor,
         });
 
         world.observer(frame_anim_color, move |&AnimationValue(value), world| {
@@ -97,16 +108,62 @@ impl Button {
             target: collider.untyped(),
         });
 
+        let mut drag_start = None;
+        let mut dragging = false;
         world.observer(collider, move |event: &PointerHit, world| {
+            const DRAG_DISTANCE: f64 = 0.01;
+
             match event.status {
                 PointerHitStatus::Press => {
                     world.trigger(this, &WidgetButton::ButtonPress);
+                    drag_start = Some(*event);
+                    dragging = false;
+                }
+                PointerHitStatus::Moving => {
+                    if let Some(start) = drag_start {
+                        if DVec2::from_array(event.screen).distance(DVec2::from_array(start.screen))
+                            > DRAG_DISTANCE
+                            && !dragging
+                        {
+                            dragging = true;
+                            world.trigger(
+                                this,
+                                &ButtonDrag {
+                                    from: start,
+                                    here: *event,
+                                    status: ButtonDragStatus::Start,
+                                },
+                            );
+                        } else if dragging {
+                            world.trigger(
+                                this,
+                                &ButtonDrag {
+                                    from: start,
+                                    here: *event,
+                                    status: ButtonDragStatus::Dragging,
+                                },
+                            );
+                        }
+                    }
                 }
                 PointerHitStatus::Release => {
-                    world.trigger(this, &WidgetClick);
+                    if !dragging {
+                        world.trigger(this, &WidgetClick);
+                    } else if let Some(start) = drag_start {
+                        world.trigger(
+                            this,
+                            &ButtonDrag {
+                                from: start,
+                                here: *event,
+                                status: ButtonDragStatus::End,
+                            },
+                        );
+                    }
+
                     world.trigger(this, &WidgetButton::ButtonRelease);
+                    drag_start = None;
+                    dragging = false;
                 }
-                _ => {}
             }
         });
 
@@ -131,14 +188,10 @@ impl Button {
     }
 
     fn attach_layout(&mut self, world: &World, this: Handle<Self>) {
-        world.enter_insert(
-            this,
-            LayoutRectangleAction(Box::new(move |world, rect| {
-                let mut this = world.fetch_mut(this).unwrap();
-                this.rect = rect;
-                rect
-            })),
-        );
+        world.observer(this, move |&WidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
+        });
     }
 }
 
@@ -154,11 +207,7 @@ impl Default for Button {
 impl Element for Button {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.attach_layout(world, this);
-        self.attach_luni(world, this);
+        self.attach_render(world, this);
         self.attach_pointer(world, this);
-    }
-
-    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
-        world.trigger(this, &WidgetRectangle(self.rect));
     }
 }

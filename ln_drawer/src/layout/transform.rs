@@ -136,6 +136,8 @@ impl Element for Transform {
             if let Ok(mut rect) = rect {
                 (rect.0)(world, target);
             }
+
+            world.queue_trigger(this.target, WidgetRectangle(target));
         });
 
         let oba = world.observer(self.source, move |&WidgetAnimatedRectangle(rect), world| {
@@ -146,6 +148,8 @@ impl Element for Transform {
             if let Ok(mut rect) = rect {
                 (rect.0)(world, target);
             }
+
+            world.queue_trigger(this.target, WidgetRectangle(target));
         });
 
         world.dependency(ob, this);

@@ -9,8 +9,10 @@ use crate::{
     measures::{Position, Rectangle, Size},
     stroke::{StrokeLayer, modifier::Modifier},
     widgets::{
-        WidgetClick, WidgetEnabled, WidgetExpanded, WidgetHsla, WidgetRectangle, button::Button,
-        expandable::Expandable, palette::hsl::PaletteHsl, translatable::Translatable,
+        WidgetClick, WidgetEnabled, WidgetExpanded, WidgetHsla, WidgetRectangle,
+        button::{Button, ButtonDrag, ButtonDragStatus},
+        palette::hsl::PaletteHsl,
+        translatable::Translatable,
     },
 };
 
@@ -26,10 +28,9 @@ impl ColorPicker {
             enabled: false,
         });
 
-        let expandable = world.insert(Expandable {
+        let expandable = world.insert(Button {
             rect: Rectangle::new(-100, -100, -50, -50),
-            transform: TransformValue::scale(10.0, 10.0),
-            expanded: false,
+            order: 0,
         });
 
         let button = world.insert(Button {
@@ -122,6 +123,19 @@ impl ColorPicker {
             };
         });
         world.queue_trigger(button, WidgetClick);
+
+        let mut drag_start = None;
+        world.observer(expandable, move |drag: &ButtonDrag, world| {
+            let button = world.fetch(expandable).unwrap();
+            if drag.status == ButtonDragStatus::Start {
+                drag_start = Some(button.rect);
+            }
+
+            if let Some(start) = drag_start {
+                let rect = start + (drag.here.position - drag.from.position).round();
+                world.queue_trigger(button.handle(), WidgetRectangle(rect));
+            }
+        });
 
         world.observer(expandable, move |&WidgetExpanded(expanded), world| {
             if let Ok(mut f) = world.enter_single_fetch_mut::<LayoutEnableAction>(palette) {
