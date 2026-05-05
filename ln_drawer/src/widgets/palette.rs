@@ -6,7 +6,7 @@ use crate::{
     measures::{Position, Rectangle, Size},
     stroke::{StrokeLayer, modifier::Modifier},
     widgets::{
-        WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
+        WidgetAnimatedRectangle, WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
         button::{Button, ButtonDrag, ButtonDragStatus},
         palette::hsl::PaletteHsl,
     },
@@ -131,10 +131,10 @@ impl ColorPicker {
             if this.expanded {
                 world.queue_trigger(
                     main_panel,
-                    WidgetRectangle(this.transform.compute(this.rect)),
+                    WidgetAnimatedRectangle(this.transform.compute(this.rect)),
                 );
             } else {
-                world.queue_trigger(main_panel, WidgetRectangle(this.rect));
+                world.queue_trigger(main_panel, WidgetAnimatedRectangle(this.rect));
             }
 
             world.queue_trigger(palette, WidgetEnabled(this.expanded));

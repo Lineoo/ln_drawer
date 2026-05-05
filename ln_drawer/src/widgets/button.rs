@@ -3,7 +3,7 @@ use ln_world::{Element, Handle, World};
 use palette::Srgba;
 
 use crate::{
-    animation::{AnimationDescriptor, AnimationValue},
+    animation::{AnimationDescriptor, AnimationValue, SimpleAnimationDescriptor},
     layout::transform::{Transform, TransformValue},
     measures::Rectangle,
     render::rounded::RoundedRectDescriptor,
@@ -12,7 +12,10 @@ use crate::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{WidgetButton, WidgetClick, WidgetEnabled, WidgetHover, WidgetRectangle},
+    widgets::{
+        WidgetAnimatedRectangle, WidgetButton, WidgetClick, WidgetEnabled, WidgetHover,
+        WidgetRectangle,
+    },
 };
 
 pub struct Button {
@@ -46,6 +49,27 @@ impl Button {
             shrink: scheme.roundness,
             value: scheme.roundness,
             ..Default::default()
+        });
+
+        let frame_rect = world.build(SimpleAnimationDescriptor {
+            animation: AnimationDescriptor::new(
+                [
+                    self.rect.left() as f32,
+                    self.rect.down() as f32,
+                    self.rect.right() as f32,
+                    self.rect.up() as f32,
+                ],
+                scheme.anim_factor,
+            ),
+            widget: frame,
+            action: |mut frame, _, rect| {
+                frame.desc.rect = Rectangle::new(
+                    rect[0].round() as i32,
+                    rect[1].round() as i32,
+                    rect[2].round() as i32,
+                    rect[3].round() as i32,
+                );
+            },
         });
 
         let frame_anim_color = world.build(AnimationDescriptor {
@@ -85,8 +109,28 @@ impl Button {
         });
 
         world.observer(this, move |&WidgetRectangle(rect), world| {
-            let mut frame = world.fetch_mut(frame).unwrap();
-            frame.desc.rect = rect;
+            let mut frame_rect = world.fetch_mut(frame_rect).unwrap();
+            let rect = [
+                rect.left() as f32,
+                rect.down() as f32,
+                rect.right() as f32,
+                rect.up() as f32,
+            ];
+
+            frame_rect.src = rect;
+            frame_rect.dst = rect;
+        });
+
+        world.observer(this, move |&WidgetAnimatedRectangle(rect), world| {
+            let mut frame_rect = world.fetch_mut(frame_rect).unwrap();
+            let rect = [
+                rect.left() as f32,
+                rect.down() as f32,
+                rect.right() as f32,
+                rect.up() as f32,
+            ];
+
+            frame_rect.dst = rect;
         });
 
         world.observer(this, move |&WidgetEnabled(enabled), world| {
