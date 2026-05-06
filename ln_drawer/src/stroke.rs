@@ -4,14 +4,22 @@ pub mod interpolate;
 pub mod modifier;
 pub mod shape;
 
+use std::{
+    error::Error,
+    sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel},
+    thread::JoinHandle,
+};
+
 use hashbrown::{HashMap, HashSet};
+use indexmap::IndexSet;
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
-use redb::{Database, MultimapTableDefinition, ReadableTable, TableDefinition, WriteTransaction};
+use redb::{Database, MultimapTableDefinition, ReadableDatabase, TableDefinition};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, ShaderStages,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, Device, Queue,
+    ShaderStages,
 };
 use winit::event::PointerKind;
 
@@ -20,9 +28,9 @@ use crate::{
     measures::{Fract, Rectangle, Size},
     render::{
         Render, RenderControl, RenderInformation,
-        camera::{Camera, CameraUtils},
+        camera::{Camera, CameraPositionChanged, CameraUtils},
     },
-    save::{Autosave, SaveDatabase, stream::SaveStream},
+    save::{Autosave, SaveDatabase},
     stroke::{
         chunk::{StrokeChunk, StrokeChunkPipeline},
         dirty::Dirty,
@@ -37,7 +45,8 @@ use crate::{
 };
 
 const CHUNK_SIZE: u32 = 512;
-const CHUNK_CAPS: usize = 5000;
+const CHUNK_CAPS: usize = 2048;
+const CHUNK_BATCH: usize = 8;
 const MAX_STROKE: u64 = 200;
 
 const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
@@ -68,8 +77,10 @@ const DEFAULT_DIRTY: Dirty = Dirty {
 
 pub struct StrokeLayer {
     pub chunks: HashMap<(i32, i32), Option<StrokeChunk>>,
-    unsaved: HashSet<(i32, i32)>,
-    stream: SaveStream<(i32, i32)>,
+
+    thread_tx: Sender<ThreadInput>,
+    thread_rx: Receiver<ThreadOutput>,
+    thread: Option<JoinHandle<()>>,
 
     pub interpolation: Interpolation,
     pub modifier: Modifier,
@@ -82,6 +93,19 @@ pub struct StrokeLayer {
     dispatch: BindGroup,
     dispatch_meta: Buffer,
     draws_array: Buffer,
+}
+
+enum ThreadInput {
+    SetStreamCenter((i32, i32)),
+    SetUnsaved((i32, i32)),
+    Create((i32, i32), StrokeChunk),
+    Autosave,
+    Finish,
+}
+
+enum ThreadOutput {
+    Insert((i32, i32), Option<StrokeChunk>),
+    Remove((i32, i32)),
 }
 
 #[repr(C)]
@@ -124,6 +148,7 @@ impl StrokeLayer {
         });
 
         let canvas_chunk_pipeline = StrokeChunkPipeline::new(world);
+        let pipeline_for_thread = canvas_chunk_pipeline.clone();
         let brush_round = RoundBrush::new(&render, &dispatch, &canvas_chunk_pipeline.compute);
         let brush_pixel = PixelBrush::new(&render, &dispatch, &canvas_chunk_pipeline.compute);
         world.insert(canvas_chunk_pipeline);
@@ -165,10 +190,44 @@ impl StrokeLayer {
             ],
         });
 
+        let (thread_input_tx, thread_input_rx) = channel();
+        let (thread_output_tx, thread_output_rx) = channel();
+
+        let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
+        let camera = world.single_fetch::<Camera>().unwrap();
+        let camera_uniform = camera.uniform.clone();
+        let render = world.single_fetch::<Render>().unwrap();
+        let device = render.device.clone();
+        let queue = render.queue.clone();
+
+        let center = camera.center.round();
+        let chunk_here = (
+            center.x.div_euclid(CHUNK_SIZE as i32),
+            center.y.div_euclid(CHUNK_SIZE as i32),
+        );
+
+        thread_input_tx
+            .send(ThreadInput::SetStreamCenter(chunk_here))
+            .unwrap();
+
+        let thread = std::thread::spawn(|| {
+            Self::loading_thread(
+                database,
+                camera_uniform,
+                pipeline_for_thread,
+                device,
+                queue,
+                thread_input_rx,
+                thread_output_tx,
+            )
+            .unwrap();
+        });
+
         StrokeLayer {
             chunks: HashMap::new(),
-            unsaved: HashSet::new(),
-            stream: SaveStream::new(CHUNK_CAPS),
+            thread_tx: thread_input_tx,
+            thread_rx: thread_output_rx,
+            thread: Some(thread),
             interpolation: DEFAULT_INTERPOLATION,
             modifier: DEFAULT_MODIFIER,
             dirty: DEFAULT_DIRTY,
@@ -190,106 +249,56 @@ impl StrokeLayer {
         Ok(())
     }
 
-    fn chunk_autoload(world: &World) -> Option<RenderInformation> {
-        let camera = world.single_fetch::<Camera>().unwrap();
-        let center = camera.center.round();
-        let (chunk_center_x, chunk_center_y) = (
-            center.x.div_euclid(CHUNK_SIZE as i32),
-            center.y.div_euclid(CHUNK_SIZE as i32),
-        );
-
-        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-        let mut buf = Vec::with_capacity(400);
-        for chunk_x in chunk_center_x - 10..chunk_center_x + 10 {
-            for chunk_y in chunk_center_y - 10..chunk_center_y + 10 {
-                buf.push((chunk_x, chunk_y));
-            }
-        }
-
-        let db = world.single_fetch::<SaveDatabase>().unwrap();
-        let write = db.0.begin_write().unwrap();
-
-        let seq = stroke.stream.load_filtered(&buf);
-        for (chunk_id, load) in seq {
-            if load {
-                stroke.try_read_chunk(&write, world, chunk_id).unwrap();
-            } else {
-                stroke.try_free_chunk(&write, world, chunk_id).unwrap();
-            }
-        }
-
-        write.commit().unwrap();
-
-        Some(RenderInformation {
-            keep_redrawing: false,
-        })
-    }
-
-    fn try_read_chunk(
-        &mut self,
-        write: &WriteTransaction,
-        world: &World,
-        chunk_id: (i32, i32),
-    ) -> Result<(), redb::Error> {
-        let table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
-
-        if let Some(chunk) = table_chunk.get(chunk_id)? {
-            let bytes = zstd::decode_all(chunk.value()).unwrap();
-            let chunk = StrokeChunk::from_bytes(world, chunk_id, &bytes);
-            self.chunks.insert(chunk_id, Some(chunk));
-        } else {
-            self.chunks.insert(chunk_id, None);
-        }
-
-        Ok(())
-    }
-
-    fn try_free_chunk(
-        &mut self,
-        write: &WriteTransaction,
-        world: &World,
-        chunk_id: (i32, i32),
-    ) -> Result<(), redb::Error> {
-        let Some(chunk) = self.chunks.remove(&chunk_id).unwrap() else {
-            return Ok(());
-        };
-
-        let mut table = write.open_multimap_table(TABLE_STROKE)?;
-        let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
-
-        if self.unsaved.remove(&chunk_id) {
-            let bytes = chunk.device_readback(world);
-            let compressed = zstd::encode_all(&bytes[..], 0).unwrap();
-            table.insert((), chunk_id).unwrap();
-            table_chunk.insert(chunk_id, &compressed[..]).unwrap();
-        }
-
-        Ok(())
-    }
-
     fn attach_autosave(&mut self, world: &World, this: Handle<Self>) {
-        let save = world.insert(Autosave(Box::new(move |world, write| {
-            let this = &mut *world.fetch_mut(this).unwrap();
-            let mut table = write.open_multimap_table(TABLE_STROKE).unwrap();
-            let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK).unwrap();
-            for chunk_id in this.unsaved.drain() {
-                let Some(Some(chunk)) = this.chunks.get(&chunk_id) else {
-                    continue;
-                };
-
-                let bytes = chunk.device_readback(world);
-                let compressed = zstd::encode_all(&bytes[..], 0).unwrap();
-                table.insert((), chunk_id).unwrap();
-                table_chunk.insert(chunk_id, &compressed[..]).unwrap();
-            }
+        let save = world.insert(Autosave(Box::new(move |world, _| {
+            let this = world.fetch_mut(this).unwrap();
+            this.thread_tx.send(ThreadInput::Autosave).unwrap();
         })));
 
         world.dependency(save, this);
+
+        let camera = world.single::<Camera>().unwrap();
+        world.observer(camera, move |change: &CameraPositionChanged, world| {
+            let from = change.from.round();
+            let chunk_from = (
+                from.x.div_euclid(CHUNK_SIZE as i32),
+                from.y.div_euclid(CHUNK_SIZE as i32),
+            );
+
+            let here = change.here.round();
+            let chunk_here = (
+                here.x.div_euclid(CHUNK_SIZE as i32),
+                here.y.div_euclid(CHUNK_SIZE as i32),
+            );
+
+            if chunk_from != chunk_here {
+                let this = world.fetch(this).unwrap();
+                this.thread_tx
+                    .send(ThreadInput::SetStreamCenter(chunk_here))
+                    .unwrap();
+            }
+        });
     }
 
     fn attach_render(&mut self, world: &World, this: Handle<Self>) {
         let control = world.insert(RenderControl {
-            prepare: Some(Box::new(Self::chunk_autoload)),
+            prepare: Some(Box::new(move |world| {
+                let this = &mut *world.fetch_mut(this).unwrap();
+                for output in this.thread_rx.try_iter() {
+                    match output {
+                        ThreadOutput::Insert(chunk_id, chunk) => {
+                            this.chunks.insert(chunk_id, chunk);
+                        }
+                        ThreadOutput::Remove(chunk_id) => {
+                            this.chunks.remove(&chunk_id);
+                        }
+                    }
+                }
+
+                Some(RenderInformation {
+                    keep_redrawing: false,
+                })
+            })),
             draw: Some(Box::new(|world, rpass| {
                 let stroke = world.single_fetch::<StrokeLayer>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
@@ -404,9 +413,21 @@ impl StrokeLayer {
             for chunk_y in dirty.chunk_src.1..dirty.chunk_dst.1 {
                 let chunk_id = (chunk_x, chunk_y);
                 if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
-                    chunk.get_or_insert_with(|| StrokeChunk::new(world, chunk_id));
+                    let chunk = chunk
+                        .get_or_insert_with(|| {
+                            let render = world.single_fetch::<Render>().unwrap();
+                            let camera = world.single_fetch::<Camera>().unwrap();
+                            let pipeline = world.single_fetch::<StrokeChunkPipeline>().unwrap();
+                            StrokeChunk::new(&camera.uniform, &pipeline, &render.device, chunk_id)
+                        })
+                        .clone();
                     chunks.push(chunk_id);
-                    self.unsaved.insert(chunk_id);
+                    self.thread_tx
+                        .send(ThreadInput::Create(chunk_id, chunk))
+                        .unwrap();
+                    self.thread_tx
+                        .send(ThreadInput::SetUnsaved(chunk_id))
+                        .unwrap();
                 }
             }
         }
@@ -469,6 +490,172 @@ impl StrokeLayer {
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         lnwindow.window.request_redraw();
     }
+
+    fn loading_thread(
+        database: SaveDatabase,
+        camera_uniform: Buffer,
+        pipeline: StrokeChunkPipeline,
+        device: Device,
+        queue: Queue,
+        input_rx: Receiver<ThreadInput>,
+        output_tx: Sender<ThreadOutput>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut actual = HashMap::<(i32, i32), Option<StrokeChunk>>::new();
+        let mut unsaved = HashSet::new();
+
+        let mut tasks_buf = IndexSet::with_capacity(400);
+        let mut task_frnt = 0;
+        let mut task_batch;
+
+        let mut ring = IndexSet::<(i32, i32)>::new();
+        let mut frnt = 0;
+
+        let mut filt_load = IndexSet::new();
+        let mut filt_unload = IndexSet::new();
+
+        loop {
+            let input = if task_frnt < tasks_buf.len() {
+                match input_rx.try_recv() {
+                    Ok(input) => Some(input),
+                    Err(TryRecvError::Empty) => None,
+                    Err(TryRecvError::Disconnected) => Err(TryRecvError::Disconnected)?,
+                }
+            } else {
+                match input_rx.recv() {
+                    Ok(input) => Some(input),
+                    Err(RecvError) => Err(RecvError)?,
+                }
+            };
+
+            match input {
+                Some(ThreadInput::SetStreamCenter((chunk_center_x, chunk_center_y))) => {
+                    tasks_buf.clear();
+
+                    for chunk_x in chunk_center_x - 10..chunk_center_x + 10 {
+                        for chunk_y in chunk_center_y - 10..chunk_center_y + 10 {
+                            tasks_buf.insert((chunk_x, chunk_y));
+                        }
+                    }
+
+                    tasks_buf.sort_by_key(|&(x, y)| {
+                        let dx = (x - chunk_center_x).unsigned_abs();
+                        let dy = (y - chunk_center_y).unsigned_abs();
+                        std::cmp::max(dx, dy)
+                    });
+
+                    task_frnt = 0;
+                }
+                Some(ThreadInput::SetUnsaved(chunk)) => {
+                    unsaved.insert(chunk);
+                    continue;
+                }
+                Some(ThreadInput::Create(chunk_id, chunk)) => {
+                    actual.insert(chunk_id, Some(chunk));
+                    continue;
+                }
+                Some(ThreadInput::Autosave) => {
+                    let write = database.0.begin_write()?;
+                    {
+                        let mut table = write.open_multimap_table(TABLE_STROKE)?;
+                        let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
+                        for chunk_id in unsaved.drain() {
+                            let Some(Some(chunk)) = actual.get(&chunk_id) else {
+                                continue;
+                            };
+
+                            let bytes = chunk.device_readback(&device, &queue);
+                            let compressed = zstd::encode_all(&bytes[..], 0)?;
+                            table.insert((), chunk_id)?;
+                            table_chunk.insert(chunk_id, &compressed[..])?;
+                        }
+                    }
+                    write.commit()?;
+                    continue;
+                }
+                Some(ThreadInput::Finish) => {
+                    return Ok(());
+                }
+                None => {}
+            };
+
+            task_batch = 0;
+            while let Some(&key) = tasks_buf.get_index(task_frnt)
+                && task_batch < CHUNK_BATCH
+            {
+                task_frnt += 1;
+
+                while frnt < ring.len() && tasks_buf.contains(&ring[frnt]) {
+                    // Keep required one in-place
+                    frnt = (frnt + 1) % CHUNK_CAPS;
+                }
+
+                if frnt >= ring.len() {
+                    // Out of bounds, just insert
+                    if ring.insert(key) {
+                        task_batch += 1;
+                        filt_load.insert(key);
+                    }
+
+                    frnt = ring.len() % CHUNK_CAPS;
+                    continue;
+                }
+
+                let Ok(replaced) = ring.replace_index(frnt, key) else {
+                    // already loaded skipped
+                    continue;
+                };
+
+                task_batch += 1;
+                filt_load.swap_remove(&replaced);
+                filt_unload.swap_remove(&key);
+                filt_unload.insert(replaced);
+                filt_load.insert(key);
+
+                // move forward
+                frnt = (frnt + 1) % CHUNK_CAPS;
+            }
+
+            let write = database.0.begin_write()?;
+            for chunk_id in filt_unload.drain(..) {
+                let mut table = write.open_multimap_table(TABLE_STROKE)?;
+                let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
+
+                if let Some(Some(chunk)) = actual.remove(&chunk_id) {
+                    output_tx.send(ThreadOutput::Remove(chunk_id))?;
+
+                    if unsaved.remove(&chunk_id) {
+                        let bytes = chunk.device_readback(&device, &queue);
+                        let compressed = zstd::encode_all(&bytes[..], 0)?;
+                        table.insert((), chunk_id)?;
+                        table_chunk.insert(chunk_id, &compressed[..])?;
+                    }
+                }
+            }
+            write.commit()?;
+
+            let read = database.0.begin_read()?;
+            for chunk_id in filt_load.drain(..) {
+                let table_chunk = read.open_table(TABLE_STROKE_CHUNK)?;
+
+                if let Some(chunk) = table_chunk.get(chunk_id)? {
+                    let bytes = zstd::decode_all(chunk.value())?;
+                    let chunk = StrokeChunk::from_bytes(
+                        &camera_uniform,
+                        &pipeline,
+                        &device,
+                        &queue,
+                        chunk_id,
+                        &bytes,
+                    );
+                    actual.insert(chunk_id, Some(chunk.clone()));
+                    output_tx.send(ThreadOutput::Insert(chunk_id, Some(chunk)))?;
+                } else {
+                    actual.insert(chunk_id, None);
+                    output_tx.send(ThreadOutput::Insert(chunk_id, None))?;
+                }
+            }
+        }
+    }
 }
 
 impl Element for StrokeLayer {
@@ -482,5 +669,13 @@ impl Element for StrokeLayer {
         self.attach_touch(world, this);
         self.attach_autosave(world, this);
         self.attach_render(world, this);
+    }
+}
+
+impl Drop for StrokeLayer {
+    fn drop(&mut self) {
+        self.thread_tx.send(ThreadInput::Finish).unwrap();
+        let thread = self.thread.take().unwrap();
+        thread.join().unwrap();
     }
 }
