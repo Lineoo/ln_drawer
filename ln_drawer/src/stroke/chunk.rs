@@ -1,23 +1,24 @@
 use ln_world::{Element, Handle, World};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBinding,
+    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
     BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites,
-    CommandEncoderDescriptor, Extent3d, FragmentState, MapMode, Origin3d, PipelineLayoutDescriptor,
-    PollType, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline,
-    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyBufferInfoBase,
-    TexelCopyBufferLayout, TexelCopyTextureInfoBase, Texture, TextureAspect, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
-    TextureViewDimension, VertexState,
+    CommandEncoderDescriptor, Device, Extent3d, FragmentState, MapMode, Origin3d,
+    PipelineLayoutDescriptor, PollType, PrimitiveState, PrimitiveTopology, Queue, RenderPass,
+    RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess,
+    TexelCopyBufferInfoBase, TexelCopyBufferLayout, TexelCopyTextureInfoBase, Texture,
+    TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
+    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
-    render::{MSAA_STATE, Render, camera::Camera, vertex::VertexUniform},
+    render::{MSAA_STATE, Render, vertex::VertexUniform},
     stroke::{CHUNK_SIZE, StrokeLayer},
 };
 
+#[derive(Clone)]
 pub struct StrokeChunk {
     pub compute: BindGroup,
     vertex: BindGroup,
@@ -25,6 +26,7 @@ pub struct StrokeChunk {
     texture: Texture,
 }
 
+#[derive(Clone)]
 pub struct StrokeChunkPipeline {
     pipeline: RenderPipeline,
     pub compute: BindGroupLayout,
@@ -163,12 +165,12 @@ impl StrokeChunkPipeline {
 impl Element for StrokeChunkPipeline {}
 
 impl StrokeChunk {
-    pub fn new(world: &World, chunk: (i32, i32)) -> Self {
-        let render = world.single_fetch::<Render>().unwrap();
-        let camera = world.single_fetch::<Camera>().unwrap();
-        let manager = world.single_fetch::<StrokeChunkPipeline>().unwrap();
-        let device = &render.device;
-
+    pub fn new(
+        camera_uniform: &Buffer,
+        pipeline: &StrokeChunkPipeline,
+        device: &Device,
+        chunk: (i32, i32),
+    ) -> Self {
         let rectangle = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("stroke_chunk_rectangle"),
             contents: bytemuck::bytes_of(&VertexUniform {
@@ -208,7 +210,7 @@ impl StrokeChunk {
 
         let compute = device.create_bind_group(&BindGroupDescriptor {
             label: Some("stroke_chunk_compute"),
-            layout: &manager.compute,
+            layout: &pipeline.compute,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
@@ -227,12 +229,12 @@ impl StrokeChunk {
 
         let vertex = device.create_bind_group(&BindGroupDescriptor {
             label: Some("stroke_chunk_vertex"),
-            layout: &manager.vertex,
+            layout: &pipeline.vertex,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
                     resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &camera.uniform,
+                        buffer: camera_uniform,
                         offset: 0,
                         size: None,
                     }),
@@ -250,7 +252,7 @@ impl StrokeChunk {
 
         let fragment = device.create_bind_group(&BindGroupDescriptor {
             label: Some("stroke_chunk_fragment"),
-            layout: &manager.fragment,
+            layout: &pipeline.fragment,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
@@ -271,10 +273,16 @@ impl StrokeChunk {
         }
     }
 
-    pub fn from_bytes(world: &World, chunk: (i32, i32), bytes: &[u8]) -> Self {
-        let render = world.single_fetch::<Render>().unwrap();
-        let chunk = Self::new(world, chunk);
-        render.queue.write_texture(
+    pub fn from_bytes(
+        camera_uniform: &Buffer,
+        pipeline: &StrokeChunkPipeline,
+        device: &Device,
+        queue: &Queue,
+        chunk: (i32, i32),
+        bytes: &[u8],
+    ) -> Self {
+        let chunk = Self::new(camera_uniform, pipeline, device, chunk);
+        queue.write_texture(
             TexelCopyTextureInfoBase {
                 texture: &chunk.texture,
                 mip_level: 0,
@@ -306,12 +314,8 @@ impl StrokeChunk {
         rpass.draw(0..4, 0..1);
     }
 
-    pub fn device_readback(&self, world: &World) -> Vec<u8> {
+    pub fn device_readback(&self, device: &Device, queue: &Queue) -> Vec<u8> {
         let (tx, rx) = std::sync::mpsc::channel();
-
-        let render = world.single_fetch::<Render>().unwrap();
-        let device = &render.device;
-        let queue = &render.queue;
 
         let readback_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("chunk_readback"),

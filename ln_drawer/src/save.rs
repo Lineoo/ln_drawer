@@ -1,8 +1,8 @@
 mod legacy;
-pub mod stream;
 
 use std::{
     path::{Path, PathBuf},
+    sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
 
@@ -29,7 +29,8 @@ const BACKUP_SLOT: u32 = 6;
 
 const TABLE_METADATA: TableDefinition<u32, &[u8]> = TableDefinition::new("metadata");
 
-pub struct SaveDatabase(pub Database);
+#[derive(Clone)]
+pub struct SaveDatabase(pub Arc<Database>);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, bytemuck::AnyBitPattern, bytemuck::NoUninit)]
@@ -49,12 +50,12 @@ impl SaveDatabase {
         SaveDatabase::create_backup(&target);
         if let Ok(db) = Database::open(&target) {
             SaveDatabase::touch(&db).unwrap();
-            world.insert(SaveDatabase(db));
+            world.insert(SaveDatabase(Arc::new(db)));
             log::debug!("database loaded");
         } else {
             let db = Database::create(&target).unwrap();
             SaveDatabase::fresh(&db).unwrap();
-            world.insert(SaveDatabase(db));
+            world.insert(SaveDatabase(Arc::new(db)));
             log::debug!("database created");
         }
 

@@ -32,6 +32,11 @@ pub struct CameraBind {
 
 pub struct MainCamera(pub Handle<Camera>);
 
+pub struct CameraPositionChanged {
+    pub from: PositionFract,
+    pub here: PositionFract,
+}
+
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct CameraDescriptor {
     pub size: Size,
@@ -311,7 +316,15 @@ impl CameraUtils {
             self.cursor[1] - self.cursor_in_anchor[1],
         ]);
 
-        camera.center = self.anchor - delta;
+        let dest = self.anchor - delta;
+        world.queue_trigger(
+            camera.handle(),
+            CameraPositionChanged {
+                from: camera.center,
+                here: dest,
+            },
+        );
+        camera.center = dest;
     }
 
     /// resolve `cursor_in_anchor`
