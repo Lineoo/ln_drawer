@@ -1,5 +1,4 @@
 mod legacy;
-pub mod stream;
 
 use std::{
     path::{Path, PathBuf},
