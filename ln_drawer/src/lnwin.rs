@@ -13,6 +13,8 @@ use winit::{
 };
 
 use crate::{
+    layout::luni::{LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
+    measures::Rectangle,
     render::{
         Render,
         camera::{Camera, CameraUtils, MainCamera},
@@ -29,7 +31,11 @@ use crate::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
     },
-    widgets::palette::{ColorPicker, hsl::PaletteHslMaterial},
+    widgets::{
+        WidgetAnimatedRectangle, WidgetClick, WidgetRectangle,
+        button::Button,
+        palette::{ColorPicker, hsl::PaletteHslMaterial},
+    },
 };
 
 #[derive(Default)]
@@ -153,6 +159,83 @@ impl Element for Lnwindow {
                 world.queue(|world| {
                     world.insert(StrokeLayer::new(world));
                     world.insert(CameraUtils::default());
+                });
+
+                // luni test
+                world.queue(|world| {
+                    let parent = world.insert(Button {
+                        rect: Rectangle::new(0, 0, 100, 100),
+                        order: 0,
+                    });
+
+                    let child0 = world.insert(Button {
+                        rect: Rectangle::new(0, 0, 100, 100),
+                        order: 10,
+                    });
+
+                    let child1 = world.insert(Button {
+                        rect: Rectangle::new(0, 0, 100, 100),
+                        order: 10,
+                    });
+
+                    world.insert(LuniFlex {
+                        parent: (
+                            parent.untyped(),
+                            LuniParent {
+                                template: LuniChildTemplate {
+                                    basis: 10,
+                                    margin: LuniRect {
+                                        left: 4,
+                                        bottom: 4,
+                                        right: 4,
+                                        top: 4,
+                                    },
+                                    ..Default::default()
+                                },
+                                padding: LuniRect {
+                                    left: 4,
+                                    bottom: 4,
+                                    right: 4,
+                                    top: 4,
+                                },
+                                ..Default::default()
+                            },
+                        ),
+                        children: vec![
+                            (
+                                child0.untyped(),
+                                LuniChild {
+                                    basis: Some(200),
+                                    grow: Some(1.0),
+                                    shrink: Some(1.0),
+                                    ..Default::default()
+                                },
+                            ),
+                            (
+                                child1.untyped(),
+                                LuniChild {
+                                    basis: Some(200),
+                                    grow: Some(10.0),
+                                    shrink: Some(0.0),
+                                    ..Default::default()
+                                },
+                            ),
+                        ],
+                    });
+
+                    world.observer(child0, move |&WidgetClick, world| {
+                        let parent = world.fetch(parent).unwrap();
+                        let rect = parent.rect.with_right(parent.rect.right() - 40);
+                        world.queue_trigger(parent.handle(), WidgetAnimatedRectangle(rect));
+                    });
+
+                    world.observer(child1, move |&WidgetClick, world| {
+                        let parent = world.fetch(parent).unwrap();
+                        let rect = parent.rect.with_right(parent.rect.right() + 40);
+                        world.queue_trigger(parent.handle(), WidgetAnimatedRectangle(rect));
+                    });
+
+                    world.queue_trigger(parent, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));
                 });
             });
 

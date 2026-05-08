@@ -236,6 +236,11 @@ impl Button {
             let mut this = world.fetch_mut(this).unwrap();
             this.rect = rect;
         });
+
+        world.observer(this, move |&WidgetAnimatedRectangle(rect), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
+        });
     }
 }
 
