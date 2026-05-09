@@ -28,7 +28,7 @@ pub struct StrokeChunk {
 
 #[derive(Clone)]
 pub struct StrokeChunkPipeline {
-    pipeline: RenderPipeline,
+    pub pipeline: RenderPipeline,
     pub compute: BindGroupLayout,
     vertex: BindGroupLayout,
     fragment: BindGroupLayout,
