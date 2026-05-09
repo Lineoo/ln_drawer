@@ -50,3 +50,9 @@ pub fn migrate0(write: &WriteTransaction) -> Result<(), redb::Error> {
 
     Ok(())
 }
+
+pub fn _migrate1(_write: &WriteTransaction) -> Result<(), redb::Error> {
+    const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
+        MultimapTableDefinition::new("stroke");
+    todo!()
+}

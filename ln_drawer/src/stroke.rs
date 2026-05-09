@@ -14,18 +14,20 @@ use hashbrown::{HashMap, HashSet};
 use indexmap::IndexSet;
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
-use redb::{Database, MultimapTableDefinition, ReadableDatabase, TableDefinition};
+use redb::{Database, ReadableDatabase, TableDefinition};
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
     Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
     ColorWrites, CommandEncoderDescriptor, ComputePassDescriptor, Device, Extent3d, FilterMode,
-    FragmentState, MapMode, MipmapFilterMode, Origin3d, PipelineLayoutDescriptor, PollType,
-    PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
-    Sampler, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource,
-    ShaderStages, StorageTextureAccess, TexelCopyBufferInfoBase, TexelCopyBufferLayout,
-    TexelCopyTextureInfoBase, Texture, TextureAspect, TextureDimension, TextureFormat,
-    TextureSampleType, TextureUsages, TextureViewDimension, VertexState, wgt::TextureDescriptor,
+    FragmentState, MapMode, Origin3d, PipelineLayoutDescriptor, PollType, PrimitiveState,
+    PrimitiveTopology, Queue, RenderPipeline, RenderPipelineDescriptor, Sampler,
+    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, TexelCopyBufferInfoBase, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
+    Texture, TextureAspect, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
+    TextureViewDimension, VertexState,
+    util::{BufferInitDescriptor, DeviceExt},
+    wgt::{TextureDescriptor, TextureViewDescriptor},
 };
 use winit::event::PointerKind;
 
@@ -35,10 +37,10 @@ use crate::{
     render::{
         MSAA_STATE, Render, RenderControl, RenderInformation,
         camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils},
+        vertex::VertexUniform,
     },
     save::{Autosave, SaveDatabase},
     stroke::{
-        chunk::{StrokeChunk, StrokeChunkPipeline},
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
         modifier::{DrawProcessedStorage, Modifier},
@@ -56,9 +58,7 @@ const CHUNK_BATCH: usize = 8;
 const CHUNK_MIPMAP: u8 = 4;
 const MAX_STROKE: u64 = 200;
 
-const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
-    MultimapTableDefinition::new("stroke");
-const TABLE_STROKE_CHUNK: TableDefinition<(i32, i32), &[u8]> = TableDefinition::new("stroke_chunk");
+const TABLE_STROKE_CHUNK: TableDefinition<ChunkKey, &[u8]> = TableDefinition::new("stroke_chunk");
 
 const DEFAULT_INTERPOLATION: Interpolation = Interpolation {
     step: |draw| draw.size / 5.0,
@@ -85,16 +85,12 @@ const DEFAULT_DIRTY: Dirty = Dirty {
 type ChunkKey = (i32, i32, u8);
 
 pub struct StrokeLayer {
-    texture: HashMap<ChunkKey, Option<Texture>>,
-    placeholder: Texture,
-    sampler: Sampler,
+    chunks: HashMap<ChunkKey, Option<Chunk>>,
 
     render_pipeline: RenderPipeline,
+    render_sampler: Sampler,
     render_layout: BindGroupLayout,
-    render_bind: HashMap<ChunkKey, BindGroup>,
-
     compute_layout: BindGroupLayout,
-    compute_bind: HashMap<ChunkKey, BindGroup>,
 
     dispatch: BindGroup,
     dispatch_meta: Buffer,
@@ -111,6 +107,13 @@ pub struct StrokeLayer {
     pub brush_round: RoundBrush,
     pub brush_pixel: PixelBrush,
     prev: Option<Draw>,
+}
+
+#[derive(Clone)]
+struct Chunk {
+    texture: Texture,
+    render: BindGroup,
+    compute: BindGroup,
 }
 
 enum ThreadInput {
@@ -224,13 +227,8 @@ impl StrokeLayer {
             ],
         });
 
-        let canvas_chunk_pipeline = StrokeChunkPipeline::new(world);
-        let pipeline_for_thread = canvas_chunk_pipeline.clone();
-        let brush_round =
-            RoundBrush::new(&render, &dispatch_layout, &canvas_chunk_pipeline.compute);
-        let brush_pixel =
-            PixelBrush::new(&render, &dispatch_layout, &canvas_chunk_pipeline.compute);
-        world.insert(canvas_chunk_pipeline);
+        let brush_round = RoundBrush::new(&render, &dispatch_layout, &compute_layout);
+        let brush_pixel = PixelBrush::new(&render, &dispatch_layout, &compute_layout);
 
         let render_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("stroke_chunk"),
@@ -309,22 +307,7 @@ impl StrokeLayer {
             cache: None,
         });
 
-        let placeholder = device.create_texture(&TextureDescriptor {
-            label: Some("placeholder"),
-            size: Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-
-        let sampler = device.create_sampler(&SamplerDescriptor {
+        let render_sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("stroke_sampler"),
             address_mode_u: AddressMode::ClampToEdge,
             address_mode_v: AddressMode::ClampToEdge,
@@ -339,7 +322,6 @@ impl StrokeLayer {
 
         let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
         let camera = world.single_fetch::<Camera>().unwrap();
-        let camera_uniform = camera.uniform.clone();
         let render = world.single_fetch::<Render>().unwrap();
         let device = render.device.clone();
         let queue = render.queue.clone();
@@ -351,27 +333,16 @@ impl StrokeLayer {
             .unwrap();
 
         let thread = std::thread::spawn(|| {
-            Self::loading_thread(
-                database,
-                camera_uniform,
-                pipeline_for_thread,
-                device,
-                queue,
-                thread_input_rx,
-                thread_output_tx,
-            )
-            .unwrap();
+            Self::loading_thread(database, device, queue, thread_input_rx, thread_output_tx)
+                .unwrap();
         });
 
         StrokeLayer {
-            texture: HashMap::new(),
-            placeholder,
-            sampler,
+            chunks: HashMap::new(),
+            render_sampler,
             render_pipeline,
             render_layout,
-            render_bind: HashMap::new(),
             compute_layout,
-            compute_bind: HashMap::new(),
             dispatch,
             dispatch_meta,
             draws_array,
@@ -388,9 +359,146 @@ impl StrokeLayer {
         }
     }
 
+    fn create_chunk(&self, device: &Device, key: ChunkKey) -> Chunk {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("stroke_chunk_texture"),
+            size: Extent3d {
+                width: CHUNK_SIZE,
+                height: CHUNK_SIZE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::COPY_SRC
+                | TextureUsages::COPY_DST
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+
+        self.create_chunk_from_texture(texture, device, key)
+    }
+
+    fn create_chunk_from_texture(&self, texture: Texture, device: &Device, key: ChunkKey) -> Chunk {
+        let rectangle = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("stroke_chunk_rectangle"),
+            contents: bytemuck::bytes_of(&VertexUniform {
+                origin: [key.0 * CHUNK_SIZE as i32, key.1 * CHUNK_SIZE as i32],
+                extend: [CHUNK_SIZE, CHUNK_SIZE],
+            }),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let texture_view = texture.create_view(&TextureViewDescriptor {
+            label: Some("stroke_chunk_texture_view"),
+            ..Default::default()
+        });
+
+        let render_bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("stroke_chunk_render"),
+            layout: &self.render_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &rectangle,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&texture_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::Sampler(&self.render_sampler),
+                },
+            ],
+        });
+
+        let compute_bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("stroke_chunk_compute"),
+            layout: &self.compute_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&texture_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &rectangle,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+            ],
+        });
+
+        Chunk {
+            texture,
+            render: render_bind,
+            compute: compute_bind,
+        }
+    }
+
+    fn chunk_readback(texture: &Texture, device: &Device, queue: &Queue) -> Vec<u8> {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        let readback_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("chunk_readback"),
+            size: (CHUNK_SIZE * CHUNK_SIZE * 4) as u64,
+            usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("chunk_readback"),
+        });
+
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfoBase {
+                texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfoBase {
+                buffer: &readback_buffer,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(CHUNK_SIZE * 4),
+                    rows_per_image: Some(CHUNK_SIZE),
+                },
+            },
+            Extent3d {
+                width: CHUNK_SIZE,
+                height: CHUNK_SIZE,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let command = encoder.finish();
+
+        queue.submit([command]);
+
+        let inner = readback_buffer.clone();
+        readback_buffer.map_async(MapMode::Read, .., move |ret| {
+            ret.unwrap();
+
+            let view = inner.get_mapped_range(..);
+            tx.send(view.to_vec()).unwrap();
+        });
+
+        device.poll(PollType::wait_indefinitely()).unwrap();
+        rx.recv().unwrap()
+    }
+
     fn database_init(&mut self, db: &Database) -> Result<(), redb::Error> {
         let write = db.begin_write()?;
-        write.open_multimap_table(TABLE_STROKE)?;
         write.open_table(TABLE_STROKE_CHUNK)?;
         write.commit()?;
         Ok(())
@@ -422,14 +530,17 @@ impl StrokeLayer {
         let control = world.insert(RenderControl {
             prepare: Some(Box::new(move |world| {
                 let this = &mut *world.fetch_mut(this).unwrap();
-                let render = world.single_fetch::<Render>().unwrap();
                 for output in this.thread_rx.try_iter() {
                     match output {
                         ThreadOutput::Insert(chunk_id, texture) => {
-                            this.texture.insert(chunk_id, texture);
+                            let render = world.single_fetch::<Render>().unwrap();
+                            let chunk = texture.map(|texture| {
+                                this.create_chunk_from_texture(texture, &render.device, chunk_id)
+                            });
+                            this.chunks.insert(chunk_id, chunk);
                         }
                         ThreadOutput::Remove(chunk_id) => {
-                            this.texture.remove(&chunk_id);
+                            this.chunks.remove(&chunk_id);
                         }
                     }
                 }
@@ -452,10 +563,13 @@ impl StrokeLayer {
                     (view_rect.up() - 1).div_euclid(CHUNK_SIZE as i32) + 1,
                 );
 
+                rpass.set_pipeline(&stroke.render_pipeline);
+                rpass.set_bind_group(0, &camera.bind, &[]);
                 for chunk_x in chunk_src.0..chunk_dst.0 {
                     for chunk_y in chunk_src.1..chunk_dst.1 {
-                        if let Some(Some(chunk)) = stroke.texture.get(&(chunk_x, chunk_y)) {
-                            chunk.redraw(world, rpass);
+                        if let Some(Some(chunk)) = stroke.chunks.get(&(chunk_x, chunk_y, 0)) {
+                            rpass.set_bind_group(1, &chunk.render, &[]);
+                            rpass.draw(0..4, 0..1);
                         }
                     }
                 }
@@ -531,15 +645,6 @@ impl StrokeLayer {
         });
     }
 
-    fn draw(&self, world: &World, rpass: &mut RenderPass) {
-        let manager = world.single_fetch::<StrokeChunkPipeline>().unwrap();
-
-        rpass.set_pipeline(&manager.pipeline);
-        rpass.set_bind_group(0, &self.vertex, &[]);
-        rpass.set_bind_group(1, &self.fragment, &[]);
-        rpass.draw(0..4, 0..1);
-    }
-
     fn paint(&mut self, next: Draw, world: &World) {
         // generate draws //
 
@@ -559,24 +664,21 @@ impl StrokeLayer {
         let mut chunks = Vec::new();
         for chunk_x in dirty.chunk_src.0..dirty.chunk_dst.0 {
             for chunk_y in dirty.chunk_src.1..dirty.chunk_dst.1 {
-                let chunk_id = (chunk_x, chunk_y);
-                if let Some(chunk) = self.texture.get_mut(&chunk_id) {
-                    let chunk = chunk
-                        .get_or_insert_with(|| {
-                            let render = world.single_fetch::<Render>().unwrap();
-                            let camera = world.single_fetch::<Camera>().unwrap();
-                            let pipeline = world.single_fetch::<StrokeChunkPipeline>().unwrap();
-                            StrokeChunk::new(&camera.uniform, &pipeline, &render.device, chunk_id)
-                        })
-                        .clone();
-                    chunks.push(chunk_id);
+                let chunk_id = (chunk_x, chunk_y, 0);
+
+                if !self.chunks.contains_key(&chunk_id) {
+                    let render = world.single_fetch::<Render>().unwrap();
+                    let chunk = self.create_chunk(&render.device, chunk_id);
                     self.thread_tx
-                        .send(ThreadInput::Create(chunk_id, chunk))
+                        .send(ThreadInput::Create(chunk_id, chunk.texture.clone()))
                         .unwrap();
-                    self.thread_tx
-                        .send(ThreadInput::MarkUnsaved(chunk_id))
-                        .unwrap();
+                    self.chunks.insert(chunk_id, Some(chunk));
                 }
+
+                self.thread_tx
+                    .send(ThreadInput::MarkUnsaved(chunk_id))
+                    .unwrap();
+                chunks.push(chunk_id);
             }
         }
 
@@ -618,7 +720,7 @@ impl StrokeLayer {
         cpass.set_bind_group(0, Some(&self.dispatch), &[]);
 
         for chunk in chunks {
-            let chunk = self.texture.get(&chunk).unwrap().as_ref().unwrap();
+            let chunk = self.chunks.get(&chunk).unwrap().as_ref().unwrap();
 
             cpass.set_bind_group(1, Some(&chunk.compute), &[]);
 
@@ -641,21 +743,19 @@ impl StrokeLayer {
 
     fn loading_thread(
         database: SaveDatabase,
-        camera_uniform: Buffer,
-        pipeline: StrokeChunkPipeline,
         device: Device,
         queue: Queue,
         input_rx: Receiver<ThreadInput>,
         output_tx: Sender<ThreadOutput>,
     ) -> Result<(), Box<dyn Error>> {
-        let mut actual = HashMap::<(i32, i32), Option<Texture>>::new();
+        let mut actual = HashMap::<ChunkKey, Option<Texture>>::new();
         let mut unsaved = HashSet::new();
 
         let mut tasks_buf = IndexSet::with_capacity(400);
         let mut task_frnt = 0;
         let mut task_batch;
 
-        let mut ring = IndexSet::<(i32, i32)>::new();
+        let mut ring = IndexSet::<ChunkKey>::new();
         let mut frnt = 0;
 
         let mut filt_load = IndexSet::new();
@@ -681,14 +781,15 @@ impl StrokeLayer {
 
                     for chunk_x in chunk_center_x - 10..chunk_center_x + 10 {
                         for chunk_y in chunk_center_y - 10..chunk_center_y + 10 {
-                            tasks_buf.insert((chunk_x, chunk_y));
+                            tasks_buf.insert((chunk_x, chunk_y, 0));
                         }
                     }
 
-                    tasks_buf.sort_by_key(|&(x, y)| {
+                    tasks_buf.sort_by_key(|&(x, y, z)| {
                         let dx = (x - chunk_center_x).unsigned_abs();
                         let dy = (y - chunk_center_y).unsigned_abs();
-                        std::cmp::max(dx, dy)
+                        let dz = (z as i32 - mipmap as i32).unsigned_abs();
+                        dx.max(dy).max(dz)
                     });
 
                     task_frnt = 0;
@@ -697,23 +798,21 @@ impl StrokeLayer {
                     unsaved.insert(chunk);
                     continue;
                 }
-                Some(ThreadInput::Create(chunk_id, chunk)) => {
-                    actual.insert(chunk_id, Some(chunk));
+                Some(ThreadInput::Create(chunk_id, texture)) => {
+                    actual.insert(chunk_id, Some(texture));
                     continue;
                 }
                 Some(ThreadInput::Autosave) => {
                     let write = database.0.begin_write()?;
                     {
-                        let mut table = write.open_multimap_table(TABLE_STROKE)?;
                         let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
                         for chunk_id in unsaved.drain() {
-                            let Some(Some(chunk)) = actual.get(&chunk_id) else {
+                            let Some(Some(texture)) = actual.get(&chunk_id) else {
                                 continue;
                             };
 
-                            let bytes = chunk.device_readback(&device, &queue);
+                            let bytes = Self::chunk_readback(&texture, &device, &queue);
                             let compressed = zstd::encode_all(&bytes[..], 0)?;
-                            table.insert((), chunk_id)?;
                             table_chunk.insert(chunk_id, &compressed[..])?;
                         }
                     }
@@ -765,16 +864,14 @@ impl StrokeLayer {
 
             let write = database.0.begin_write()?;
             for chunk_id in filt_unload.drain(..) {
-                let mut table = write.open_multimap_table(TABLE_STROKE)?;
                 let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
 
                 if let Some(Some(chunk)) = actual.remove(&chunk_id) {
                     output_tx.send(ThreadOutput::Remove(chunk_id))?;
 
                     if unsaved.remove(&chunk_id) {
-                        let bytes = chunk.device_readback(&device, &queue);
+                        let bytes = Self::chunk_readback(&chunk, &device, &queue);
                         let compressed = zstd::encode_all(&bytes[..], 0)?;
-                        table.insert((), chunk_id)?;
                         table_chunk.insert(chunk_id, &compressed[..])?;
                     }
                 }
@@ -826,8 +923,8 @@ impl StrokeLayer {
                         },
                     );
 
-                    actual.insert(chunk_id, Some(texture));
-                    output_tx.send(ThreadOutput::Insert(chunk_id, Some(chunk)))?;
+                    actual.insert(chunk_id, Some(texture.clone()));
+                    output_tx.send(ThreadOutput::Insert(chunk_id, Some(texture)))?;
                 } else {
                     actual.insert(chunk_id, None);
                     output_tx.send(ThreadOutput::Insert(chunk_id, None))?;
@@ -843,58 +940,6 @@ fn chunk_of(center: Position) -> ChunkKey {
         center.y.div_euclid(CHUNK_SIZE as i32),
         0,
     )
-}
-
-fn texture_readback(texture: &Texture, device: &Device, queue: &Queue) -> Vec<u8> {
-    let (tx, rx) = std::sync::mpsc::channel();
-
-    let readback_buffer = device.create_buffer(&BufferDescriptor {
-        label: Some("chunk_readback"),
-        size: (CHUNK_SIZE * CHUNK_SIZE * 4) as u64,
-        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-        label: Some("chunk_readback"),
-    });
-
-    encoder.copy_texture_to_buffer(
-        TexelCopyTextureInfoBase {
-            texture: &texture,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyBufferInfoBase {
-            buffer: &readback_buffer,
-            layout: TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(CHUNK_SIZE * 4),
-                rows_per_image: Some(CHUNK_SIZE),
-            },
-        },
-        Extent3d {
-            width: CHUNK_SIZE,
-            height: CHUNK_SIZE,
-            depth_or_array_layers: 1,
-        },
-    );
-
-    let command = encoder.finish();
-
-    queue.submit([command]);
-
-    let inner = readback_buffer.clone();
-    readback_buffer.map_async(MapMode::Read, .., move |ret| {
-        ret.unwrap();
-
-        let view = inner.get_mapped_range(..);
-        tx.send(view.to_vec()).unwrap();
-    });
-
-    device.poll(PollType::wait_indefinitely()).unwrap();
-    rx.recv().unwrap()
 }
 
 impl Element for StrokeLayer {
