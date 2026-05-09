@@ -3,7 +3,8 @@ use palette::{Hsla, IntoColor, RgbHue};
 
 use crate::{
     layout::transform::{Transform, TransformValue},
-    measures::{Position, Rectangle, Size},
+    measures::{Position, PositionFract, Rectangle, Size},
+    render::camera::{Camera, MainCamera},
     stroke::{StrokeLayer, modifier::Modifier},
     widgets::{
         WidgetAnimatedRectangle, WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
@@ -38,7 +39,13 @@ impl ColorPicker {
             order: 100,
         });
 
+        let home_button = world.insert(Button {
+            rect: Rectangle::new(-150, -150, -100, -100),
+            order: 100,
+        });
+
         world.queue_trigger(brush_button, WidgetEnabled(false));
+        world.queue_trigger(home_button, WidgetEnabled(false));
 
         world.insert(Transform {
             value: TransformValue::scale(0.7, 0.7),
@@ -54,6 +61,16 @@ impl ColorPicker {
             ),
             source: main_panel.untyped(),
             target: brush_button.untyped(),
+        });
+
+        world.insert(Transform {
+            value: TransformValue::anchor(
+                (0.0, 0.0),
+                Rectangle::new_half(Position::ZERO, Size::new(25, 25)),
+                Position::new(100, 40),
+            ),
+            source: main_panel.untyped(),
+            target: home_button.untyped(),
         });
 
         world.observer(palette, move |&WidgetHsla(color), world| {
@@ -106,6 +123,14 @@ impl ColorPicker {
         });
         world.queue_trigger(brush_button, WidgetClick);
 
+        world.observer(home_button, move |&WidgetClick, world| {
+            let main_camera = world.single_fetch::<MainCamera>().unwrap();
+            let mut camera = world
+                .enter_single_fetch_mut::<Camera>(main_camera.0)
+                .unwrap();
+            camera.center = PositionFract::ZERO;
+        });
+
         let mut drag_start = None;
         world.observer(main_panel, move |drag: &ButtonDrag, world| {
             let mut this = world.fetch_mut(this).unwrap();
@@ -139,6 +164,7 @@ impl ColorPicker {
 
             world.queue_trigger(palette, WidgetEnabled(this.expanded));
             world.queue_trigger(brush_button, WidgetEnabled(this.expanded));
+            world.queue_trigger(home_button, WidgetEnabled(this.expanded));
         });
     }
 }
