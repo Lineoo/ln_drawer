@@ -51,8 +51,39 @@ pub fn migrate0(write: &WriteTransaction) -> Result<(), redb::Error> {
     Ok(())
 }
 
-pub fn _migrate1(_write: &WriteTransaction) -> Result<(), redb::Error> {
-    const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
+/// Add mipmap level key, remove main chunk index table. The rest of completing mipmaps will
+/// be done by the stroke layer, using the **corrupted mipmap fixing** mechanics.
+///
+/// This migration will add mipmap level marker 0 to all StrokeLayer's chunks, and delete
+/// unused index chunk table.
+pub fn migrate1(write: &WriteTransaction) -> Result<(), redb::Error> {
+    const LEGACY_TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
         MultimapTableDefinition::new("stroke");
-    todo!()
+    const LEGACY_TABLE_STROKE_CHUNK: TableDefinition<(i32, i32), &[u8]> =
+        TableDefinition::new("stroke_chunk");
+
+    const BUFFER_TABLE: TableDefinition<(i32, i32), &[u8]> = TableDefinition::new("_temp_");
+
+    const TABLE_STROKE_CHUNK: TableDefinition<(i32, i32, u8), &[u8]> =
+        TableDefinition::new("stroke_chunk");
+
+    // migrate data
+    {
+        write.rename_table(LEGACY_TABLE_STROKE_CHUNK, BUFFER_TABLE)?;
+        let legacy = write.open_table(BUFFER_TABLE)?;
+        let mut table = write.open_table(TABLE_STROKE_CHUNK)?;
+        for result in legacy.iter()? {
+            let (key, value) = result?;
+            let ((x, y), value) = (key.value(), value.value());
+            table.insert((x, y, 0), value)?;
+        }
+    }
+
+    // clean up buffer table
+    {
+        write.delete_multimap_table(LEGACY_TABLE_STROKE)?;
+        write.delete_table(BUFFER_TABLE)?;
+    }
+
+    Ok(())
 }

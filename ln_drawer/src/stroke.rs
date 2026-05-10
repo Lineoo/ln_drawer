@@ -30,7 +30,7 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
     wgt::{TextureDescriptor, TextureViewDescriptor},
 };
-use winit::event::{PointerKind, WindowEvent};
+use winit::event::PointerKind;
 
 use crate::{
     lnwin::Lnwindow,
@@ -87,6 +87,7 @@ type ChunkKey = (i32, i32, u8);
 
 pub struct StrokeLayer {
     chunks: HashMap<ChunkKey, Option<Chunk>>,
+    mipmap_ready: HashSet<ChunkKey>,
 
     render_pipeline: RenderPipeline,
     render_sampler: Sampler,
@@ -365,7 +366,7 @@ impl StrokeLayer {
 
         let mipmap_meta_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("mipmap_meta"),
-            size: size_of::<MipmapUniform>() as u64 * CHUNK_MIPMAP as u64,
+            size: size_of::<MipmapUniform>() as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -465,6 +466,7 @@ impl StrokeLayer {
 
         StrokeLayer {
             chunks: HashMap::new(),
+            mipmap_ready: HashSet::new(),
             render_sampler,
             render_pipeline,
             render_layout,
@@ -797,11 +799,74 @@ impl StrokeLayer {
 
                     new_chunk
                 });
+
                 self.chunks.insert(chunk_id, chunk);
+                self.detect_corrupted(chunk_id, &render);
+                self.detect_corrupted(upper_chunk_of(chunk_id), &render);
             }
             ThreadOutput::Remove(chunk_id) => {
                 self.chunks.remove(&chunk_id);
+
+                if chunk_id.2 > 0 {
+                    let (rx, ry, rp) = lower_root_chunk_of(chunk_id);
+
+                    if let Some(Some(c)) = self.chunks.get_mut(&(rx, ry, rp)) {
+                        c.mipmap = None;
+                    }
+                    if let Some(Some(c)) = self.chunks.get_mut(&(rx + 1, ry, rp)) {
+                        c.mipmap = None;
+                    }
+                    if let Some(Some(c)) = self.chunks.get_mut(&(rx, ry + 1, rp)) {
+                        c.mipmap = None;
+                    }
+                    if let Some(Some(c)) = self.chunks.get_mut(&(rx + 1, ry + 1, rp)) {
+                        c.mipmap = None;
+                    }
+                }
             }
+        }
+    }
+
+    fn detect_corrupted(&mut self, upper: (i32, i32, u8), render: &Render) {
+        // If the lower layer has content but upper layer is empty, then something must go wrong.
+        // We will regen mipmap in that case.
+
+        if let Some(None) = self.chunks.get(&upper)
+            && upper.2 > 0
+        {
+            let (rx, ry, rp) = lower_root_chunk_of(upper);
+
+            let r0 = (rx, ry, rp);
+            let r1 = (rx + 1, ry, rp);
+            let r2 = (rx, ry + 1, rp);
+            let r3 = (rx + 1, ry + 1, rp);
+
+            let p0 = self.chunks.get(&r0);
+            let p1 = self.chunks.get(&r1);
+            let p2 = self.chunks.get(&r2);
+            let p3 = self.chunks.get(&r3);
+
+            let all_loaded = p0.is_some() && p1.is_some() && p2.is_some() && p3.is_some();
+            let all_ready = self.mipmap_ready.contains(&r0)
+                && self.mipmap_ready.contains(&r1)
+                && self.mipmap_ready.contains(&r2)
+                && self.mipmap_ready.contains(&r3);
+
+            if all_loaded && all_ready {
+                let any_content = p0.is_some_and(|x| x.is_some())
+                    || p1.is_some_and(|x| x.is_some())
+                    || p2.is_some_and(|x| x.is_some())
+                    || p3.is_some_and(|x| x.is_some());
+
+                if any_content {
+                    self.fix_corrupted_mipmap(render, upper);
+                }
+
+                self.mipmap_ready.insert(upper);
+                self.detect_corrupted(upper_chunk_of(upper), render);
+            }
+        } else {
+            self.mipmap_ready.insert(upper);
         }
     }
 
@@ -932,35 +997,24 @@ impl StrokeLayer {
         let mut mipmap_chunks = Vec::new();
 
         for mipmap in 0..CHUNK_MIPMAP {
-            let size = chunk_size(mipmap);
-
-            let chunk_src = (
-                (dirty.left()).div_euclid(size),
-                (dirty.down()).div_euclid(size),
-            );
-
-            let chunk_dst = (
-                (dirty.right() - 1).div_euclid(size) + 1,
-                (dirty.up() - 1).div_euclid(size) + 1,
-            );
-
+            let (chunk_src, chunk_dst) = view_rect_to_chunk(dirty, mipmap);
             for chunk_x in chunk_src.0..chunk_dst.0 {
                 for chunk_y in chunk_src.1..chunk_dst.1 {
                     let chunk_id = (chunk_x, chunk_y, mipmap);
 
-                    if let Some(None) = self.chunks.get(&chunk_id) {
-                        let render = world.single_fetch::<Render>().unwrap();
-                        let mut chunk = self.create_chunk(&render.device, chunk_id);
+                    if let Some(chunk) = self.chunks.get(&chunk_id) {
+                        if chunk.is_none() {
+                            let render = world.single_fetch::<Render>().unwrap();
+                            let mut chunk = self.create_chunk(&render.device, chunk_id);
 
-                        self.update_mipmap_bind(chunk_id, &mut chunk, &render);
+                            self.update_mipmap_bind(chunk_id, &mut chunk, &render);
 
-                        self.thread_tx
-                            .send(ThreadInput::Create(chunk_id, chunk.texture.clone()))
-                            .unwrap();
-                        self.chunks.insert(chunk_id, Some(chunk));
-                    }
+                            self.thread_tx
+                                .send(ThreadInput::Create(chunk_id, chunk.texture.clone()))
+                                .unwrap();
+                            self.chunks.insert(chunk_id, Some(chunk));
+                        }
 
-                    if let Some(Some(_)) = self.chunks.get(&chunk_id) {
                         self.thread_tx
                             .send(ThreadInput::MarkUnsaved(chunk_id))
                             .unwrap();
@@ -1052,6 +1106,74 @@ impl StrokeLayer {
         lnwindow.window.request_redraw();
     }
 
+    fn fix_corrupted_mipmap(&mut self, render: &Render, upper: (i32, i32, u8)) {
+        log::warn!("fixing corrupted mipmap chunk {upper:?}");
+
+        debug_assert!(self.chunks.get(&upper).is_some_and(|x| x.is_none()));
+
+        let device = &render.device;
+        let mut chunk = self.create_chunk(device, upper);
+
+        self.update_mipmap_bind(upper, &mut chunk, &render);
+
+        self.thread_tx
+            .send(ThreadInput::Create(upper, chunk.texture.clone()))
+            .unwrap();
+        self.thread_tx
+            .send(ThreadInput::MarkUnsaved(upper))
+            .unwrap();
+        self.chunks.insert(upper, Some(chunk));
+
+        let (rx, ry, rp) = lower_root_chunk_of(upper);
+        self.fix_corrupted(render, (rx, ry, rp));
+        self.fix_corrupted(render, (rx, ry + 1, rp));
+        self.fix_corrupted(render, (rx + 1, ry, rp));
+        self.fix_corrupted(render, (rx + 1, ry + 1, rp));
+    }
+
+    fn fix_corrupted(&mut self, render: &Render, lower: (i32, i32, u8)) {
+        const WORKGROUP_SIZE: Size = Size::new(16, 16);
+
+        let Some(chunk) = self.chunks.get(&lower).unwrap() else {
+            return;
+        };
+
+        let chunk_mipmap = chunk.mipmap.as_ref().unwrap();
+
+        let (device, queue) = (&render.device, &render.queue);
+        let size = chunk_size(lower.2);
+
+        let mipmap = MipmapUniform {
+            mipmap_coords: [lower.0 * size, lower.1 * size],
+            mipmap_size: [size as u32; 2],
+        };
+
+        queue.write_buffer(&self.mipmap_meta_buffer, 0, bytemuck::bytes_of(&mipmap));
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("corrupted_fix"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("corrupted_fix"),
+            timestamp_writes: None,
+        });
+
+        cpass.set_pipeline(&self.mipmap_pipeline);
+        cpass.set_bind_group(0, Some(&self.mipmap_meta), &[]);
+        cpass.set_bind_group(1, Some(chunk_mipmap), &[]);
+        cpass.dispatch_workgroups(
+            (CHUNK_SIZE - 1) / WORKGROUP_SIZE.w + 1,
+            (CHUNK_SIZE - 1) / WORKGROUP_SIZE.h + 1,
+            1,
+        );
+
+        drop(cpass);
+
+        let command = encoder.finish();
+        queue.submit([command]);
+    }
+
     fn loading_thread(
         database: SaveDatabase,
         device: Device,
@@ -1098,8 +1220,8 @@ impl StrokeLayer {
                             chunk_center_y.div_euclid(2i32.pow(mipmap as u32)),
                             mipmap,
                         );
-                        for chunk_x in mipmapped.0 + range_src.0..=mipmapped.0 + range_dst.0 {
-                            for chunk_y in mipmapped.1 + range_src.1..=mipmapped.1 + range_dst.1 {
+                        for chunk_x in mipmapped.0 + range_src.0..mipmapped.0 + range_dst.0 {
+                            for chunk_y in mipmapped.1 + range_src.1..mipmapped.1 + range_dst.1 {
                                 tasks_buf.insert((chunk_x, chunk_y, mipmap));
                             }
                         }
@@ -1115,15 +1237,19 @@ impl StrokeLayer {
                     task_frnt = 0;
                 }
                 Some(ThreadInput::SetStreamSize(size)) => {
-                    let view_rect =
-                        Camera::manual_view_rect(Fract::ZERO, size, PositionFract::ZERO);
-                    (range_src, range_dst) = view_rect_to_chunk(view_rect, 0);
+                    let rect_min = Camera::manual_view_rect(Fract::ZERO, size, PositionFract::ZERO);
+                    (range_src, _) = view_rect_to_chunk(rect_min, 0);
+
+                    let pos = PositionFract::splat(Fract::new(CHUNK_SIZE as i32, 0));
+                    let rect_max = Camera::manual_view_rect(Fract::ZERO, size, pos);
+                    (_, range_dst) = view_rect_to_chunk(rect_max, 0);
                 }
                 Some(ThreadInput::MarkUnsaved(chunk)) => {
                     unsaved.insert(chunk);
                     continue;
                 }
                 Some(ThreadInput::Create(chunk_id, texture)) => {
+                    debug_assert_eq!(actual.get(&chunk_id), Some(&None));
                     actual.insert(chunk_id, Some(texture));
                     continue;
                 }
