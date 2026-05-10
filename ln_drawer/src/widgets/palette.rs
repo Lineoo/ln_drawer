@@ -38,7 +38,13 @@ impl ColorPicker {
             order: 100,
         });
 
+        let render_debug_button = world.insert(Button {
+            rect: Rectangle::new(-150, -150, -100, -100),
+            order: 100,
+        });
+
         world.queue_trigger(brush_button, WidgetEnabled(false));
+        world.queue_trigger(render_debug_button, WidgetEnabled(false));
 
         world.insert(Transform {
             value: TransformValue::scale(0.7, 0.7),
@@ -54,6 +60,16 @@ impl ColorPicker {
             ),
             source: main_panel.untyped(),
             target: brush_button.untyped(),
+        });
+
+        world.insert(Transform {
+            value: TransformValue::anchor(
+                (0.0, 0.0),
+                Rectangle::new_half(Position::ZERO, Size::new(25, 25)),
+                Position::new(40, 100),
+            ),
+            source: main_panel.untyped(),
+            target: render_debug_button.untyped(),
         });
 
         world.observer(palette, move |&WidgetHsla(color), world| {
@@ -106,6 +122,11 @@ impl ColorPicker {
         });
         world.queue_trigger(brush_button, WidgetClick);
 
+        world.observer(render_debug_button, |&WidgetClick, world| {
+            let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+            stroke.render_debugging = !stroke.render_debugging;
+        });
+
         let mut drag_start = None;
         world.observer(main_panel, move |drag: &ButtonDrag, world| {
             let mut this = world.fetch_mut(this).unwrap();
@@ -139,6 +160,7 @@ impl ColorPicker {
 
             world.queue_trigger(palette, WidgetEnabled(this.expanded));
             world.queue_trigger(brush_button, WidgetEnabled(this.expanded));
+            world.queue_trigger(render_debug_button, WidgetEnabled(this.expanded));
         });
     }
 }

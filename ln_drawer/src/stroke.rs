@@ -90,7 +90,9 @@ pub struct StrokeLayer {
     chunks: HashMap<ChunkKey, Option<Chunk>>,
     mipmap_ready: HashSet<ChunkKey>,
 
+    pub render_debugging: bool,
     render_pipeline: RenderPipeline,
+    render_debug_pipeline: RenderPipeline,
     render_sampler: Sampler,
     render_layout: BindGroupLayout,
 
@@ -320,7 +322,7 @@ impl StrokeLayer {
             source: ShaderSource::Wgsl(include_str!("stroke/chunk.wgsl").into()),
         });
 
-        let render_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("stroke_chunk"),
             bind_group_layouts: &[&camera_bind.layout, &render_layout],
             immediate_size: 0,
@@ -328,7 +330,7 @@ impl StrokeLayer {
 
         let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some("stroke_chunk"),
-            layout: Some(&render_pipeline),
+            layout: Some(&render_pipeline_layout),
             vertex: VertexState {
                 module: &render_shader,
                 entry_point: Some("vs_main"),
@@ -342,6 +344,35 @@ impl StrokeLayer {
             fragment: Some(FragmentState {
                 module: &render_shader,
                 entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState {
+                    format: render.config.format,
+                    blend: Some(BlendState::ALPHA_BLENDING),
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            depth_stencil: None,
+            multisample: MSAA_STATE,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let render_debug_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("stroke_chunk_debug"),
+            layout: Some(&render_pipeline_layout),
+            vertex: VertexState {
+                module: &render_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            fragment: Some(FragmentState {
+                module: &render_shader,
+                entry_point: Some("fs_main_debug"),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
                     format: render.config.format,
@@ -468,8 +499,10 @@ impl StrokeLayer {
         StrokeLayer {
             chunks: HashMap::new(),
             mipmap_ready: HashSet::new(),
+            render_debugging: false,
             render_sampler,
             render_pipeline,
+            render_debug_pipeline,
             render_layout,
             mipmap_pipeline,
             mipmap_layout,
@@ -767,7 +800,10 @@ impl StrokeLayer {
                 let mipmap = mipmap_of(camera.zoom);
                 let (chunk_src, chunk_dst) = view_rect_to_chunk(view_rect, mipmap);
 
-                rpass.set_pipeline(&stroke.render_pipeline);
+                match stroke.render_debugging {
+                    false => rpass.set_pipeline(&stroke.render_pipeline),
+                    true => rpass.set_pipeline(&stroke.render_debug_pipeline),
+                }
                 rpass.set_bind_group(0, &camera.bind, &[]);
 
                 let mut chunk_list = Vec::new();
