@@ -998,21 +998,6 @@ impl StrokeLayer {
             return;
         }
 
-        // pre-check that chunks are all ready
-
-        for mipmap in 0..CHUNK_MIPMAP {
-            let (chunk_src, chunk_dst) = view_rect_to_chunk(dirty, mipmap);
-            for chunk_x in chunk_src.0..chunk_dst.0 {
-                for chunk_y in chunk_src.1..chunk_dst.1 {
-                    let chunk_id = (chunk_x, chunk_y, mipmap);
-
-                    if let None = self.chunks.get(&chunk_id) {
-                        return;
-                    }
-                }
-            }
-        }
-
         // prepare chunks
 
         let mut paint_chunks = Vec::new();
@@ -1024,7 +1009,9 @@ impl StrokeLayer {
                 for chunk_y in chunk_src.1..chunk_dst.1 {
                     let chunk_id = (chunk_x, chunk_y, mipmap);
 
-                    if let Some(chunk) = self.chunks.get(&chunk_id) {
+                    if let Some(chunk) = self.chunks.get(&chunk_id)
+                        && self.mipmap_ready.contains(&chunk_id)
+                    {
                         if chunk.is_none() {
                             let render = world.single_fetch::<Render>().unwrap();
                             let mut chunk = self.create_chunk(&render.device, chunk_id);
