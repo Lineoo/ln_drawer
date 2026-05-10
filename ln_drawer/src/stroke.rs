@@ -837,6 +837,8 @@ impl StrokeLayer {
     fn process_thread_output(&mut self, world: &World, output: ThreadOutput) {
         match output {
             ThreadOutput::Insert(chunk_id, texture) => {
+                debug_assert!(!self.chunks.contains_key(&chunk_id));
+
                 let render = world.single_fetch::<Render>().unwrap();
                 let chunk = texture.map(|texture| {
                     let mut new_chunk = Self::create_chunk_from_texture(
@@ -857,6 +859,8 @@ impl StrokeLayer {
                 self.detect_corrupted(chunk_id, &render);
             }
             ThreadOutput::Remove(chunk_id) => {
+                debug_assert!(self.chunks.contains_key(&chunk_id));
+
                 self.chunks.remove(&chunk_id);
                 self.mipmap_ready.remove(&chunk_id);
 
@@ -1244,6 +1248,7 @@ impl StrokeLayer {
         let mut actual = HashMap::<ChunkKey, Option<Texture>>::new();
         let mut unsaved = HashSet::new();
 
+        let mut task_center = None;
         let mut tasks_buf = IndexSet::with_capacity(400);
         let mut task_frnt = 0;
         let mut task_batch;
@@ -1257,7 +1262,7 @@ impl StrokeLayer {
         let (mut range_src, mut range_dst) = ((0, 0), (1, 1));
 
         loop {
-            let input = if task_frnt < tasks_buf.len() {
+            let input = if task_frnt < tasks_buf.len() || task_center.is_some() {
                 match input_rx.try_recv() {
                     Ok(input) => Some(input),
                     Err(TryRecvError::Empty) => None,
@@ -1271,30 +1276,9 @@ impl StrokeLayer {
             };
 
             match input {
-                Some(ThreadInput::SetStreamCenter((chunk_center_x, chunk_center_y, mipmap))) => {
-                    tasks_buf.clear();
-
-                    for mipmap in 0..CHUNK_MIPMAP {
-                        let mipmapped = (
-                            chunk_center_x.div_euclid(2i32.pow(mipmap as u32)),
-                            chunk_center_y.div_euclid(2i32.pow(mipmap as u32)),
-                            mipmap,
-                        );
-                        for chunk_x in mipmapped.0 + range_src.0..mipmapped.0 + range_dst.0 {
-                            for chunk_y in mipmapped.1 + range_src.1..mipmapped.1 + range_dst.1 {
-                                tasks_buf.insert((chunk_x, chunk_y, mipmap));
-                            }
-                        }
-                    }
-
-                    tasks_buf.sort_by_key(|&(x, y, z)| {
-                        let dx = (x - chunk_center_x).unsigned_abs();
-                        let dy = (y - chunk_center_y).unsigned_abs();
-                        let dz = (z as i32 - mipmap as i32).unsigned_abs();
-                        dx.max(dy).max(dz)
-                    });
-
-                    task_frnt = 0;
+                Some(ThreadInput::SetStreamCenter(key)) => {
+                    task_center = Some(key);
+                    continue;
                 }
                 Some(ThreadInput::SetStreamSize(size)) => {
                     let rect_min = Camera::manual_view_rect(Fract::ZERO, size, PositionFract::ZERO);
@@ -1303,18 +1287,17 @@ impl StrokeLayer {
                     let pos = PositionFract::splat(Fract::new(CHUNK_SIZE as i32, 0));
                     let rect_max = Camera::manual_view_rect(Fract::ZERO, size, pos);
                     (_, range_dst) = view_rect_to_chunk(rect_max, 0);
+                    continue;
                 }
                 Some(ThreadInput::MarkUnsaved(chunk)) => {
                     unsaved.insert(chunk);
                     continue;
                 }
                 Some(ThreadInput::Create(chunk_id, texture)) => {
-                    if actual.get(&chunk_id).is_none() {
-                        // this happen when main thread doesn't receive Remove signal when
-                        // our thread already unload the chunk. Ignoring it is okay, though
-                        // a few changes may not be saved.
-                        continue;
-                    }
+                    // this happen when main thread doesn't receive Remove signal when
+                    // our thread already unload the chunk. Ignoring it is okay, though
+                    // a few changes may not be saved.
+                    debug_assert!(actual.get(&chunk_id).is_some_and(|x| x.is_none()));
                     actual.insert(chunk_id, Some(texture));
                     continue;
                 }
@@ -1340,6 +1323,33 @@ impl StrokeLayer {
                 }
                 None => {}
             };
+
+            if let Some((chunk_center_x, chunk_center_y, mipmap)) = task_center.take() {
+                task_frnt = 0;
+                tasks_buf.clear();
+
+                for mipmap in 0..CHUNK_MIPMAP {
+                    let mipmapped = (
+                        chunk_center_x.div_euclid(2i32.pow(mipmap as u32)),
+                        chunk_center_y.div_euclid(2i32.pow(mipmap as u32)),
+                        mipmap,
+                    );
+                    for chunk_x in mipmapped.0 + range_src.0..mipmapped.0 + range_dst.0 {
+                        for chunk_y in mipmapped.1 + range_src.1..mipmapped.1 + range_dst.1 {
+                            tasks_buf.insert((chunk_x, chunk_y, mipmap));
+                        }
+                    }
+                }
+
+                debug_assert!(tasks_buf.len() < CHUNK_CAPS - 1);
+
+                tasks_buf.sort_by_key(|&(x, y, z)| {
+                    let dx = (x - chunk_center_x).unsigned_abs();
+                    let dy = (y - chunk_center_y).unsigned_abs();
+                    let dz = (z as i32 - mipmap as i32).unsigned_abs();
+                    dx.max(dy).max(dz)
+                });
+            }
 
             task_batch = 0;
             while let Some(&key) = tasks_buf.get_index(task_frnt)
@@ -1382,10 +1392,13 @@ impl StrokeLayer {
             for chunk_id in filt_unload.drain(..) {
                 let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
 
-                if let Some(Some(chunk)) = actual.remove(&chunk_id) {
+                debug_assert!(actual.contains_key(&chunk_id));
+                if let Some(chunk) = actual.remove(&chunk_id) {
                     output_tx.send(ThreadOutput::Remove(chunk_id))?;
 
-                    if unsaved.remove(&chunk_id) {
+                    if let Some(chunk) = chunk
+                        && unsaved.remove(&chunk_id)
+                    {
                         let bytes = Self::chunk_readback(&chunk, &device, &queue);
                         let compressed = zstd::encode_all(&bytes[..], 0)?;
                         table_chunk.insert(chunk_id, &compressed[..])?;
@@ -1398,6 +1411,7 @@ impl StrokeLayer {
             for chunk_id in filt_load.drain(..) {
                 let table_chunk = read.open_table(TABLE_STROKE_CHUNK)?;
 
+                debug_assert!(!actual.contains_key(&chunk_id));
                 if let Some(chunk) = table_chunk.get(chunk_id)? {
                     let bytes = zstd::decode_all(chunk.value())?;
 
