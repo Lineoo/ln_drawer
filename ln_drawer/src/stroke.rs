@@ -30,11 +30,11 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
     wgt::{TextureDescriptor, TextureViewDescriptor},
 };
-use winit::event::PointerKind;
+use winit::event::{PointerKind, WindowEvent};
 
 use crate::{
     lnwin::Lnwindow,
-    measures::{Fract, Position, Rectangle, Size},
+    measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{
         MSAA_STATE, Render, RenderControl, RenderInformation,
         camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils},
@@ -126,6 +126,7 @@ struct Chunk {
 
 enum ThreadInput {
     SetStreamCenter(ChunkKey),
+    SetStreamSize(Size),
     MarkUnsaved(ChunkKey),
     Create(ChunkKey, Texture),
     Autosave,
@@ -453,6 +454,9 @@ impl StrokeLayer {
         thread_input_tx
             .send(ThreadInput::SetStreamCenter(chunk_here))
             .unwrap();
+        thread_input_tx
+            .send(ThreadInput::SetStreamSize(camera.size))
+            .unwrap();
 
         let thread = std::thread::spawn(|| {
             Self::loading_thread(database, device, queue, thread_input_rx, thread_output_tx)
@@ -728,8 +732,12 @@ impl StrokeLayer {
 
             if chunk_from != chunk_here {
                 let this = world.fetch(this).unwrap();
+                let camera = world.fetch(camera).unwrap();
                 this.thread_tx
                     .send(ThreadInput::SetStreamCenter(chunk_here))
+                    .unwrap();
+                this.thread_tx
+                    .send(ThreadInput::SetStreamSize(camera.size))
                     .unwrap();
             }
         });
@@ -752,16 +760,8 @@ impl StrokeLayer {
                 let camera = world.single_fetch::<Camera>().unwrap();
 
                 let view_rect = camera.world_view_rect();
-                let mipmap = (-camera.zoom.floor()).max(0) as u8;
-                let size = chunk_size(mipmap);
-                let chunk_src = (
-                    view_rect.left().div_euclid(size),
-                    view_rect.down().div_euclid(size),
-                );
-                let chunk_dst = (
-                    (view_rect.right() - 1).div_euclid(size) + 1,
-                    (view_rect.up() - 1).div_euclid(size) + 1,
-                );
+                let mipmap = ((-camera.zoom.floor()).max(0) as u8).min(CHUNK_MIPMAP - 1);
+                let (chunk_src, chunk_dst) = view_rect_to_chunk(view_rect, mipmap);
 
                 rpass.set_pipeline(&stroke.render_pipeline);
                 rpass.set_bind_group(0, &camera.bind, &[]);
@@ -1058,6 +1058,8 @@ impl StrokeLayer {
         let mut filt_load = IndexSet::new();
         let mut filt_unload = IndexSet::new();
 
+        let (mut range_src, mut range_dst) = ((0, 0), (1, 1));
+
         loop {
             let input = if task_frnt < tasks_buf.len() {
                 match input_rx.try_recv() {
@@ -1076,14 +1078,17 @@ impl StrokeLayer {
                 Some(ThreadInput::SetStreamCenter((chunk_center_x, chunk_center_y, mipmap))) => {
                     tasks_buf.clear();
 
-                    let mut mipmapped = (chunk_center_x, chunk_center_y, 0);
                     for mipmap in 0..CHUNK_MIPMAP {
-                        for chunk_x in mipmapped.0 - 5..mipmapped.0 + 5 {
-                            for chunk_y in mipmapped.1 - 5..mipmapped.1 + 5 {
+                        let mipmapped = (
+                            chunk_center_x.div_euclid(2i32.pow(mipmap as u32)),
+                            chunk_center_y.div_euclid(2i32.pow(mipmap as u32)),
+                            mipmap,
+                        );
+                        for chunk_x in mipmapped.0 + range_src.0..=mipmapped.0 + range_dst.0 {
+                            for chunk_y in mipmapped.1 + range_src.1..=mipmapped.1 + range_dst.1 {
                                 tasks_buf.insert((chunk_x, chunk_y, mipmap));
                             }
                         }
-                        mipmapped = upper_chunk_of(mipmapped);
                     }
 
                     tasks_buf.sort_by_key(|&(x, y, z)| {
@@ -1094,6 +1099,11 @@ impl StrokeLayer {
                     });
 
                     task_frnt = 0;
+                }
+                Some(ThreadInput::SetStreamSize(size)) => {
+                    let view_rect =
+                        Camera::manual_view_rect(Fract::ZERO, size, PositionFract::ZERO);
+                    (range_src, range_dst) = view_rect_to_chunk(view_rect, 0);
                 }
                 Some(ThreadInput::MarkUnsaved(chunk)) => {
                     unsaved.insert(chunk);
@@ -1237,6 +1247,19 @@ impl StrokeLayer {
 
 fn chunk_size(mipmap: u8) -> i32 {
     CHUNK_SIZE as i32 * 2i32.pow(mipmap as u32)
+}
+
+fn view_rect_to_chunk(view_rect: Rectangle, mipmap: u8) -> ((i32, i32), (i32, i32)) {
+    let size = chunk_size(mipmap);
+    let chunk_src = (
+        view_rect.left().div_euclid(size),
+        view_rect.down().div_euclid(size),
+    );
+    let chunk_dst = (
+        (view_rect.right() - 1).div_euclid(size) + 1,
+        (view_rect.up() - 1).div_euclid(size) + 1,
+    );
+    (chunk_src, chunk_dst)
 }
 
 fn lower_root_chunk_of(chunk: ChunkKey) -> ChunkKey {
