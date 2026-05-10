@@ -54,7 +54,7 @@ use crate::{
 };
 
 const CHUNK_SIZE: u32 = 512;
-const CHUNK_CAPS: usize = 2048;
+const CHUNK_CAPS: usize = 512;
 const CHUNK_BATCH: usize = 8;
 const CHUNK_MIPMAP: u8 = 8;
 const RENDER_FALLBACK_DEPTH: u8 = 3;
@@ -1034,6 +1034,21 @@ impl StrokeLayer {
             return;
         }
 
+        // pre-check that chunks are all ready
+
+        for mipmap in 0..CHUNK_MIPMAP {
+            let (chunk_src, chunk_dst) = view_rect_to_chunk(dirty, mipmap);
+            for chunk_x in chunk_src.0..chunk_dst.0 {
+                for chunk_y in chunk_src.1..chunk_dst.1 {
+                    let chunk_id = (chunk_x, chunk_y, mipmap);
+
+                    if let None = self.chunks.get(&chunk_id) {
+                        return;
+                    }
+                }
+            }
+        }
+
         // prepare chunks
 
         let mut paint_chunks = Vec::new();
@@ -1259,7 +1274,7 @@ impl StrokeLayer {
                 Some(ThreadInput::SetStreamCenter((chunk_center_x, chunk_center_y, mipmap))) => {
                     tasks_buf.clear();
 
-                    for mipmap in mipmap.saturating_sub(3)..(mipmap + 3).min(CHUNK_MIPMAP) {
+                    for mipmap in 0..CHUNK_MIPMAP {
                         let mipmapped = (
                             chunk_center_x.div_euclid(2i32.pow(mipmap as u32)),
                             chunk_center_y.div_euclid(2i32.pow(mipmap as u32)),
@@ -1294,7 +1309,12 @@ impl StrokeLayer {
                     continue;
                 }
                 Some(ThreadInput::Create(chunk_id, texture)) => {
-                    debug_assert_eq!(actual.get(&chunk_id), Some(&None));
+                    if actual.get(&chunk_id).is_none() {
+                        // this happen when main thread doesn't receive Remove signal when
+                        // our thread already unload the chunk. Ignoring it is okay, though
+                        // a few changes may not be saved.
+                        continue;
+                    }
                     actual.insert(chunk_id, Some(texture));
                     continue;
                 }
@@ -1431,7 +1451,7 @@ impl StrokeLayer {
 }
 
 fn mipmap_of(zoom: Fract) -> u8 {
-    ((-zoom.floor()).max(0) as u8).min(CHUNK_MIPMAP - 1)
+    ((-zoom.round()).max(0) as u8).min(CHUNK_MIPMAP - 1)
 }
 
 fn chunk_size(mipmap: u8) -> i32 {
