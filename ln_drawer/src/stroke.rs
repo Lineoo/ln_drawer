@@ -739,51 +739,8 @@ impl StrokeLayer {
         let control = world.insert(RenderControl {
             prepare: Some(Box::new(move |world| {
                 let this = &mut *world.fetch_mut(this).unwrap();
-                for output in this.thread_rx.try_iter() {
-                    match output {
-                        ThreadOutput::Insert(chunk_id, texture) => {
-                            let render = world.single_fetch::<Render>().unwrap();
-                            let chunk = texture.map(|texture| {
-                                let mut new_chunk = Self::create_chunk_from_texture(
-                                    &this.render_layout,
-                                    &this.render_sampler,
-                                    &this.compute_layout,
-                                    texture,
-                                    &render.device,
-                                    chunk_id,
-                                );
-
-                                if chunk_id.2 > 0
-                                    && let Some(Some(lower)) =
-                                        this.chunks.get_mut(&lower_chunk_of(chunk_id))
-                                {
-                                    Self::chunk_bind_mipmap(
-                                        &this.mipmap_layout,
-                                        lower,
-                                        &new_chunk,
-                                        &render.device,
-                                    );
-                                }
-
-                                if let Some(Some(upper)) =
-                                    this.chunks.get(&upper_chunk_of(chunk_id))
-                                {
-                                    Self::chunk_bind_mipmap(
-                                        &this.mipmap_layout,
-                                        &mut new_chunk,
-                                        upper,
-                                        &render.device,
-                                    );
-                                }
-
-                                new_chunk
-                            });
-                            this.chunks.insert(chunk_id, chunk);
-                        }
-                        ThreadOutput::Remove(chunk_id) => {
-                            this.chunks.remove(&chunk_id);
-                        }
-                    }
+                while let Ok(output) = this.thread_rx.try_recv() {
+                    this.process_thread_output(world, output);
                 }
 
                 Some(RenderInformation {
@@ -796,7 +753,7 @@ impl StrokeLayer {
 
                 let view_rect = camera.world_view_rect();
                 let mipmap = (-camera.zoom.floor()).max(0) as u8;
-                let size = CHUNK_SIZE as i32 * 2i32.pow(mipmap as u32);
+                let size = chunk_size(mipmap);
                 let chunk_src = (
                     view_rect.left().div_euclid(size),
                     view_rect.down().div_euclid(size),
@@ -820,6 +777,58 @@ impl StrokeLayer {
         });
         RenderControl::reorder(Some(-100), world, control);
         world.dependency(control, this);
+    }
+
+    fn process_thread_output(&mut self, world: &World, output: ThreadOutput) {
+        match output {
+            ThreadOutput::Insert(chunk_id, texture) => {
+                let render = world.single_fetch::<Render>().unwrap();
+                let chunk = texture.map(|texture| {
+                    let mut new_chunk = Self::create_chunk_from_texture(
+                        &self.render_layout,
+                        &self.render_sampler,
+                        &self.compute_layout,
+                        texture,
+                        &render.device,
+                        chunk_id,
+                    );
+
+                    self.update_mipmap_bind(chunk_id, &mut new_chunk, &render);
+
+                    new_chunk
+                });
+                self.chunks.insert(chunk_id, chunk);
+            }
+            ThreadOutput::Remove(chunk_id) => {
+                self.chunks.remove(&chunk_id);
+            }
+        }
+    }
+
+    fn update_mipmap_bind(&mut self, chunk_id: (i32, i32, u8), chunk: &mut Chunk, render: &Render) {
+        if chunk_id.2 > 0 {
+            let (rx, ry, rp) = lower_root_chunk_of(chunk_id);
+
+            if let Some(Some(lower)) = self.chunks.get_mut(&(rx, ry, rp)) {
+                Self::chunk_bind_mipmap(&self.mipmap_layout, lower, chunk, &render.device);
+            }
+
+            if let Some(Some(lower)) = self.chunks.get_mut(&(rx + 1, ry, rp)) {
+                Self::chunk_bind_mipmap(&self.mipmap_layout, lower, chunk, &render.device);
+            }
+
+            if let Some(Some(lower)) = self.chunks.get_mut(&(rx, ry + 1, rp)) {
+                Self::chunk_bind_mipmap(&self.mipmap_layout, lower, chunk, &render.device);
+            }
+
+            if let Some(Some(lower)) = self.chunks.get_mut(&(rx + 1, ry + 1, rp)) {
+                Self::chunk_bind_mipmap(&self.mipmap_layout, lower, chunk, &render.device);
+            }
+        }
+
+        if let Some(Some(upper)) = self.chunks.get(&upper_chunk_of(chunk_id)) {
+            Self::chunk_bind_mipmap(&self.mipmap_layout, chunk, upper, &render.device);
+        }
     }
 
     fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
@@ -921,34 +930,15 @@ impl StrokeLayer {
 
             // FIXME 需要等待所有 Mipmap 层都就位后才能绘制。不然会出现不一致
 
-            for chunk_x in chunk_src.0..=chunk_dst.0 {
-                for chunk_y in chunk_src.1..=chunk_dst.1 {
+            for chunk_x in chunk_src.0..chunk_dst.0 {
+                for chunk_y in chunk_src.1..chunk_dst.1 {
                     let chunk_id = (chunk_x, chunk_y, mipmap);
 
                     if let Some(None) = self.chunks.get(&chunk_id) {
                         let render = world.single_fetch::<Render>().unwrap();
                         let mut chunk = self.create_chunk(&render.device, chunk_id);
 
-                        if mipmap > 0
-                            && let Some(Some(lower)) =
-                                self.chunks.get_mut(&lower_chunk_of(chunk_id))
-                        {
-                            Self::chunk_bind_mipmap(
-                                &self.mipmap_layout,
-                                lower,
-                                &chunk,
-                                &render.device,
-                            );
-                        }
-
-                        if let Some(Some(upper)) = self.chunks.get(&upper_chunk_of(chunk_id)) {
-                            Self::chunk_bind_mipmap(
-                                &self.mipmap_layout,
-                                &mut chunk,
-                                upper,
-                                &render.device,
-                            );
-                        }
+                        self.update_mipmap_bind(chunk_id, &mut chunk, &render);
 
                         self.thread_tx
                             .send(ThreadInput::Create(chunk_id, chunk.texture.clone()))
@@ -993,6 +983,7 @@ impl StrokeLayer {
         }
 
         queue.write_buffer(&self.dispatch_meta, 0, bytemuck::bytes_of(&dispatch));
+        queue.write_buffer(&self.mipmap_meta_buffer, 0, bytemuck::bytes_of(&mipmap));
         queue.write_buffer(&self.draws_array, 0, bytemuck::cast_slice(&draw_stg));
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
@@ -1031,13 +1022,12 @@ impl StrokeLayer {
             if let Some(chunk_mipmap) = &chunk.mipmap {
                 cpass.set_bind_group(1, Some(chunk_mipmap), &[]);
                 cpass.dispatch_workgroups(
-                    (dirty.extend.w - 1) / WORKGROUP_SIZE.w + 1,
-                    (dirty.extend.h - 1) / WORKGROUP_SIZE.h + 1,
+                    (dirty.extend.w - 1) / 2u32.pow(chunk_id.2 as u32) / WORKGROUP_SIZE.w + 1,
+                    (dirty.extend.h - 1) / 2u32.pow(chunk_id.2 as u32) / WORKGROUP_SIZE.h + 1,
                     1,
                 );
             }
         }
-        queue.write_buffer(&self.mipmap_meta_buffer, 0, bytemuck::bytes_of(&mipmap));
 
         drop(cpass);
 
@@ -1249,7 +1239,7 @@ fn chunk_size(mipmap: u8) -> i32 {
     CHUNK_SIZE as i32 * 2i32.pow(mipmap as u32)
 }
 
-fn lower_chunk_of(chunk: ChunkKey) -> ChunkKey {
+fn lower_root_chunk_of(chunk: ChunkKey) -> ChunkKey {
     (chunk.0 * 2, chunk.1 * 2, chunk.2 - 1)
 }
 
