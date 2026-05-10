@@ -56,7 +56,7 @@ use crate::{
 const CHUNK_SIZE: u32 = 512;
 const CHUNK_CAPS: usize = 2048;
 const CHUNK_BATCH: usize = 8;
-const CHUNK_MIPMAP: u8 = 4;
+const CHUNK_MIPMAP: u8 = 8;
 const MAX_STROKE: u64 = 200;
 
 const TABLE_STROKE_CHUNK: TableDefinition<ChunkKey, &[u8]> = TableDefinition::new("stroke_chunk");
@@ -172,7 +172,7 @@ impl StrokeLayer {
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: ShaderStages::VERTEX,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -767,11 +767,26 @@ impl StrokeLayer {
 
                 rpass.set_pipeline(&stroke.render_pipeline);
                 rpass.set_bind_group(0, &camera.bind, &[]);
+
+                let mut chunk_list = Vec::new();
                 for chunk_x in chunk_src.0..chunk_dst.0 {
                     for chunk_y in chunk_src.1..chunk_dst.1 {
-                        if let Some(Some(chunk)) = stroke.chunks.get(&(chunk_x, chunk_y, mipmap)) {
+                        chunk_list.push((chunk_x, chunk_y, mipmap));
+                    }
+                }
+
+                while let Some(chunk) = chunk_list.pop() {
+                    if let Some(possible) = stroke.chunks.get(&chunk) {
+                        if let Some(chunk) = possible {
                             rpass.set_bind_group(1, &chunk.render, &[]);
                             rpass.draw(0..4, 0..1);
+                        } else if chunk.2 > 0 && chunk.2 + 3 > mipmap {
+                            let (rx, ry, rp) = lower_root_chunk_of(chunk);
+
+                            chunk_list.push((rx, ry, rp));
+                            chunk_list.push((rx + 1, ry, rp));
+                            chunk_list.push((rx, ry + 1, rp));
+                            chunk_list.push((rx + 1, ry + 1, rp));
                         }
                     }
                 }
@@ -802,10 +817,10 @@ impl StrokeLayer {
 
                 self.chunks.insert(chunk_id, chunk);
                 self.detect_corrupted(chunk_id, &render);
-                self.detect_corrupted(upper_chunk_of(chunk_id), &render);
             }
             ThreadOutput::Remove(chunk_id) => {
                 self.chunks.remove(&chunk_id);
+                self.mipmap_ready.remove(&chunk_id);
 
                 if chunk_id.2 > 0 {
                     let (rx, ry, rp) = lower_root_chunk_of(chunk_id);
@@ -865,8 +880,13 @@ impl StrokeLayer {
                 self.mipmap_ready.insert(upper);
                 self.detect_corrupted(upper_chunk_of(upper), render);
             }
-        } else {
+        } else if self
+            .chunks
+            .get(&upper)
+            .is_some_and(|x| x.is_some() || upper.2 == 0)
+        {
             self.mipmap_ready.insert(upper);
+            self.detect_corrupted(upper_chunk_of(upper), &render);
         }
     }
 
