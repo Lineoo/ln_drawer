@@ -911,10 +911,26 @@ impl StrokeLayer {
             return;
         }
 
+        // pre-check that chunks are all ready
+
+        for mipmap in 0..CHUNK_MIPMAP {
+            let (chunk_src, chunk_dst) = view_rect_to_chunk(dirty, mipmap);
+            for chunk_x in chunk_src.0..chunk_dst.0 {
+                for chunk_y in chunk_src.1..chunk_dst.1 {
+                    let chunk_id = (chunk_x, chunk_y, mipmap);
+
+                    if let None = self.chunks.get(&chunk_id) {
+                        return;
+                    }
+                }
+            }
+        }
+
         // prepare chunks
 
         let mut paint_chunks = Vec::new();
         let mut mipmap_chunks = Vec::new();
+
         for mipmap in 0..CHUNK_MIPMAP {
             let size = chunk_size(mipmap);
 
@@ -927,8 +943,6 @@ impl StrokeLayer {
                 (dirty.right() - 1).div_euclid(size) + 1,
                 (dirty.up() - 1).div_euclid(size) + 1,
             );
-
-            // FIXME 需要等待所有 Mipmap 层都就位后才能绘制。不然会出现不一致
 
             for chunk_x in chunk_src.0..chunk_dst.0 {
                 for chunk_y in chunk_src.1..chunk_dst.1 {
