@@ -1347,7 +1347,7 @@ impl StrokeLayer {
                     let dx = (x - chunk_center_x).unsigned_abs();
                     let dy = (y - chunk_center_y).unsigned_abs();
                     let dz = (z as i32 - mipmap as i32).unsigned_abs();
-                    dx.max(dy).max(dz)
+                    dx + dy + dz * 8
                 });
             }
 
