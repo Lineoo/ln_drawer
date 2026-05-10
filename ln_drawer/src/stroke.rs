@@ -57,6 +57,7 @@ const CHUNK_SIZE: u32 = 512;
 const CHUNK_CAPS: usize = 2048;
 const CHUNK_BATCH: usize = 8;
 const CHUNK_MIPMAP: u8 = 8;
+const RENDER_FALLBACK_DEPTH: u8 = 3;
 const MAX_STROKE: u64 = 200;
 
 const TABLE_STROKE_CHUNK: TableDefinition<ChunkKey, &[u8]> = TableDefinition::new("stroke_chunk");
@@ -450,7 +451,7 @@ impl StrokeLayer {
         let device = render.device.clone();
         let queue = render.queue.clone();
 
-        let chunk_here = chunk_of(camera.center.round());
+        let chunk_here = chunk_of(camera.center.round(), camera.zoom);
 
         thread_input_tx
             .send(ThreadInput::SetStreamCenter(chunk_here))
@@ -729,12 +730,13 @@ impl StrokeLayer {
 
         let camera = world.single::<Camera>().unwrap();
         world.observer(camera, move |change: &CameraPositionChanged, world| {
-            let chunk_from = chunk_of(change.from.round());
-            let chunk_here = chunk_of(change.here.round());
+            let this = world.fetch(this).unwrap();
+            let camera = world.fetch(camera).unwrap();
+
+            let chunk_from = chunk_of(change.from.round(), camera.zoom);
+            let chunk_here = chunk_of(change.here.round(), camera.zoom);
 
             if chunk_from != chunk_here {
-                let this = world.fetch(this).unwrap();
-                let camera = world.fetch(camera).unwrap();
                 this.thread_tx
                     .send(ThreadInput::SetStreamCenter(chunk_here))
                     .unwrap();
@@ -762,7 +764,7 @@ impl StrokeLayer {
                 let camera = world.single_fetch::<Camera>().unwrap();
 
                 let view_rect = camera.world_view_rect();
-                let mipmap = ((-camera.zoom.floor()).max(0) as u8).min(CHUNK_MIPMAP - 1);
+                let mipmap = mipmap_of(camera.zoom);
                 let (chunk_src, chunk_dst) = view_rect_to_chunk(view_rect, mipmap);
 
                 rpass.set_pipeline(&stroke.render_pipeline);
@@ -780,7 +782,7 @@ impl StrokeLayer {
                         if let Some(chunk) = possible {
                             rpass.set_bind_group(1, &chunk.render, &[]);
                             rpass.draw(0..4, 0..1);
-                        } else if chunk.2 > 0 && chunk.2 + 3 > mipmap {
+                        } else if chunk.2 > 0 && chunk.2 + RENDER_FALLBACK_DEPTH > mipmap {
                             let (rx, ry, rp) = lower_root_chunk_of(chunk);
 
                             chunk_list.push((rx, ry, rp));
@@ -1234,7 +1236,7 @@ impl StrokeLayer {
                 Some(ThreadInput::SetStreamCenter((chunk_center_x, chunk_center_y, mipmap))) => {
                     tasks_buf.clear();
 
-                    for mipmap in 0..CHUNK_MIPMAP {
+                    for mipmap in mipmap.saturating_sub(3)..(mipmap + 3).min(CHUNK_MIPMAP) {
                         let mipmapped = (
                             chunk_center_x.div_euclid(2i32.pow(mipmap as u32)),
                             chunk_center_y.div_euclid(2i32.pow(mipmap as u32)),
@@ -1405,6 +1407,10 @@ impl StrokeLayer {
     }
 }
 
+fn mipmap_of(zoom: Fract) -> u8 {
+    ((-zoom.floor()).max(0) as u8).min(CHUNK_MIPMAP - 1)
+}
+
 fn chunk_size(mipmap: u8) -> i32 {
     CHUNK_SIZE as i32 * 2i32.pow(mipmap as u32)
 }
@@ -1430,11 +1436,11 @@ fn upper_chunk_of(chunk: ChunkKey) -> ChunkKey {
     (chunk.0.div_euclid(2), chunk.1.div_euclid(2), chunk.2 + 1)
 }
 
-fn chunk_of(center: Position) -> ChunkKey {
+fn chunk_of(center: Position, zoom: Fract) -> ChunkKey {
     (
         center.x.div_euclid(CHUNK_SIZE as i32),
         center.y.div_euclid(CHUNK_SIZE as i32),
-        0,
+        mipmap_of(zoom),
     )
 }
 
