@@ -1449,7 +1449,7 @@ dependencies = [
 
 [[package]]
 name = "ln_world"
-version = "0.1.3-alpha.3-dev"
+version = "0.1.0"
 dependencies = [
  "hashbrown 0.15.5",
  "log",

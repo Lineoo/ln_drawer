@@ -4,7 +4,7 @@ set -e
 
 # [package]
 # version = "0.0.0-alpha.0-dev"
-sed -i '/^\[package\]/,/^\[/ s/^version = "\(.*\)-dev"$/version = "\1"/' Cargo.toml
+sed -i '/^\[package\]/,/^\[/ s/^version = "\(.*\)-dev"$/version = "\1"/' ln_drawer/Cargo.toml
 
 # [package.metadata.android]
 # package = "dev.linn.lndrawer"
