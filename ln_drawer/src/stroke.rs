@@ -11,7 +11,7 @@ use std::{
 };
 
 use hashbrown::{HashMap, HashSet};
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
 use redb::{Database, ReadableDatabase, TableDefinition};
@@ -1245,19 +1245,15 @@ impl StrokeLayer {
         input_rx: Receiver<ThreadInput>,
         output_tx: Sender<ThreadOutput>,
     ) -> Result<(), Box<dyn Error>> {
-        let mut actual = HashMap::<ChunkKey, Option<Texture>>::new();
+        let mut actual = IndexMap::<ChunkKey, Option<Texture>>::new();
         let mut unsaved = HashSet::new();
+        let mut loading = IndexSet::new();
+        let mut center = (0, 0, 0);
 
         let mut task_center = None;
         let mut tasks_buf = IndexSet::with_capacity(400);
         let mut task_frnt = 0;
         let mut task_batch;
-
-        let mut ring = IndexSet::<ChunkKey>::new();
-        let mut frnt = 0;
-
-        let mut filt_load = IndexSet::new();
-        let mut filt_unload = IndexSet::new();
 
         let (mut range_src, mut range_dst) = ((0, 0), (1, 1));
 
@@ -1324,93 +1320,75 @@ impl StrokeLayer {
                 None => {}
             };
 
-            if let Some((chunk_center_x, chunk_center_y, mipmap)) = task_center.take() {
+            // Center
+            if let Some((cx, cy, cz)) = task_center.take() {
                 task_frnt = 0;
                 tasks_buf.clear();
 
-                for mipmap in 0..CHUNK_MIPMAP {
+                for z in cz.saturating_sub(2)..CHUNK_MIPMAP {
                     let mipmapped = (
-                        chunk_center_x.div_euclid(2i32.pow(mipmap as u32)),
-                        chunk_center_y.div_euclid(2i32.pow(mipmap as u32)),
-                        mipmap,
+                        cx.div_euclid(2i32.pow(z as u32)),
+                        cy.div_euclid(2i32.pow(z as u32)),
+                        z,
                     );
                     for chunk_x in mipmapped.0 + range_src.0..mipmapped.0 + range_dst.0 {
                         for chunk_y in mipmapped.1 + range_src.1..mipmapped.1 + range_dst.1 {
-                            tasks_buf.insert((chunk_x, chunk_y, mipmap));
+                            tasks_buf.insert((chunk_x, chunk_y, z));
                         }
                     }
                 }
 
                 debug_assert!(tasks_buf.len() < CHUNK_CAPS - 1);
 
-                tasks_buf.sort_by_key(|&(x, y, z)| {
-                    let dx = (x - chunk_center_x).unsigned_abs();
-                    let dy = (y - chunk_center_y).unsigned_abs();
-                    let dz = (z as i32 - mipmap as i32).unsigned_abs();
-                    dx + dy + dz * 8
-                });
+                center = (cx, cy, cz);
+                tasks_buf.sort_by_key(|&(x, y, z)| chunk_priority(x, y, z, cx, cy, cz));
             }
 
+            // Assign loading
             task_batch = 0;
             while let Some(&key) = tasks_buf.get_index(task_frnt)
                 && task_batch < CHUNK_BATCH
             {
                 task_frnt += 1;
 
-                while frnt < ring.len() && tasks_buf.contains(&ring[frnt]) {
-                    // Keep required one in-place
-                    frnt = (frnt + 1) % CHUNK_CAPS;
-                }
-
-                if frnt >= ring.len() {
-                    // Out of bounds, just insert
-                    if ring.insert(key) {
-                        task_batch += 1;
-                        filt_load.insert(key);
-                    }
-
-                    frnt = ring.len() % CHUNK_CAPS;
+                if actual.contains_key(&key) {
                     continue;
                 }
 
-                let Ok(replaced) = ring.replace_index(frnt, key) else {
-                    // already loaded skipped
-                    continue;
-                };
-
+                loading.insert(key);
                 task_batch += 1;
-                filt_load.swap_remove(&replaced);
-                filt_unload.swap_remove(&key);
-                filt_unload.insert(replaced);
-                filt_load.insert(key);
-
-                // move forward
-                frnt = (frnt + 1) % CHUNK_CAPS;
             }
 
+            // Early exiting
+            if loading.is_empty() {
+                continue;
+            }
+
+            // Unloading
+            actual
+                .sort_by_key(|&(x, y, z), _| chunk_priority(x, y, z, center.0, center.1, center.2));
             let write = database.0.begin_write()?;
-            for chunk_id in filt_unload.drain(..) {
-                let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
+            let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
+            while actual.len() + loading.len() >= CHUNK_CAPS {
+                let (chunk_id, texture) = actual.pop().unwrap();
+                output_tx.send(ThreadOutput::Remove(chunk_id))?;
+                loading.swap_remove(&chunk_id);
 
-                debug_assert!(actual.contains_key(&chunk_id));
-                if let Some(chunk) = actual.remove(&chunk_id) {
-                    output_tx.send(ThreadOutput::Remove(chunk_id))?;
-
-                    if let Some(chunk) = chunk
-                        && unsaved.remove(&chunk_id)
-                    {
-                        let bytes = Self::chunk_readback(&chunk, &device, &queue);
-                        let compressed = zstd::encode_all(&bytes[..], 0)?;
-                        table_chunk.insert(chunk_id, &compressed[..])?;
-                    }
+                if let Some(texture) = texture
+                    && unsaved.remove(&chunk_id)
+                {
+                    let bytes = Self::chunk_readback(&texture, &device, &queue);
+                    let compressed = zstd::encode_all(&bytes[..], 0)?;
+                    table_chunk.insert(chunk_id, &compressed[..])?;
                 }
             }
+            drop(table_chunk);
             write.commit()?;
 
+            // Loading
             let read = database.0.begin_read()?;
-            for chunk_id in filt_load.drain(..) {
-                let table_chunk = read.open_table(TABLE_STROKE_CHUNK)?;
-
+            let table_chunk = read.open_table(TABLE_STROKE_CHUNK)?;
+            for chunk_id in loading.drain(..) {
                 debug_assert!(!actual.contains_key(&chunk_id));
                 if let Some(chunk) = table_chunk.get(chunk_id)? {
                     let bytes = zstd::decode_all(chunk.value())?;
@@ -1462,6 +1440,13 @@ impl StrokeLayer {
             }
         }
     }
+}
+
+fn chunk_priority(x: i32, y: i32, z: u8, cx: i32, cy: i32, cz: u8) -> u32 {
+    let dx = (x - cx).unsigned_abs();
+    let dy = (y - cy).unsigned_abs();
+    let dz = (z as i32 - cz as i32).unsigned_abs();
+    dx + dy + dz * 8
 }
 
 fn mipmap_of(zoom: Fract) -> u8 {
