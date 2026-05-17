@@ -66,16 +66,20 @@ pub fn migrate1(write: &WriteTransaction) -> Result<(), redb::Error> {
 
     const TABLE_STROKE_CHUNK: TableDefinition<(i32, i32, u8), &[u8]> =
         TableDefinition::new("stroke_chunk");
+    const TABLE_STROKE_UNMIPMAPPED: MultimapTableDefinition<(), (i32, i32, u8)> =
+        MultimapTableDefinition::new("stroke_unmipmapped");
 
     // migrate data
     {
         write.rename_table(LEGACY_TABLE_STROKE_CHUNK, BUFFER_TABLE)?;
         let legacy = write.open_table(BUFFER_TABLE)?;
         let mut table = write.open_table(TABLE_STROKE_CHUNK)?;
+        let mut unmipmapped = write.open_multimap_table(TABLE_STROKE_UNMIPMAPPED)?;
         for result in legacy.iter()? {
             let (key, value) = result?;
             let ((x, y), value) = (key.value(), value.value());
             table.insert((x, y, 0), value)?;
+            unmipmapped.insert((), (x, y, 0))?;
         }
     }
 
