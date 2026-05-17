@@ -90,6 +90,8 @@ type ChunkKey = (i32, i32, u8);
 pub struct StrokeLayer {
     chunks: HashMap<ChunkKey, Option<Chunk>>,
     unmipmapped: HashSet<ChunkKey>,
+    unmipmapped_unsaved: HashSet<ChunkKey>,
+    mipmapped_unsaved: HashSet<ChunkKey>,
 
     pub render_debugging: bool,
     render_pipeline: RenderPipeline,
@@ -131,8 +133,7 @@ struct Chunk {
 }
 
 enum ThreadInput {
-    SetStreamCenter(ChunkKey),
-    SetStreamViewRect(Rectangle),
+    SetStreamView(ChunkKey, Rectangle),
     MarkUnsaved(ChunkKey),
     Create(ChunkKey, Texture),
     Autosave,
@@ -492,13 +493,13 @@ impl StrokeLayer {
         let device = render.device.clone();
         let queue = render.queue.clone();
 
-        let chunk_here = chunk_of(camera.center.round(), camera.zoom);
+        let chunk_here = raw_chunk_of(camera.center.round(), camera.zoom);
 
         thread_input_tx
-            .send(ThreadInput::SetStreamCenter(chunk_here))
-            .unwrap();
-        thread_input_tx
-            .send(ThreadInput::SetStreamViewRect(camera.world_view_rect()))
+            .send(ThreadInput::SetStreamView(
+                chunk_here,
+                camera.world_view_rect(),
+            ))
             .unwrap();
 
         let thread = std::thread::spawn(|| {
@@ -509,6 +510,8 @@ impl StrokeLayer {
         StrokeLayer {
             chunks: HashMap::new(),
             unmipmapped,
+            unmipmapped_unsaved: HashSet::new(),
+            mipmapped_unsaved: HashSet::new(),
             render_debugging: false,
             render_sampler,
             render_pipeline,
@@ -761,15 +764,16 @@ impl StrokeLayer {
 
     fn attach_autosave(&mut self, world: &World, this: Handle<Self>) {
         let save = world.insert(Autosave(Box::new(move |world, write| {
-            let this = world.fetch_mut(this).unwrap();
-            this.thread_tx.send(ThreadInput::Autosave).unwrap();
-
+            let mut this = world.fetch_mut(this).unwrap();
             let mut table_unmipmapped =
                 write.open_multimap_table(TABLE_STROKE_UNMIPMAPPED).unwrap();
-            table_unmipmapped.remove_all(()).unwrap();
-            for key in &this.unmipmapped {
+            for key in this.unmipmapped_unsaved.drain() {
                 table_unmipmapped.insert((), key).unwrap();
             }
+            for key in this.mipmapped_unsaved.drain() {
+                table_unmipmapped.remove((), key).unwrap();
+            }
+            this.thread_tx.send(ThreadInput::Autosave).unwrap();
         })));
 
         world.dependency(save, this);
@@ -780,15 +784,15 @@ impl StrokeLayer {
             let camera = world.fetch(camera).unwrap();
 
             let chunk_from = this.stream_center;
-            let chunk_here = chunk_of(change.here.round(), camera.zoom);
+            let chunk_here = raw_chunk_of(change.here.round(), camera.zoom);
             this.stream_center = chunk_here;
 
             if chunk_from != chunk_here {
                 this.thread_tx
-                    .send(ThreadInput::SetStreamCenter(chunk_here))
-                    .unwrap();
-                this.thread_tx
-                    .send(ThreadInput::SetStreamViewRect(camera.world_view_rect()))
+                    .send(ThreadInput::SetStreamView(
+                        chunk_here,
+                        camera.world_view_rect(),
+                    ))
                     .unwrap();
             }
         });
@@ -858,7 +862,7 @@ impl StrokeLayer {
                 });
 
                 self.chunks.insert(chunk_id, chunk);
-                if self.unmipmapped.remove(&chunk_id) {
+                if self.unmipmapped.contains(&chunk_id) {
                     self.fix_unmipmapped(chunk_id, &render);
                 }
             }
@@ -1089,7 +1093,6 @@ impl StrokeLayer {
         #[cfg(debug_assertions)]
         if !self.validate_chunks(dirty) {
             log::warn!("chunk pre-check failed when fixing mipmap");
-            self.unmipmapped.insert(lower);
             return;
         }
 
@@ -1097,7 +1100,9 @@ impl StrokeLayer {
 
         let mut paint_chunks = Vec::new();
         let mut mipmap_chunks = Vec::new();
-
+        self.unmipmapped.remove(&lower);
+        self.mipmapped_unsaved.insert(lower);
+        self.unmipmapped_unsaved.remove(&lower);
         self.prepare_chunks(render, dirty, &mut paint_chunks, &mut mipmap_chunks);
 
         // assign works to GPU
@@ -1137,6 +1142,7 @@ impl StrokeLayer {
                 );
             } else {
                 self.unmipmapped.insert(chunk_id);
+                self.unmipmapped_unsaved.insert(chunk_id);
             }
         }
 
@@ -1236,13 +1242,10 @@ impl StrokeLayer {
             };
 
             match input {
-                Some(ThreadInput::SetStreamCenter(key)) => {
+                Some(ThreadInput::SetStreamView(key, rect)) => {
                     task_pending = true;
-                    center = key;
-                    continue;
-                }
-                Some(ThreadInput::SetStreamViewRect(rect)) => {
                     view_rect = rect;
+                    center = key;
                     continue;
                 }
                 Some(ThreadInput::MarkUnsaved(chunk)) => {
@@ -1424,8 +1427,12 @@ fn chunk_distance(x: i32, y: i32, z: u8, cx: i32, cy: i32, _cz: u8) -> u32 {
     dx * 100 + dy * 100 + (CHUNK_MIPMAP - z) as u32
 }
 
+fn raw_mipmap_of(zoom: Fract) -> u8 {
+    (-zoom.round()).max(0) as u8
+}
+
 fn mipmap_of(zoom: Fract) -> u8 {
-    ((-zoom.round()).max(0) as u8).min(CHUNK_MIPMAP - 1)
+    raw_mipmap_of(zoom).min(CHUNK_MIPMAP - 1)
 }
 
 fn chunk_size(mipmap: u8) -> i32 {
@@ -1453,11 +1460,11 @@ fn upper_chunk_of(chunk: ChunkKey) -> ChunkKey {
     (chunk.0.div_euclid(2), chunk.1.div_euclid(2), chunk.2 + 1)
 }
 
-fn chunk_of(center: Position, zoom: Fract) -> ChunkKey {
+fn raw_chunk_of(center: Position, zoom: Fract) -> ChunkKey {
     (
-        center.x.div_euclid(chunk_size(mipmap_of(zoom))),
-        center.y.div_euclid(chunk_size(mipmap_of(zoom))),
-        mipmap_of(zoom),
+        center.x.div_euclid(chunk_size(raw_mipmap_of(zoom))),
+        center.y.div_euclid(chunk_size(raw_mipmap_of(zoom))),
+        raw_mipmap_of(zoom),
     )
 }
 
