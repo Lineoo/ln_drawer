@@ -13,8 +13,11 @@ use winit::{
 };
 
 use crate::{
-    layout::luni::{LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
-    measures::Rectangle,
+    layout::{
+        luni::{LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
+        transform::{Transform, TransformEdge, TransformValue},
+    },
+    measures::{Position, Rectangle, Size},
     render::{
         Render,
         camera::{Camera, CameraUtils, MainCamera},
@@ -160,22 +163,76 @@ impl Element for Lnwindow {
                     world.insert(StrokeLayer::new(world));
                     world.insert(CameraUtils::default());
                 });
+            });
 
-                // luni test
+            world.flush();
+
+            let camera2 = Camera::build_from_save(world, "camera2");
+            world.enter(camera2, || {
+                let stroke = world.enter(camera1, || world.single::<StrokeLayer>().unwrap());
+                world.option(ViewOptions {
+                    refs: vec![here, stroke.untyped()],
+                });
                 world.queue(|world| {
+                    world.insert(ColorPicker::default());
+                    world.insert(CameraUtils::default());
+                });
+
+                world.queue(|world| {
+                    let lnwindow = world.single::<Lnwindow>().unwrap();
+                    world.observer(lnwindow, move |event: &WindowEvent, world| {
+                        if let WindowEvent::SurfaceResized(size) = event {
+                            world.trigger(
+                                lnwindow,
+                                &WidgetRectangle(Rectangle::new_half(
+                                    Position::ZERO,
+                                    Size::new(size.width / 2, size.height / 2),
+                                )),
+                            );
+                        }
+                    });
+
+                    // luni test
+
                     let parent = world.insert(Button {
                         rect: Rectangle::new(0, 0, 100, 100),
                         order: 0,
+                        schema: None,
                     });
 
                     let child0 = world.insert(Button {
                         rect: Rectangle::new(0, 0, 100, 100),
                         order: 10,
+                        schema: None,
                     });
 
                     let child1 = world.insert(Button {
                         rect: Rectangle::new(0, 0, 100, 100),
                         order: 10,
+                        schema: None,
+                    });
+
+                    world.insert(Transform {
+                        value: TransformValue {
+                            left: TransformEdge {
+                                anchor: 0.0,
+                                offset: 50,
+                            },
+                            down: TransformEdge {
+                                anchor: 0.0,
+                                offset: 50,
+                            },
+                            right: TransformEdge {
+                                anchor: 1.0,
+                                offset: -50,
+                            },
+                            up: TransformEdge {
+                                anchor: 0.0,
+                                offset: 120,
+                            },
+                        },
+                        source: lnwindow.untyped(),
+                        target: parent.untyped(),
                     });
 
                     world.insert(LuniFlex {
@@ -236,20 +293,6 @@ impl Element for Lnwindow {
                     });
 
                     world.queue_trigger(parent, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));
-                });
-            });
-
-            world.flush();
-
-            let camera2 = Camera::build_from_save(world, "camera2");
-            world.enter(camera2, || {
-                let stroke = world.enter(camera1, || world.single::<StrokeLayer>().unwrap());
-                world.option(ViewOptions {
-                    refs: vec![here, stroke.untyped()],
-                });
-                world.queue(|world| {
-                    world.insert(ColorPicker::default());
-                    world.insert(CameraUtils::default());
                 });
             });
         });

@@ -49,19 +49,19 @@ impl TransformValue {
         TransformValue {
             left: TransformEdge {
                 anchor: anchor.0,
-                offset: offset.x,
+                offset: offset.x + rect.left(),
             },
             down: TransformEdge {
                 anchor: anchor.1,
-                offset: offset.y,
+                offset: offset.y + rect.down(),
             },
             right: TransformEdge {
                 anchor: anchor.0,
-                offset: offset.x + rect.width() as i32,
+                offset: offset.x + rect.right(),
             },
             up: TransformEdge {
                 anchor: anchor.1,
-                offset: offset.y + rect.height() as i32,
+                offset: offset.y + rect.up(),
             },
         }
     }

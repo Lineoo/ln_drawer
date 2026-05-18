@@ -21,6 +21,7 @@ use crate::{
 pub struct Button {
     pub rect: Rectangle,
     pub order: isize,
+    pub schema: Option<ColorScheme>,
 }
 
 pub struct ButtonDrag {
@@ -38,7 +39,10 @@ pub enum ButtonDragStatus {
 
 impl Button {
     fn attach_render(&mut self, world: &World, this: Handle<Self>) {
-        let scheme = world.single_fetch::<ColorScheme>().unwrap();
+        let scheme = match &self.schema {
+            Some(schema) => schema,
+            None => &world.single_fetch::<ColorScheme>().unwrap(),
+        };
 
         // display
 
@@ -249,6 +253,7 @@ impl Default for Button {
         Self {
             rect: Rectangle::new(0, 0, 100, 100),
             order: 10,
+            schema: None,
         }
     }
 }

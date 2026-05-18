@@ -31,11 +31,13 @@ impl ColorPicker {
         let main_panel = world.insert(Button {
             rect: Rectangle::new(-100, -100, -50, -50),
             order: 0,
+            schema: None,
         });
 
         let brush_button = world.insert(Button {
             rect: Rectangle::new(-150, -150, -100, -100),
             order: 100,
+            schema: None,
         });
 
         world.queue_trigger(brush_button, WidgetEnabled(false));
