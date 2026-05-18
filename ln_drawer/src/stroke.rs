@@ -34,7 +34,7 @@ use winit::event::PointerKind;
 
 use crate::{
     lnwin::Lnwindow,
-    measures::{Fract, Position, Rectangle, Size},
+    measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{
         MSAA_STATE, Render, RenderControl, RenderInformation,
         camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils},
@@ -109,7 +109,6 @@ pub struct StrokeLayer {
     dispatch_meta: Buffer,
     draws_array: Buffer,
 
-    stream_center: ChunkKey,
     thread_tx: Sender<ThreadInput>,
     thread_rx: Receiver<ThreadOutput>,
     thread: Option<JoinHandle<()>>,
@@ -133,7 +132,7 @@ struct Chunk {
 }
 
 enum ThreadInput {
-    SetStreamView(ChunkKey, Rectangle),
+    SetStreamCamera(Fract, Size, PositionFract),
     MarkUnsaved(ChunkKey),
     Create(ChunkKey, Texture),
     Autosave,
@@ -493,12 +492,11 @@ impl StrokeLayer {
         let device = render.device.clone();
         let queue = render.queue.clone();
 
-        let chunk_here = chunk_of(camera.center.round(), camera.zoom);
-
         thread_input_tx
-            .send(ThreadInput::SetStreamView(
-                chunk_here,
-                camera.world_view_rect(),
+            .send(ThreadInput::SetStreamCamera(
+                camera.zoom,
+                camera.size,
+                camera.center,
             ))
             .unwrap();
 
@@ -525,7 +523,6 @@ impl StrokeLayer {
             dispatch,
             dispatch_meta,
             draws_array,
-            stream_center: chunk_here,
             thread_tx: thread_input_tx,
             thread_rx: thread_output_rx,
             thread: Some(thread),
@@ -779,22 +776,17 @@ impl StrokeLayer {
         world.dependency(save, this);
 
         let camera = world.single::<Camera>().unwrap();
-        world.observer(camera, move |change: &CameraPositionChanged, world| {
-            let mut this = world.fetch_mut(this).unwrap();
+        world.observer(camera, move |_: &CameraPositionChanged, world| {
+            let this = world.fetch(this).unwrap();
             let camera = world.fetch(camera).unwrap();
 
-            let chunk_from = this.stream_center;
-            let chunk_here = chunk_of(change.here.round(), camera.zoom);
-            this.stream_center = chunk_here;
-
-            if chunk_from != chunk_here {
-                this.thread_tx
-                    .send(ThreadInput::SetStreamView(
-                        chunk_here,
-                        camera.world_view_rect(),
-                    ))
-                    .unwrap();
-            }
+            this.thread_tx
+                .send(ThreadInput::SetStreamCamera(
+                    camera.zoom,
+                    camera.size,
+                    camera.center,
+                ))
+                .unwrap();
         });
     }
 
@@ -815,7 +807,7 @@ impl StrokeLayer {
                 let camera = world.single_fetch::<Camera>().unwrap();
 
                 let view_rect = camera.world_view_rect();
-                let mipmap = mipmap_of(camera.zoom).min(CHUNK_MIPMAP - 1);
+                let mipmap = mipmap_of(camera.zoom);
                 let (chunk_src, chunk_dst) = chunks_within(view_rect, mipmap);
 
                 match stroke.render_debugging {
@@ -1222,6 +1214,7 @@ impl StrokeLayer {
 
         let mut stream_center = (0, 0, 0);
         let mut stream_rect = Rectangle::new_half(Position::ZERO, Size::splat(50));
+        let mut stream_range = chunks_within(stream_rect, 0);
         let mut stream_outdated = false;
 
         let mut stream_front = 0;
@@ -1242,10 +1235,15 @@ impl StrokeLayer {
             };
 
             match input {
-                Some(ThreadInput::SetStreamView(center, rect)) => {
-                    stream_outdated = true;
-                    stream_rect = rect;
-                    stream_center = center;
+                Some(ThreadInput::SetStreamCamera(zoom, size, center)) => {
+                    stream_rect = Camera::manual_view_rect(zoom, size, center);
+                    let stream_center_new = chunk_of(center.round(), zoom);
+                    let stream_range_new = chunks_within(stream_rect, stream_center.2);
+                    if stream_range_new != stream_range || stream_center_new != stream_center {
+                        stream_range = stream_range_new;
+                        stream_center = stream_center_new;
+                        stream_outdated = true;
+                    }
                     continue;
                 }
                 Some(ThreadInput::MarkUnsaved(chunk)) => {
@@ -1298,6 +1296,7 @@ impl StrokeLayer {
                     }
                 }
 
+                log::debug!("stream_queue.len() = {}, center = {:?}", stream_queue.len(), stream_center);
                 debug_assert!(stream_queue.len() < CHUNK_CAPS - 1);
 
                 stream_queue.sort_by_key(|&(x, y, z)| {
@@ -1417,11 +1416,11 @@ fn chunk_rect(key: (i32, i32, u8)) -> Rectangle {
 
 /// Guaranteed assumption: Upper layer is always loaded first
 fn chunk_distance(x: i32, y: i32, z: u8, cx: i32, cy: i32, cz: u8) -> u32 {
-    let dx = (x * chunk_size_scale(z) + chunk_size(z) / 2)
-        - (cx * chunk_size_scale(cz) + chunk_size(cz) / 2);
-    let dy = (y * chunk_size_scale(z) + chunk_size(z) / 2)
-        - (cy * chunk_size_scale(cz) + chunk_size(cz) / 2);
-    let dz = (CHUNK_MIPMAP - z) as i32 * 100;
+    let dx = (x * chunk_size_scale(z) + chunk_size_scale(z.saturating_sub(1)))
+        - (cx * chunk_size_scale(cz) + chunk_size_scale(cz.saturating_sub(1)));
+    let dy = (y * chunk_size_scale(z) + chunk_size_scale(z.saturating_sub(1)))
+        - (cy * chunk_size_scale(cz) + chunk_size_scale(cz.saturating_sub(1)));
+    let dz = (CHUNK_MIPMAP - z) as i32 * 0x8000;
     dx.unsigned_abs() + dy.unsigned_abs() + dz.unsigned_abs()
 }
 
