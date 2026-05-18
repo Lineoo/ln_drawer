@@ -1217,18 +1217,18 @@ impl StrokeLayer {
         output_tx: Sender<ThreadOutput>,
     ) -> Result<(), Box<dyn Error>> {
         let mut actual = IndexMap::<ChunkKey, Option<Texture>>::new();
-        let mut unsaved = HashSet::new();
-        let mut loading = IndexSet::new();
-        let mut center = (0, 0, 0);
-        let mut view_rect = Rectangle::new_half(Position::ZERO, Size::splat(50));
+        let mut actual_staging = IndexSet::<ChunkKey>::new();
+        let mut actual_unsaved = HashSet::new();
 
-        let mut task_pending = false;
-        let mut task_frnt = 0;
-        let mut tasks_buf = IndexSet::with_capacity(400);
-        let mut task_batch;
+        let mut stream_center = (0, 0, 0);
+        let mut stream_rect = Rectangle::new_half(Position::ZERO, Size::splat(50));
+        let mut stream_outdated = false;
+
+        let mut stream_front = 0;
+        let mut stream_queue = IndexSet::with_capacity(400);
 
         loop {
-            let input = if task_frnt < tasks_buf.len() || task_pending {
+            let input = if stream_front < stream_queue.len() || stream_outdated {
                 match input_rx.try_recv() {
                     Ok(input) => Some(input),
                     Err(TryRecvError::Empty) => None,
@@ -1242,14 +1242,14 @@ impl StrokeLayer {
             };
 
             match input {
-                Some(ThreadInput::SetStreamView(key, rect)) => {
-                    task_pending = true;
-                    view_rect = rect;
-                    center = key;
+                Some(ThreadInput::SetStreamView(center, rect)) => {
+                    stream_outdated = true;
+                    stream_rect = rect;
+                    stream_center = center;
                     continue;
                 }
                 Some(ThreadInput::MarkUnsaved(chunk)) => {
-                    unsaved.insert(chunk);
+                    actual_unsaved.insert(chunk);
                     continue;
                 }
                 Some(ThreadInput::Create(chunk_id, texture)) => {
@@ -1264,7 +1264,7 @@ impl StrokeLayer {
                     let write = database.0.begin_write()?;
                     {
                         let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
-                        for chunk_id in unsaved.drain() {
+                        for chunk_id in actual_unsaved.drain() {
                             let Some(Some(texture)) = actual.get(&chunk_id) else {
                                 continue;
                             };
@@ -1284,56 +1284,57 @@ impl StrokeLayer {
             };
 
             // Stream
-            if task_pending {
-                task_pending = false;
-                task_frnt = 0;
-                tasks_buf.clear();
+            if stream_outdated {
+                stream_outdated = false;
+                stream_front = 0;
+                stream_queue.clear();
 
-                for z in center.2.saturating_sub(1)..CHUNK_MIPMAP {
-                    let (range_src, range_dst) = chunks_within(view_rect, z);
+                for z in stream_center.2.saturating_sub(1)..CHUNK_MIPMAP {
+                    let (range_src, range_dst) = chunks_within(stream_rect, z);
                     for x in range_src.0..range_dst.0 {
                         for y in range_src.1..range_dst.1 {
-                            tasks_buf.insert((x, y, z));
+                            stream_queue.insert((x, y, z));
                         }
                     }
                 }
 
-                debug_assert!(tasks_buf.len() < CHUNK_CAPS - 1);
+                debug_assert!(stream_queue.len() < CHUNK_CAPS - 1);
 
-                tasks_buf.sort_by_key(|&(x, y, z)| {
-                    chunk_distance(x, y, z, center.0, center.1, center.2)
+                stream_queue.sort_by_key(|&(x, y, z)| {
+                    chunk_distance(x, y, z, stream_center.0, stream_center.1, stream_center.2)
                 });
             }
 
             // Assign loading
-            task_batch = 0;
-            while let Some(&key) = tasks_buf.get_index(task_frnt)
-                && task_batch < CHUNK_BATCH
+            let mut batch_cnt = 0;
+            while let Some(&key) = stream_queue.get_index(stream_front)
+                && batch_cnt < CHUNK_BATCH
             {
-                task_frnt += 1;
+                stream_front += 1;
                 if actual.contains_key(&key) {
                     continue;
                 }
 
                 actual.insert(key, None);
-                loading.insert(key);
-                task_batch += 1;
+                actual_staging.insert(key);
+                batch_cnt += 1;
             }
 
             // Early exiting
-            if loading.is_empty() {
+            if actual_staging.is_empty() {
                 continue;
             }
 
             // Unloading
-            actual
-                .sort_by_key(|&(x, y, z), _| chunk_distance(x, y, z, center.0, center.1, center.2));
+            actual.sort_by_key(|&(x, y, z), _| {
+                chunk_distance(x, y, z, stream_center.0, stream_center.1, stream_center.2)
+            });
             let write = database.0.begin_write()?;
             let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
             let mut frnt = actual.len();
-            while actual.len() + loading.len() >= CHUNK_CAPS {
+            while actual.len() + actual_staging.len() >= CHUNK_CAPS {
                 frnt -= 1;
-                if tasks_buf.contains(actual.get_index(frnt).unwrap().0) {
+                if stream_queue.contains(actual.get_index(frnt).unwrap().0) {
                     continue;
                 }
 
@@ -1341,7 +1342,7 @@ impl StrokeLayer {
                 output_tx.send(ThreadOutput::Remove(chunk_id))?;
 
                 if let Some(texture) = texture
-                    && unsaved.remove(&chunk_id)
+                    && actual_unsaved.remove(&chunk_id)
                 {
                     let bytes = Self::chunk_readback(&texture, &device, &queue);
                     let compressed = zstd::encode_all(&bytes[..], 0)?;
@@ -1354,7 +1355,7 @@ impl StrokeLayer {
             // Loading
             let read = database.0.begin_read()?;
             let table_chunk = read.open_table(TABLE_STROKE_CHUNK)?;
-            for chunk_id in loading.drain(..) {
+            for chunk_id in actual_staging.drain(..) {
                 if let Some(chunk) = table_chunk.get(chunk_id)? {
                     let bytes = zstd::decode_all(chunk.value())?;
 
@@ -1407,16 +1408,10 @@ impl StrokeLayer {
     }
 }
 
-fn chunk_rect(lower: (i32, i32, u8)) -> Rectangle {
+fn chunk_rect(key: (i32, i32, u8)) -> Rectangle {
     Rectangle {
-        origin: Position::new(
-            lower.0 * CHUNK_SIZE as i32 * 2i32.pow(lower.2 as u32),
-            lower.1 * CHUNK_SIZE as i32 * 2i32.pow(lower.2 as u32),
-        ),
-        extend: Size::new(
-            CHUNK_SIZE * 2u32.pow(lower.2 as u32),
-            CHUNK_SIZE * 2u32.pow(lower.2 as u32),
-        ),
+        origin: Position::new(key.0 * chunk_size(key.2), key.1 * chunk_size(key.2)),
+        extend: Size::splat(chunk_size(key.2) as u32),
     }
 }
 
