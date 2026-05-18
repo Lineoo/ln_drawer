@@ -493,7 +493,7 @@ impl StrokeLayer {
         let device = render.device.clone();
         let queue = render.queue.clone();
 
-        let chunk_here = raw_chunk_of(camera.center.round(), camera.zoom);
+        let chunk_here = chunk_of(camera.center.round(), camera.zoom);
 
         thread_input_tx
             .send(ThreadInput::SetStreamView(
@@ -784,7 +784,7 @@ impl StrokeLayer {
             let camera = world.fetch(camera).unwrap();
 
             let chunk_from = this.stream_center;
-            let chunk_here = raw_chunk_of(change.here.round(), camera.zoom);
+            let chunk_here = chunk_of(change.here.round(), camera.zoom);
             this.stream_center = chunk_here;
 
             if chunk_from != chunk_here {
@@ -815,7 +815,7 @@ impl StrokeLayer {
                 let camera = world.single_fetch::<Camera>().unwrap();
 
                 let view_rect = camera.world_view_rect();
-                let mipmap = mipmap_of(camera.zoom);
+                let mipmap = mipmap_of(camera.zoom).min(CHUNK_MIPMAP - 1);
                 let (chunk_src, chunk_dst) = chunks_within(view_rect, mipmap);
 
                 match stroke.render_debugging {
@@ -1421,22 +1421,25 @@ fn chunk_rect(lower: (i32, i32, u8)) -> Rectangle {
 }
 
 /// Guaranteed assumption: Upper layer is always loaded first
-fn chunk_distance(x: i32, y: i32, z: u8, cx: i32, cy: i32, _cz: u8) -> u32 {
-    let dx = (x - cx).unsigned_abs() * 2u32.pow((CHUNK_MIPMAP - z) as u32);
-    let dy = (y - cy).unsigned_abs() * 2u32.pow((CHUNK_MIPMAP - z) as u32);
-    dx * 100 + dy * 100 + (CHUNK_MIPMAP - z) as u32
-}
-
-fn raw_mipmap_of(zoom: Fract) -> u8 {
-    (-zoom.round()).max(0) as u8
+fn chunk_distance(x: i32, y: i32, z: u8, cx: i32, cy: i32, cz: u8) -> u32 {
+    let dx = (x * chunk_size_scale(z) + chunk_size(z) / 2)
+        - (cx * chunk_size_scale(cz) + chunk_size(cz) / 2);
+    let dy = (y * chunk_size_scale(z) + chunk_size(z) / 2)
+        - (cy * chunk_size_scale(cz) + chunk_size(cz) / 2);
+    let dz = (CHUNK_MIPMAP - z) as i32 * 100;
+    dx.unsigned_abs() + dy.unsigned_abs() + dz.unsigned_abs()
 }
 
 fn mipmap_of(zoom: Fract) -> u8 {
-    raw_mipmap_of(zoom).min(CHUNK_MIPMAP - 1)
+    (-zoom.round()).max(0) as u8
 }
 
 fn chunk_size(mipmap: u8) -> i32 {
-    CHUNK_SIZE as i32 * 2i32.pow(mipmap as u32)
+    CHUNK_SIZE as i32 * chunk_size_scale(mipmap)
+}
+
+fn chunk_size_scale(mipmap: u8) -> i32 {
+    2i32.pow(mipmap as u32)
 }
 
 fn chunks_within(view_rect: Rectangle, mipmap: u8) -> ((i32, i32), (i32, i32)) {
@@ -1460,11 +1463,11 @@ fn upper_chunk_of(chunk: ChunkKey) -> ChunkKey {
     (chunk.0.div_euclid(2), chunk.1.div_euclid(2), chunk.2 + 1)
 }
 
-fn raw_chunk_of(center: Position, zoom: Fract) -> ChunkKey {
+fn chunk_of(center: Position, zoom: Fract) -> ChunkKey {
     (
-        center.x.div_euclid(chunk_size(raw_mipmap_of(zoom))),
-        center.y.div_euclid(chunk_size(raw_mipmap_of(zoom))),
-        raw_mipmap_of(zoom),
+        center.x.div_euclid(chunk_size(mipmap_of(zoom))),
+        center.y.div_euclid(chunk_size(mipmap_of(zoom))),
+        mipmap_of(zoom),
     )
 }
 
