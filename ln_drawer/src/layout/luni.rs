@@ -79,6 +79,9 @@ pub enum LuniAlign {
     Center,
 }
 
+/// TODO specific certain data for parent to adjust itself based on its children
+pub struct LuniHug;
+
 impl LuniFlex {
     fn compute(&self, rect: Rectangle) -> Vec<(Handle, Rectangle)> {
         let mut result = Vec::with_capacity(self.children.len());
@@ -88,12 +91,13 @@ impl LuniFlex {
 
         let mut grow_sum = 0.0;
         let mut shrink_sum = 0.0;
-        let mut available = rect.width() as i32 - parent.padding.left - parent.padding.right;
+        let mut available =
+            rect_main_lenth(rect, parent.axis) - rect_main_padding(parent.padding, parent.axis);
         for (_, child) in &self.children {
             let child = child.apply(&parent.template);
             grow_sum += child.grow;
             shrink_sum += child.shrink * child.basis as f32;
-            available -= child.basis + child.margin.left + child.margin.right;
+            available -= child.basis + rect_main_margin(child.margin, parent.axis);
             lengths.push(child.basis);
         }
 
@@ -112,32 +116,110 @@ impl LuniFlex {
             i += 1;
         }
 
-        let mut cursor = parent.padding.left;
+        let mut cursor = rect_main_start(parent.padding, parent.axis);
         for (i, (handle, child)) in self.children.iter().enumerate() {
             let child = child.apply(&parent.template);
-            let (bottom, top) = match child.align {
-                LuniAlign::Stretch => (parent.padding.bottom, parent.padding.top),
-                LuniAlign::FlexStart => todo!(),
-                LuniAlign::FlexEnd => todo!(),
-                LuniAlign::Center => todo!(),
-            };
-
             let length = lengths[i];
-
             result.push((
                 *handle,
-                Rectangle::new(
-                    rect.left() + cursor + child.margin.left,
-                    rect.down() + bottom + child.margin.bottom,
-                    rect.left() + cursor + child.margin.left + length,
-                    rect.up() - top - child.margin.top,
+                cursor_assign(
+                    cursor,
+                    rect,
+                    parent.padding,
+                    child.margin,
+                    length,
+                    child.align,
+                    parent.axis,
                 ),
             ));
 
-            cursor += child.margin.right + length;
+            cursor += cursor_step(child.margin, parent.axis) + length;
         }
 
         result
+    }
+}
+
+fn rect_main_lenth(rect: Rectangle, axis: LuniAxis) -> i32 {
+    match axis {
+        LuniAxis::Column | LuniAxis::ColumnReverse => rect.height() as i32,
+        LuniAxis::Row | LuniAxis::RowReverse => rect.width() as i32,
+    }
+}
+
+fn rect_main_padding(padding: LuniRect, axis: LuniAxis) -> i32 {
+    match axis {
+        LuniAxis::Column | LuniAxis::ColumnReverse => padding.top + padding.bottom,
+        LuniAxis::Row | LuniAxis::RowReverse => padding.left + padding.right,
+    }
+}
+
+fn rect_main_margin(margin: LuniRect, axis: LuniAxis) -> i32 {
+    match axis {
+        LuniAxis::Column | LuniAxis::ColumnReverse => margin.top + margin.bottom,
+        LuniAxis::Row | LuniAxis::RowReverse => margin.left + margin.right,
+    }
+}
+
+fn rect_main_start(padding: LuniRect, axis: LuniAxis) -> i32 {
+    match axis {
+        LuniAxis::Row => padding.left,
+        LuniAxis::RowReverse => padding.right,
+        LuniAxis::Column => padding.top,
+        LuniAxis::ColumnReverse => padding.bottom,
+    }
+}
+
+fn cursor_assign(
+    cursor: i32,
+    rect: Rectangle,
+    padding: LuniRect,
+    margin: LuniRect,
+    length: i32,
+    align: LuniAlign,
+    axis: LuniAxis,
+) -> Rectangle {
+    let (start, end) = match align {
+        LuniAlign::Stretch => (padding.bottom, padding.top),
+        LuniAlign::FlexStart => todo!(),
+        LuniAlign::FlexEnd => todo!(),
+        LuniAlign::Center => todo!(),
+    };
+
+    match axis {
+        LuniAxis::Row => Rectangle::new(
+            rect.left() + cursor + margin.left,
+            rect.down() + start + margin.bottom,
+            rect.left() + cursor + margin.left + length,
+            rect.up() - end - margin.top,
+        ),
+        LuniAxis::RowReverse => Rectangle::new(
+            rect.right() - cursor - margin.right,
+            rect.down() + start + margin.bottom,
+            rect.right() - cursor - margin.right - length,
+            rect.up() - end - margin.top,
+        ),
+        LuniAxis::Column => Rectangle::new(
+            rect.left() + start + margin.left,
+            rect.up() - cursor - margin.top - length,
+            rect.right() - end - margin.right,
+            rect.up() - cursor - margin.top,
+        ),
+        LuniAxis::ColumnReverse => Rectangle::new(
+            rect.left() + start + margin.left,
+            rect.down() + cursor + margin.top,
+            rect.right() - end - margin.right,
+            rect.down() + cursor + margin.top + length,
+        ),
+    }
+}
+
+fn cursor_step(margin: LuniRect, axis: LuniAxis) -> i32 {
+    match axis {
+        LuniAxis::Row => margin.right,
+        LuniAxis::RowReverse => margin.left,
+        LuniAxis::Column => margin.bottom,
+        LuniAxis::ColumnReverse => margin.top,
     }
 }
 

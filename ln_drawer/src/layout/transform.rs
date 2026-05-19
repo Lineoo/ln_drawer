@@ -11,6 +11,7 @@ pub struct Transform {
     pub target: Handle,
 }
 
+#[derive(Clone, Copy)]
 pub struct TransformValue {
     pub left: TransformEdge,
     pub down: TransformEdge,
@@ -18,6 +19,7 @@ pub struct TransformValue {
     pub up: TransformEdge,
 }
 
+#[derive(Clone, Copy)]
 pub struct TransformEdge {
     pub anchor: f32,
     pub offset: i32,

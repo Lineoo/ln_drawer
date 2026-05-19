@@ -9,8 +9,8 @@ struct Camera {
 fn camera_convert(world_space: vec2i) -> vec2f {
     let camera_space = world_space - camera.center;
     let camera_scale = pow(2.0, f32(camera.zoom) + f32(camera.zoom_fract) * 0x1p-32);
-    let screen_space = (vec2f(camera_space) - vec2f(camera.center_fract) * vec2f(0x1p-32))
-        / vec2f(camera.size) * camera_scale * 2.0;
+    let screen_space = (floor((vec2f(camera_space) - vec2f(camera.center_fract) * vec2f(0x1p-32))
+         * camera_scale * 2.0) + vec2f(camera.size % 2) / 2) / vec2f(camera.size);
 
     return screen_space;
 }
@@ -34,7 +34,7 @@ struct VertexOutput {
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var<uniform> rectangle: RoundedRect;
 
-const vertex_extend: i32 = 10;
+const vertex_extend: i32 = 20;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {

@@ -36,3 +36,5 @@ This workspace contains multiple crates with different licenses:
 - Crate **ln_world** is dual-licensed under **MIT OR Apache-2.0**.
 
 See the crate-level README file or license field for details.
+
+Some icons in this project are from [Lucide Icons](https://lucide.dev/).

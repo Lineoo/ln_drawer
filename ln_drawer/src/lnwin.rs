@@ -15,7 +15,7 @@ use winit::{
 
 use crate::{
     layout::{
-        luni::{LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
+        luni::{LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
     },
     measures::{Position, Rectangle, Size},
@@ -28,15 +28,15 @@ use crate::{
         text::TextManagerDescriptor,
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
-    stroke::StrokeLayer,
+    stroke::{StrokeLayer, modifier::Modifier},
     theme::ColorScheme,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
     },
     widgets::{
-        WidgetAnimatedRectangle, WidgetClick, WidgetRectangle,
-        button::Button,
+        WidgetClick, WidgetRectangle,
+        button::{Button, ButtonChecked, ButtonImage},
         palette::{ColorPicker, hsl::PaletteHslMaterial},
     },
 };
@@ -209,6 +209,14 @@ impl Element for Lnwindow {
                         active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
                         press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
                         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+                        image: Some(ButtonImage {
+                            transform: TransformValue::anchor(
+                                (0.5, 0.5),
+                                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+                                Position::ZERO,
+                            ),
+                            bytes: include_bytes!("../res/interface/brush.png"),
+                        }),
                         ..Default::default()
                     });
 
@@ -219,26 +227,34 @@ impl Element for Lnwindow {
                         active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
                         press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
                         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+                        image: Some(ButtonImage {
+                            transform: TransformValue::anchor(
+                                (0.5, 0.5),
+                                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+                                Position::ZERO,
+                            ),
+                            bytes: include_bytes!("../res/interface/pen.png"),
+                        }),
                         ..Default::default()
                     });
 
                     world.insert(Transform {
                         value: TransformValue {
                             left: TransformEdge {
-                                anchor: 0.0,
-                                offset: 50,
+                                anchor: 1.0,
+                                offset: -120,
                             },
                             down: TransformEdge {
-                                anchor: 0.0,
-                                offset: 50,
+                                anchor: 0.5,
+                                offset: 200,
                             },
                             right: TransformEdge {
                                 anchor: 1.0,
                                 offset: -50,
                             },
                             up: TransformEdge {
-                                anchor: 0.0,
-                                offset: 120,
+                                anchor: 0.5,
+                                offset: -200,
                             },
                         },
                         source: lnwindow.untyped(),
@@ -249,6 +265,7 @@ impl Element for Lnwindow {
                         parent: (
                             parent.untyped(),
                             LuniParent {
+                                axis: LuniAxis::Column,
                                 template: LuniChildTemplate {
                                     basis: 10,
                                     margin: LuniRect {
@@ -272,7 +289,7 @@ impl Element for Lnwindow {
                             (
                                 child0.untyped(),
                                 LuniChild {
-                                    basis: Some(200),
+                                    basis: Some(54),
                                     shrink: Some(1.0),
                                     ..Default::default()
                                 },
@@ -280,8 +297,8 @@ impl Element for Lnwindow {
                             (
                                 child1.untyped(),
                                 LuniChild {
-                                    basis: Some(200),
-                                    shrink: Some(0.0),
+                                    basis: Some(54),
+                                    shrink: Some(1.0),
                                     ..Default::default()
                                 },
                             ),
@@ -289,15 +306,35 @@ impl Element for Lnwindow {
                     });
 
                     world.observer(child0, move |&WidgetClick, world| {
-                        let parent = world.fetch(parent).unwrap();
-                        let rect = parent.rect.with_right(parent.rect.right() - 40);
-                        world.queue_trigger(parent.handle(), WidgetAnimatedRectangle(rect));
+                        world.trigger(child0, &ButtonChecked(true));
+                        world.trigger(child1, &ButtonChecked(false));
+                        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+                        stroke.modifier = Modifier {
+                            min_size: 0.0,
+                            max_size: 6.0,
+                            size_force_exp: 1.0,
+                            min_flow: 0.7,
+                            max_flow: 1.0,
+                            flow_force_exp: 2.0,
+                            softness: 0.2,
+                            ..stroke.modifier
+                        };
                     });
 
                     world.observer(child1, move |&WidgetClick, world| {
-                        let parent = world.fetch(parent).unwrap();
-                        let rect = parent.rect.with_right(parent.rect.right() + 40);
-                        world.queue_trigger(parent.handle(), WidgetAnimatedRectangle(rect));
+                        world.trigger(child0, &ButtonChecked(false));
+                        world.trigger(child1, &ButtonChecked(true));
+                        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+                        stroke.modifier = Modifier {
+                            min_size: 1.0,
+                            max_size: 25.0,
+                            size_force_exp: 1.0,
+                            min_flow: 0.1,
+                            max_flow: 1.0,
+                            flow_force_exp: 1.0,
+                            softness: 0.5,
+                            ..stroke.modifier
+                        };
                     });
 
                     world.queue_trigger(parent, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));

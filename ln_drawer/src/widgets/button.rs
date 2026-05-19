@@ -6,7 +6,7 @@ use crate::{
     animation::{AnimationDescriptor, AnimationValue, SimpleAnimationDescriptor},
     layout::transform::{Transform, TransformValue},
     measures::Rectangle,
-    render::rounded::RoundedRectDescriptor,
+    render::{canvas::CanvasDescriptor, rounded::RoundedRectDescriptor},
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
@@ -20,6 +20,7 @@ use crate::{
 pub struct Button {
     pub rect: Rectangle,
     pub enabled: bool,
+    pub checked: bool,
     pub order: isize,
     pub color: Srgba,
     pub active_color: Srgba,
@@ -32,6 +33,13 @@ pub struct Button {
     pub anim_factor: f32,
     pub anim_factor_menu: f32,
     pub pad: i32,
+    pub image: Option<ButtonImage>,
+}
+
+#[derive(Clone, Copy)]
+pub struct ButtonImage {
+    pub transform: TransformValue,
+    pub bytes: &'static [u8],
 }
 
 pub struct ButtonDrag {
@@ -39,6 +47,8 @@ pub struct ButtonDrag {
     pub here: PointerHit,
     pub status: ButtonDragStatus,
 }
+
+pub struct ButtonChecked(pub bool);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ButtonDragStatus {
@@ -98,8 +108,21 @@ impl Button {
 
         // behavior
 
+        world.observer(this, move |&ButtonChecked(checked), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.checked = checked;
+            let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
+            match checked {
+                true => frame_anim_color.dst = this.press_color,
+                false => frame_anim_color.dst = this.color,
+            }
+        });
+
         world.observer(this, move |event: &WidgetHover, world| {
             let this = world.fetch(this).unwrap();
+            if this.checked {
+                return;
+            }
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
                 WidgetHover::HoverEnter => frame_anim_color.dst = this.active_color,
@@ -109,6 +132,9 @@ impl Button {
 
         world.observer(this, move |event: &WidgetButton, world| {
             let this = world.fetch(this).unwrap();
+            if this.checked {
+                return;
+            }
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
                 WidgetButton::ButtonPress => frame_anim_color.dst = this.press_color,
@@ -257,6 +283,7 @@ impl Default for Button {
         Self {
             rect: Rectangle::new(0, 0, 100, 100),
             enabled: true,
+            checked: false,
             order: 10,
             color: Srgba::new(0.863, 0.863, 0.863, 1.0),
             active_color: Srgba::new(0.808, 0.808, 0.808, 1.0),
@@ -269,6 +296,7 @@ impl Default for Button {
             anim_factor: 30.0,
             anim_factor_menu: 50.0,
             pad: 5,
+            image: None,
         }
     }
 }
@@ -279,7 +307,31 @@ impl Element for Button {
         self.attach_render(world, this);
         self.attach_pointer(world, this);
 
+        if let Some(image) = self.image
+            && let Ok(data) = image::load_from_memory(image.bytes)
+        {
+            let canvas = world.build(CanvasDescriptor {
+                width: data.width(),
+                height: data.height(),
+                rect: image.transform.compute(self.rect),
+                order: self.order + 1,
+                visible: self.enabled,
+                data: Some(data.into_bytes()),
+            });
+
+            world.observer(this, move |&WidgetAnimatedRectangle(rect), world| {
+                let mut canvas = world.fetch_mut(canvas).unwrap();
+                canvas.rect = image.transform.compute(rect);
+            });
+
+            world.observer(this, move |&WidgetRectangle(rect), world| {
+                let mut canvas = world.fetch_mut(canvas).unwrap();
+                canvas.rect = image.transform.compute(rect);
+            });
+        }
+
         world.queue_trigger(this, WidgetRectangle(self.rect));
         world.queue_trigger(this, WidgetEnabled(self.enabled));
+        world.queue_trigger(this, ButtonChecked(self.checked));
     }
 }

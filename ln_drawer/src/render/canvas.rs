@@ -288,24 +288,6 @@ impl Element for Canvas {
     }
 }
 
-impl CanvasDescriptor {
-    pub fn from_bytes(
-        rect: Rectangle,
-        order: isize,
-        bytes: &[u8],
-    ) -> Result<CanvasDescriptor, Box<dyn std::error::Error>> {
-        let image = image::load_from_memory(bytes)?;
-        Ok(CanvasDescriptor {
-            data: Some(image.as_bytes().to_vec()),
-            width: image.width(),
-            height: image.height(),
-            rect,
-            order,
-            visible: true,
-        })
-    }
-}
-
 impl Canvas {
     pub fn to_descriptor(&self) -> CanvasDescriptor {
         CanvasDescriptor {

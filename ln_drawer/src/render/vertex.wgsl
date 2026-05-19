@@ -9,8 +9,8 @@ struct Camera {
 fn camera_convert(world_space: vec2i) -> vec2f {
     let camera_space = world_space - camera.center;
     let camera_scale = pow(2.0, f32(camera.zoom) + f32(camera.zoom_fract) * 0x1p-32);
-    let screen_space = (vec2f(camera_space) - vec2f(camera.center_fract) * vec2f(0x1p-32))
-        / vec2f(camera.size) * camera_scale * 2.0;
+    let screen_space = (floor((vec2f(camera_space) - vec2f(camera.center_fract) * vec2f(0x1p-32))
+         * camera_scale * 2.0) + vec2f(camera.size % 2) / 2) / vec2f(camera.size);
 
     return screen_space;
 }
