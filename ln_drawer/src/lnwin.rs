@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, ViewOptions, World};
+use palette::Srgba;
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 use winit::{
@@ -25,7 +26,6 @@ use crate::{
         rectangle::RectangleMesh,
         rounded::RoundedRect,
         text::TextManagerDescriptor,
-        wireframe::WireframeManagerDescriptor,
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     stroke::StrokeLayer,
@@ -137,7 +137,6 @@ impl Element for Lnwindow {
 
             world.build(CanvasManagerDescriptor);
             world.build(TextManagerDescriptor);
-            world.build(WireframeManagerDescriptor);
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
             world.insert(ColorScheme::default());
@@ -197,19 +196,30 @@ impl Element for Lnwindow {
                     let parent = world.insert(Button {
                         rect: Rectangle::new(0, 0, 100, 100),
                         order: 0,
-                        schema: None,
+                        color: Srgba::new(0.863, 0.863, 0.863, 1.0),
+                        active_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
+                        press_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
+                        ..Default::default()
                     });
 
                     let child0 = world.insert(Button {
                         rect: Rectangle::new(0, 0, 100, 100),
                         order: 10,
-                        schema: None,
+                        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
+                        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
+                        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+                        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+                        ..Default::default()
                     });
 
                     let child1 = world.insert(Button {
                         rect: Rectangle::new(0, 0, 100, 100),
                         order: 10,
-                        schema: None,
+                        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
+                        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
+                        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+                        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+                        ..Default::default()
                     });
 
                     world.insert(Transform {
@@ -263,7 +273,6 @@ impl Element for Lnwindow {
                                 child0.untyped(),
                                 LuniChild {
                                     basis: Some(200),
-                                    grow: Some(1.0),
                                     shrink: Some(1.0),
                                     ..Default::default()
                                 },
@@ -272,7 +281,6 @@ impl Element for Lnwindow {
                                 child1.untyped(),
                                 LuniChild {
                                     basis: Some(200),
-                                    grow: Some(10.0),
                                     shrink: Some(0.0),
                                     ..Default::default()
                                 },

@@ -16,9 +16,12 @@ fn camera_convert(world_space: vec2i) -> vec2f {
 }
 
 struct RoundedRect {
+    color: vec4f,
+    shadow_color: vec4f,
     origin: vec2i,
     extend: vec2u,
-    color: vec4f,
+    shadow_offset: vec2f,
+    shadow_blur: f32,
     shrink: f32,
     value: f32,
 }
@@ -79,11 +82,7 @@ fn panel(vertex: VertexOutput) -> vec4f {
 }
 
 fn shadow(vertex: VertexOutput) -> vec4f {
-    const shadow_offset = vec2f(0.0, -4.0);
-    const shadow_blur = 10.0;
-    const shadow_color = vec4f(0.0, 0.0, 0.0, 0.5);
-
-    let shadow_pos = vertex.relative - shadow_offset;
+    let shadow_pos = vertex.relative - rectangle.shadow_offset;
 
     let point = abs(shadow_pos - vec2f(rectangle.extend) / 2.0);
     let corner = vec2f(rectangle.extend) / 2.0 - rectangle.shrink;
@@ -93,5 +92,5 @@ fn shadow(vertex: VertexOutput) -> vec4f {
 
     let diff = rectangle.value - distance;
 
-    return vec4f(shadow_color.rgb, shadow_color.a * smoothstep(-shadow_blur, shadow_blur, diff));
+    return vec4f(rectangle.shadow_color.rgb, rectangle.shadow_color.a * smoothstep(-rectangle.shadow_blur, rectangle.shadow_blur, diff));
 }

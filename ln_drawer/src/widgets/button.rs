@@ -1,4 +1,4 @@
-use glam::DVec2;
+use glam::{DVec2, Vec2};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
 
@@ -7,7 +7,6 @@ use crate::{
     layout::transform::{Transform, TransformValue},
     measures::Rectangle,
     render::rounded::RoundedRectDescriptor,
-    theme::ColorScheme,
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
@@ -20,8 +19,19 @@ use crate::{
 
 pub struct Button {
     pub rect: Rectangle,
+    pub enabled: bool,
     pub order: isize,
-    pub schema: Option<ColorScheme>,
+    pub color: Srgba,
+    pub active_color: Srgba,
+    pub press_color: Srgba,
+    pub roundness: f32,
+    pub shadow_color: Srgba,
+    pub shadow_offset: Vec2,
+    pub shadow_blur: f32,
+    pub press_roundness: f32,
+    pub anim_factor: f32,
+    pub anim_factor_menu: f32,
+    pub pad: i32,
 }
 
 pub struct ButtonDrag {
@@ -39,20 +49,18 @@ pub enum ButtonDragStatus {
 
 impl Button {
     fn attach_render(&mut self, world: &World, this: Handle<Self>) {
-        let scheme = match &self.schema {
-            Some(schema) => schema,
-            None => &world.single_fetch::<ColorScheme>().unwrap(),
-        };
-
         // display
 
         let frame = world.build(RoundedRectDescriptor {
             rect: self.rect,
+            color: self.color,
+            shadow_color: self.shadow_color,
+            shadow_offset: self.shadow_offset,
+            shadow_blur: self.shadow_blur,
+            shrink: self.roundness,
+            value: self.roundness,
+            visible: self.enabled,
             order: self.order,
-            color: scheme.color,
-            shrink: scheme.roundness,
-            value: scheme.roundness,
-            ..Default::default()
         });
 
         let frame_rect = world.build(SimpleAnimationDescriptor {
@@ -63,7 +71,7 @@ impl Button {
                     self.rect.right() as f32,
                     self.rect.up() as f32,
                 ],
-                scheme.anim_factor,
+                self.anim_factor,
             ),
             widget: frame,
             action: |mut frame, _, rect| {
@@ -76,11 +84,7 @@ impl Button {
             },
         });
 
-        let frame_anim_color = world.build(AnimationDescriptor {
-            src: Srgba::new(0.0, 0.0, 0.0, 0.0),
-            dst: scheme.color,
-            factor: scheme.anim_factor,
-        });
+        let frame_anim_color = world.build(AnimationDescriptor::new(self.color, self.anim_factor));
 
         world.observer(frame_anim_color, move |&AnimationValue(value), world| {
             let mut frame = world.fetch_mut(frame).unwrap();
@@ -95,20 +99,20 @@ impl Button {
         // behavior
 
         world.observer(this, move |event: &WidgetHover, world| {
-            let luni = world.single_fetch::<ColorScheme>().unwrap();
+            let this = world.fetch(this).unwrap();
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
-                WidgetHover::HoverEnter => frame_anim_color.dst = luni.active_color,
-                WidgetHover::HoverLeave => frame_anim_color.dst = luni.color,
+                WidgetHover::HoverEnter => frame_anim_color.dst = this.active_color,
+                WidgetHover::HoverLeave => frame_anim_color.dst = this.color,
             }
         });
 
         world.observer(this, move |event: &WidgetButton, world| {
-            let luni = world.single_fetch::<ColorScheme>().unwrap();
+            let this = world.fetch(this).unwrap();
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
-                WidgetButton::ButtonPress => frame_anim_color.dst = luni.press_color,
-                WidgetButton::ButtonRelease => frame_anim_color.dst = luni.active_color,
+                WidgetButton::ButtonPress => frame_anim_color.dst = this.press_color,
+                WidgetButton::ButtonRelease => frame_anim_color.dst = this.active_color,
             }
         });
 
@@ -147,7 +151,7 @@ impl Button {
         let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: self.order,
-            enabled: true,
+            enabled: self.enabled,
         });
 
         world.insert(Transform {
@@ -252,8 +256,19 @@ impl Default for Button {
     fn default() -> Self {
         Self {
             rect: Rectangle::new(0, 0, 100, 100),
+            enabled: true,
             order: 10,
-            schema: None,
+            color: Srgba::new(0.863, 0.863, 0.863, 1.0),
+            active_color: Srgba::new(0.808, 0.808, 0.808, 1.0),
+            press_color: Srgba::new(0.737, 0.737, 0.737, 1.0),
+            roundness: 5.0,
+            shadow_color: palette::Srgba::new(0.0, 0.0, 0.0, 0.5),
+            shadow_offset: Vec2::new(0.0, -4.0),
+            shadow_blur: 10.0,
+            press_roundness: 15.0,
+            anim_factor: 30.0,
+            anim_factor_menu: 50.0,
+            pad: 5,
         }
     }
 }
@@ -263,5 +278,8 @@ impl Element for Button {
         self.attach_layout(world, this);
         self.attach_render(world, this);
         self.attach_pointer(world, this);
+
+        world.queue_trigger(this, WidgetRectangle(self.rect));
+        world.queue_trigger(this, WidgetEnabled(self.enabled));
     }
 }
