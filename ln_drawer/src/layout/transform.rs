@@ -1,7 +1,7 @@
 use ln_world::{Element, Handle, World};
 
 use crate::{
-    measures::{Position, Rectangle},
+    measures::Rectangle,
     widgets::{WidgetAnimatedRectangle, WidgetRectangle},
 };
 
@@ -47,23 +47,23 @@ impl TransformValue {
         }
     }
 
-    pub const fn anchor(anchor: (f32, f32), rect: Rectangle, offset: Position) -> TransformValue {
+    pub const fn anchor(anchor: (f32, f32), rect: Rectangle) -> TransformValue {
         TransformValue {
             left: TransformEdge {
                 anchor: anchor.0,
-                offset: offset.x + rect.left(),
+                offset: rect.left(),
             },
             down: TransformEdge {
                 anchor: anchor.1,
-                offset: offset.y + rect.down(),
+                offset: rect.down(),
             },
             right: TransformEdge {
                 anchor: anchor.0,
-                offset: offset.x + rect.right(),
+                offset: rect.right(),
             },
             up: TransformEdge {
                 anchor: anchor.1,
-                offset: offset.y + rect.up(),
+                offset: rect.up(),
             },
         }
     }

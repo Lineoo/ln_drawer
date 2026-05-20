@@ -20,6 +20,7 @@ use crate::{
 pub struct Button {
     pub rect: Rectangle,
     pub enabled: bool,
+    pub attach_pointer: bool,
     pub checked: bool,
     pub order: isize,
     pub color: Srgba,
@@ -49,6 +50,7 @@ pub struct ButtonDrag {
 }
 
 pub struct ButtonChecked(pub bool);
+pub struct ButtonColor(pub Srgba);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ButtonDragStatus {
@@ -128,6 +130,12 @@ impl Button {
                 WidgetHover::HoverEnter => frame_anim_color.dst = this.active_color,
                 WidgetHover::HoverLeave => frame_anim_color.dst = this.color,
             }
+        });
+
+        world.observer(this, move |&ButtonColor(color), world| {
+            let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
+            frame_anim_color.src = color;
+            frame_anim_color.dst = color;
         });
 
         world.observer(this, move |event: &WidgetButton, world| {
@@ -264,18 +272,6 @@ impl Button {
 
         world.dependency(collider, this);
     }
-
-    fn attach_layout(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, move |&WidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
-        });
-
-        world.observer(this, move |&WidgetAnimatedRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
-        });
-    }
 }
 
 impl Default for Button {
@@ -283,6 +279,7 @@ impl Default for Button {
         Self {
             rect: Rectangle::new(0, 0, 100, 100),
             enabled: true,
+            attach_pointer: true,
             checked: false,
             order: 10,
             color: Srgba::new(0.863, 0.863, 0.863, 1.0),
@@ -303,9 +300,10 @@ impl Default for Button {
 
 impl Element for Button {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        self.attach_layout(world, this);
         self.attach_render(world, this);
-        self.attach_pointer(world, this);
+        if self.attach_pointer {
+            self.attach_pointer(world, this);
+        }
 
         if let Some(image) = self.image
             && let Ok(data) = image::load_from_memory(image.bytes)
@@ -329,6 +327,21 @@ impl Element for Button {
                 canvas.rect = image.transform.compute(rect);
             });
         }
+
+        world.observer(this, move |&WidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
+        });
+
+        world.observer(this, move |&WidgetAnimatedRectangle(rect), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.rect = rect;
+        });
+
+        world.observer(this, move |&WidgetEnabled(enabled), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.enabled = enabled;
+        });
 
         world.queue_trigger(this, WidgetRectangle(self.rect));
         world.queue_trigger(this, WidgetEnabled(self.enabled));

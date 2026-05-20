@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, ViewOptions, World};
-use palette::Srgba;
+use palette::{Hsla, IntoColor, RgbHue, Srgba};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 use winit::{
@@ -35,9 +35,9 @@ use crate::{
         pointer::PointerTool, touch::MultiTouchTool,
     },
     widgets::{
-        WidgetClick, WidgetRectangle,
-        button::{Button, ButtonChecked, ButtonImage},
-        palette::{ColorPicker, hsl::PaletteHslMaterial},
+        WidgetAnimatedRectangle, WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
+        button::{Button, ButtonChecked, ButtonColor, ButtonImage},
+        palette::hsl::{PaletteHsl, PaletteHslMaterial},
     },
 };
 
@@ -173,11 +173,7 @@ impl Element for Lnwindow {
                     refs: vec![here, stroke.untyped()],
                 });
                 world.queue(|world| {
-                    world.insert(ColorPicker::default());
                     world.insert(CameraUtils::default());
-                });
-
-                world.queue(|world| {
                     let lnwindow = world.single::<Lnwindow>().unwrap();
                     world.observer(lnwindow, move |event: &WindowEvent, world| {
                         if let WindowEvent::SurfaceResized(size) = event {
@@ -190,158 +186,256 @@ impl Element for Lnwindow {
                             );
                         }
                     });
-
-                    // luni test
-
-                    let parent = world.insert(Button {
-                        rect: Rectangle::new(0, 0, 100, 100),
-                        order: 0,
-                        color: Srgba::new(0.863, 0.863, 0.863, 1.0),
-                        active_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
-                        press_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
-                        ..Default::default()
-                    });
-
-                    let child0 = world.insert(Button {
-                        rect: Rectangle::new(0, 0, 100, 100),
-                        order: 10,
-                        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-                        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-                        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
-                        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-                        image: Some(ButtonImage {
-                            transform: TransformValue::anchor(
-                                (0.5, 0.5),
-                                Rectangle::new_half(Position::ZERO, Size::splat(12)),
-                                Position::ZERO,
-                            ),
-                            bytes: include_bytes!("../res/interface/brush.png"),
-                        }),
-                        ..Default::default()
-                    });
-
-                    let child1 = world.insert(Button {
-                        rect: Rectangle::new(0, 0, 100, 100),
-                        order: 10,
-                        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-                        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-                        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
-                        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-                        image: Some(ButtonImage {
-                            transform: TransformValue::anchor(
-                                (0.5, 0.5),
-                                Rectangle::new_half(Position::ZERO, Size::splat(12)),
-                                Position::ZERO,
-                            ),
-                            bytes: include_bytes!("../res/interface/pen.png"),
-                        }),
-                        ..Default::default()
-                    });
-
-                    world.insert(Transform {
-                        value: TransformValue {
-                            left: TransformEdge {
-                                anchor: 1.0,
-                                offset: -120,
-                            },
-                            down: TransformEdge {
-                                anchor: 0.5,
-                                offset: 200,
-                            },
-                            right: TransformEdge {
-                                anchor: 1.0,
-                                offset: -50,
-                            },
-                            up: TransformEdge {
-                                anchor: 0.5,
-                                offset: -200,
-                            },
-                        },
-                        source: lnwindow.untyped(),
-                        target: parent.untyped(),
-                    });
-
-                    world.insert(LuniFlex {
-                        parent: (
-                            parent.untyped(),
-                            LuniParent {
-                                axis: LuniAxis::Column,
-                                template: LuniChildTemplate {
-                                    basis: 10,
-                                    margin: LuniRect {
-                                        left: 4,
-                                        bottom: 4,
-                                        right: 4,
-                                        top: 4,
-                                    },
-                                    ..Default::default()
-                                },
-                                padding: LuniRect {
-                                    left: 4,
-                                    bottom: 4,
-                                    right: 4,
-                                    top: 4,
-                                },
-                                ..Default::default()
-                            },
-                        ),
-                        children: vec![
-                            (
-                                child0.untyped(),
-                                LuniChild {
-                                    basis: Some(54),
-                                    shrink: Some(1.0),
-                                    ..Default::default()
-                                },
-                            ),
-                            (
-                                child1.untyped(),
-                                LuniChild {
-                                    basis: Some(54),
-                                    shrink: Some(1.0),
-                                    ..Default::default()
-                                },
-                            ),
-                        ],
-                    });
-
-                    world.observer(child0, move |&WidgetClick, world| {
-                        world.trigger(child0, &ButtonChecked(true));
-                        world.trigger(child1, &ButtonChecked(false));
-                        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-                        stroke.modifier = Modifier {
-                            min_size: 0.0,
-                            max_size: 6.0,
-                            size_force_exp: 1.0,
-                            min_flow: 0.7,
-                            max_flow: 1.0,
-                            flow_force_exp: 2.0,
-                            softness: 0.2,
-                            ..stroke.modifier
-                        };
-                    });
-
-                    world.observer(child1, move |&WidgetClick, world| {
-                        world.trigger(child0, &ButtonChecked(false));
-                        world.trigger(child1, &ButtonChecked(true));
-                        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-                        stroke.modifier = Modifier {
-                            min_size: 1.0,
-                            max_size: 25.0,
-                            size_force_exp: 1.0,
-                            min_flow: 0.1,
-                            max_flow: 1.0,
-                            flow_force_exp: 1.0,
-                            softness: 0.5,
-                            ..stroke.modifier
-                        };
-                    });
-
-                    world.queue_trigger(parent, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));
                 });
+
+                world.queue(side_panel);
             });
         });
     }
+}
+
+fn side_panel(world: &mut World) {
+    let lnwindow = world.single::<Lnwindow>().unwrap();
+
+    let parent = world.insert(Button {
+        order: 0,
+        color: Srgba::new(0.863, 0.863, 0.863, 1.0),
+        active_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
+        press_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
+        ..Default::default()
+    });
+
+    let child0 = world.insert(Button {
+        order: 10,
+        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
+        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
+        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        image: Some(ButtonImage {
+            transform: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+            ),
+            bytes: include_bytes!("../res/interface/pen.png"),
+        }),
+        ..Default::default()
+    });
+
+    let child1 = world.insert(Button {
+        order: 10,
+        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
+        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
+        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        image: Some(ButtonImage {
+            transform: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+            ),
+            bytes: include_bytes!("../res/interface/brush.png"),
+        }),
+        ..Default::default()
+    });
+
+    let child2 = world.insert(Button {
+        order: 10,
+        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
+        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
+        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        image: None,
+        ..Default::default()
+    });
+
+    let child2_color = world.insert(Button {
+        order: 11,
+        color: Srgba::new(0.9, 0.7, 0.7, 1.0),
+        attach_pointer: false,
+        roundness: 16.0,
+        ..Default::default()
+    });
+
+    world.insert(Transform {
+        value: TransformValue {
+            left: TransformEdge {
+                anchor: 1.0,
+                offset: -120,
+            },
+            down: TransformEdge {
+                anchor: 0.5,
+                offset: 100,
+            },
+            right: TransformEdge {
+                anchor: 1.0,
+                offset: -50,
+            },
+            up: TransformEdge {
+                anchor: 0.5,
+                offset: -100,
+            },
+        },
+        source: lnwindow.untyped(),
+        target: parent.untyped(),
+    });
+
+    world.insert(LuniFlex {
+        parent: (
+            parent.untyped(),
+            LuniParent {
+                axis: LuniAxis::Column,
+                template: LuniChildTemplate {
+                    basis: 10,
+                    margin: LuniRect {
+                        left: 4,
+                        bottom: 4,
+                        right: 4,
+                        top: 4,
+                    },
+                    ..Default::default()
+                },
+                padding: LuniRect {
+                    left: 4,
+                    bottom: 4,
+                    right: 4,
+                    top: 4,
+                },
+                ..Default::default()
+            },
+        ),
+        children: vec![
+            (
+                child0.untyped(),
+                LuniChild {
+                    basis: Some(54),
+                    shrink: Some(1.0),
+                    ..Default::default()
+                },
+            ),
+            (
+                child1.untyped(),
+                LuniChild {
+                    basis: Some(54),
+                    shrink: Some(1.0),
+                    ..Default::default()
+                },
+            ),
+            (
+                child2.untyped(),
+                LuniChild {
+                    basis: Some(54),
+                    shrink: Some(1.0),
+                    ..Default::default()
+                },
+            ),
+        ],
+    });
+
+    world.insert(Transform {
+        value: TransformValue::anchor(
+            (0.5, 0.5),
+            Rectangle::new_half(Position::ZERO, Size::splat(16)),
+        ),
+        source: child2.untyped(),
+        target: child2_color.untyped(),
+    });
+
+    world.observer(child0, move |&WidgetClick, world| {
+        world.trigger(child0, &ButtonChecked(true));
+        world.trigger(child1, &ButtonChecked(false));
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        stroke.modifier = Modifier {
+            min_size: 0.0,
+            max_size: 6.0,
+            size_force_exp: 1.0,
+            min_flow: 0.7,
+            max_flow: 1.0,
+            flow_force_exp: 2.0,
+            softness: 0.2,
+            ..stroke.modifier
+        };
+    });
+
+    world.observer(child1, move |&WidgetClick, world| {
+        world.trigger(child0, &ButtonChecked(false));
+        world.trigger(child1, &ButtonChecked(true));
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        stroke.modifier = Modifier {
+            min_size: 1.0,
+            max_size: 25.0,
+            size_force_exp: 1.0,
+            min_flow: 0.1,
+            max_flow: 1.0,
+            flow_force_exp: 1.0,
+            softness: 0.5,
+            ..stroke.modifier
+        };
+    });
+
+    let main_panel_transform = TransformValue::anchor(
+        (0.0, 0.5),
+        Rectangle::new_half(Position::new(-220, 0), Size::splat(180)),
+    );
+
+    let main_panel_transform_start = TransformValue::anchor(
+        (0.0, 0.5),
+        Rectangle::new_half(Position::new(-110, 0), Size::splat(90)),
+    );
+
+    let palette_transform = TransformValue::scale(0.8, 0.8);
+
+    let main_panel = world.insert(Button {
+        attach_pointer: false,
+        order: 0,
+        enabled: false,
+        ..Default::default()
+    });
+
+    let palette = world.insert(PaletteHsl {
+        rect: Rectangle::default(),
+        color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
+        enabled: false,
+    });
+
+    world.dependency(palette, main_panel);
+
+    world.insert(Transform {
+        value: main_panel_transform,
+        source: child2.untyped(),
+        target: main_panel.untyped(),
+    });
+
+    world.insert(Transform {
+        value: palette_transform,
+        source: main_panel.untyped(),
+        target: palette.untyped(),
+    });
+
+    world.observer(palette, move |&WidgetHsla(color), world| {
+        let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        layer.modifier.color = color.into_color();
+        world.queue_trigger(child2_color, ButtonColor(color.into_color()));
+    });
+
+    world.observer(child2, move |&WidgetClick, world| {
+        let main_panel = world.fetch(main_panel).unwrap();
+        let child2 = world.fetch(child2).unwrap();
+        world.queue_trigger(main_panel.handle(), WidgetEnabled(!main_panel.enabled));
+        world.queue_trigger(palette, WidgetEnabled(!main_panel.enabled));
+
+        if !main_panel.enabled {
+            world.queue_trigger(
+                main_panel.handle(),
+                WidgetAnimatedRectangle(main_panel_transform.compute(child2.rect)),
+            );
+        } else {
+            world.queue_trigger(
+                main_panel.handle(),
+                WidgetRectangle(main_panel_transform_start.compute(child2.rect)),
+            );
+        }
+    });
+
+    world.queue_trigger(parent, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));
 }
 
 impl Lnwindow {
