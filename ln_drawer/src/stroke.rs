@@ -550,7 +550,7 @@ impl StrokeLayer {
                 | TextureUsages::COPY_DST
                 | TextureUsages::TEXTURE_BINDING
                 | TextureUsages::STORAGE_BINDING,
-            view_formats: &[],
+            view_formats: &[TextureFormat::Rgba8UnormSrgb],
         });
 
         Self::create_chunk_from_texture(
@@ -590,8 +590,17 @@ impl StrokeLayer {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let texture_view = texture.create_view(&TextureViewDescriptor {
+        let texture_compute_view = texture.create_view(&TextureViewDescriptor {
             label: Some("stroke_chunk_texture_view"),
+            format: Some(TextureFormat::Rgba8Unorm),
+            usage: Some(TextureUsages::STORAGE_BINDING),
+            ..Default::default()
+        });
+
+        let texture_fragment_view = texture.create_view(&TextureViewDescriptor {
+            label: Some("stroke_chunk_texture_view"),
+            format: Some(TextureFormat::Rgba8UnormSrgb),
+            usage: Some(TextureUsages::TEXTURE_BINDING),
             ..Default::default()
         });
 
@@ -609,7 +618,7 @@ impl StrokeLayer {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&texture_view),
+                    resource: BindingResource::TextureView(&texture_fragment_view),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -624,7 +633,7 @@ impl StrokeLayer {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&texture_view),
+                    resource: BindingResource::TextureView(&texture_compute_view),
                 },
                 BindGroupEntry {
                     binding: 1,

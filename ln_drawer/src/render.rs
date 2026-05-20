@@ -169,7 +169,7 @@ impl Render {
         let caps = surface.get_capabilities(&adapter);
         let config = SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
-            format: *caps.formats.first().unwrap(),
+            format: *caps.formats.iter().find(|format| format.is_srgb()).unwrap(),
             width: size.width.max(1),
             height: size.height.max(1),
             desired_maximum_frame_latency: 2,
@@ -199,6 +199,7 @@ impl Render {
         };
 
         log::trace!("resize in {}, {}", config.width, config.height);
+        log::trace!("texture format {:?}", config.format);
         log::trace!("present mode {:?} is selected", config.present_mode);
         log::trace!("alpha mode {:?} is selected", config.alpha_mode);
 
