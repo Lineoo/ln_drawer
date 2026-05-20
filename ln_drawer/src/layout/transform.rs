@@ -1,9 +1,6 @@
 use ln_world::{Element, Handle, World};
 
-use crate::{
-    measures::Rectangle,
-    widgets::{WidgetAnimatedRectangle, WidgetRectangle},
-};
+use crate::{measures::Rectangle, widgets::WidgetRectangle};
 
 pub struct Transform {
     pub value: TransformValue,
@@ -136,15 +133,7 @@ impl Element for Transform {
             world.queue_trigger(this.target, WidgetRectangle(target));
         });
 
-        let oba = world.observer(self.source, move |&WidgetAnimatedRectangle(rect), world| {
-            let this = world.fetch(this).unwrap();
-            let target = this.value.compute(rect);
-
-            world.queue_trigger(this.target, WidgetRectangle(target));
-        });
-
         world.dependency(ob, this);
-        world.dependency(oba, this);
         world.dependency(this, self.source);
         world.dependency(this, self.target);
     }

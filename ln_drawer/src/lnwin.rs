@@ -35,8 +35,8 @@ use crate::{
         pointer::PointerTool, touch::MultiTouchTool,
     },
     widgets::{
-        WidgetAnimatedRectangle, WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
-        button::{Button, ButtonChecked, ButtonColor, ButtonImage},
+        WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
+        button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage},
         palette::hsl::{PaletteHsl, PaletteHslMaterial},
     },
 };
@@ -425,12 +425,11 @@ fn side_panel(world: &mut World) {
         if !main_panel.enabled {
             world.queue_trigger(
                 main_panel.handle(),
-                WidgetAnimatedRectangle(main_panel_transform.compute(child2.rect)),
-            );
-        } else {
-            world.queue_trigger(
-                main_panel.handle(),
-                WidgetRectangle(main_panel_transform_start.compute(child2.rect)),
+                ButtonAnim {
+                    src: main_panel_transform_start.compute(child2.rect),
+                    dst: main_panel_transform.compute(child2.rect),
+                    hidden_after_finished: false,
+                },
             );
         }
     });
