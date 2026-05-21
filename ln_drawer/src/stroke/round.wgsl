@@ -27,11 +27,11 @@ struct Draw {
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     let coords = dispatch.dirty_coords + vec2i(id.xy) - rect.origin;
 
-    var working_color = linear_to_srgb(textureLoad(texture, coords));
+    var working_color = srgb_to_linear(textureLoad(texture, coords));
     for (var i = 0u; i < dispatch.stroke_count; i++) {
         let center = (draws_array[i].position - rect.origin);
 
-        let raw_color = linear_to_srgb(linear_to_srgb(draws_array[i].color));
+        let raw_color = draws_array[i].color;
         let color = vec4f(raw_color.rgb, raw_color.a * draws_array[i].flow * smoothstep(
             1.0 + draws_array[i].softness,
             1.0 - draws_array[i].softness,
@@ -49,7 +49,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
         working_color = vec4f(result.rgb / result.a, result.a);
     }
 
-    textureStore(texture, coords, srgb_to_linear(working_color));
+    textureStore(texture, coords, linear_to_srgb(working_color));
     // textureStore(texture, coords, vec4f(f32(dispatch.stroke_count) / 200, 0, 0, 1));
 }
 

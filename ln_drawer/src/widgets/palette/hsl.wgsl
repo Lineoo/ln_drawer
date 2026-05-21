@@ -33,7 +33,7 @@ fn main(in: VertexOutput) -> @location(0) vec4f {
     let chk = color_hue_knob(radius, angle);
     let kb = mix(cmk, chk, chk.a);
 
-    return mix(bg, kb, kb.a);
+    return srgb_to_linear(mix(bg, kb, kb.a));
 }
 
 fn color_main_palette(uv: vec2f) -> vec4f {
@@ -101,4 +101,11 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> vec3f {
 
 fn hue_to_rgb(h: f32) -> vec3f {
     return clamp(abs(((h * 6.0 + vec3f(0.0, 4.0, 2.0)) % 6.0) - 3.0) - 1.0, vec3f(0.0), vec3f(1.0));
+}
+
+fn srgb_to_linear(v: vec4f) -> vec4f {
+    let threshold = vec3(0.04045);
+    let low = v.rgb / 12.92;
+    let high = pow((v.rgb + 0.055) / 1.055, vec3(2.4));
+    return vec4f(select(high, low, v.rgb < threshold), v.a);
 }

@@ -22,10 +22,9 @@ use wgpu::{
     PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology,
     RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
     ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
-    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDimension,
-    VertexState,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
+    TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
-    wgt::{TextureDescriptor, TextureViewDescriptor},
 };
 use winit::event::PointerKind;
 
@@ -535,23 +534,7 @@ impl StrokeLayer {
     }
 
     fn create_chunk(&self, device: &Device, key: ChunkKey) -> ChunkBind {
-        let texture = device.create_texture(&TextureDescriptor {
-            label: Some("stroke_chunk_texture"),
-            size: Extent3d {
-                width: CHUNK_SIZE,
-                height: CHUNK_SIZE,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::COPY_SRC
-                | TextureUsages::COPY_DST
-                | TextureUsages::TEXTURE_BINDING
-                | TextureUsages::STORAGE_BINDING,
-            view_formats: &[TextureFormat::Rgba8UnormSrgb],
-        });
+        let texture = device.create_texture(&chunk_texture_desc());
 
         Self::create_chunk_from_texture(
             &self.render_layout,
@@ -1208,6 +1191,26 @@ impl StrokeLayer {
                 }
             }
         }
+    }
+}
+
+fn chunk_texture_desc() -> TextureDescriptor<'static> {
+    TextureDescriptor {
+        label: Some("stroke_chunk_texture"),
+        size: Extent3d {
+            width: CHUNK_SIZE,
+            height: CHUNK_SIZE,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::COPY_SRC
+            | TextureUsages::COPY_DST
+            | TextureUsages::TEXTURE_BINDING
+            | TextureUsages::STORAGE_BINDING,
+        view_formats: &[TextureFormat::Rgba8UnormSrgb],
     }
 }
 
