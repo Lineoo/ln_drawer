@@ -117,11 +117,6 @@ pub fn loading_thread(
                 }
             }
 
-            log::debug!(
-                "stream_queue.len() = {}, center = {:?}",
-                stream_queue.len(),
-                stream_center
-            );
             debug_assert!(stream_queue.len() < CHUNK_CAPS - 1);
 
             stream_queue.sort_by_key(|&(x, y, z)| {
