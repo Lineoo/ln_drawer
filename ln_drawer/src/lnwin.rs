@@ -258,16 +258,16 @@ fn side_panel(world: &mut World) {
     world.insert(Transform {
         value: TransformValue {
             left: TransformEdge {
-                anchor: 1.0,
-                offset: -120,
+                anchor: 0.0,
+                offset: 50,
             },
             down: TransformEdge {
                 anchor: 0.5,
                 offset: 100,
             },
             right: TransformEdge {
-                anchor: 1.0,
-                offset: -50,
+                anchor: 0.0,
+                offset: 120,
             },
             up: TransformEdge {
                 anchor: 0.5,
@@ -372,13 +372,13 @@ fn side_panel(world: &mut World) {
     });
 
     let main_panel_transform = TransformValue::anchor(
-        (0.0, 0.5),
-        Rectangle::new_half(Position::new(-220, 0), Size::splat(180)),
+        (1.0, 0.5),
+        Rectangle::new_half(Position::new(220, 0), Size::splat(180)),
     );
 
     let main_panel_transform_start = TransformValue::anchor(
-        (0.0, 0.5),
-        Rectangle::new_half(Position::new(-110, 0), Size::splat(90)),
+        (1.0, 0.5),
+        Rectangle::new_half(Position::new(110, 0), Size::splat(90)),
     );
 
     let palette_transform = TransformValue::scale(0.8, 0.8);
