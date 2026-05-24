@@ -22,7 +22,8 @@ use crate::{
 /// ### History
 /// `version`: `format` (the last version that used it)
 /// - `v0.1.3-alpha.2`: 0
-const FORMAT_VERSION: u32 = 1;
+/// - `v0.1.3-alpha.3`: 1
+const FORMAT_VERSION: u32 = 2;
 
 /// The number of backup files.
 const BACKUP_SLOT: u32 = 6;
@@ -107,7 +108,8 @@ impl SaveDatabase {
 
         for migrate_format in from_format..FORMAT_VERSION {
             match migrate_format {
-                0 => legacy::migrate0(&write)?,
+                0 => legacy::migrate0(&write).unwrap(),
+                1 => legacy::migrate1(&write).unwrap(),
                 _ => unimplemented!("unsupported migration {migrate_format}"),
             }
 

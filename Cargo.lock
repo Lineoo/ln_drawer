@@ -1417,7 +1417,7 @@ checksum = "f5e54036fe321fd421e10d732f155734c4e4afd610dd556d9a82833ab3ee0bed"
 
 [[package]]
 name = "ln_drawer"
-version = "0.1.3-alpha.2-dev"
+version = "0.1.3-alpha.3-dev"
 dependencies = [
  "android_logger",
  "bytemuck",
@@ -1449,7 +1449,7 @@ dependencies = [
 
 [[package]]
 name = "ln_world"
-version = "0.1.3-alpha.2-dev"
+version = "0.1.3-alpha.3-dev"
 dependencies = [
  "hashbrown 0.15.5",
  "log",

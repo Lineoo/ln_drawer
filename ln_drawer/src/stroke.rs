@@ -1,38 +1,44 @@
-pub mod chunk;
 pub mod dirty;
 pub mod interpolate;
 pub mod modifier;
 pub mod shape;
+mod stream;
 
 use std::{
-    error::Error,
-    sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel},
+    sync::mpsc::{Receiver, Sender, channel},
     thread::JoinHandle,
 };
 
 use hashbrown::{HashMap, HashSet};
-use indexmap::IndexSet;
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
-use redb::{Database, MultimapTableDefinition, ReadableDatabase, TableDefinition};
+use redb::{Database, ReadableDatabase, TableDefinition};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, Device, Queue,
-    ShaderStages,
+    AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
+    Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
+    ColorWrites, CommandEncoderDescriptor, ComputePassDescriptor, ComputePipeline,
+    ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState,
+    PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology,
+    RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDimension,
+    VertexState,
+    util::{BufferInitDescriptor, DeviceExt},
+    wgt::{TextureDescriptor, TextureViewDescriptor},
 };
 use winit::event::PointerKind;
 
 use crate::{
     lnwin::Lnwindow,
-    measures::{Fract, Rectangle, Size},
+    measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{
-        Render, RenderControl, RenderInformation,
-        camera::{Camera, CameraPositionChanged, CameraUtils},
+        MSAA_STATE, Render, RenderControl, RenderInformation,
+        camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils},
+        vertex::VertexUniform,
     },
     save::{Autosave, SaveDatabase},
     stroke::{
-        chunk::{StrokeChunk, StrokeChunkPipeline},
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
         modifier::{DrawProcessedStorage, Modifier},
@@ -45,13 +51,17 @@ use crate::{
 };
 
 const CHUNK_SIZE: u32 = 512;
-const CHUNK_CAPS: usize = 2048;
+const CHUNK_CAPS: usize = 512;
 const CHUNK_BATCH: usize = 8;
+const CHUNK_MIPMAP: u8 = 8;
 const MAX_STROKE: u64 = 200;
 
-const TABLE_STROKE: MultimapTableDefinition<(), (i32, i32)> =
-    MultimapTableDefinition::new("stroke");
-const TABLE_STROKE_CHUNK: TableDefinition<(i32, i32), &[u8]> = TableDefinition::new("stroke_chunk");
+const CHUNK_META0_FORMAT: u32 = 0;
+
+const TABLE_STROKE_CHUNK: TableDefinition<(u64, ChunkKey), &[u8]> =
+    TableDefinition::new("stroke_chunk");
+const TABLE_STROKE_CHUNK_META: TableDefinition<((u64, ChunkKey), u32), &[u8]> =
+    TableDefinition::new("stroke_chunk_meta");
 
 const DEFAULT_INTERPOLATION: Interpolation = Interpolation {
     step: |draw| draw.size / 5.0,
@@ -75,8 +85,27 @@ const DEFAULT_DIRTY: Dirty = Dirty {
     },
 };
 
+type ChunkKey = (i32, i32, u8);
+
 pub struct StrokeLayer {
-    pub chunks: HashMap<(i32, i32), Option<StrokeChunk>>,
+    chunks: HashMap<ChunkKey, Option<Chunk>>,
+    meta_unsaved: HashSet<ChunkKey>,
+
+    pub render_debugging: bool,
+    render_pipeline: RenderPipeline,
+    render_debug_pipeline: RenderPipeline,
+    render_sampler: Sampler,
+    render_layout: BindGroupLayout,
+
+    mipmap_pipeline: ComputePipeline,
+    mipmap_layout: BindGroupLayout,
+    mipmap_meta: BindGroup,
+    mipmap_meta_buffer: Buffer,
+
+    compute_layout: BindGroupLayout,
+    dispatch: BindGroup,
+    dispatch_meta: Buffer,
+    draws_array: Buffer,
 
     thread_tx: Sender<ThreadInput>,
     thread_rx: Receiver<ThreadOutput>,
@@ -89,23 +118,38 @@ pub struct StrokeLayer {
     pub brush_round: RoundBrush,
     pub brush_pixel: PixelBrush,
     prev: Option<Draw>,
+}
 
-    dispatch: BindGroup,
-    dispatch_meta: Buffer,
-    draws_array: Buffer,
+struct Chunk {
+    bind: ChunkBind,
+    meta0: ChunkMeta0,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct ChunkMeta0 {
+    format: u32,
+    mipmapped: bool,
+}
+
+struct ChunkBind {
+    texture: Texture,
+    uniform: Buffer,
+    render: BindGroup,
+    mipmap: Option<BindGroup>,
+    compute: BindGroup,
 }
 
 enum ThreadInput {
-    SetStreamCenter((i32, i32)),
-    SetUnsaved((i32, i32)),
-    Create((i32, i32), StrokeChunk),
+    SetStreamCamera(Fract, Size, PositionFract),
+    MarkUnsaved(ChunkKey),
+    Create(ChunkKey, Texture),
     Autosave,
     Finish,
 }
 
 enum ThreadOutput {
-    Insert((i32, i32), Option<StrokeChunk>),
-    Remove((i32, i32)),
+    Insert(ChunkKey, Option<Texture>),
+    Remove(ChunkKey),
 }
 
 #[repr(C)]
@@ -116,12 +160,145 @@ struct DispatchUniform {
     _pad: u32,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct MipmapUniform {
+    mipmap_coords: [i32; 2],
+    mipmap_size: [u32; 2],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct ChunkUniform {
+    chunk: [i32; 3],
+    _pad: u32,
+}
+
 impl StrokeLayer {
     pub fn new(world: &World) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
+        let camera_bind = world.single_fetch::<CameraBind>().unwrap();
         let device = &render.device;
 
-        let dispatch = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let render_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("stroke_chunk_fragment"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: false },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+            ],
+        });
+
+        let compute_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("stroke_chunk_compute"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadWrite,
+                        format: TextureFormat::Rgba8Unorm,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let mipmap_meta_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("mipmap_meta"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let mipmap_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("mipmap"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: TextureFormat::Rgba8Unorm,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: TextureFormat::Rgba8Unorm,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let dispatch_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("dispatch"),
             entries: &[
                 BindGroupLayoutEntry {
@@ -147,11 +324,127 @@ impl StrokeLayer {
             ],
         });
 
-        let canvas_chunk_pipeline = StrokeChunkPipeline::new(world);
-        let pipeline_for_thread = canvas_chunk_pipeline.clone();
-        let brush_round = RoundBrush::new(&render, &dispatch, &canvas_chunk_pipeline.compute);
-        let brush_pixel = PixelBrush::new(&render, &dispatch, &canvas_chunk_pipeline.compute);
-        world.insert(canvas_chunk_pipeline);
+        let brush_round = RoundBrush::new(&render, &dispatch_layout, &compute_layout);
+        let brush_pixel = PixelBrush::new(&render, &dispatch_layout, &compute_layout);
+
+        let render_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("stroke_chunk"),
+            source: ShaderSource::Wgsl(include_str!("stroke/chunk.wgsl").into()),
+        });
+
+        let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("stroke_chunk"),
+            bind_group_layouts: &[&camera_bind.layout, &render_layout],
+            immediate_size: 0,
+        });
+
+        let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("stroke_chunk"),
+            layout: Some(&render_pipeline_layout),
+            vertex: VertexState {
+                module: &render_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            fragment: Some(FragmentState {
+                module: &render_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState {
+                    format: render.config.format,
+                    blend: Some(BlendState::ALPHA_BLENDING),
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            depth_stencil: None,
+            multisample: MSAA_STATE,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let render_debug_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("stroke_chunk_debug"),
+            layout: Some(&render_pipeline_layout),
+            vertex: VertexState {
+                module: &render_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            fragment: Some(FragmentState {
+                module: &render_shader,
+                entry_point: Some("fs_main_debug"),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState {
+                    format: render.config.format,
+                    blend: Some(BlendState::ALPHA_BLENDING),
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            depth_stencil: None,
+            multisample: MSAA_STATE,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let render_sampler = device.create_sampler(&SamplerDescriptor {
+            label: Some("stroke_sampler"),
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let mipmap_meta_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("mipmap_meta"),
+            size: size_of::<MipmapUniform>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mipmap_meta = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("mipmap_meta"),
+            layout: &mipmap_meta_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &mipmap_meta_buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
+        let mipmap_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("stroke_chunk"),
+            source: ShaderSource::Wgsl(include_str!("stroke/mipmap.wgsl").into()),
+        });
+
+        let mipmap_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("stroke_mipmap"),
+            bind_group_layouts: &[&mipmap_meta_layout, &mipmap_layout],
+            immediate_size: 0,
+        });
+
+        let mipmap_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("stroke_mipmap"),
+            layout: Some(&mipmap_pipeline),
+            module: &mipmap_shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        });
 
         let dispatch_meta = device.create_buffer(&BufferDescriptor {
             label: Some("dispatch_meta"),
@@ -169,7 +462,7 @@ impl StrokeLayer {
 
         let dispatch = device.create_bind_group(&BindGroupDescriptor {
             label: Some("dispatch"),
-            layout: &dispatch,
+            layout: &dispatch_layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
@@ -195,36 +488,39 @@ impl StrokeLayer {
 
         let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
         let camera = world.single_fetch::<Camera>().unwrap();
-        let camera_uniform = camera.uniform.clone();
         let render = world.single_fetch::<Render>().unwrap();
         let device = render.device.clone();
         let queue = render.queue.clone();
 
-        let center = camera.center.round();
-        let chunk_here = (
-            center.x.div_euclid(CHUNK_SIZE as i32),
-            center.y.div_euclid(CHUNK_SIZE as i32),
-        );
-
         thread_input_tx
-            .send(ThreadInput::SetStreamCenter(chunk_here))
+            .send(ThreadInput::SetStreamCamera(
+                camera.zoom,
+                camera.size,
+                camera.center,
+            ))
             .unwrap();
 
         let thread = std::thread::spawn(|| {
-            Self::loading_thread(
-                database,
-                camera_uniform,
-                pipeline_for_thread,
-                device,
-                queue,
-                thread_input_rx,
-                thread_output_tx,
-            )
-            .unwrap();
+            stream::loading_thread(database, device, queue, thread_input_rx, thread_output_tx)
+                .unwrap();
         });
 
         StrokeLayer {
             chunks: HashMap::new(),
+            meta_unsaved: HashSet::new(),
+            render_debugging: false,
+            render_sampler,
+            render_pipeline,
+            render_debug_pipeline,
+            render_layout,
+            mipmap_pipeline,
+            mipmap_layout,
+            mipmap_meta,
+            mipmap_meta_buffer,
+            compute_layout,
+            dispatch,
+            dispatch_meta,
+            draws_array,
             thread_tx: thread_input_tx,
             thread_rx: thread_output_rx,
             thread: Some(thread),
@@ -235,48 +531,156 @@ impl StrokeLayer {
             brush_round,
             brush_pixel,
             prev: None,
-            dispatch,
-            dispatch_meta,
-            draws_array,
+        }
+    }
+
+    fn create_chunk(&self, device: &Device, key: ChunkKey) -> ChunkBind {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("stroke_chunk_texture"),
+            size: Extent3d {
+                width: CHUNK_SIZE,
+                height: CHUNK_SIZE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::COPY_SRC
+                | TextureUsages::COPY_DST
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+
+        Self::create_chunk_from_texture(
+            &self.render_layout,
+            &self.render_sampler,
+            &self.compute_layout,
+            texture,
+            device,
+            key,
+        )
+    }
+
+    fn create_chunk_from_texture(
+        render_layout: &BindGroupLayout,
+        render_sampler: &Sampler,
+        compute_layout: &BindGroupLayout,
+        texture: Texture,
+        device: &Device,
+        key: ChunkKey,
+    ) -> ChunkBind {
+        let rect = chunk_rect(key);
+        let rectangle = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("stroke_chunk_rectangle"),
+            contents: bytemuck::bytes_of(&VertexUniform {
+                origin: rect.origin.into_array(),
+                extend: rect.extend.into_array(),
+            }),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let uniform = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("stroke_chunk_key"),
+            contents: bytemuck::bytes_of(&ChunkUniform {
+                chunk: [key.0, key.1, key.2 as i32],
+                _pad: 0,
+            }),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let texture_view = texture.create_view(&TextureViewDescriptor {
+            label: Some("stroke_chunk_texture_view"),
+            ..Default::default()
+        });
+
+        let render_bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("stroke_chunk_render"),
+            layout: &render_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &rectangle,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&texture_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::Sampler(&render_sampler),
+                },
+            ],
+        });
+
+        let compute_bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("stroke_chunk_compute"),
+            layout: &compute_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&texture_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &rectangle,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+            ],
+        });
+
+        ChunkBind {
+            texture,
+            uniform,
+            render: render_bind,
+            mipmap: None,
+            compute: compute_bind,
         }
     }
 
     fn database_init(&mut self, db: &Database) -> Result<(), redb::Error> {
         let write = db.begin_write()?;
-        write.open_multimap_table(TABLE_STROKE)?;
         write.open_table(TABLE_STROKE_CHUNK)?;
         write.commit()?;
         Ok(())
     }
 
     fn attach_autosave(&mut self, world: &World, this: Handle<Self>) {
-        let save = world.insert(Autosave(Box::new(move |world, _| {
-            let this = world.fetch_mut(this).unwrap();
+        let save = world.insert(Autosave(Box::new(move |world, write| {
+            let this = &mut *world.fetch_mut(this).unwrap();
+            let mut table_meta = write.open_table(TABLE_STROKE_CHUNK_META).unwrap();
+            for key in this.meta_unsaved.drain() {
+                let chunk = this.chunks.get(&key).unwrap();
+                let meta0 = chunk.as_ref().unwrap().meta0;
+                let mut bytes = [0u8; 16];
+                postcard::to_slice(&meta0, &mut bytes).unwrap();
+                table_meta.insert(((0, key), 0), &bytes[..]).unwrap();
+            }
             this.thread_tx.send(ThreadInput::Autosave).unwrap();
         })));
 
         world.dependency(save, this);
 
         let camera = world.single::<Camera>().unwrap();
-        world.observer(camera, move |change: &CameraPositionChanged, world| {
-            let from = change.from.round();
-            let chunk_from = (
-                from.x.div_euclid(CHUNK_SIZE as i32),
-                from.y.div_euclid(CHUNK_SIZE as i32),
-            );
+        world.observer(camera, move |_: &CameraPositionChanged, world| {
+            let this = world.fetch(this).unwrap();
+            let camera = world.fetch(camera).unwrap();
 
-            let here = change.here.round();
-            let chunk_here = (
-                here.x.div_euclid(CHUNK_SIZE as i32),
-                here.y.div_euclid(CHUNK_SIZE as i32),
-            );
-
-            if chunk_from != chunk_here {
-                let this = world.fetch(this).unwrap();
-                this.thread_tx
-                    .send(ThreadInput::SetStreamCenter(chunk_here))
-                    .unwrap();
-            }
+            this.thread_tx
+                .send(ThreadInput::SetStreamCamera(
+                    camera.zoom,
+                    camera.size,
+                    camera.center,
+                ))
+                .unwrap();
         });
     }
 
@@ -284,15 +688,8 @@ impl StrokeLayer {
         let control = world.insert(RenderControl {
             prepare: Some(Box::new(move |world| {
                 let this = &mut *world.fetch_mut(this).unwrap();
-                for output in this.thread_rx.try_iter() {
-                    match output {
-                        ThreadOutput::Insert(chunk_id, chunk) => {
-                            this.chunks.insert(chunk_id, chunk);
-                        }
-                        ThreadOutput::Remove(chunk_id) => {
-                            this.chunks.remove(&chunk_id);
-                        }
-                    }
+                while let Ok(output) = this.thread_rx.try_recv() {
+                    this.process_thread_output(world, output);
                 }
 
                 Some(RenderInformation {
@@ -304,19 +701,20 @@ impl StrokeLayer {
                 let camera = world.single_fetch::<Camera>().unwrap();
 
                 let view_rect = camera.world_view_rect();
-                let chunk_src = (
-                    view_rect.left().div_euclid(CHUNK_SIZE as i32),
-                    view_rect.down().div_euclid(CHUNK_SIZE as i32),
-                );
-                let chunk_dst = (
-                    (view_rect.right() - 1).div_euclid(CHUNK_SIZE as i32) + 1,
-                    (view_rect.up() - 1).div_euclid(CHUNK_SIZE as i32) + 1,
-                );
+                let mipmap = mipmap_of(camera.zoom);
+                let (chunk_src, chunk_dst) = chunks_within(view_rect, mipmap);
+
+                match stroke.render_debugging {
+                    false => rpass.set_pipeline(&stroke.render_pipeline),
+                    true => rpass.set_pipeline(&stroke.render_debug_pipeline),
+                }
+                rpass.set_bind_group(0, &camera.bind, &[]);
 
                 for chunk_x in chunk_src.0..chunk_dst.0 {
                     for chunk_y in chunk_src.1..chunk_dst.1 {
-                        if let Some(Some(chunk)) = stroke.chunks.get(&(chunk_x, chunk_y)) {
-                            chunk.redraw(world, rpass);
+                        if let Some(Some(chunk)) = stroke.chunks.get(&(chunk_x, chunk_y, mipmap)) {
+                            rpass.set_bind_group(1, &chunk.bind.render, &[]);
+                            rpass.draw(0..4, 0..1);
                         }
                     }
                 }
@@ -324,6 +722,181 @@ impl StrokeLayer {
         });
         RenderControl::reorder(Some(-100), world, control);
         world.dependency(control, this);
+    }
+
+    fn process_thread_output(&mut self, world: &World, output: ThreadOutput) {
+        match output {
+            ThreadOutput::Insert(chunk_id, texture) => {
+                debug_assert!(!self.chunks.contains_key(&chunk_id));
+
+                let mut need_mipmap_fix = false;
+                let render = world.single_fetch::<Render>().unwrap();
+                let chunk = texture.and_then(|texture| {
+                    let mut new_chunk = Self::create_chunk_from_texture(
+                        &self.render_layout,
+                        &self.render_sampler,
+                        &self.compute_layout,
+                        texture,
+                        &render.device,
+                        chunk_id,
+                    );
+
+                    self.insert_related_mipmap_bind(chunk_id, &mut new_chunk, &render);
+
+                    let database = world.single_fetch::<SaveDatabase>().unwrap();
+                    let read = database.0.begin_read().unwrap();
+                    let table_meta = read.open_table(TABLE_STROKE_CHUNK_META).unwrap();
+                    let meta0 = if let Some(meta0) = table_meta.get(((0, chunk_id), 0)).unwrap() {
+                        postcard::from_bytes::<ChunkMeta0>(meta0.value()).unwrap()
+                    } else {
+                        // blank chunk
+                        ChunkMeta0 {
+                            format: CHUNK_META0_FORMAT,
+                            mipmapped: true,
+                        }
+                    };
+
+                    if meta0.format > CHUNK_META0_FORMAT {
+                        // We cannot really read this in case we accidentally broke it
+                        log::error!(
+                            "Cannot read stroke chunk from newer version {:?}",
+                            meta0.format
+                        );
+                        return None;
+                    }
+
+                    if !meta0.mipmapped {
+                        need_mipmap_fix = true;
+                    }
+
+                    Some(Chunk {
+                        bind: new_chunk,
+                        meta0,
+                    })
+                });
+
+                self.chunks.insert(chunk_id, chunk);
+
+                if need_mipmap_fix {
+                    log::trace!("mipmap fixed {chunk_id:?}");
+                    self.fix_unmipmapped(chunk_id, &render);
+                }
+            }
+            ThreadOutput::Remove(key) => {
+                debug_assert!(self.chunks.contains_key(&key));
+
+                if self.meta_unsaved.remove(&key) {
+                    let database = world.single_fetch::<SaveDatabase>().unwrap();
+                    let write = database.0.begin_write().unwrap();
+                    let mut table_meta = write.open_table(TABLE_STROKE_CHUNK_META).unwrap();
+                    let chunk = self.chunks.get(&key).unwrap();
+                    let meta0 = chunk.as_ref().unwrap().meta0;
+                    let mut bytes = [0u8; 16];
+                    postcard::to_slice(&meta0, &mut bytes).unwrap();
+                    table_meta.insert(((0, key), 0), &bytes[..]).unwrap();
+                    drop(table_meta);
+                    write.commit().unwrap();
+                }
+
+                self.chunks.remove(&key);
+                self.remove_related_mipmap_bind(key);
+            }
+        }
+    }
+
+    fn insert_related_mipmap_bind(
+        &mut self,
+        chunk_id: (i32, i32, u8),
+        chunk: &mut ChunkBind,
+        render: &Render,
+    ) {
+        if chunk_id.2 > 0 {
+            let (rx, ry, rp) = lower_root_chunk_of(chunk_id);
+
+            self.insert_mipmap_bind(chunk, render, (rx, ry, rp));
+            self.insert_mipmap_bind(chunk, render, (rx + 1, ry, rp));
+            self.insert_mipmap_bind(chunk, render, (rx, ry + 1, rp));
+            self.insert_mipmap_bind(chunk, render, (rx + 1, ry + 1, rp));
+        }
+
+        if let Some(Some(upper)) = self.chunks.get(&upper_chunk_of(chunk_id)) {
+            Self::chunk_bind_mipmap(&self.mipmap_layout, chunk, &upper.bind, &render.device);
+        }
+    }
+
+    fn insert_mipmap_bind(&mut self, chunk: &mut ChunkBind, render: &Render, key: ChunkKey) {
+        if let Some(Some(lower)) = self.chunks.get_mut(&key) {
+            Self::chunk_bind_mipmap(&self.mipmap_layout, &mut lower.bind, chunk, &render.device);
+        }
+    }
+
+    fn remove_related_mipmap_bind(&mut self, chunk_id: (i32, i32, u8)) {
+        if chunk_id.2 > 0 {
+            let (rx, ry, rp) = lower_root_chunk_of(chunk_id);
+
+            self.remove_mipmap_bind(rx, ry, rp);
+            self.remove_mipmap_bind(rx + 1, ry, rp);
+            self.remove_mipmap_bind(rx, ry + 1, rp);
+            self.remove_mipmap_bind(rx + 1, ry + 1, rp);
+        }
+    }
+
+    fn remove_mipmap_bind(&mut self, rx: i32, ry: i32, rp: u8) {
+        if let Some(Some(chunk)) = self.chunks.get_mut(&(rx, ry, rp)) {
+            chunk.bind.mipmap = None;
+        }
+    }
+
+    fn chunk_bind_mipmap(
+        mipmap_layout: &BindGroupLayout,
+        lower: &mut ChunkBind,
+        upper: &ChunkBind,
+        device: &Device,
+    ) {
+        debug_assert!(lower.mipmap.is_none());
+
+        let mipmap_bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("mipmap"),
+            layout: &mipmap_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&upper.texture.create_view(
+                        &TextureViewDescriptor {
+                            label: Some("destination"),
+                            ..Default::default()
+                        },
+                    )),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &upper.uniform,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&lower.texture.create_view(
+                        &TextureViewDescriptor {
+                            label: Some("source"),
+                            ..Default::default()
+                        },
+                    )),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &lower.uniform,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+            ],
+        });
+
+        lower.mipmap = Some(mipmap_bind);
     }
 
     fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
@@ -402,45 +975,36 @@ impl StrokeLayer {
         self.prev = Some(curr);
 
         let dirty = self.dirty.compute(curr.position.round(), &draw_buf);
-        if dirty.bounding.extend.w == 0 || dirty.bounding.extend.h == 0 {
+        if dirty.extend.w == 0 || dirty.extend.h == 0 {
+            return;
+        }
+
+        // pre-check that chunks are all ready
+
+        if !self.validate_chunks(dirty) {
             return;
         }
 
         // prepare chunks
 
-        let mut chunks = Vec::new();
-        for chunk_x in dirty.chunk_src.0..dirty.chunk_dst.0 {
-            for chunk_y in dirty.chunk_src.1..dirty.chunk_dst.1 {
-                let chunk_id = (chunk_x, chunk_y);
-                if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
-                    let chunk = chunk
-                        .get_or_insert_with(|| {
-                            let render = world.single_fetch::<Render>().unwrap();
-                            let camera = world.single_fetch::<Camera>().unwrap();
-                            let pipeline = world.single_fetch::<StrokeChunkPipeline>().unwrap();
-                            StrokeChunk::new(&camera.uniform, &pipeline, &render.device, chunk_id)
-                        })
-                        .clone();
-                    chunks.push(chunk_id);
-                    self.thread_tx
-                        .send(ThreadInput::Create(chunk_id, chunk))
-                        .unwrap();
-                    self.thread_tx
-                        .send(ThreadInput::SetUnsaved(chunk_id))
-                        .unwrap();
-                }
-            }
-        }
+        let render = world.single_fetch::<Render>().unwrap();
+        let mut paint_chunks = Vec::new();
+        let mut mipmap_chunks = Vec::new();
+        self.prepare_chunks(&render, dirty, &mut paint_chunks, &mut mipmap_chunks);
 
         // assign works to GPU
 
         let dispatch = DispatchUniform {
-            dirty_coords: dirty.bounding.origin.into_array(),
+            dirty_coords: dirty.origin.into_array(),
             stroke_count: draw_buf.len() as u32,
             _pad: 0,
         };
 
-        let render = world.single_fetch::<Render>().unwrap();
+        let mipmap = MipmapUniform {
+            mipmap_coords: dirty.origin.into_array(),
+            mipmap_size: dirty.extend.into_array(),
+        };
+
         let queue = &render.queue;
         let device = &render.device;
 
@@ -450,6 +1014,7 @@ impl StrokeLayer {
         }
 
         queue.write_buffer(&self.dispatch_meta, 0, bytemuck::bytes_of(&dispatch));
+        queue.write_buffer(&self.mipmap_meta_buffer, 0, bytemuck::bytes_of(&mipmap));
         queue.write_buffer(&self.draws_array, 0, bytemuck::cast_slice(&draw_stg));
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
@@ -461,201 +1026,238 @@ impl StrokeLayer {
             timestamp_writes: None,
         });
 
+        const WORKGROUP_SIZE: Size = Size::new(16, 16);
+
         match self.shape {
             0 => cpass.set_pipeline(&self.brush_round.pipeline),
             1 => cpass.set_pipeline(&self.brush_pixel.pipeline),
             _ => unreachable!(),
         }
-
         cpass.set_bind_group(0, Some(&self.dispatch), &[]);
+        for key in paint_chunks {
+            let chunk = self.chunks.get(&key).unwrap();
+            let bind = &chunk.as_ref().unwrap().bind;
 
-        for chunk in chunks {
-            let chunk = self.chunks.get(&chunk).unwrap().as_ref().unwrap();
-
-            cpass.set_bind_group(1, Some(&chunk.compute), &[]);
-
-            const WORKGROUP_SIZE: Size = Size::new(16, 16);
+            cpass.set_bind_group(1, Some(&bind.compute), &[]);
             cpass.dispatch_workgroups(
-                (dirty.bounding.extend.w - 1) / WORKGROUP_SIZE.w + 1,
-                (dirty.bounding.extend.h - 1) / WORKGROUP_SIZE.h + 1,
+                (dirty.extend.w - 1) / WORKGROUP_SIZE.w + 1,
+                (dirty.extend.h - 1) / WORKGROUP_SIZE.h + 1,
                 1,
             );
+        }
+
+        cpass.set_pipeline(&self.mipmap_pipeline);
+        cpass.set_bind_group(0, Some(&self.mipmap_meta), &[]);
+        for key in mipmap_chunks {
+            let chunk = self.chunks.get(&key).unwrap();
+            let bind = &chunk.as_ref().unwrap().bind;
+
+            if let Some(chunk_mipmap) = &bind.mipmap {
+                cpass.set_bind_group(1, Some(chunk_mipmap), &[]);
+                cpass.dispatch_workgroups(
+                    (dirty.extend.w - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.w + 1,
+                    (dirty.extend.h - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.h + 1,
+                    1,
+                );
+            }
         }
 
         drop(cpass);
 
         let command = encoder.finish();
-        render.queue.submit([command]);
+        queue.submit([command]);
 
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         lnwindow.window.request_redraw();
     }
 
-    fn loading_thread(
-        database: SaveDatabase,
-        camera_uniform: Buffer,
-        pipeline: StrokeChunkPipeline,
-        device: Device,
-        queue: Queue,
-        input_rx: Receiver<ThreadInput>,
-        output_tx: Sender<ThreadOutput>,
-    ) -> Result<(), Box<dyn Error>> {
-        let mut actual = HashMap::<(i32, i32), Option<StrokeChunk>>::new();
-        let mut unsaved = HashSet::new();
+    fn fix_unmipmapped(&mut self, lower: (i32, i32, u8), render: &Render) {
+        let dirty = chunk_rect(lower);
 
-        let mut tasks_buf = IndexSet::with_capacity(400);
-        let mut task_frnt = 0;
-        let mut task_batch;
+        if !self.validate_chunks(dirty) {
+            log::warn!("chunk pre-check failed when fixing mipmap");
+            return;
+        }
 
-        let mut ring = IndexSet::<(i32, i32)>::new();
-        let mut frnt = 0;
+        // prepare chunks
 
-        let mut filt_load = IndexSet::new();
-        let mut filt_unload = IndexSet::new();
+        let mut paint_chunks = Vec::new();
+        let mut mipmap_chunks = Vec::new();
+        let chunk = self.chunks.get_mut(&lower).unwrap().as_mut().unwrap();
+        chunk.meta0.mipmapped = true;
+        self.meta_unsaved.insert(lower);
+        self.prepare_chunks(render, dirty, &mut paint_chunks, &mut mipmap_chunks);
 
-        loop {
-            let input = if task_frnt < tasks_buf.len() {
-                match input_rx.try_recv() {
-                    Ok(input) => Some(input),
-                    Err(TryRecvError::Empty) => None,
-                    Err(TryRecvError::Disconnected) => Err(TryRecvError::Disconnected)?,
-                }
+        // assign works to GPU
+
+        let mipmap = MipmapUniform {
+            mipmap_coords: dirty.origin.into_array(),
+            mipmap_size: dirty.extend.into_array(),
+        };
+
+        let queue = &render.queue;
+        let device = &render.device;
+
+        queue.write_buffer(&self.mipmap_meta_buffer, 0, bytemuck::bytes_of(&mipmap));
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("stroke"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("stroke"),
+            timestamp_writes: None,
+        });
+
+        const WORKGROUP_SIZE: Size = Size::new(16, 16);
+
+        cpass.set_pipeline(&self.mipmap_pipeline);
+        cpass.set_bind_group(0, Some(&self.mipmap_meta), &[]);
+        for key in mipmap_chunks {
+            let chunk = self.chunks.get(&key).unwrap();
+            let bind = &chunk.as_ref().unwrap().bind;
+
+            if let Some(chunk_mipmap) = &bind.mipmap {
+                cpass.set_bind_group(1, Some(chunk_mipmap), &[]);
+                cpass.dispatch_workgroups(
+                    (dirty.extend.w - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.w + 1,
+                    (dirty.extend.h - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.h + 1,
+                    1,
+                );
             } else {
-                match input_rx.recv() {
-                    Ok(input) => Some(input),
-                    Err(RecvError) => Err(RecvError)?,
-                }
-            };
-
-            match input {
-                Some(ThreadInput::SetStreamCenter((chunk_center_x, chunk_center_y))) => {
-                    tasks_buf.clear();
-
-                    for chunk_x in chunk_center_x - 10..chunk_center_x + 10 {
-                        for chunk_y in chunk_center_y - 10..chunk_center_y + 10 {
-                            tasks_buf.insert((chunk_x, chunk_y));
-                        }
-                    }
-
-                    tasks_buf.sort_by_key(|&(x, y)| {
-                        let dx = (x - chunk_center_x).unsigned_abs();
-                        let dy = (y - chunk_center_y).unsigned_abs();
-                        std::cmp::max(dx, dy)
-                    });
-
-                    task_frnt = 0;
-                }
-                Some(ThreadInput::SetUnsaved(chunk)) => {
-                    unsaved.insert(chunk);
-                    continue;
-                }
-                Some(ThreadInput::Create(chunk_id, chunk)) => {
-                    actual.insert(chunk_id, Some(chunk));
-                    continue;
-                }
-                Some(ThreadInput::Autosave) => {
-                    let write = database.0.begin_write()?;
-                    {
-                        let mut table = write.open_multimap_table(TABLE_STROKE)?;
-                        let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
-                        for chunk_id in unsaved.drain() {
-                            let Some(Some(chunk)) = actual.get(&chunk_id) else {
-                                continue;
-                            };
-
-                            let bytes = chunk.device_readback(&device, &queue);
-                            let compressed = zstd::encode_all(&bytes[..], 0)?;
-                            table.insert((), chunk_id)?;
-                            table_chunk.insert(chunk_id, &compressed[..])?;
-                        }
-                    }
-                    write.commit()?;
-                    continue;
-                }
-                Some(ThreadInput::Finish) => {
-                    return Ok(());
-                }
-                None => {}
-            };
-
-            task_batch = 0;
-            while let Some(&key) = tasks_buf.get_index(task_frnt)
-                && task_batch < CHUNK_BATCH
-            {
-                task_frnt += 1;
-
-                while frnt < ring.len() && tasks_buf.contains(&ring[frnt]) {
-                    // Keep required one in-place
-                    frnt = (frnt + 1) % CHUNK_CAPS;
-                }
-
-                if frnt >= ring.len() {
-                    // Out of bounds, just insert
-                    if ring.insert(key) {
-                        task_batch += 1;
-                        filt_load.insert(key);
-                    }
-
-                    frnt = ring.len() % CHUNK_CAPS;
-                    continue;
-                }
-
-                let Ok(replaced) = ring.replace_index(frnt, key) else {
-                    // already loaded skipped
-                    continue;
-                };
-
-                task_batch += 1;
-                filt_load.swap_remove(&replaced);
-                filt_unload.swap_remove(&key);
-                filt_unload.insert(replaced);
-                filt_load.insert(key);
-
-                // move forward
-                frnt = (frnt + 1) % CHUNK_CAPS;
+                let chunk = self.chunks.get_mut(&key).unwrap().as_mut().unwrap();
+                chunk.meta0.mipmapped = false;
+                self.meta_unsaved.insert(lower);
             }
+        }
 
-            let write = database.0.begin_write()?;
-            for chunk_id in filt_unload.drain(..) {
-                let mut table = write.open_multimap_table(TABLE_STROKE)?;
-                let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
+        drop(cpass);
 
-                if let Some(Some(chunk)) = actual.remove(&chunk_id) {
-                    output_tx.send(ThreadOutput::Remove(chunk_id))?;
+        let command = encoder.finish();
+        queue.submit([command]);
+    }
 
-                    if unsaved.remove(&chunk_id) {
-                        let bytes = chunk.device_readback(&device, &queue);
-                        let compressed = zstd::encode_all(&bytes[..], 0)?;
-                        table.insert((), chunk_id)?;
-                        table_chunk.insert(chunk_id, &compressed[..])?;
+    fn validate_chunks(&mut self, dirty: Rectangle) -> bool {
+        for mipmap in 0..CHUNK_MIPMAP {
+            let (chunk_src, chunk_dst) = chunks_within(dirty, mipmap);
+            for chunk_x in chunk_src.0..chunk_dst.0 {
+                for chunk_y in chunk_src.1..chunk_dst.1 {
+                    let chunk_id = (chunk_x, chunk_y, mipmap);
+
+                    if let None = self.chunks.get(&chunk_id) {
+                        return false;
                     }
                 }
             }
-            write.commit()?;
+        }
 
-            let read = database.0.begin_read()?;
-            for chunk_id in filt_load.drain(..) {
-                let table_chunk = read.open_table(TABLE_STROKE_CHUNK)?;
+        true
+    }
 
-                if let Some(chunk) = table_chunk.get(chunk_id)? {
-                    let bytes = zstd::decode_all(chunk.value())?;
-                    let chunk = StrokeChunk::from_bytes(
-                        &camera_uniform,
-                        &pipeline,
-                        &device,
-                        &queue,
-                        chunk_id,
-                        &bytes,
-                    );
-                    actual.insert(chunk_id, Some(chunk.clone()));
-                    output_tx.send(ThreadOutput::Insert(chunk_id, Some(chunk)))?;
-                } else {
-                    actual.insert(chunk_id, None);
-                    output_tx.send(ThreadOutput::Insert(chunk_id, None))?;
+    /// Assume `validate_chunks` results true.
+    fn prepare_chunks(
+        &mut self,
+        render: &Render,
+        dirty: Rectangle,
+        paint_chunks: &mut Vec<(i32, i32, u8)>,
+        mipmap_chunks: &mut Vec<(i32, i32, u8)>,
+    ) {
+        for mipmap in 0..CHUNK_MIPMAP {
+            let (chunk_src, chunk_dst) = chunks_within(dirty, mipmap);
+            for chunk_x in chunk_src.0..chunk_dst.0 {
+                for chunk_y in chunk_src.1..chunk_dst.1 {
+                    let key = (chunk_x, chunk_y, mipmap);
+
+                    if let Some(chunk) = self.chunks.get(&key) {
+                        if chunk.is_none() {
+                            let mut bind = self.create_chunk(&render.device, key);
+
+                            self.insert_related_mipmap_bind(key, &mut bind, &render);
+
+                            self.thread_tx
+                                .send(ThreadInput::Create(key, bind.texture.clone()))
+                                .unwrap();
+
+                            let chunk = self.chunks.get_mut(&key).unwrap();
+                            *chunk = Some(Chunk {
+                                bind,
+                                meta0: ChunkMeta0 {
+                                    format: CHUNK_META0_FORMAT,
+                                    // Pure transparent can be seen as mipmapped
+                                    mipmapped: true,
+                                },
+                            });
+                        }
+
+                        self.thread_tx.send(ThreadInput::MarkUnsaved(key)).unwrap();
+
+                        mipmap_chunks.push(key);
+                        if mipmap == 0 {
+                            paint_chunks.push(key);
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+fn chunk_rect(key: (i32, i32, u8)) -> Rectangle {
+    Rectangle {
+        origin: Position::new(key.0 * chunk_size(key.2), key.1 * chunk_size(key.2)),
+        extend: Size::splat(chunk_size(key.2) as u32),
+    }
+}
+
+/// Guaranteed assumption: Upper layer is always loaded first
+fn chunk_distance(x: i32, y: i32, z: u8, cx: i32, cy: i32, cz: u8) -> u32 {
+    let dx = (x * chunk_size_scale(z) + chunk_size_scale(z.saturating_sub(1)))
+        - (cx * chunk_size_scale(cz) + chunk_size_scale(cz.saturating_sub(1)));
+    let dy = (y * chunk_size_scale(z) + chunk_size_scale(z.saturating_sub(1)))
+        - (cy * chunk_size_scale(cz) + chunk_size_scale(cz.saturating_sub(1)));
+    let dz = (CHUNK_MIPMAP - z) as i32 * 0x8000;
+    dx.unsigned_abs() + dy.unsigned_abs() + dz.unsigned_abs()
+}
+
+fn mipmap_of(zoom: Fract) -> u8 {
+    (-zoom.round()).max(0) as u8
+}
+
+fn chunk_size(mipmap: u8) -> i32 {
+    CHUNK_SIZE as i32 * chunk_size_scale(mipmap)
+}
+
+fn chunk_size_scale(mipmap: u8) -> i32 {
+    2i32.pow(mipmap as u32)
+}
+
+fn chunks_within(view_rect: Rectangle, mipmap: u8) -> ((i32, i32), (i32, i32)) {
+    let size = chunk_size(mipmap);
+    let chunk_src = (
+        view_rect.left().div_euclid(size),
+        view_rect.down().div_euclid(size),
+    );
+    let chunk_dst = (
+        (view_rect.right() - 1).div_euclid(size) + 1,
+        (view_rect.up() - 1).div_euclid(size) + 1,
+    );
+    (chunk_src, chunk_dst)
+}
+
+fn lower_root_chunk_of(chunk: ChunkKey) -> ChunkKey {
+    (chunk.0 * 2, chunk.1 * 2, chunk.2 - 1)
+}
+
+fn upper_chunk_of(chunk: ChunkKey) -> ChunkKey {
+    (chunk.0.div_euclid(2), chunk.1.div_euclid(2), chunk.2 + 1)
+}
+
+fn chunk_of(center: Position, zoom: Fract) -> ChunkKey {
+    (
+        center.x.div_euclid(chunk_size(mipmap_of(zoom))),
+        center.y.div_euclid(chunk_size(mipmap_of(zoom))),
+        mipmap_of(zoom),
+    )
 }
 
 impl Element for StrokeLayer {

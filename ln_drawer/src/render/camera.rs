@@ -156,11 +156,15 @@ impl Camera {
     }
 
     pub fn world_view_rect(&self) -> Rectangle {
-        let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
-        let width = self.size.w as f64 / scale * 0.5;
-        let height = self.size.h as f64 / scale * 0.5;
+        Self::manual_view_rect(self.zoom, self.size, self.center)
+    }
+
+    pub fn manual_view_rect(zoom: Fract, size: Size, center: PositionFract) -> Rectangle {
+        let scale = (zoom.n as f64 + zoom.nf as f64 * (-32f64).exp2()).exp2();
+        let width = size.w as f64 / scale * 0.5;
+        let height = size.h as f64 / scale * 0.5;
         Rectangle::new_half(
-            self.center.round(),
+            center.round(),
             Size::new(width.ceil() as u32, height.ceil() as u32),
         )
     }

@@ -104,7 +104,7 @@ impl Element for MouseTool {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                     let zoom_delta = match delta {
-                        MouseScrollDelta::LineDelta(_rows, lines) => Fract::from_f32(*lines),
+                        MouseScrollDelta::LineDelta(_rows, lines) => Fract::from_f32(*lines / 4.0),
                         MouseScrollDelta::PixelDelta(delta) => Fract::from_f64(delta.y / 16.0),
                     };
 
