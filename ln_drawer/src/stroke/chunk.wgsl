@@ -22,14 +22,14 @@ struct Rectangle {
 
 struct VertexOutput {
     @builtin(position) pos: vec4f,
-    @location(0) @interpolate(perspective, sample) uv: vec2f,
+    @location(0) uv: vec2f,
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
-@group(0) @binding(1) var<uniform> rectangle: Rectangle;
 
-@group(1) @binding(0) var texture: texture_2d<f32>;
-@group(1) @binding(1) var texture_sampler: sampler;
+@group(1) @binding(0) var<uniform> rectangle: Rectangle;
+@group(1) @binding(1) var texture: texture_2d<f32>;
+@group(1) @binding(2) var texture_sampler: sampler;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
@@ -48,4 +48,11 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
     return textureSample(texture, texture_sampler, vertex.uv);
+}
+
+@fragment
+fn fs_main_debug(vertex: VertexOutput) -> @location(0) vec4f {
+    let a = textureSample(texture, texture_sampler, vertex.uv);
+    let b = vec4f(1, 0, 0, 1);
+    return mix(a, b, log2(f32(rectangle.extend.x) / 512) / 8.0);
 }
