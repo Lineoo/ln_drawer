@@ -4,7 +4,6 @@ pub mod rectangle;
 pub mod rounded;
 pub mod text;
 pub mod vertex;
-pub mod wireframe;
 
 use std::time::Instant;
 

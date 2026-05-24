@@ -1,9 +1,6 @@
 use ln_world::{Element, Handle, World};
 
-use crate::{
-    measures::{Position, Rectangle},
-    widgets::{WidgetAnimatedRectangle, WidgetRectangle},
-};
+use crate::{measures::Rectangle, widgets::WidgetRectangle};
 
 pub struct Transform {
     pub value: TransformValue,
@@ -11,6 +8,7 @@ pub struct Transform {
     pub target: Handle,
 }
 
+#[derive(Clone, Copy)]
 pub struct TransformValue {
     pub left: TransformEdge,
     pub down: TransformEdge,
@@ -18,6 +16,7 @@ pub struct TransformValue {
     pub up: TransformEdge,
 }
 
+#[derive(Clone, Copy)]
 pub struct TransformEdge {
     pub anchor: f32,
     pub offset: i32,
@@ -45,23 +44,23 @@ impl TransformValue {
         }
     }
 
-    pub const fn anchor(anchor: (f32, f32), rect: Rectangle, offset: Position) -> TransformValue {
+    pub const fn anchor(anchor: (f32, f32), rect: Rectangle) -> TransformValue {
         TransformValue {
             left: TransformEdge {
                 anchor: anchor.0,
-                offset: offset.x,
+                offset: rect.left(),
             },
             down: TransformEdge {
                 anchor: anchor.1,
-                offset: offset.y,
+                offset: rect.down(),
             },
             right: TransformEdge {
                 anchor: anchor.0,
-                offset: offset.x + rect.width() as i32,
+                offset: rect.right(),
             },
             up: TransformEdge {
                 anchor: anchor.1,
-                offset: offset.y + rect.height() as i32,
+                offset: rect.up(),
             },
         }
     }
@@ -134,15 +133,7 @@ impl Element for Transform {
             world.queue_trigger(this.target, WidgetRectangle(target));
         });
 
-        let oba = world.observer(self.source, move |&WidgetAnimatedRectangle(rect), world| {
-            let this = world.fetch(this).unwrap();
-            let target = this.value.compute(rect);
-
-            world.queue_trigger(this.target, WidgetRectangle(target));
-        });
-
         world.dependency(ob, this);
-        world.dependency(oba, this);
         world.dependency(this, self.source);
         world.dependency(this, self.target);
     }

@@ -1,8 +1,6 @@
+use glam::{IVec2, UVec2, Vec2, Vec3, Vec4};
 use ln_world::{Descriptor, Element, Handle, World};
-use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt},
-    *,
-};
+use wgpu::*;
 
 use crate::{
     measures::Rectangle,
@@ -16,6 +14,9 @@ use crate::{
 pub struct RoundedRectDescriptor {
     pub rect: Rectangle,
     pub color: palette::Srgba,
+    pub shadow_color: palette::Srgba,
+    pub shadow_offset: Vec2,
+    pub shadow_blur: f32,
     pub shrink: f32,
     pub value: f32,
     pub visible: bool,
@@ -37,13 +38,15 @@ pub struct RoundedRect {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct RoundedRectUniform {
-    origin: [i32; 2],
-    extend: [u32; 2],
-    color: [f32; 4],
+    color: Vec4,
+    shadow_color: Vec4,
+    origin: IVec2,
+    extend: UVec2,
+    shadow_offset: Vec2,
+    shadow_blur: f32,
     shrink: f32,
     value: f32,
-
-    _pad: u64,
+    _pad: Vec3,
 }
 
 impl Default for RoundedRectDescriptor {
@@ -55,6 +58,9 @@ impl Default for RoundedRectDescriptor {
             value: 5.0,
             order: 0,
             visible: true,
+            shadow_color: palette::Srgba::new(0.0, 0.0, 0.0, 0.5),
+            shadow_offset: Vec2::new(0.0, -4.0),
+            shadow_blur: 10.0,
         }
     }
 }
@@ -126,22 +132,11 @@ impl RoundedRect {
         let render = world.single_fetch::<Render>().unwrap();
         let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
 
-        let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
+        let uniform = render.device.create_buffer(&BufferDescriptor {
             label: Some("rounded"),
-            contents: bytemuck::bytes_of(&RoundedRectUniform {
-                origin: desc.rect.origin.into_array(),
-                extend: desc.rect.extend.into_array(),
-                color: [
-                    desc.color.red,
-                    desc.color.green,
-                    desc.color.blue,
-                    desc.color.alpha,
-                ],
-                shrink: desc.shrink,
-                value: desc.value,
-                _pad: 0,
-            }),
+            size: size_of::<RoundedRectUniform>() as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         let bind = render.device.create_bind_group(&BindGroupDescriptor {
@@ -170,6 +165,8 @@ impl RoundedRect {
             })),
         });
 
+        Self::upload_uniform(&desc, &render.queue, &uniform);
+
         RoundedRect {
             desc,
             control,
@@ -186,23 +183,24 @@ impl RoundedRect {
         );
     }
 
-    fn update_buffer(&mut self) {
+    fn upload_uniform(desc: &RoundedRectDescriptor, queue: &Queue, buffer: &Buffer) {
         let uniform = RoundedRectUniform {
-            origin: self.desc.rect.origin.into_array(),
-            extend: self.desc.rect.extend.into_array(),
-            color: [
-                self.desc.color.red,
-                self.desc.color.green,
-                self.desc.color.blue,
-                self.desc.color.alpha,
-            ],
-            shrink: self.desc.shrink,
-            value: self.desc.value,
-            _pad: 0,
+            color: Vec4::new(
+                desc.color.red,
+                desc.color.green,
+                desc.color.blue,
+                desc.color.alpha,
+            ),
+            shadow_color: Vec4::from(desc.shadow_color.into_components()),
+            origin: IVec2::from_array(desc.rect.origin.into_array()),
+            extend: UVec2::from_array(desc.rect.extend.into_array()),
+            shadow_offset: desc.shadow_offset,
+            shadow_blur: desc.shadow_blur,
+            shrink: desc.shrink,
+            value: desc.value,
+            _pad: Vec3::ZERO,
         };
-
-        let bytes = bytemuck::bytes_of(&uniform);
-        self.queue.write_buffer(&self.uniform, 0, bytes);
+        queue.write_buffer(buffer, 0, bytemuck::bytes_of(&uniform));
     }
 }
 
@@ -224,7 +222,7 @@ impl Element for RoundedRect {
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         self.reorder(world);
-        self.update_buffer();
+        Self::upload_uniform(&self.desc, &self.queue, &self.uniform);
         RenderControl::redraw(world);
     }
 }

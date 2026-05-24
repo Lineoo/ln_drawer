@@ -81,6 +81,8 @@ impl PaletteHsl {
         world.observer(this, move |&WidgetDestroyed, world| {
             world.remove(rectangle).unwrap();
         });
+
+        world.dependency(rectangle, this);
     }
 
     fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {

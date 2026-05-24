@@ -3,9 +3,8 @@ use palette::{Hsla, IntoColor, RgbHue};
 
 use crate::{
     layout::transform::{Transform, TransformValue},
-    measures::{Position, PositionFract, Rectangle, Size},
-    render::camera::{Camera, MainCamera},
-    stroke::{StrokeLayer, modifier::Modifier},
+    measures::Rectangle,
+    stroke::StrokeLayer,
     widgets::{
         WidgetAnimatedRectangle, WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
         button::{Button, ButtonDrag, ButtonDragStatus},
@@ -32,26 +31,8 @@ impl ColorPicker {
         let main_panel = world.insert(Button {
             rect: Rectangle::new(-100, -100, -50, -50),
             order: 0,
+            ..Default::default()
         });
-
-        let brush_button = world.insert(Button {
-            rect: Rectangle::new(-150, -150, -100, -100),
-            order: 100,
-        });
-
-        let home_button = world.insert(Button {
-            rect: Rectangle::new(-150, -150, -100, -100),
-            order: 100,
-        });
-
-        let render_debug_button = world.insert(Button {
-            rect: Rectangle::new(-150, -150, -100, -100),
-            order: 100,
-        });
-
-        world.queue_trigger(brush_button, WidgetEnabled(false));
-        world.queue_trigger(home_button, WidgetEnabled(false));
-        world.queue_trigger(render_debug_button, WidgetEnabled(false));
 
         world.insert(Transform {
             value: TransformValue::scale(0.7, 0.7),
@@ -59,97 +40,9 @@ impl ColorPicker {
             target: palette.untyped(),
         });
 
-        world.insert(Transform {
-            value: TransformValue::anchor(
-                (0.0, 0.0),
-                Rectangle::new_half(Position::ZERO, Size::new(25, 25)),
-                Position::new(40, 40),
-            ),
-            source: main_panel.untyped(),
-            target: brush_button.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue::anchor(
-                (0.0, 0.0),
-                Rectangle::new_half(Position::ZERO, Size::new(25, 25)),
-                Position::new(100, 40),
-            ),
-            source: main_panel.untyped(),
-            target: home_button.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue::anchor(
-                (0.0, 0.0),
-                Rectangle::new_half(Position::ZERO, Size::new(25, 25)),
-                Position::new(40, 100),
-            ),
-            source: main_panel.untyped(),
-            target: render_debug_button.untyped(),
-        });
-
         world.observer(palette, move |&WidgetHsla(color), world| {
             let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
             layer.modifier.color = color.into_color();
-        });
-
-        let mut kind = 2;
-        world.observer(brush_button, move |&WidgetClick, world| {
-            kind = (kind + 1) % 3;
-            let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-            stroke.modifier = match kind {
-                0 => Modifier {
-                    min_size: 0.0,
-                    max_size: 6.0,
-                    size_force_exp: 1.0,
-                    min_flow: 0.7,
-                    max_flow: 1.0,
-                    flow_force_exp: 2.0,
-                    softness: 0.2,
-                    ..stroke.modifier
-                },
-                1 => Modifier {
-                    min_size: 1.0,
-                    max_size: 25.0,
-                    size_force_exp: 1.0,
-                    min_flow: 0.1,
-                    max_flow: 1.0,
-                    flow_force_exp: 1.0,
-                    softness: 0.5,
-                    ..stroke.modifier
-                },
-                2 => Modifier {
-                    min_size: 0.5,
-                    max_size: 0.5,
-                    size_force_exp: 0.0,
-                    min_flow: 1.0,
-                    max_flow: 1.0,
-                    flow_force_exp: 0.0,
-                    softness: 0.0,
-                    ..stroke.modifier
-                },
-                _ => unreachable!(),
-            };
-            stroke.shape = match kind {
-                0 | 1 => 0,
-                2 => 1,
-                _ => unreachable!(),
-            };
-        });
-        world.queue_trigger(brush_button, WidgetClick);
-
-        world.observer(home_button, move |&WidgetClick, world| {
-            let main_camera = world.single_fetch::<MainCamera>().unwrap();
-            let mut camera = world
-                .enter_single_fetch_mut::<Camera>(main_camera.0)
-                .unwrap();
-            camera.center = PositionFract::ZERO;
-        });
-
-        world.observer(render_debug_button, |&WidgetClick, world| {
-            let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-            stroke.render_debugging = !stroke.render_debugging;
         });
 
         let mut drag_start = None;
@@ -184,9 +77,6 @@ impl ColorPicker {
             }
 
             world.queue_trigger(palette, WidgetEnabled(this.expanded));
-            world.queue_trigger(brush_button, WidgetEnabled(this.expanded));
-            world.queue_trigger(home_button, WidgetEnabled(this.expanded));
-            world.queue_trigger(render_debug_button, WidgetEnabled(this.expanded));
         });
     }
 }
