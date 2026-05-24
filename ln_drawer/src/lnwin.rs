@@ -18,7 +18,7 @@ use crate::{
         luni::{LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
     },
-    measures::{Position, Rectangle, Size},
+    measures::{Position, PositionFract, Rectangle, Size},
     render::{
         Render,
         camera::{Camera, CameraUtils, MainCamera},
@@ -255,6 +255,24 @@ fn side_panel(world: &mut World) {
         ..Default::default()
     });
 
+    let elastic_blank = world.insert(());
+
+    let child3 = world.insert(Button {
+        order: 10,
+        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
+        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
+        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        image: Some(ButtonImage {
+            transform: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+            ),
+            bytes: include_bytes!("../res/interface/compass.png"),
+        }),
+        ..Default::default()
+    });
+
     world.insert(Transform {
         value: TransformValue {
             left: TransformEdge {
@@ -263,7 +281,7 @@ fn side_panel(world: &mut World) {
             },
             down: TransformEdge {
                 anchor: 0.5,
-                offset: 100,
+                offset: 150,
             },
             right: TransformEdge {
                 anchor: 0.0,
@@ -271,7 +289,7 @@ fn side_panel(world: &mut World) {
             },
             up: TransformEdge {
                 anchor: 0.5,
-                offset: -100,
+                offset: -150,
             },
         },
         source: lnwindow.untyped(),
@@ -327,6 +345,22 @@ fn side_panel(world: &mut World) {
                     ..Default::default()
                 },
             ),
+            (
+                elastic_blank.untyped(),
+                LuniChild {
+                    basis: Some(0),
+                    grow: Some(1.0),
+                    ..Default::default()
+                },
+            ),
+            (
+                child3.untyped(),
+                LuniChild {
+                    basis: Some(54),
+                    shrink: Some(1.0),
+                    ..Default::default()
+                },
+            ),
         ],
     });
 
@@ -369,6 +403,14 @@ fn side_panel(world: &mut World) {
             softness: 0.5,
             ..stroke.modifier
         };
+    });
+
+    world.observer(child3, move |&WidgetClick, world| {
+        let main_camera = world.single_fetch::<MainCamera>().unwrap();
+        let mut camera = world
+            .enter_single_fetch_mut::<Camera>(main_camera.0)
+            .unwrap();
+        camera.center = PositionFract::ZERO;
     });
 
     let main_panel_transform = TransformValue::anchor(
