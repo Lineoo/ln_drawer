@@ -101,6 +101,8 @@ impl LuniFlex {
             lengths.push(child.basis);
         }
 
+        log::debug!("before: {lengths:?}, available: {available:?}");
+
         let mut i = 0;
         while i < self.children.len() {
             let (_, child) = &self.children[i];
@@ -115,6 +117,8 @@ impl LuniFlex {
 
             i += 1;
         }
+
+        log::debug!("after: {lengths:?}");
 
         let mut cursor = rect_main_start(parent.padding, parent.axis);
         for (i, (handle, child)) in self.children.iter().enumerate() {
@@ -133,7 +137,7 @@ impl LuniFlex {
                 ),
             ));
 
-            cursor += cursor_step(child.margin, parent.axis) + length;
+            cursor += rect_main_margin(child.margin, parent.axis) + length;
         }
 
         result
@@ -180,7 +184,10 @@ fn cursor_assign(
     axis: LuniAxis,
 ) -> Rectangle {
     let (start, end) = match align {
-        LuniAlign::Stretch => (padding.bottom, padding.top),
+        LuniAlign::Stretch => match axis {
+            LuniAxis::Column | LuniAxis::ColumnReverse => (padding.left, padding.right),
+            LuniAxis::Row | LuniAxis::RowReverse => (padding.top, padding.bottom),
+        },
         LuniAlign::FlexStart => todo!(),
         LuniAlign::FlexEnd => todo!(),
         LuniAlign::Center => todo!(),
@@ -211,15 +218,6 @@ fn cursor_assign(
             rect.right() - end - margin.right,
             rect.down() + cursor + margin.top + length,
         ),
-    }
-}
-
-fn cursor_step(margin: LuniRect, axis: LuniAxis) -> i32 {
-    match axis {
-        LuniAxis::Row => margin.right,
-        LuniAxis::RowReverse => margin.left,
-        LuniAxis::Column => margin.bottom,
-        LuniAxis::ColumnReverse => margin.top,
     }
 }
 

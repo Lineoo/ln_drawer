@@ -304,18 +304,18 @@ fn side_panel(world: &mut World) {
                 template: LuniChildTemplate {
                     basis: 10,
                     margin: LuniRect {
-                        left: 4,
-                        bottom: 4,
-                        right: 4,
-                        top: 4,
+                        left: 2,
+                        bottom: 2,
+                        right: 2,
+                        top: 2,
                     },
                     ..Default::default()
                 },
                 padding: LuniRect {
-                    left: 4,
-                    bottom: 4,
-                    right: 4,
-                    top: 4,
+                    left: 6,
+                    bottom: 6,
+                    right: 6,
+                    top: 6,
                 },
                 ..Default::default()
             },
