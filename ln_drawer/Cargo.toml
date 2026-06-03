@@ -1,7 +1,7 @@
 [package]
 name = "ln_drawer"
 license = "LGPL-3.0-or-later"
-version = "0.1.3-alpha.3-dev"
+version = "0.1.3-alpha.4-dev"
 edition.workspace = true
 
 [lib]
