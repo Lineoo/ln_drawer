@@ -38,6 +38,7 @@ use crate::{
         WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
         button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage},
         palette::hsl::{PaletteHsl, PaletteHslMaterial},
+        renderer::grid::{Grid, GridMaterial},
     },
 };
 
@@ -139,6 +140,7 @@ impl Element for Lnwindow {
             world.build(TextManagerDescriptor);
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
+            RectangleMesh::<GridMaterial>::init(world);
             world.insert(ColorScheme::default());
         });
 
@@ -160,6 +162,7 @@ impl Element for Lnwindow {
                 world.option(ViewOptions { refs: vec![here] });
                 world.queue(|world| {
                     world.insert(StrokeLayer::new(world));
+                    world.insert(Grid);
                     world.insert(CameraUtils::default());
                 });
             });

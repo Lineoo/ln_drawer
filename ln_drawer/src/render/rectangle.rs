@@ -16,8 +16,18 @@ use crate::{
 
 pub trait RectangleMeshMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {
     fn label() -> &'static str;
+
+    fn vertex() -> Option<ShaderSource<'static>> {
+        None
+    }
+
+    fn vertex_entry_point() -> Option<&'static str> {
+        None
+    }
+
     fn fragment() -> ShaderSource<'static>;
-    fn entry_point() -> Option<&'static str>;
+
+    fn fragment_entry_point() -> Option<&'static str>;
 }
 
 pub struct RectangleMeshPipeline<M: RectangleMeshMaterial> {
@@ -56,7 +66,8 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
         let vertex = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(M::label()),
-            source: ShaderSource::Wgsl(include_str!("rectangle.wgsl").into()),
+            source: M::vertex()
+                .unwrap_or_else(|| ShaderSource::Wgsl(include_str!("rectangle.wgsl").into())),
         });
 
         let fragment = device.create_shader_module(ShaderModuleDescriptor {
@@ -101,7 +112,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
             layout: Some(&pipeline),
             vertex: VertexState {
                 module: &vertex,
-                entry_point: Some("vs_main"),
+                entry_point: M::vertex_entry_point(),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
@@ -111,7 +122,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
             },
             fragment: Some(FragmentState {
                 module: &fragment,
-                entry_point: M::entry_point(),
+                entry_point: M::fragment_entry_point(),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
                     format: render.config.format,

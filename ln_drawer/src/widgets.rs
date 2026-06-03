@@ -4,6 +4,7 @@ use crate::measures::Rectangle;
 
 pub mod button;
 pub mod palette;
+pub mod renderer;
 
 /// Send when widget's hovering status is changed.
 pub enum WidgetHover {

@@ -90,7 +90,8 @@ impl Render {
         let (device, queue) = adapter
             .request_device(&DeviceDescriptor {
                 label: None,
-                required_features: Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                required_features: Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+                    | Features::SHADER_INT64,
                 required_limits: Limits::defaults(),
                 experimental_features: ExperimentalFeatures::disabled(),
                 memory_hints: MemoryHints::MemoryUsage,
