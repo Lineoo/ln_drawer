@@ -23,12 +23,12 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     for (var i = 0u; i < draws_length; i++) {
         let raw_color = draws_array[i].color;
         let color = vec4f(raw_color.rgb, raw_color.a * draws_array[i].flow * smoothstep(
-            1.0 + draws_array[i].softness,
-            1.0 - draws_array[i].softness,
+            (1.0 + draws_array[i].softness) * draws_array[i].size + 0.5,
+            (1.0 - draws_array[i].softness) * draws_array[i].size + 0.5,
             length(
                 vec2f(draws_array[i].position - area(id)) - vec2f(0.5) +
                 vec2f(draws_array[i].position_fract) / vec2f(0xffffffff)
-            ) / draws_array[i].size,
+            ),
         ));
 
         if color.a < 1e-6 {
