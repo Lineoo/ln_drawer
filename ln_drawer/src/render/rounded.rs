@@ -8,6 +8,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
     },
+    widgets::{WidgetEnabled, WidgetRectangle},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -218,6 +219,16 @@ impl Element for RoundedRect {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.reorder(world);
         world.dependency(self.control, this);
+
+        world.observer(this, move |&WidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.desc.rect = rect;
+        });
+
+        world.observer(this, move |&WidgetEnabled(enabled), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.desc.visible = enabled;
+        });
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {

@@ -9,6 +9,7 @@ use std::{
     thread::JoinHandle,
 };
 
+use glam::Vec2;
 use hashbrown::{HashMap, HashSet};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -35,6 +36,7 @@ use crate::{
     render::{
         MSAA_STATE, Render, RenderControl, RenderInformation,
         camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils},
+        rounded::{RoundedRect, RoundedRectDescriptor},
         vertex::VertexUniform,
     },
     save::{Autosave, SaveDatabase},
@@ -46,8 +48,10 @@ use crate::{
     },
     tools::{
         collider::ToolCollider,
+        pointer::{PointerHover, PointerHoverStatus},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
+    widgets::{WidgetEnabled, WidgetRectangle},
 };
 
 const CHUNK_SIZE: u32 = 512;
@@ -110,6 +114,8 @@ pub struct StrokeLayer {
     thread_tx: Sender<ThreadInput>,
     thread_rx: Receiver<ThreadOutput>,
     thread: Option<JoinHandle<()>>,
+
+    brush_preview: Handle<RoundedRect>,
 
     pub interpolation: Interpolation,
     pub modifier: Modifier,
@@ -505,6 +511,17 @@ impl StrokeLayer {
                 .unwrap();
         });
 
+        let brush_preview = world.build(RoundedRectDescriptor {
+            rect: Rectangle::new_half(Position::new(0, 0), Size::new(2, 2)),
+            color: Srgba::new(0.0, 0.0, 0.0, 0.2),
+            shrink: 2.0,
+            value: 2.0,
+            shadow_offset: Vec2::ZERO,
+            visible: false,
+            order: -10,
+            ..Default::default()
+        });
+
         StrokeLayer {
             chunks: HashMap::new(),
             meta_unsaved: HashSet::new(),
@@ -524,6 +541,7 @@ impl StrokeLayer {
             thread_tx: thread_input_tx,
             thread_rx: thread_output_rx,
             thread: Some(thread),
+            brush_preview,
             interpolation: DEFAULT_INTERPOLATION,
             modifier: DEFAULT_MODIFIER,
             dirty: DEFAULT_DIRTY,
@@ -902,6 +920,28 @@ impl StrokeLayer {
     fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
         let collider = world.insert(ToolCollider::fullscreen(-100));
         world.dependency(collider, this);
+
+        world.observer(collider, move |event: &PointerHover, world| {
+            if let PointerKind::Touch(_) = event.pointer {
+                return;
+            }
+
+            let this = world.fetch(this).unwrap();
+            world.queue_trigger(
+                this.brush_preview,
+                WidgetRectangle(Rectangle::new_half(event.position.round(), Size::new(2, 2))),
+            );
+
+            match event.status {
+                PointerHoverStatus::Enter => {
+                    world.queue_trigger(this.brush_preview, WidgetEnabled(true));
+                }
+                PointerHoverStatus::Moving => {}
+                PointerHoverStatus::Leave => {
+                    world.queue_trigger(this.brush_preview, WidgetEnabled(false));
+                }
+            }
+        });
 
         let mut pinch_distance = None;
         world.observer(collider, move |event: &MultiTouchGroup, world| {
