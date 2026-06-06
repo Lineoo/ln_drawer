@@ -1127,8 +1127,9 @@ fn mipmap_pipeline(
         label: Some("stroke_chunk"),
         source: ShaderSource::Wgsl(
             format!(
-                "{}{}",
+                "{}{}{}",
                 include_str!("stroke/lib_dispatch.wgsl"),
+                include_str!("stroke/lib_colorspace.wgsl"),
                 include_str!("stroke/mipmap.wgsl")
             )
             .into(),
