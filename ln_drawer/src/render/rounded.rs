@@ -1,4 +1,4 @@
-use glam::{IVec2, UVec2, Vec2, Vec3, Vec4};
+use glam::{IVec2, UVec2, Vec2, Vec4};
 use ln_world::{Descriptor, Element, Handle, World};
 use wgpu::*;
 
@@ -8,6 +8,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
     },
+    widgets::{WidgetEnabled, WidgetRectangle},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -19,6 +20,7 @@ pub struct RoundedRectDescriptor {
     pub shadow_blur: f32,
     pub shrink: f32,
     pub value: f32,
+    pub vertex_extend: i32,
     pub visible: bool,
     pub order: isize,
 }
@@ -46,7 +48,8 @@ struct RoundedRectUniform {
     shadow_blur: f32,
     shrink: f32,
     value: f32,
-    _pad: Vec3,
+    vertex_extend: i32,
+    _pad: Vec2,
 }
 
 impl Default for RoundedRectDescriptor {
@@ -56,6 +59,7 @@ impl Default for RoundedRectDescriptor {
             color: palette::Srgba::new(1.0, 1.0, 1.0, 1.0),
             shrink: 5.0,
             value: 5.0,
+            vertex_extend: 20,
             order: 0,
             visible: true,
             shadow_color: palette::Srgba::new(0.0, 0.0, 0.0, 0.5),
@@ -198,7 +202,8 @@ impl RoundedRect {
             shadow_blur: desc.shadow_blur,
             shrink: desc.shrink,
             value: desc.value,
-            _pad: Vec3::ZERO,
+            vertex_extend: desc.vertex_extend,
+            _pad: Vec2::ZERO,
         };
         queue.write_buffer(buffer, 0, bytemuck::bytes_of(&uniform));
     }
@@ -218,6 +223,16 @@ impl Element for RoundedRect {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.reorder(world);
         world.dependency(self.control, this);
+
+        world.observer(this, move |&WidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.desc.rect = rect;
+        });
+
+        world.observer(this, move |&WidgetEnabled(enabled), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.desc.visible = enabled;
+        });
     }
 
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {

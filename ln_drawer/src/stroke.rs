@@ -9,6 +9,7 @@ use std::{
     thread::JoinHandle,
 };
 
+use glam::Vec2;
 use hashbrown::{HashMap, HashSet};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -34,7 +35,8 @@ use crate::{
     measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{
         MSAA_STATE, Render, RenderControl, RenderInformation,
-        camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils},
+        camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils, UICamera},
+        rounded::{RoundedRect, RoundedRectDescriptor},
         vertex::VertexUniform,
     },
     save::{Autosave, SaveDatabase},
@@ -46,8 +48,10 @@ use crate::{
     },
     tools::{
         collider::ToolCollider,
+        pointer::{PointerHover, PointerHoverStatus},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
+    widgets::{WidgetEnabled, WidgetRectangle},
 };
 
 const CHUNK_SIZE: u32 = 512;
@@ -110,6 +114,8 @@ pub struct StrokeLayer {
     thread_tx: Sender<ThreadInput>,
     thread_rx: Receiver<ThreadOutput>,
     thread: Option<JoinHandle<()>>,
+
+    brush_preview: Handle<RoundedRect>,
 
     pub interpolation: Interpolation,
     pub modifier: Modifier,
@@ -505,6 +511,22 @@ impl StrokeLayer {
                 .unwrap();
         });
 
+        let ui_camera = world.single_fetch::<UICamera>().unwrap();
+        let brush_preview = world.enter(ui_camera.0, || {
+            world.build(RoundedRectDescriptor {
+                rect: Rectangle::new_half(Position::new(0, 0), Size::new(5, 5)),
+                color: Srgba::new(0.0, 0.0, 0.0, 0.1),
+                shrink: 8.0,
+                value: 8.0,
+                shadow_offset: Vec2::ZERO,
+                shadow_blur: 30.0,
+                visible: false,
+                vertex_extend: 80,
+                order: -10,
+                ..Default::default()
+            })
+        });
+
         StrokeLayer {
             chunks: HashMap::new(),
             meta_unsaved: HashSet::new(),
@@ -524,6 +546,7 @@ impl StrokeLayer {
             thread_tx: thread_input_tx,
             thread_rx: thread_output_rx,
             thread: Some(thread),
+            brush_preview,
             interpolation: DEFAULT_INTERPOLATION,
             modifier: DEFAULT_MODIFIER,
             dirty: DEFAULT_DIRTY,
@@ -902,6 +925,37 @@ impl StrokeLayer {
     fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
         let collider = world.insert(ToolCollider::fullscreen(-100));
         world.dependency(collider, this);
+
+        world.observer(collider, move |event: &PointerHover, world| {
+            if let PointerKind::Touch(_) = event.pointer.kind {
+                return;
+            }
+
+            let this = world.fetch(this).unwrap();
+            let ui_camera = world.single_fetch::<UICamera>().unwrap();
+            world.enter(ui_camera.0, || {
+                let camera = world.single_fetch::<Camera>().unwrap();
+                let mut brush_preview = world.fetch_mut(this.brush_preview).unwrap();
+                brush_preview.desc.shadow_offset = event.pointer.tilt * 48.0;
+                world.queue_trigger(
+                    this.brush_preview,
+                    WidgetRectangle(Rectangle::new_half(
+                        camera.screen_to_world_absolute(event.pointer.screen).round(),
+                        Size::new(5, 5),
+                    )),
+                );
+
+                match event.status {
+                    PointerHoverStatus::Enter => {
+                        world.queue_trigger(this.brush_preview, WidgetEnabled(true));
+                    }
+                    PointerHoverStatus::Moving => {}
+                    PointerHoverStatus::Leave => {
+                        world.queue_trigger(this.brush_preview, WidgetEnabled(false));
+                    }
+                }
+            });
+        });
 
         let mut pinch_distance = None;
         world.observer(collider, move |event: &MultiTouchGroup, world| {

@@ -74,6 +74,7 @@ impl Button {
             shadow_blur: self.shadow_blur,
             shrink: self.roundness,
             value: self.roundness,
+            vertex_extend: 20,
             visible: self.enabled,
             order: self.order,
         });
@@ -217,7 +218,8 @@ impl Button {
                 }
                 PointerHitStatus::Moving => {
                     if let Some(start) = drag_start {
-                        if DVec2::from_array(event.screen).distance(DVec2::from_array(start.screen))
+                        if DVec2::from_array(event.pointer.screen)
+                            .distance(DVec2::from_array(start.pointer.screen))
                             > DRAG_DISTANCE
                             && !dragging
                         {

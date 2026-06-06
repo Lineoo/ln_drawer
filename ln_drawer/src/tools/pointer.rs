@@ -1,3 +1,4 @@
+use glam::{I8Vec2, Vec2};
 use ln_world::{Element, Handle, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
@@ -20,18 +21,16 @@ pub struct PointerTool {
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHit {
     pub position: PositionFract,
-    pub screen: [f64; 2],
+    pub pointer: PointerData,
     pub status: PointerHitStatus,
     pub data: PointerHitData,
-    pub pointer: PointerKind,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHover {
     pub position: PositionFract,
-    pub screen: [f64; 2],
+    pub pointer: PointerData,
     pub status: PointerHoverStatus,
-    pub pointer: PointerKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,19 +49,18 @@ pub enum PointerHoverStatus {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerData {
-    pub position: PositionFract,
     pub screen: [f64; 2],
-    pub pointer: PointerKind,
+    pub kind: PointerKind,
+    pub tilt: Vec2,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHitData {
-    pub force: Option<f32>,
+    pub force: f32,
 }
 
 struct Pointer {
-    screen: [f64; 2],
-    kind: PointerKind,
+    data: PointerData,
     hovering: Option<Hover>,
     pressed: Option<Press>,
 }
@@ -76,22 +74,25 @@ struct Hover {
 
 #[derive(Clone, Copy)]
 struct Press {
-    force: Option<f32>,
+    force: f32,
 }
 
 impl PointerTool {
     fn acquire_pointer(&mut self, kind: PointerKind) -> Option<&mut Pointer> {
         if self.pointer.is_none() {
             self.pointer = Some(Pointer {
-                screen: Default::default(),
-                kind,
+                data: PointerData {
+                    screen: Default::default(),
+                    kind,
+                    tilt: Vec2::ZERO,
+                },
                 hovering: None,
                 pressed: None,
             });
 
             self.pointer.as_mut()
         } else if let Some(pointer) = &self.pointer
-            && pointer.kind == kind
+            && pointer.data.kind == kind
         {
             self.pointer.as_mut()
         } else {
@@ -101,7 +102,7 @@ impl PointerTool {
 
     fn acquire_pointer_forceful(&mut self, kind: PointerKind, world: &World) -> &mut Pointer {
         if let Some(pointer) = &self.pointer
-            && pointer.kind == kind
+            && pointer.data.kind == kind
         {
             return self.pointer.as_mut().unwrap();
         }
@@ -112,8 +113,11 @@ impl PointerTool {
         }
 
         self.pointer.insert(Pointer {
-            screen: Default::default(),
-            kind,
+            data: PointerData {
+                screen: Default::default(),
+                kind,
+                tilt: Vec2::ZERO,
+            },
             hovering: None,
             pressed: None,
         })
@@ -140,16 +144,26 @@ impl Element for PointerTool {
                     let screen = lnwindow.cursor_to_screen(*position);
                     drop(lnwindow);
 
+                    pointer.data.tilt = match source {
+                        PointerSource::Mouse => Vec2::ZERO,
+                        PointerSource::Touch { .. } => Vec2::ZERO,
+                        PointerSource::TabletTool { data, .. } => match data.tilt {
+                            Some(tilt) => I8Vec2::new(tilt.x, tilt.y).as_vec2() / 128.0,
+                            None => Vec2::ZERO,
+                        },
+                        PointerSource::Unknown => Vec2::ZERO,
+                    };
+
                     if let Some(press) = &mut pointer.pressed {
                         press.force = match source {
-                            PointerSource::Mouse => Some(1.0),
+                            PointerSource::Mouse => 1.0,
                             PointerSource::Touch { force, .. } => {
-                                force.map(|x| x.normalized(None) as f32)
+                                force.map(|x| x.normalized(None) as f32).unwrap_or(1.0)
                             }
                             PointerSource::TabletTool { data, .. } => {
-                                data.force.map(|x| x.normalized(None) as f32)
+                                data.force.map(|x| x.normalized(None) as f32).unwrap_or(1.0)
                             }
-                            PointerSource::Unknown => None,
+                            PointerSource::Unknown => 1.0,
                         };
                     }
                     pointer.update_position(world, screen);
@@ -174,20 +188,30 @@ impl Element for PointerTool {
                     let screen = lnwindow.cursor_to_screen(*position);
                     drop(lnwindow);
 
+                    pointer.data.tilt = match button {
+                        ButtonSource::Mouse(_) => Vec2::ZERO,
+                        ButtonSource::Touch { .. } => Vec2::ZERO,
+                        ButtonSource::TabletTool { data, .. } => match data.tilt {
+                            Some(tilt) => I8Vec2::new(tilt.x, tilt.y).as_vec2() / 128.0,
+                            None => Vec2::ZERO,
+                        },
+                        ButtonSource::Unknown(_) => Vec2::ZERO,
+                    };
+
                     pointer.update_position(world, screen);
                     pointer.update_pressed(
                         world,
                         match state {
                             ElementState::Pressed => Some(Press {
                                 force: match button {
-                                    ButtonSource::Mouse(_) => Some(1.0),
+                                    ButtonSource::Mouse(_) => 1.0,
                                     ButtonSource::Touch { force, .. } => {
-                                        force.map(|x| x.normalized(None) as f32)
+                                        force.map(|x| x.normalized(None) as f32).unwrap_or(1.0)
                                     }
                                     ButtonSource::TabletTool { data, .. } => {
-                                        data.force.map(|x| x.normalized(None) as f32)
+                                        data.force.map(|x| x.normalized(None) as f32).unwrap_or(1.0)
                                     }
-                                    ButtonSource::Unknown(_) => None,
+                                    ButtonSource::Unknown(_) => 1.0,
                                 },
                             }),
                             ElementState::Released => None,
@@ -245,7 +269,7 @@ impl Element for PointerTool {
 
 impl Pointer {
     fn update_position(&mut self, world: &World, screen: [f64; 2]) {
-        self.screen = screen;
+        self.data.screen = screen;
 
         self.recalculate_hovering(world);
 
@@ -256,12 +280,11 @@ impl Pointer {
                         hovering.handle,
                         PointerHit {
                             position: hovering.position,
-                            screen,
+                            pointer: self.data,
                             status: PointerHitStatus::Moving,
                             data: PointerHitData {
                                 force: pressed.force,
                             },
-                            pointer: self.kind,
                         },
                     );
                 });
@@ -272,9 +295,8 @@ impl Pointer {
                     hovering.handle,
                     PointerHover {
                         position: hovering.position,
-                        screen,
+                        pointer: self.data,
                         status: PointerHoverStatus::Moving,
-                        pointer: self.kind,
                     },
                 );
             });
@@ -286,17 +308,15 @@ impl Pointer {
             let hit = match (self.pressed, pressed) {
                 (None, Some(press)) => Some(PointerHit {
                     position: hovering.position,
-                    screen: self.screen,
+                    pointer: self.data,
                     status: PointerHitStatus::Press,
                     data: PointerHitData { force: press.force },
-                    pointer: self.kind,
                 }),
                 (Some(press), None) => Some(PointerHit {
                     position: hovering.position,
-                    screen: self.screen,
+                    pointer: self.data,
                     status: PointerHitStatus::Release,
                     data: PointerHitData { force: press.force },
-                    pointer: self.kind,
                 }),
                 _ => None,
             };
@@ -326,9 +346,8 @@ impl Pointer {
                     previous.handle,
                     PointerHover {
                         position: previous.position,
-                        screen: self.screen,
+                        pointer: self.data,
                         status: PointerHoverStatus::Leave,
-                        pointer: self.kind,
                     },
                 );
             });
@@ -340,9 +359,8 @@ impl Pointer {
                     hovering.handle,
                     PointerHover {
                         position: hovering.position,
-                        screen: self.screen,
+                        pointer: self.data,
                         status: PointerHoverStatus::Enter,
-                        pointer: self.kind,
                     },
                 );
             });
@@ -354,7 +372,7 @@ impl Pointer {
             let hovering = self.hovering.unwrap();
             let position = world.enter(hovering.view, || {
                 let camera = world.single_fetch::<Camera>().unwrap();
-                camera.screen_to_world_absolute(self.screen)
+                camera.screen_to_world_absolute(self.data.screen)
             });
 
             self.update_hovering(
@@ -365,10 +383,11 @@ impl Pointer {
                     handle: hovering.handle,
                 }),
             );
-        } else if let Some(&(each, view)) = ToolCollider::intersect(world, self.screen).first() {
+        } else if let Some(&(each, view)) = ToolCollider::intersect(world, self.data.screen).first()
+        {
             let position = world.enter(view, || {
                 let camera = world.single_fetch::<Camera>().unwrap();
-                camera.screen_to_world_absolute(self.screen)
+                camera.screen_to_world_absolute(self.data.screen)
             });
 
             self.update_hovering(

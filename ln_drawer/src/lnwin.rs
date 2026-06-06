@@ -21,7 +21,7 @@ use crate::{
     measures::{Position, PositionFract, Rectangle, Size},
     render::{
         Render,
-        camera::{Camera, CameraUtils, MainCamera},
+        camera::{Camera, CameraUtils, MainCamera, UICamera},
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
@@ -38,6 +38,7 @@ use crate::{
         WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
         button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage},
         palette::hsl::{PaletteHsl, PaletteHslMaterial},
+        renderer::grid::{Grid, GridMaterial},
     },
 };
 
@@ -139,6 +140,7 @@ impl Element for Lnwindow {
             world.build(TextManagerDescriptor);
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
+            RectangleMesh::<GridMaterial>::init(world);
             world.insert(ColorScheme::default());
         });
 
@@ -156,17 +158,29 @@ impl Element for Lnwindow {
 
             let camera1 = Camera::build_from_save(world, "camera1");
             world.insert(MainCamera(camera1));
+
+            let camera2 = Camera::build_from_save(world, "camera2");
+            world.insert(UICamera(camera2));
+
+            world.flush();
+
             world.enter(camera1, || {
                 world.option(ViewOptions { refs: vec![here] });
+            });
+            world.enter(camera2, || {
+                world.option(ViewOptions { refs: vec![here] });
+            });
+
+            world.flush();
+            world.enter(camera1, || {
                 world.queue(|world| {
                     world.insert(StrokeLayer::new(world));
+                    world.insert(Grid);
                     world.insert(CameraUtils::default());
                 });
             });
 
             world.flush();
-
-            let camera2 = Camera::build_from_save(world, "camera2");
             world.enter(camera2, || {
                 let stroke = world.enter(camera1, || world.single::<StrokeLayer>().unwrap());
                 world.option(ViewOptions {

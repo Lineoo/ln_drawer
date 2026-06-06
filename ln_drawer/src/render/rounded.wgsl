@@ -24,6 +24,7 @@ struct RoundedRect {
     shadow_blur: f32,
     shrink: f32,
     value: f32,
+    vertex_extend: i32,
 }
 
 struct VertexOutput {
@@ -34,8 +35,6 @@ struct VertexOutput {
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var<uniform> rectangle: RoundedRect;
 
-const vertex_extend: i32 = 20;
-
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
     let world_space = vec2i(
@@ -45,8 +44,8 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
     // extend 10 pixels to render shadow
     let world_space_extend = world_space + vec2i(
-        ((i32(index) / 2) * 2 - 1) * vertex_extend,
-        ((i32(index) % 2) * 2 - 1) * vertex_extend,
+        ((i32(index) / 2) * 2 - 1) * rectangle.vertex_extend,
+        ((i32(index) % 2) * 2 - 1) * rectangle.vertex_extend,
     );
 
     var ret: VertexOutput;

@@ -16,8 +16,14 @@ use crate::{
 
 pub trait RectangleMeshMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {
     fn label() -> &'static str;
-    fn fragment() -> ShaderSource<'static>;
-    fn entry_point() -> Option<&'static str>;
+
+    fn shader() -> ShaderSource<'static>;
+
+    fn vertex() -> Option<Option<&'static str>> {
+        None
+    }
+
+    fn fragment() -> Option<&'static str>;
 }
 
 pub struct RectangleMeshPipeline<M: RectangleMeshMaterial> {
@@ -54,14 +60,14 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
         let camera = world.single_fetch::<CameraBind>().unwrap();
         let device = &render.device;
 
-        let vertex = device.create_shader_module(ShaderModuleDescriptor {
+        let rectangle_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(M::label()),
             source: ShaderSource::Wgsl(include_str!("rectangle.wgsl").into()),
         });
 
-        let fragment = device.create_shader_module(ShaderModuleDescriptor {
+        let custom_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(M::label()),
-            source: M::fragment(),
+            source: M::shader(),
         });
 
         let bind = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -99,19 +105,27 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some(M::label()),
             layout: Some(&pipeline),
-            vertex: VertexState {
-                module: &vertex,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
+            vertex: match M::vertex() {
+                Some(entry_point) => VertexState {
+                    module: &custom_shader,
+                    entry_point,
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                None => VertexState {
+                    module: &rectangle_shader,
+                    entry_point: None,
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
             },
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleStrip,
                 ..Default::default()
             },
             fragment: Some(FragmentState {
-                module: &fragment,
-                entry_point: M::entry_point(),
+                module: &custom_shader,
+                entry_point: M::fragment(),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
                     format: render.config.format,
