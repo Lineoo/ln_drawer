@@ -7,12 +7,6 @@ use crate::{
     widgets::WidgetDestroyed,
 };
 
-/// Standard palette for picking hsl color. Contains a circle of hue value and a square
-/// whose x axis stands for saturation and y axis stands for lightness.
-///
-/// Corresponding material is [`PaletteHslMaterial`].
-///
-/// Possible events are [`WidgetRectangle`], [`WidgetHsla`] and [`WidgetDestroyed`].
 pub struct Grid;
 
 #[repr(C)]
@@ -41,16 +35,23 @@ impl RectangleMeshMaterial for GridMaterial {
         "grid"
     }
 
-    fn vertex() -> Option<ShaderSource<'static>> {
-        Some(ShaderSource::Wgsl(include_str!("grid.wgsl").into()))
+    fn shader() -> ShaderSource<'static> {
+        ShaderSource::Wgsl(
+            format!(
+                "{}{}",
+                include_str!("camera.wgsl"),
+                include_str!("grid.wgsl")
+            )
+            .into(),
+        )
     }
 
-    fn fragment() -> ShaderSource<'static> {
-        ShaderSource::Wgsl(include_str!("grid.wgsl").into())
+    fn vertex() -> Option<Option<&'static str>> {
+        Some(Some("vs_main"))
     }
 
-    fn fragment_entry_point() -> Option<&'static str> {
-        Some("main")
+    fn fragment() -> Option<&'static str> {
+        Some("fs_main")
     }
 }
 
