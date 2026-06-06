@@ -32,6 +32,8 @@ pub struct CameraBind {
 
 pub struct MainCamera(pub Handle<Camera>);
 
+pub struct UICamera(pub Handle<Camera>);
+
 pub struct CameraPositionChanged {
     pub from: PositionFract,
     pub here: PositionFract,
@@ -341,4 +343,5 @@ impl CameraUtils {
 }
 
 impl Element for MainCamera {}
+impl Element for UICamera {}
 impl Element for CameraUtils {}

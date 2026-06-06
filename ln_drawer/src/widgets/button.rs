@@ -74,6 +74,7 @@ impl Button {
             shadow_blur: self.shadow_blur,
             shrink: self.roundness,
             value: self.roundness,
+            vertex_extend: 20,
             visible: self.enabled,
             order: self.order,
         });

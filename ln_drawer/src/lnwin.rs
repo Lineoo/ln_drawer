@@ -21,7 +21,7 @@ use crate::{
     measures::{Position, PositionFract, Rectangle, Size},
     render::{
         Render,
-        camera::{Camera, CameraUtils, MainCamera},
+        camera::{Camera, CameraUtils, MainCamera, UICamera},
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
@@ -158,8 +158,21 @@ impl Element for Lnwindow {
 
             let camera1 = Camera::build_from_save(world, "camera1");
             world.insert(MainCamera(camera1));
+
+            let camera2 = Camera::build_from_save(world, "camera2");
+            world.insert(UICamera(camera2));
+
+            world.flush();
+
             world.enter(camera1, || {
                 world.option(ViewOptions { refs: vec![here] });
+            });
+            world.enter(camera2, || {
+                world.option(ViewOptions { refs: vec![here] });
+            });
+
+            world.flush();
+            world.enter(camera1, || {
                 world.queue(|world| {
                     world.insert(StrokeLayer::new(world));
                     world.insert(Grid);
@@ -168,8 +181,6 @@ impl Element for Lnwindow {
             });
 
             world.flush();
-
-            let camera2 = Camera::build_from_save(world, "camera2");
             world.enter(camera2, || {
                 let stroke = world.enter(camera1, || world.single::<StrokeLayer>().unwrap());
                 world.option(ViewOptions {

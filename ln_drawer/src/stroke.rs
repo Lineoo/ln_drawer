@@ -35,7 +35,7 @@ use crate::{
     measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{
         MSAA_STATE, Render, RenderControl, RenderInformation,
-        camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils},
+        camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils, UICamera},
         rounded::{RoundedRect, RoundedRectDescriptor},
         vertex::VertexUniform,
     },
@@ -511,15 +511,20 @@ impl StrokeLayer {
                 .unwrap();
         });
 
-        let brush_preview = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new_half(Position::new(0, 0), Size::new(2, 2)),
-            color: Srgba::new(0.0, 0.0, 0.0, 0.2),
-            shrink: 2.0,
-            value: 2.0,
-            shadow_offset: Vec2::ZERO,
-            visible: false,
-            order: -10,
-            ..Default::default()
+        let ui_camera = world.single_fetch::<UICamera>().unwrap();
+        let brush_preview = world.enter(ui_camera.0, || {
+            world.build(RoundedRectDescriptor {
+                rect: Rectangle::new_half(Position::new(0, 0), Size::new(5, 5)),
+                color: Srgba::new(0.0, 0.0, 0.0, 0.1),
+                shrink: 8.0,
+                value: 8.0,
+                shadow_offset: Vec2::ZERO,
+                shadow_blur: 30.0,
+                visible: false,
+                vertex_extend: 80,
+                order: -10,
+                ..Default::default()
+            })
         });
 
         StrokeLayer {
@@ -927,22 +932,29 @@ impl StrokeLayer {
             }
 
             let this = world.fetch(this).unwrap();
-            let mut brush_preview = world.fetch_mut(this.brush_preview).unwrap();
-            brush_preview.desc.shadow_offset = event.pointer.tilt * 16.0;
-            world.queue_trigger(
-                this.brush_preview,
-                WidgetRectangle(Rectangle::new_half(event.position.round(), Size::new(2, 2))),
-            );
+            let ui_camera = world.single_fetch::<UICamera>().unwrap();
+            world.enter(ui_camera.0, || {
+                let camera = world.single_fetch::<Camera>().unwrap();
+                let mut brush_preview = world.fetch_mut(this.brush_preview).unwrap();
+                brush_preview.desc.shadow_offset = event.pointer.tilt * 48.0;
+                world.queue_trigger(
+                    this.brush_preview,
+                    WidgetRectangle(Rectangle::new_half(
+                        camera.screen_to_world_absolute(event.pointer.screen).round(),
+                        Size::new(5, 5),
+                    )),
+                );
 
-            match event.status {
-                PointerHoverStatus::Enter => {
-                    world.queue_trigger(this.brush_preview, WidgetEnabled(true));
+                match event.status {
+                    PointerHoverStatus::Enter => {
+                        world.queue_trigger(this.brush_preview, WidgetEnabled(true));
+                    }
+                    PointerHoverStatus::Moving => {}
+                    PointerHoverStatus::Leave => {
+                        world.queue_trigger(this.brush_preview, WidgetEnabled(false));
+                    }
                 }
-                PointerHoverStatus::Moving => {}
-                PointerHoverStatus::Leave => {
-                    world.queue_trigger(this.brush_preview, WidgetEnabled(false));
-                }
-            }
+            });
         });
 
         let mut pinch_distance = None;

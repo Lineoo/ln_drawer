@@ -1,4 +1,4 @@
-use glam::{IVec2, UVec2, Vec2, Vec3, Vec4};
+use glam::{IVec2, UVec2, Vec2, Vec4};
 use ln_world::{Descriptor, Element, Handle, World};
 use wgpu::*;
 
@@ -20,6 +20,7 @@ pub struct RoundedRectDescriptor {
     pub shadow_blur: f32,
     pub shrink: f32,
     pub value: f32,
+    pub vertex_extend: i32,
     pub visible: bool,
     pub order: isize,
 }
@@ -47,7 +48,8 @@ struct RoundedRectUniform {
     shadow_blur: f32,
     shrink: f32,
     value: f32,
-    _pad: Vec3,
+    vertex_extend: i32,
+    _pad: Vec2,
 }
 
 impl Default for RoundedRectDescriptor {
@@ -57,6 +59,7 @@ impl Default for RoundedRectDescriptor {
             color: palette::Srgba::new(1.0, 1.0, 1.0, 1.0),
             shrink: 5.0,
             value: 5.0,
+            vertex_extend: 20,
             order: 0,
             visible: true,
             shadow_color: palette::Srgba::new(0.0, 0.0, 0.0, 0.5),
@@ -199,7 +202,8 @@ impl RoundedRect {
             shadow_blur: desc.shadow_blur,
             shrink: desc.shrink,
             value: desc.value,
-            _pad: Vec3::ZERO,
+            vertex_extend: desc.vertex_extend,
+            _pad: Vec2::ZERO,
         };
         queue.write_buffer(buffer, 0, bytemuck::bytes_of(&uniform));
     }
