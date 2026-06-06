@@ -922,11 +922,13 @@ impl StrokeLayer {
         world.dependency(collider, this);
 
         world.observer(collider, move |event: &PointerHover, world| {
-            if let PointerKind::Touch(_) = event.pointer {
+            if let PointerKind::Touch(_) = event.pointer.kind {
                 return;
             }
 
             let this = world.fetch(this).unwrap();
+            let mut brush_preview = world.fetch_mut(this.brush_preview).unwrap();
+            brush_preview.desc.shadow_offset = event.pointer.tilt * 16.0;
             world.queue_trigger(
                 this.brush_preview,
                 WidgetRectangle(Rectangle::new_half(event.position.round(), Size::new(2, 2))),

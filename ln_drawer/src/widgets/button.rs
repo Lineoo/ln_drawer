@@ -217,7 +217,8 @@ impl Button {
                 }
                 PointerHitStatus::Moving => {
                     if let Some(start) = drag_start {
-                        if DVec2::from_array(event.screen).distance(DVec2::from_array(start.screen))
+                        if DVec2::from_array(event.pointer.screen)
+                            .distance(DVec2::from_array(start.pointer.screen))
                             > DRAG_DISTANCE
                             && !dragging
                         {
