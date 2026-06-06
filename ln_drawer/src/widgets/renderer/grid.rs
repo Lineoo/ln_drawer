@@ -11,7 +11,7 @@ pub struct Grid;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GridMaterial(u64);
+pub struct GridMaterial(u32);
 
 impl Grid {
     fn attach_render(&mut self, world: &World, this: Handle<Self>) {

@@ -3,7 +3,7 @@ struct VertexOutput {
     @location(0) uv: vec2f,
 }
 
-@group(1) @binding(1) var<uniform> grid_size: u64;
+@group(1) @binding(1) var<uniform> grid_size: u32;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
