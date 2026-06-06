@@ -9,6 +9,7 @@ use std::{
     thread::JoinHandle,
 };
 
+use bytemuck::{bytes_of, cast_slice};
 use glam::Vec2;
 use hashbrown::{HashMap, HashSet};
 use ln_world::{Element, Handle, World};
@@ -43,7 +44,7 @@ use crate::{
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
         modifier::{DrawProcessedStorage, Modifier},
-        shape::{PixelBrush, RoundBrush},
+        shape::RoundBrush,
     },
     tools::{
         collider::ToolCollider,
@@ -98,20 +99,22 @@ pub struct StrokeLayer {
     render_pipeline: RenderPipeline,
     render_debug_pipeline: RenderPipeline,
     render_sampler: Sampler,
-    render_layout: BindGroupLayout,
 
     mipmap_pipeline: ComputePipeline,
-    mipmap_layout: BindGroupLayout,
-    mipmap_meta: BindGroup,
-    mipmap_meta_buffer: Buffer,
 
     gamma_fixing_pipeline: ComputePipeline,
-    drawing_layout: BindGroupLayout,
 
-    compute_layout: BindGroupLayout,
-    dispatch: BindGroup,
-    dispatch_meta: Buffer,
+    chunk_render_layout: BindGroupLayout,
+    /// Planned to be deprecated
+    chunk_mipmap_layout: BindGroupLayout,
+    chunk_draw_layout: BindGroupLayout,
+
+    dispatch: Buffer,
+    draws_length: Buffer,
     draws_array: Buffer,
+
+    dispatch_group: BindGroup,
+    dispatch_group_draw: BindGroup,
 
     thread_tx: Sender<ThreadInput>,
     thread_rx: Receiver<ThreadOutput>,
@@ -124,7 +127,6 @@ pub struct StrokeLayer {
     pub dirty: Dirty,
     pub shape: u32,
     pub brush_round: RoundBrush,
-    pub brush_pixel: PixelBrush,
     prev: Option<Draw>,
 }
 
@@ -156,8 +158,6 @@ struct ChunkBind {
     render: BindGroup,
     /// TODO Use the third bind group instead of rebind whole new ones.
     mipmap: Option<BindGroup>,
-    /// Planned to deprecate. Use [`draw`] instead.
-    compute: BindGroup,
     draw: BindGroup,
 }
 
@@ -174,20 +174,11 @@ enum ThreadOutput {
     Remove(ChunkKey),
 }
 
-/// Planned to deprecate. Use [`MipmapUniform`] instead.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct DispatchUniform {
-    dirty_coords: [i32; 2],
-    stroke_count: u32,
-    _pad: u32,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct MipmapUniform {
-    mipmap_coords: [i32; 2],
-    mipmap_size: [u32; 2],
+    dispatch_coords: [i32; 2],
+    dispatch_size: [u32; 2],
 }
 
 #[repr(C)]
@@ -203,8 +194,8 @@ impl StrokeLayer {
         let camera_bind = world.single_fetch::<CameraBind>().unwrap();
         let device = &render.device;
 
-        let render_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("stroke_chunk_fragment"),
+        let chunk_render_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("chunk_render"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -235,48 +226,8 @@ impl StrokeLayer {
             ],
         });
 
-        let compute_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("stroke_chunk_compute"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadWrite,
-                        format: TextureFormat::Rgba8Unorm,
-                        view_dimension: TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-
-        let mipmap_meta_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("mipmap_meta"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let mipmap_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("mipmap"),
+        let chunk_mipmap_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("chunk_mipmap"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -321,8 +272,8 @@ impl StrokeLayer {
             ],
         });
 
-        let drawing_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("drawing"),
+        let chunk_draw_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("chunk_draw"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -347,34 +298,133 @@ impl StrokeLayer {
             ],
         });
 
-        let dispatch_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let dispatch_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("dispatch"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                count: None,
+            }],
+        });
+
+        let dispatch_group_draw_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("dispatch_draw"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let dispatch = device.create_buffer(&BufferDescriptor {
+            label: Some("dispatch"),
+            size: size_of::<DispatchUniform>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let draws_length = device.create_buffer(&BufferDescriptor {
+            label: Some("draws_length"),
+            size: size_of::<u32>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let draws_array = device.create_buffer(&BufferDescriptor {
+            label: Some("draws_array"),
+            size: size_of::<DrawProcessedStorage>() as u64 * MAX_STROKE,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let dispatch_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("dispatch"),
+            layout: &dispatch_group_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &dispatch,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
+        let dispatch_group_draw = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("dispatch"),
+            layout: &dispatch_group_draw_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &dispatch,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &draws_length,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &draws_array,
+                        offset: 0,
+                        size: None,
+                    }),
                 },
             ],
         });
 
-        let brush_round = RoundBrush::new(&render, &dispatch_layout, &compute_layout);
-        let brush_pixel = PixelBrush::new(&render, &dispatch_layout, &compute_layout);
+        let brush_round = RoundBrush::new(&render, &dispatch_group_draw_layout, &chunk_draw_layout);
+
+        let render_sampler = device.create_sampler(&SamplerDescriptor {
+            label: Some("stroke_sampler"),
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Nearest,
+            ..Default::default()
+        });
 
         let render_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("stroke_chunk"),
@@ -383,7 +433,7 @@ impl StrokeLayer {
 
         let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("stroke_chunk"),
-            bind_group_layouts: &[&camera_bind.layout, &render_layout],
+            bind_group_layouts: &[&camera_bind.layout, &chunk_render_layout],
             immediate_size: 0,
         });
 
@@ -445,36 +495,6 @@ impl StrokeLayer {
             cache: None,
         });
 
-        let render_sampler = device.create_sampler(&SamplerDescriptor {
-            label: Some("stroke_sampler"),
-            address_mode_u: AddressMode::ClampToEdge,
-            address_mode_v: AddressMode::ClampToEdge,
-            address_mode_w: AddressMode::ClampToEdge,
-            mag_filter: FilterMode::Nearest,
-            min_filter: FilterMode::Nearest,
-            ..Default::default()
-        });
-
-        let mipmap_meta_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("mipmap_meta"),
-            size: size_of::<MipmapUniform>() as u64,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let mipmap_meta = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("mipmap_meta"),
-            layout: &mipmap_meta_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &mipmap_meta_buffer,
-                    offset: 0,
-                    size: None,
-                }),
-            }],
-        });
-
         let mipmap_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("stroke_chunk"),
             source: ShaderSource::Wgsl(include_str!("stroke/mipmap.wgsl").into()),
@@ -482,7 +502,7 @@ impl StrokeLayer {
 
         let mipmap_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("stroke_mipmap"),
-            bind_group_layouts: &[&mipmap_meta_layout, &mipmap_layout],
+            bind_group_layouts: &[&dispatch_group_layout, &chunk_mipmap_layout],
             immediate_size: 0,
         });
 
@@ -502,7 +522,7 @@ impl StrokeLayer {
 
         let gamma_fixing_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("stroke_mipmap"),
-            bind_group_layouts: &[&mipmap_meta_layout, &drawing_layout],
+            bind_group_layouts: &[&dispatch_group_layout, &chunk_draw_layout],
             immediate_size: 0,
         });
 
@@ -513,43 +533,6 @@ impl StrokeLayer {
             entry_point: Some("cs_main"),
             compilation_options: PipelineCompilationOptions::default(),
             cache: None,
-        });
-
-        let dispatch_meta = device.create_buffer(&BufferDescriptor {
-            label: Some("dispatch_meta"),
-            size: size_of::<DispatchUniform>() as u64,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let draws_array = device.create_buffer(&BufferDescriptor {
-            label: Some("draws_array"),
-            size: size_of::<DrawProcessedStorage>() as u64 * MAX_STROKE,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let dispatch = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("dispatch"),
-            layout: &dispatch_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &dispatch_meta,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &draws_array,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-            ],
         });
 
         let (thread_input_tx, thread_input_rx) = channel();
@@ -598,16 +581,15 @@ impl StrokeLayer {
             render_pipeline,
             render_debug_pipeline,
             render_sampler,
-            render_layout,
             mipmap_pipeline,
-            mipmap_layout,
-            mipmap_meta,
-            mipmap_meta_buffer,
             gamma_fixing_pipeline,
-            drawing_layout,
-            compute_layout,
+            chunk_render_layout,
+            chunk_mipmap_layout,
+            chunk_draw_layout,
             dispatch,
-            dispatch_meta,
+            dispatch_group,
+            dispatch_group_draw,
+            draws_length,
             draws_array,
             thread_tx: thread_input_tx,
             thread_rx: thread_output_rx,
@@ -618,7 +600,6 @@ impl StrokeLayer {
             dirty: DEFAULT_DIRTY,
             shape: 0,
             brush_round,
-            brush_pixel,
             prev: None,
         }
     }
@@ -627,10 +608,9 @@ impl StrokeLayer {
         let texture = device.create_texture(&chunk_texture_desc());
 
         Self::create_chunk_from_texture(
-            &self.render_layout,
+            &self.chunk_render_layout,
+            &self.chunk_draw_layout,
             &self.render_sampler,
-            &self.compute_layout,
-            &self.drawing_layout,
             texture,
             device,
             key,
@@ -644,9 +624,8 @@ impl StrokeLayer {
     ///   which case you should sync with loading thread by `ThreadInput::Create`
     fn create_chunk_from_texture(
         render_layout: &BindGroupLayout,
-        render_sampler: &Sampler,
-        compute_layout: &BindGroupLayout,
         draw_layout: &BindGroupLayout,
+        render_sampler: &Sampler,
         texture: Texture,
         device: &Device,
         key: ChunkKey,
@@ -654,7 +633,7 @@ impl StrokeLayer {
         let rect = chunk_rect(key);
         let rectangle = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("stroke_chunk_rectangle"),
-            contents: bytemuck::bytes_of(&VertexUniform {
+            contents: bytes_of(&VertexUniform {
                 origin: rect.origin.into_array(),
                 extend: rect.extend.into_array(),
             }),
@@ -663,7 +642,7 @@ impl StrokeLayer {
 
         let key = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("stroke_chunk_key"),
-            contents: bytemuck::bytes_of(&ChunkUniform {
+            contents: bytes_of(&ChunkUniform {
                 chunk: [key.0, key.1, key.2 as i32],
                 _pad: 0,
             }),
@@ -707,25 +686,6 @@ impl StrokeLayer {
             ],
         });
 
-        let compute_bind = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("stroke_chunk_compute"),
-            layout: &compute_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&texture_compute_view),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &rectangle,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-            ],
-        });
-
         let draw_bind = device.create_bind_group(&BindGroupDescriptor {
             label: Some("stroke_chunk_draw"),
             layout: &draw_layout,
@@ -750,7 +710,6 @@ impl StrokeLayer {
             chunk_key: key,
             render: render_bind,
             mipmap: None,
-            compute: compute_bind,
             draw: draw_bind,
         }
     }
@@ -843,10 +802,9 @@ impl StrokeLayer {
                 let render = world.single_fetch::<Render>().unwrap();
                 let chunk = texture.and_then(|texture| {
                     let mut new_chunk = Self::create_chunk_from_texture(
-                        &self.render_layout,
+                        &self.chunk_render_layout,
+                        &self.chunk_draw_layout,
                         &self.render_sampler,
-                        &self.compute_layout,
-                        &self.drawing_layout,
                         texture,
                         &render.device,
                         chunk_id,
@@ -956,13 +914,23 @@ impl StrokeLayer {
         }
 
         if let Some(Some(upper)) = self.chunks.get(&upper_chunk_of(chunk_id)) {
-            Self::chunk_bind_mipmap(&self.mipmap_layout, chunk, &upper.bind, &render.device);
+            Self::chunk_bind_mipmap(
+                &self.chunk_mipmap_layout,
+                chunk,
+                &upper.bind,
+                &render.device,
+            );
         }
     }
 
     fn insert_mipmap_bind(&mut self, chunk: &mut ChunkBind, render: &Render, key: ChunkKey) {
         if let Some(Some(lower)) = self.chunks.get_mut(&key) {
-            Self::chunk_bind_mipmap(&self.mipmap_layout, &mut lower.bind, chunk, &render.device);
+            Self::chunk_bind_mipmap(
+                &self.chunk_mipmap_layout,
+                &mut lower.bind,
+                chunk,
+                &render.device,
+            );
         }
     }
 
@@ -1164,14 +1132,8 @@ impl StrokeLayer {
         // assign works to GPU
 
         let dispatch = DispatchUniform {
-            dirty_coords: dirty.origin.into_array(),
-            stroke_count: draw_buf.len() as u32,
-            _pad: 0,
-        };
-
-        let mipmap = MipmapUniform {
-            mipmap_coords: dirty.origin.into_array(),
-            mipmap_size: dirty.extend.into_array(),
+            dispatch_coords: dirty.origin.into_array(),
+            dispatch_size: dirty.extend.into_array(),
         };
 
         let queue = &render.queue;
@@ -1182,9 +1144,9 @@ impl StrokeLayer {
             draw_stg.push(draw.into_storage());
         }
 
-        queue.write_buffer(&self.dispatch_meta, 0, bytemuck::bytes_of(&dispatch));
-        queue.write_buffer(&self.mipmap_meta_buffer, 0, bytemuck::bytes_of(&mipmap));
-        queue.write_buffer(&self.draws_array, 0, bytemuck::cast_slice(&draw_stg));
+        queue.write_buffer(&self.dispatch, 0, bytes_of(&dispatch));
+        queue.write_buffer(&self.draws_length, 0, bytes_of(&(draw_stg.len() as u32)));
+        queue.write_buffer(&self.draws_array, 0, cast_slice(&draw_stg));
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("stroke"),
@@ -1199,15 +1161,14 @@ impl StrokeLayer {
 
         match self.shape {
             0 => cpass.set_pipeline(&self.brush_round.pipeline),
-            1 => cpass.set_pipeline(&self.brush_pixel.pipeline),
             _ => unreachable!(),
         }
-        cpass.set_bind_group(0, Some(&self.dispatch), &[]);
+        cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
         for key in paint_chunks {
             let chunk = self.chunks.get(&key).unwrap();
             let bind = &chunk.as_ref().unwrap().bind;
 
-            cpass.set_bind_group(1, Some(&bind.compute), &[]);
+            cpass.set_bind_group(1, Some(&bind.draw), &[]);
             cpass.dispatch_workgroups(
                 (dirty.extend.w - 1) / WORKGROUP_SIZE.w + 1,
                 (dirty.extend.h - 1) / WORKGROUP_SIZE.h + 1,
@@ -1216,7 +1177,7 @@ impl StrokeLayer {
         }
 
         cpass.set_pipeline(&self.mipmap_pipeline);
-        cpass.set_bind_group(0, Some(&self.mipmap_meta), &[]);
+        cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
         for key in mipmap_chunks {
             let chunk = self.chunks.get(&key).unwrap();
             let bind = &chunk.as_ref().unwrap().bind;
@@ -1254,15 +1215,15 @@ impl StrokeLayer {
 
         // assign works to GPU
 
-        let mipmap = MipmapUniform {
-            mipmap_coords: dirty.origin.into_array(),
-            mipmap_size: dirty.extend.into_array(),
+        let mipmap = DispatchUniform {
+            dispatch_coords: dirty.origin.into_array(),
+            dispatch_size: dirty.extend.into_array(),
         };
 
         let queue = &render.queue;
         let device = &render.device;
 
-        queue.write_buffer(&self.mipmap_meta_buffer, 0, bytemuck::bytes_of(&mipmap));
+        queue.write_buffer(&self.dispatch, 0, bytes_of(&mipmap));
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("stroke"),
@@ -1276,7 +1237,7 @@ impl StrokeLayer {
         const WORKGROUP_SIZE: Size = Size::new(16, 16);
 
         cpass.set_pipeline(&self.mipmap_pipeline);
-        cpass.set_bind_group(0, Some(&self.mipmap_meta), &[]);
+        cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
         for key in mipmap_chunks {
             let chunk = self.chunks.get(&key).unwrap();
             let bind = &chunk.as_ref().unwrap().bind;
@@ -1303,15 +1264,15 @@ impl StrokeLayer {
 
     fn fix_gamma(&mut self, chunk: &mut ChunkBind, lower: (i32, i32, u8), render: &Render) {
         let dirty = chunk_rect(lower);
-        let drawing = MipmapUniform {
-            mipmap_coords: dirty.origin.into_array(),
-            mipmap_size: dirty.extend.into_array(),
+        let drawing = DispatchUniform {
+            dispatch_coords: dirty.origin.into_array(),
+            dispatch_size: dirty.extend.into_array(),
         };
 
         let queue = &render.queue;
         let device = &render.device;
 
-        queue.write_buffer(&self.mipmap_meta_buffer, 0, bytemuck::bytes_of(&drawing));
+        queue.write_buffer(&self.dispatch, 0, bytes_of(&drawing));
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("stroke"),
@@ -1323,7 +1284,7 @@ impl StrokeLayer {
         });
 
         cpass.set_pipeline(&self.gamma_fixing_pipeline);
-        cpass.set_bind_group(0, Some(&self.mipmap_meta), &[]);
+        cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
         cpass.set_bind_group(1, Some(&chunk.draw), &[]);
         cpass.dispatch_workgroups(
             (dirty.extend.w - 1) / 2u32.pow(lower.2 as u32) / 16 + 1,
