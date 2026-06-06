@@ -105,8 +105,6 @@ pub struct StrokeLayer {
     gamma_fixing_pipeline: ComputePipeline,
 
     chunk_render_layout: BindGroupLayout,
-    /// Planned to be deprecated
-    chunk_mipmap_layout: BindGroupLayout,
     chunk_draw_layout: BindGroupLayout,
 
     dispatch: Buffer,
@@ -153,11 +151,7 @@ struct ChunkMeta0 {
 ///         - Maybe we could get a third bind group for that
 struct ChunkBind {
     texture: Texture,
-    /// a `vec3i` in WGSL, maintained here only for binding with upper or lower chunks later.
-    chunk_key: Buffer,
     render: BindGroup,
-    /// TODO Use the third bind group instead of rebind whole new ones.
-    mipmap: Option<BindGroup>,
     draw: BindGroup,
 }
 
@@ -221,52 +215,6 @@ impl StrokeLayer {
                     binding: 2,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
-                    count: None,
-                },
-            ],
-        });
-
-        let chunk_mipmap_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("chunk_mipmap"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::WriteOnly,
-                        format: TextureFormat::Rgba8Unorm,
-                        view_dimension: TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: TextureFormat::Rgba8Unorm,
-                        view_dimension: TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
                     count: None,
                 },
             ],
@@ -497,12 +445,23 @@ impl StrokeLayer {
 
         let mipmap_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("stroke_chunk"),
-            source: ShaderSource::Wgsl(include_str!("stroke/mipmap.wgsl").into()),
+            source: ShaderSource::Wgsl(
+                format!(
+                    "{}{}",
+                    include_str!("stroke/lib_dispatch.wgsl"),
+                    include_str!("stroke/mipmap.wgsl")
+                )
+                .into(),
+            ),
         });
 
         let mipmap_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("stroke_mipmap"),
-            bind_group_layouts: &[&dispatch_group_layout, &chunk_mipmap_layout],
+            bind_group_layouts: &[
+                &dispatch_group_layout,
+                &chunk_draw_layout,
+                &chunk_draw_layout,
+            ],
             immediate_size: 0,
         });
 
@@ -585,14 +544,13 @@ impl StrokeLayer {
         StrokeLayer {
             chunks: HashMap::new(),
             meta_unsaved: HashSet::new(),
-            render_debugging: false,
+            render_debugging: true,
             render_pipeline,
             render_debug_pipeline,
             render_sampler,
             mipmap_pipeline,
             gamma_fixing_pipeline,
             chunk_render_layout,
-            chunk_mipmap_layout,
             chunk_draw_layout,
             dispatch,
             dispatch_group,
@@ -715,9 +673,7 @@ impl StrokeLayer {
 
         ChunkBind {
             texture,
-            chunk_key: key,
             render: render_bind,
-            mipmap: None,
             draw: draw_bind,
         }
     }
@@ -818,8 +774,6 @@ impl StrokeLayer {
                         chunk_id,
                     );
 
-                    self.insert_related_mipmap_bind(chunk_id, &mut new_chunk, &render);
-
                     let database = world.single_fetch::<SaveDatabase>().unwrap();
                     let read = database.0.begin_read().unwrap();
                     let table_meta = read.open_table(TABLE_STROKE_CHUNK_META).unwrap();
@@ -901,114 +855,8 @@ impl StrokeLayer {
                 }
 
                 self.chunks.remove(&key);
-                self.remove_related_mipmap_bind(key);
             }
         }
-    }
-
-    fn insert_related_mipmap_bind(
-        &mut self,
-        chunk_id: (i32, i32, u8),
-        chunk: &mut ChunkBind,
-        render: &Render,
-    ) {
-        if chunk_id.2 > 0 {
-            let (rx, ry, rp) = lower_root_chunk_of(chunk_id);
-
-            self.insert_mipmap_bind(chunk, render, (rx, ry, rp));
-            self.insert_mipmap_bind(chunk, render, (rx + 1, ry, rp));
-            self.insert_mipmap_bind(chunk, render, (rx, ry + 1, rp));
-            self.insert_mipmap_bind(chunk, render, (rx + 1, ry + 1, rp));
-        }
-
-        if let Some(Some(upper)) = self.chunks.get(&upper_chunk_of(chunk_id)) {
-            Self::chunk_bind_mipmap(
-                &self.chunk_mipmap_layout,
-                chunk,
-                &upper.bind,
-                &render.device,
-            );
-        }
-    }
-
-    fn insert_mipmap_bind(&mut self, chunk: &mut ChunkBind, render: &Render, key: ChunkKey) {
-        if let Some(Some(lower)) = self.chunks.get_mut(&key) {
-            Self::chunk_bind_mipmap(
-                &self.chunk_mipmap_layout,
-                &mut lower.bind,
-                chunk,
-                &render.device,
-            );
-        }
-    }
-
-    fn remove_related_mipmap_bind(&mut self, chunk_id: (i32, i32, u8)) {
-        if chunk_id.2 > 0 {
-            let (rx, ry, rp) = lower_root_chunk_of(chunk_id);
-
-            self.remove_mipmap_bind(rx, ry, rp);
-            self.remove_mipmap_bind(rx + 1, ry, rp);
-            self.remove_mipmap_bind(rx, ry + 1, rp);
-            self.remove_mipmap_bind(rx + 1, ry + 1, rp);
-        }
-    }
-
-    fn remove_mipmap_bind(&mut self, rx: i32, ry: i32, rp: u8) {
-        if let Some(Some(chunk)) = self.chunks.get_mut(&(rx, ry, rp)) {
-            chunk.bind.mipmap = None;
-        }
-    }
-
-    fn chunk_bind_mipmap(
-        mipmap_layout: &BindGroupLayout,
-        lower: &mut ChunkBind,
-        upper: &ChunkBind,
-        device: &Device,
-    ) {
-        debug_assert!(lower.mipmap.is_none());
-
-        let mipmap_bind = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("mipmap"),
-            layout: &mipmap_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&upper.texture.create_view(
-                        &TextureViewDescriptor {
-                            label: Some("destination"),
-                            ..Default::default()
-                        },
-                    )),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &upper.chunk_key,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::TextureView(&lower.texture.create_view(
-                        &TextureViewDescriptor {
-                            label: Some("source"),
-                            ..Default::default()
-                        },
-                    )),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &lower.chunk_key,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-            ],
-        });
-
-        lower.mipmap = Some(mipmap_bind);
     }
 
     fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
@@ -1187,17 +1035,20 @@ impl StrokeLayer {
         cpass.set_pipeline(&self.mipmap_pipeline);
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
         for key in mipmap_chunks {
-            let chunk = self.chunks.get(&key).unwrap();
-            let bind = &chunk.as_ref().unwrap().bind;
+            let Some(upper) = self.chunks.get(&upper_chunk_of(key)) else {
+                continue;
+            };
+            let upper = upper.as_ref().unwrap();
+            let lower = self.chunks.get(&key).unwrap();
+            let lower = lower.as_ref().unwrap();
 
-            if let Some(chunk_mipmap) = &bind.mipmap {
-                cpass.set_bind_group(1, Some(chunk_mipmap), &[]);
-                cpass.dispatch_workgroups(
-                    (dirty.extend.w - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.w + 1,
-                    (dirty.extend.h - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.h + 1,
-                    1,
-                );
-            }
+            cpass.set_bind_group(1, Some(&upper.bind.draw), &[]);
+            cpass.set_bind_group(2, Some(&lower.bind.draw), &[]);
+            cpass.dispatch_workgroups(
+                (dirty.extend.w - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.w + 1,
+                (dirty.extend.h - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.h + 1,
+                1,
+            );
         }
 
         drop(cpass);
@@ -1247,21 +1098,24 @@ impl StrokeLayer {
         cpass.set_pipeline(&self.mipmap_pipeline);
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
         for key in mipmap_chunks {
-            let chunk = self.chunks.get(&key).unwrap();
-            let bind = &chunk.as_ref().unwrap().bind;
+            let Some(upper) = self.chunks.get(&upper_chunk_of(key)) else {
+                let lower = self.chunks.get_mut(&key).unwrap();
+                let lower = lower.as_mut().unwrap();
+                lower.meta0.mipmapped = false;
+                self.meta_unsaved.insert(key);
+                continue;
+            };
+            let upper = upper.as_ref().unwrap();
+            let lower = self.chunks.get(&key).unwrap();
+            let lower = lower.as_ref().unwrap();
 
-            if let Some(chunk_mipmap) = &bind.mipmap {
-                cpass.set_bind_group(1, Some(chunk_mipmap), &[]);
-                cpass.dispatch_workgroups(
-                    (dirty.extend.w - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.w + 1,
-                    (dirty.extend.h - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.h + 1,
-                    1,
-                );
-            } else {
-                let chunk = self.chunks.get_mut(&key).unwrap().as_mut().unwrap();
-                chunk.meta0.mipmapped = false;
-                self.meta_unsaved.insert(lower);
-            }
+            cpass.set_bind_group(1, Some(&upper.bind.draw), &[]);
+            cpass.set_bind_group(2, Some(&lower.bind.draw), &[]);
+            cpass.dispatch_workgroups(
+                (dirty.extend.w - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.w + 1,
+                (dirty.extend.h - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.h + 1,
+                1,
+            );
         }
 
         drop(cpass);
@@ -1339,9 +1193,7 @@ impl StrokeLayer {
 
                     if let Some(chunk) = self.chunks.get(&key) {
                         if chunk.is_none() {
-                            let mut bind = self.create_chunk(&render.device, key);
-
-                            self.insert_related_mipmap_bind(key, &mut bind, &render);
+                            let bind = self.create_chunk(&render.device, key);
 
                             self.thread_tx
                                 .send(ThreadInput::Create(key, bind.texture.clone()))
@@ -1432,10 +1284,6 @@ fn chunks_within(view_rect: Rectangle, mipmap: u8) -> ((i32, i32), (i32, i32)) {
         (view_rect.up() - 1).div_euclid(size) + 1,
     );
     (chunk_src, chunk_dst)
-}
-
-fn lower_root_chunk_of(chunk: ChunkKey) -> ChunkKey {
-    (chunk.0 * 2, chunk.1 * 2, chunk.2 - 1)
 }
 
 fn upper_chunk_of(chunk: ChunkKey) -> ChunkKey {

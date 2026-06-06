@@ -41,11 +41,11 @@ fn area_satisfied(id: vec3u) -> bool {
 // _coords_ is texture-space coords of dispatch
 
 fn coords_min() -> vec2i {
-    return (texel_size() + area_min() - chunk_coords()) / pixel_size() - texel_size();
+    return (texel_size() + area_min() - chunk_coords()) / pixel_size() - texture_base_size;
 }
 
 fn coords_max() -> vec2i {
-    return (texel_size() + area_max() - chunk_coords() - 1) / pixel_size() + 1 - texel_size();
+    return (texel_size() + area_max() - chunk_coords() - 1) / pixel_size() + 1 - texture_base_size;
 }
 
 fn coords(id: vec3u) -> vec2i {
