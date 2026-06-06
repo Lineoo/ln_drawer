@@ -838,6 +838,7 @@ impl StrokeLayer {
                 debug_assert!(!self.chunks.contains_key(&chunk_id));
 
                 let mut need_mipmap_fix = false;
+                let mut migrated = false;
                 let render = world.single_fetch::<Render>().unwrap();
                 let chunk = texture.and_then(|texture| {
                     let mut new_chunk = Self::create_chunk_from_texture(
@@ -884,6 +885,7 @@ impl StrokeLayer {
                                 0 => {
                                     log::trace!("gamma fixed {chunk_id:?}");
                                     self.fix_gamma(&mut new_chunk, chunk_id, &render);
+                                    migrated = true;
                                 }
                                 _ => unimplemented!("unsupported migration {migrate_format}"),
                             }
@@ -907,6 +909,12 @@ impl StrokeLayer {
                 if need_mipmap_fix {
                     log::trace!("mipmap fixed {chunk_id:?}");
                     self.fix_unmipmapped(chunk_id, &render);
+                }
+
+                if migrated {
+                    self.thread_tx
+                        .send(ThreadInput::MarkUnsaved(chunk_id))
+                        .unwrap();
                 }
             }
             ThreadOutput::Remove(key) => {
@@ -1044,7 +1052,9 @@ impl StrokeLayer {
                 world.queue_trigger(
                     this.brush_preview,
                     WidgetRectangle(Rectangle::new_half(
-                        camera.screen_to_world_absolute(event.pointer.screen).round(),
+                        camera
+                            .screen_to_world_absolute(event.pointer.screen)
+                            .round(),
                         Size::new(5, 5),
                     )),
                 );
