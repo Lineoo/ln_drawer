@@ -44,7 +44,6 @@ use crate::{
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
         modifier::{DrawProcessed, DrawProcessedStorage, Modifier},
-        shape::RoundBrush,
     },
     tools::{
         collider::ToolCollider,
@@ -101,8 +100,8 @@ pub struct StrokeLayer {
     render_sampler: Sampler,
 
     mipmap_pipeline: ComputePipeline,
-
     gamma_fixing_pipeline: ComputePipeline,
+    brush_round_pipeline: ComputePipeline,
 
     chunk_render_layout: BindGroupLayout,
     chunk_draw_layout: BindGroupLayout,
@@ -124,7 +123,6 @@ pub struct StrokeLayer {
     pub modifier: Modifier,
     pub dirty: Dirty,
     pub shape: u32,
-    pub brush_round: RoundBrush,
     prev: Option<Draw>,
 }
 
@@ -362,8 +360,6 @@ impl StrokeLayer {
             ],
         });
 
-        let brush_round = RoundBrush::new(&render, &dispatch_group_draw_layout, &chunk_draw_layout);
-
         let render_sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("stroke_sampler"),
             address_mode_u: AddressMode::ClampToEdge,
@@ -443,64 +439,11 @@ impl StrokeLayer {
             cache: None,
         });
 
-        let mipmap_shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("stroke_chunk"),
-            source: ShaderSource::Wgsl(
-                format!(
-                    "{}{}",
-                    include_str!("stroke/lib_dispatch.wgsl"),
-                    include_str!("stroke/mipmap.wgsl")
-                )
-                .into(),
-            ),
-        });
-
-        let mipmap_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("stroke_mipmap"),
-            bind_group_layouts: &[
-                &dispatch_group_layout,
-                &chunk_draw_layout,
-                &chunk_draw_layout,
-            ],
-            immediate_size: 0,
-        });
-
-        let mipmap_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("stroke_mipmap"),
-            layout: Some(&mipmap_pipeline),
-            module: &mipmap_shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        });
-
-        let gamma_shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("fix_gamma"),
-            source: ShaderSource::Wgsl(
-                format!(
-                    "{}{}{}",
-                    include_str!("stroke/lib_colorspace.wgsl"),
-                    include_str!("stroke/lib_dispatch.wgsl"),
-                    include_str!("stroke/legacy/gamma_fix.wgsl")
-                )
-                .into(),
-            ),
-        });
-
-        let gamma_fixing_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("stroke_mipmap"),
-            bind_group_layouts: &[&dispatch_group_layout, &chunk_draw_layout],
-            immediate_size: 0,
-        });
-
-        let gamma_fixing_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("fix_gamma"),
-            layout: Some(&gamma_fixing_pipeline),
-            module: &gamma_shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        });
+        let mipmap_pipeline = mipmap_pipeline(device, &chunk_draw_layout, &dispatch_group_layout);
+        let gamma_fixing_pipeline =
+            gamma_fixing_pipeline(device, &chunk_draw_layout, &dispatch_group_layout);
+        let brush_round_pipeline =
+            shape::brush_round(&render, &dispatch_group_draw_layout, &chunk_draw_layout);
 
         let (thread_input_tx, thread_input_rx) = channel();
         let (thread_output_tx, thread_output_rx) = channel();
@@ -550,13 +493,14 @@ impl StrokeLayer {
             render_sampler,
             mipmap_pipeline,
             gamma_fixing_pipeline,
+            brush_round_pipeline,
             chunk_render_layout,
             chunk_draw_layout,
             dispatch,
-            dispatch_group,
-            dispatch_group_draw,
             draws_length,
             draws_array,
+            dispatch_group,
+            dispatch_group_draw,
             thread_tx: thread_input_tx,
             thread_rx: thread_output_rx,
             thread: Some(thread),
@@ -565,7 +509,6 @@ impl StrokeLayer {
             modifier: DEFAULT_MODIFIER,
             dirty: DEFAULT_DIRTY,
             shape: 0,
-            brush_round,
             prev: None,
         }
     }
@@ -996,7 +939,7 @@ impl StrokeLayer {
         let mut encoder = device.create_command_encoder(&ENCODER_DESC);
         let mut cpass = encoder.begin_compute_pass(&CPASS_DESC);
 
-        cpass.set_pipeline(&self.brush_round.pipeline);
+        cpass.set_pipeline(&self.brush_round_pipeline);
         cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
         for key in paint_chunks {
             let chunk = self.chunks.get(&key).unwrap();
@@ -1173,6 +1116,75 @@ impl StrokeLayer {
             }
         }
     }
+}
+
+fn mipmap_pipeline(
+    device: &Device,
+    chunk_draw_layout: &BindGroupLayout,
+    dispatch_group_layout: &BindGroupLayout,
+) -> ComputePipeline {
+    let mipmap_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("stroke_chunk"),
+        source: ShaderSource::Wgsl(
+            format!(
+                "{}{}",
+                include_str!("stroke/lib_dispatch.wgsl"),
+                include_str!("stroke/mipmap.wgsl")
+            )
+            .into(),
+        ),
+    });
+
+    let mipmap_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("stroke_mipmap"),
+        bind_group_layouts: &[dispatch_group_layout, chunk_draw_layout, chunk_draw_layout],
+        immediate_size: 0,
+    });
+
+    let mipmap_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+        label: Some("stroke_mipmap"),
+        layout: Some(&mipmap_pipeline),
+        module: &mipmap_shader,
+        entry_point: Some("cs_main"),
+        compilation_options: PipelineCompilationOptions::default(),
+        cache: None,
+    });
+    mipmap_pipeline
+}
+
+fn gamma_fixing_pipeline(
+    device: &Device,
+    chunk_draw_layout: &BindGroupLayout,
+    dispatch_group_layout: &BindGroupLayout,
+) -> ComputePipeline {
+    let gamma_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("fix_gamma"),
+        source: ShaderSource::Wgsl(
+            format!(
+                "{}{}{}",
+                include_str!("stroke/lib_colorspace.wgsl"),
+                include_str!("stroke/lib_dispatch.wgsl"),
+                include_str!("stroke/legacy/gamma_fix.wgsl")
+            )
+            .into(),
+        ),
+    });
+
+    let gamma_fixing_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("stroke_mipmap"),
+        bind_group_layouts: &[dispatch_group_layout, chunk_draw_layout],
+        immediate_size: 0,
+    });
+
+    let gamma_fixing_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+        label: Some("fix_gamma"),
+        layout: Some(&gamma_fixing_pipeline),
+        module: &gamma_shader,
+        entry_point: Some("cs_main"),
+        compilation_options: PipelineCompilationOptions::default(),
+        cache: None,
+    });
+    gamma_fixing_pipeline
 }
 
 const ENCODER_DESC: CommandEncoderDescriptor<'_> = CommandEncoderDescriptor {
