@@ -23,7 +23,8 @@ impl RoundBrush {
             label: Some("round_brush"),
             source: ShaderSource::Wgsl(
                 format!(
-                    "{}{}",
+                    "{}{}{}",
+                    include_str!("lib_colorspace.wgsl"),
                     include_str!("lib_dispatch.wgsl"),
                     include_str!("round.wgsl")
                 )

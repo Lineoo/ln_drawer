@@ -517,7 +517,15 @@ impl StrokeLayer {
 
         let gamma_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("fix_gamma"),
-            source: ShaderSource::Wgsl(include_str!("stroke/legacy/color_space.wgsl").into()),
+            source: ShaderSource::Wgsl(
+                format!(
+                    "{}{}{}",
+                    include_str!("stroke/lib_colorspace.wgsl"),
+                    include_str!("stroke/lib_dispatch.wgsl"),
+                    include_str!("stroke/legacy/gamma_fix.wgsl")
+                )
+                .into(),
+            ),
         });
 
         let gamma_fixing_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
