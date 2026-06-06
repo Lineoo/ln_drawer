@@ -21,7 +21,14 @@ impl RoundBrush {
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("round_brush"),
-            source: ShaderSource::Wgsl(include_str!("round.wgsl").into()),
+            source: ShaderSource::Wgsl(
+                format!(
+                    "{}{}",
+                    include_str!("lib_dispatch.wgsl"),
+                    include_str!("round.wgsl")
+                )
+                .into(),
+            ),
         });
 
         let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
