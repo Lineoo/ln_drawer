@@ -613,6 +613,11 @@ impl StrokeLayer {
         )
     }
 
+    /// By only two way you should call this function:
+    /// - First you are processing output from stream loading thread by `ThreadOutput::Insert`
+    ///     - The main thread may also needs to migrate canvas format.
+    /// - Or it could be while drawing and you needs to extend the canvas, in
+    ///   which case you should sync with loading thread by `ThreadInput::Create`
     fn create_chunk_from_texture(
         render_layout: &BindGroupLayout,
         render_sampler: &Sampler,
@@ -810,7 +815,6 @@ impl StrokeLayer {
                 debug_assert!(!self.chunks.contains_key(&chunk_id));
 
                 let mut need_mipmap_fix = false;
-                let mut need_gamma_correction = false;
                 let render = world.single_fetch::<Render>().unwrap();
                 let chunk = texture.and_then(|texture| {
                     let mut new_chunk = Self::create_chunk_from_texture(
@@ -832,9 +836,14 @@ impl StrokeLayer {
                     {
                         postcard::from_bytes::<ChunkMeta0>(meta0.value()).unwrap()
                     } else {
-                        // blank chunk
+                        // __EDGE CASES__: Always expect data, transparent meta data write can be
+                        // found in another place while legacy meta data write is in the main database
+                        // format migration. If there is texture but no meta, we expect that's a
+                        // leftover issues that happens in legacy so we use format 0.
+                        log::error!("cannot fetch found chunk meta on {chunk_id:?}!");
+                        self.meta_unsaved.insert(chunk_id);
                         ChunkMeta0 {
-                            format: CHUNK_META0_FORMAT,
+                            format: 0,
                             mipmapped: true,
                         }
                     };
@@ -849,7 +858,10 @@ impl StrokeLayer {
                     } else if meta0.format < CHUNK_META0_FORMAT {
                         for migrate_format in meta0.format..CHUNK_META0_FORMAT {
                             match migrate_format {
-                                0 => need_gamma_correction = true,
+                                0 => {
+                                    log::trace!("gamma fixed {chunk_id:?}");
+                                    self.fix_gamma(&mut new_chunk, chunk_id, &render);
+                                }
                                 _ => unimplemented!("unsupported migration {migrate_format}"),
                             }
                         }
@@ -872,11 +884,6 @@ impl StrokeLayer {
                 if need_mipmap_fix {
                     log::trace!("mipmap fixed {chunk_id:?}");
                     self.fix_unmipmapped(chunk_id, &render);
-                }
-
-                if need_gamma_correction {
-                    log::trace!("mipmap fixed {chunk_id:?}");
-                    self.fix_gamma(chunk_id, &render);
                 }
             }
             ThreadOutput::Remove(key) => {
@@ -1229,9 +1236,7 @@ impl StrokeLayer {
         queue.submit([command]);
     }
 
-    fn fix_gamma(&mut self, lower: (i32, i32, u8), render: &Render) {
-        let chunk = self.chunks.get_mut(&lower).unwrap().as_mut().unwrap();
-
+    fn fix_gamma(&mut self, chunk: &mut ChunkBind, lower: (i32, i32, u8), render: &Render) {
         let dirty = chunk_rect(lower);
         let drawing = MipmapUniform {
             mipmap_coords: dirty.origin.into_array(),
@@ -1254,7 +1259,7 @@ impl StrokeLayer {
 
         cpass.set_pipeline(&self.gamma_fixing_pipeline);
         cpass.set_bind_group(0, Some(&self.mipmap_meta), &[]);
-        cpass.set_bind_group(1, Some(&chunk.bind.draw), &[]);
+        cpass.set_bind_group(1, Some(&chunk.draw), &[]);
         cpass.dispatch_workgroups(
             (dirty.extend.w - 1) / 2u32.pow(lower.2 as u32) / 16 + 1,
             (dirty.extend.h - 1) / 2u32.pow(lower.2 as u32) / 16 + 1,
@@ -1309,6 +1314,7 @@ impl StrokeLayer {
                                 .unwrap();
 
                             let chunk = self.chunks.get_mut(&key).unwrap();
+                            self.meta_unsaved.insert(key);
                             *chunk = Some(Chunk {
                                 bind,
                                 meta0: ChunkMeta0 {
