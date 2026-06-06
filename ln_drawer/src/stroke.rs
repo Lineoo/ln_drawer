@@ -544,7 +544,7 @@ impl StrokeLayer {
         StrokeLayer {
             chunks: HashMap::new(),
             meta_unsaved: HashSet::new(),
-            render_debugging: true,
+            render_debugging: false,
             render_pipeline,
             render_debug_pipeline,
             render_sampler,
