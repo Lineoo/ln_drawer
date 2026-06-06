@@ -19,9 +19,9 @@ use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
     Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
-    ColorWrites, CommandEncoderDescriptor, ComputePassDescriptor, ComputePipeline,
+    ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
     ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState,
-    PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology,
+    PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
     RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
     ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
     TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
@@ -43,7 +43,7 @@ use crate::{
     stroke::{
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
-        modifier::{DrawProcessedStorage, Modifier},
+        modifier::{DrawProcessed, DrawProcessedStorage, Modifier},
         shape::RoundBrush,
     },
     tools::{
@@ -987,49 +987,23 @@ impl StrokeLayer {
 
         // assign works to GPU
 
-        let dispatch = DispatchUniform {
-            dispatch_coords: dirty.origin.into_array(),
-            dispatch_size: dirty.extend.into_array(),
-        };
-
         let queue = &render.queue;
         let device = &render.device;
 
-        let mut draw_stg = Vec::with_capacity(draw_buf.len());
-        for draw in draw_buf {
-            draw_stg.push(draw.into_storage());
-        }
+        self.upload_dispatch(dirty, queue);
+        self.upload_draws(draw_buf, queue);
 
-        queue.write_buffer(&self.dispatch, 0, bytes_of(&dispatch));
-        queue.write_buffer(&self.draws_length, 0, bytes_of(&(draw_stg.len() as u32)));
-        queue.write_buffer(&self.draws_array, 0, cast_slice(&draw_stg));
+        let mut encoder = device.create_command_encoder(&ENCODER_DESC);
+        let mut cpass = encoder.begin_compute_pass(&CPASS_DESC);
 
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("stroke"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("stroke"),
-            timestamp_writes: None,
-        });
-
-        const WORKGROUP_SIZE: Size = Size::new(16, 16);
-
-        match self.shape {
-            0 => cpass.set_pipeline(&self.brush_round.pipeline),
-            _ => unreachable!(),
-        }
+        cpass.set_pipeline(&self.brush_round.pipeline);
         cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
         for key in paint_chunks {
             let chunk = self.chunks.get(&key).unwrap();
-            let bind = &chunk.as_ref().unwrap().bind;
+            let chunk = chunk.as_ref().unwrap();
 
-            cpass.set_bind_group(1, Some(&bind.draw), &[]);
-            cpass.dispatch_workgroups(
-                (dirty.extend.w - 1) / WORKGROUP_SIZE.w + 1,
-                (dirty.extend.h - 1) / WORKGROUP_SIZE.h + 1,
-                1,
-            );
+            cpass.set_bind_group(1, Some(&chunk.bind.draw), &[]);
+            cpass_dispatch(dirty, &mut cpass, key);
         }
 
         cpass.set_pipeline(&self.mipmap_pipeline);
@@ -1044,17 +1018,11 @@ impl StrokeLayer {
 
             cpass.set_bind_group(1, Some(&upper.bind.draw), &[]);
             cpass.set_bind_group(2, Some(&lower.bind.draw), &[]);
-            cpass.dispatch_workgroups(
-                (dirty.extend.w - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.w + 1,
-                (dirty.extend.h - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.h + 1,
-                1,
-            );
+            cpass_dispatch(dirty, &mut cpass, key);
         }
 
         drop(cpass);
-
-        let command = encoder.finish();
-        queue.submit([command]);
+        queue.submit([encoder.finish()]);
 
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         lnwindow.window.request_redraw();
@@ -1074,26 +1042,13 @@ impl StrokeLayer {
 
         // assign works to GPU
 
-        let mipmap = DispatchUniform {
-            dispatch_coords: dirty.origin.into_array(),
-            dispatch_size: dirty.extend.into_array(),
-        };
-
         let queue = &render.queue;
         let device = &render.device;
 
-        queue.write_buffer(&self.dispatch, 0, bytes_of(&mipmap));
+        self.upload_dispatch(dirty, queue);
 
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("stroke"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("stroke"),
-            timestamp_writes: None,
-        });
-
-        const WORKGROUP_SIZE: Size = Size::new(16, 16);
+        let mut encoder = device.create_command_encoder(&ENCODER_DESC);
+        let mut cpass = encoder.begin_compute_pass(&CPASS_DESC);
 
         cpass.set_pipeline(&self.mipmap_pipeline);
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
@@ -1111,53 +1066,49 @@ impl StrokeLayer {
 
             cpass.set_bind_group(1, Some(&upper.bind.draw), &[]);
             cpass.set_bind_group(2, Some(&lower.bind.draw), &[]);
-            cpass.dispatch_workgroups(
-                (dirty.extend.w - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.w + 1,
-                (dirty.extend.h - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.h + 1,
-                1,
-            );
+            cpass_dispatch(dirty, &mut cpass, upper_chunk_of(key));
         }
 
         drop(cpass);
-
-        let command = encoder.finish();
-        queue.submit([command]);
+        queue.submit([encoder.finish()]);
     }
 
     fn fix_gamma(&mut self, chunk: &mut ChunkBind, lower: (i32, i32, u8), render: &Render) {
         let dirty = chunk_rect(lower);
-        let drawing = DispatchUniform {
-            dispatch_coords: dirty.origin.into_array(),
-            dispatch_size: dirty.extend.into_array(),
-        };
 
         let queue = &render.queue;
         let device = &render.device;
 
-        queue.write_buffer(&self.dispatch, 0, bytes_of(&drawing));
+        self.upload_dispatch(dirty, queue);
 
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("stroke"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("stroke"),
-            timestamp_writes: None,
-        });
+        let mut encoder = device.create_command_encoder(&ENCODER_DESC);
+        let mut cpass = encoder.begin_compute_pass(&CPASS_DESC);
 
         cpass.set_pipeline(&self.gamma_fixing_pipeline);
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
         cpass.set_bind_group(1, Some(&chunk.draw), &[]);
-        cpass.dispatch_workgroups(
-            (dirty.extend.w - 1) / 2u32.pow(lower.2 as u32) / 16 + 1,
-            (dirty.extend.h - 1) / 2u32.pow(lower.2 as u32) / 16 + 1,
-            1,
-        );
+        cpass_dispatch(chunk_rect(lower), &mut cpass, lower);
 
         drop(cpass);
+        queue.submit([encoder.finish()]);
+    }
 
-        let command = encoder.finish();
-        queue.submit([command]);
+    fn upload_dispatch(&mut self, dirty: Rectangle, queue: &Queue) {
+        let dispatch = DispatchUniform {
+            dispatch_coords: dirty.origin.into_array(),
+            dispatch_size: dirty.extend.into_array(),
+        };
+        queue.write_buffer(&self.dispatch, 0, bytes_of(&dispatch));
+    }
+
+    fn upload_draws(&mut self, draw_buf: Vec<DrawProcessed>, queue: &Queue) {
+        let mut draw_stg = Vec::with_capacity(draw_buf.len());
+        for draw in draw_buf {
+            draw_stg.push(draw.into_storage());
+        }
+
+        queue.write_buffer(&self.draws_length, 0, bytes_of(&(draw_stg.len() as u32)));
+        queue.write_buffer(&self.draws_array, 0, cast_slice(&draw_stg));
     }
 
     fn validate_chunks(&mut self, dirty: Rectangle) -> bool {
@@ -1222,6 +1173,24 @@ impl StrokeLayer {
             }
         }
     }
+}
+
+const ENCODER_DESC: CommandEncoderDescriptor<'_> = CommandEncoderDescriptor {
+    label: Some("stroke"),
+};
+
+const CPASS_DESC: ComputePassDescriptor<'_> = ComputePassDescriptor {
+    label: Some("stroke"),
+    timestamp_writes: None,
+};
+
+fn cpass_dispatch(dirty: Rectangle, cpass: &mut ComputePass, key: (i32, i32, u8)) {
+    const WORKGROUP_SIZE: Size = Size::new(16, 16);
+    cpass.dispatch_workgroups(
+        (dirty.extend.w - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.w + 1,
+        (dirty.extend.h - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.h + 1,
+        1,
+    );
 }
 
 fn chunk_texture_desc() -> TextureDescriptor<'static> {
