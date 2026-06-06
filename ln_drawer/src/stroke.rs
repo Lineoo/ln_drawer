@@ -55,7 +55,7 @@ const CHUNK_BATCH: usize = 8;
 const CHUNK_MIPMAP: u8 = 8;
 const MAX_STROKE: u64 = 200;
 
-const CHUNK_META0_FORMAT: u32 = 0;
+const CHUNK_META0_FORMAT: u32 = 1;
 
 const TABLE_STROKE_CHUNK: TableDefinition<(u64, ChunkKey), &[u8]> =
     TableDefinition::new("stroke_chunk");
@@ -101,6 +101,9 @@ pub struct StrokeLayer {
     mipmap_meta: BindGroup,
     mipmap_meta_buffer: Buffer,
 
+    gamma_fixing_pipeline: ComputePipeline,
+    drawing_layout: BindGroupLayout,
+
     compute_layout: BindGroupLayout,
     dispatch: BindGroup,
     dispatch_meta: Buffer,
@@ -130,12 +133,26 @@ struct ChunkMeta0 {
     mipmapped: bool,
 }
 
+/// There are two `BindGroup`s here in pipelines:
+/// - First the __global__ layer
+///     - the __dirty rectangle__ in mipmapping & color space compute shader
+///     - the __dirty rectangle and strokes__ in painting compute shader
+///     - the __camera binding and sampler__ in render shader
+/// - Second the __chunk__ layer
+///     - chunk_key bind contains TextureView and `vec3i` chunk_key
+///     - a additional sampler is included in render
+///     - For obvious reason the mipmap binding has two sets of data.
+///         - Maybe we could get a third bind group for that
 struct ChunkBind {
     texture: Texture,
-    uniform: Buffer,
+    /// a `vec3i` in WGSL, maintained here only for binding with upper or lower chunks later.
+    chunk_key: Buffer,
     render: BindGroup,
+    /// TODO Use the third bind group instead of rebind whole new ones.
     mipmap: Option<BindGroup>,
+    /// Planned to deprecate. Use [`draw`] instead.
     compute: BindGroup,
+    draw: BindGroup,
 }
 
 enum ThreadInput {
@@ -151,6 +168,7 @@ enum ThreadOutput {
     Remove(ChunkKey),
 }
 
+/// Planned to deprecate. Use [`MipmapUniform`] instead.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct DispatchUniform {
@@ -286,6 +304,32 @@ impl StrokeLayer {
                 },
                 BindGroupLayoutEntry {
                     binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let drawing_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("drawing"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadWrite,
+                        format: TextureFormat::Rgba8Unorm,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
@@ -445,6 +489,26 @@ impl StrokeLayer {
             cache: None,
         });
 
+        let gamma_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("fix_gamma"),
+            source: ShaderSource::Wgsl(include_str!("stroke/legacy/color_space.wgsl").into()),
+        });
+
+        let gamma_fixing_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("stroke_mipmap"),
+            bind_group_layouts: &[&mipmap_meta_layout, &drawing_layout],
+            immediate_size: 0,
+        });
+
+        let gamma_fixing_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("fix_gamma"),
+            layout: Some(&gamma_fixing_pipeline),
+            module: &gamma_shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        });
+
         let dispatch_meta = device.create_buffer(&BufferDescriptor {
             label: Some("dispatch_meta"),
             size: size_of::<DispatchUniform>() as u64,
@@ -508,14 +572,16 @@ impl StrokeLayer {
             chunks: HashMap::new(),
             meta_unsaved: HashSet::new(),
             render_debugging: false,
-            render_sampler,
             render_pipeline,
             render_debug_pipeline,
+            render_sampler,
             render_layout,
             mipmap_pipeline,
             mipmap_layout,
             mipmap_meta,
             mipmap_meta_buffer,
+            gamma_fixing_pipeline,
+            drawing_layout,
             compute_layout,
             dispatch,
             dispatch_meta,
@@ -540,6 +606,7 @@ impl StrokeLayer {
             &self.render_layout,
             &self.render_sampler,
             &self.compute_layout,
+            &self.drawing_layout,
             texture,
             device,
             key,
@@ -550,6 +617,7 @@ impl StrokeLayer {
         render_layout: &BindGroupLayout,
         render_sampler: &Sampler,
         compute_layout: &BindGroupLayout,
+        draw_layout: &BindGroupLayout,
         texture: Texture,
         device: &Device,
         key: ChunkKey,
@@ -564,7 +632,7 @@ impl StrokeLayer {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let uniform = device.create_buffer_init(&BufferInitDescriptor {
+        let key = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("stroke_chunk_key"),
             contents: bytemuck::bytes_of(&ChunkUniform {
                 chunk: [key.0, key.1, key.2 as i32],
@@ -573,17 +641,17 @@ impl StrokeLayer {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let texture_compute_view = texture.create_view(&TextureViewDescriptor {
-            label: Some("stroke_chunk_texture_view"),
-            format: Some(TextureFormat::Rgba8Unorm),
-            usage: Some(TextureUsages::STORAGE_BINDING),
-            ..Default::default()
-        });
-
         let texture_fragment_view = texture.create_view(&TextureViewDescriptor {
             label: Some("stroke_chunk_texture_view"),
             format: Some(TextureFormat::Rgba8UnormSrgb),
             usage: Some(TextureUsages::TEXTURE_BINDING),
+            ..Default::default()
+        });
+
+        let texture_compute_view = texture.create_view(&TextureViewDescriptor {
+            label: Some("stroke_chunk_texture_view"),
+            format: Some(TextureFormat::Rgba8Unorm),
+            usage: Some(TextureUsages::STORAGE_BINDING),
             ..Default::default()
         });
 
@@ -629,12 +697,32 @@ impl StrokeLayer {
             ],
         });
 
+        let draw_bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("stroke_chunk_draw"),
+            layout: &draw_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&texture_compute_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &key,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+            ],
+        });
+
         ChunkBind {
             texture,
-            uniform,
+            chunk_key: key,
             render: render_bind,
             mipmap: None,
             compute: compute_bind,
+            draw: draw_bind,
         }
     }
 
@@ -722,12 +810,14 @@ impl StrokeLayer {
                 debug_assert!(!self.chunks.contains_key(&chunk_id));
 
                 let mut need_mipmap_fix = false;
+                let mut need_gamma_correction = false;
                 let render = world.single_fetch::<Render>().unwrap();
                 let chunk = texture.and_then(|texture| {
                     let mut new_chunk = Self::create_chunk_from_texture(
                         &self.render_layout,
                         &self.render_sampler,
                         &self.compute_layout,
+                        &self.drawing_layout,
                         texture,
                         &render.device,
                         chunk_id,
@@ -738,7 +828,8 @@ impl StrokeLayer {
                     let database = world.single_fetch::<SaveDatabase>().unwrap();
                     let read = database.0.begin_read().unwrap();
                     let table_meta = read.open_table(TABLE_STROKE_CHUNK_META).unwrap();
-                    let meta0 = if let Some(meta0) = table_meta.get(((0, chunk_id), 0)).unwrap() {
+                    let mut meta0 = if let Some(meta0) = table_meta.get(((0, chunk_id), 0)).unwrap()
+                    {
                         postcard::from_bytes::<ChunkMeta0>(meta0.value()).unwrap()
                     } else {
                         // blank chunk
@@ -755,6 +846,15 @@ impl StrokeLayer {
                             meta0.format
                         );
                         return None;
+                    } else if meta0.format < CHUNK_META0_FORMAT {
+                        for migrate_format in meta0.format..CHUNK_META0_FORMAT {
+                            match migrate_format {
+                                0 => need_gamma_correction = true,
+                                _ => unimplemented!("unsupported migration {migrate_format}"),
+                            }
+                        }
+                        meta0.format = CHUNK_META0_FORMAT;
+                        self.meta_unsaved.insert(chunk_id);
                     }
 
                     if !meta0.mipmapped {
@@ -772,6 +872,11 @@ impl StrokeLayer {
                 if need_mipmap_fix {
                     log::trace!("mipmap fixed {chunk_id:?}");
                     self.fix_unmipmapped(chunk_id, &render);
+                }
+
+                if need_gamma_correction {
+                    log::trace!("mipmap fixed {chunk_id:?}");
+                    self.fix_gamma(chunk_id, &render);
                 }
             }
             ThreadOutput::Remove(key) => {
@@ -863,7 +968,7 @@ impl StrokeLayer {
                 BindGroupEntry {
                     binding: 1,
                     resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &upper.uniform,
+                        buffer: &upper.chunk_key,
                         offset: 0,
                         size: None,
                     }),
@@ -880,7 +985,7 @@ impl StrokeLayer {
                 BindGroupEntry {
                     binding: 3,
                     resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &lower.uniform,
+                        buffer: &lower.chunk_key,
                         offset: 0,
                         size: None,
                     }),
@@ -1066,11 +1171,6 @@ impl StrokeLayer {
     fn fix_unmipmapped(&mut self, lower: (i32, i32, u8), render: &Render) {
         let dirty = chunk_rect(lower);
 
-        if !self.validate_chunks(dirty) {
-            log::warn!("chunk pre-check failed when fixing mipmap");
-            return;
-        }
-
         // prepare chunks
 
         let mut paint_chunks = Vec::new();
@@ -1122,6 +1222,44 @@ impl StrokeLayer {
                 self.meta_unsaved.insert(lower);
             }
         }
+
+        drop(cpass);
+
+        let command = encoder.finish();
+        queue.submit([command]);
+    }
+
+    fn fix_gamma(&mut self, lower: (i32, i32, u8), render: &Render) {
+        let chunk = self.chunks.get_mut(&lower).unwrap().as_mut().unwrap();
+
+        let dirty = chunk_rect(lower);
+        let drawing = MipmapUniform {
+            mipmap_coords: dirty.origin.into_array(),
+            mipmap_size: dirty.extend.into_array(),
+        };
+
+        let queue = &render.queue;
+        let device = &render.device;
+
+        queue.write_buffer(&self.mipmap_meta_buffer, 0, bytemuck::bytes_of(&drawing));
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("stroke"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("stroke"),
+            timestamp_writes: None,
+        });
+
+        cpass.set_pipeline(&self.gamma_fixing_pipeline);
+        cpass.set_bind_group(0, Some(&self.mipmap_meta), &[]);
+        cpass.set_bind_group(1, Some(&chunk.bind.draw), &[]);
+        cpass.dispatch_workgroups(
+            (dirty.extend.w - 1) / 2u32.pow(lower.2 as u32) / 16 + 1,
+            (dirty.extend.h - 1) / 2u32.pow(lower.2 as u32) / 16 + 1,
+            1,
+        );
 
         drop(cpass);
 
