@@ -321,13 +321,14 @@ impl Element for Button {
         if let Some(image) = self.image
             && let Ok(data) = image::load_from_memory(image.bytes)
         {
+            let data = data.into_rgba8();
             let canvas = world.build(CanvasDescriptor {
                 width: data.width(),
                 height: data.height(),
                 rect: image.transform.compute(self.rect),
                 order: self.order + 1,
                 visible: self.enabled,
-                data: Some(data.into_bytes()),
+                data: Some(data.into_raw()),
             });
 
             world.observer(this, move |&WidgetRectangle(rect), world| {

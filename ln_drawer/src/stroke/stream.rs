@@ -9,7 +9,7 @@ use redb::ReadableDatabase;
 use wgpu::{
     BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Device, Extent3d, MapMode, Origin3d,
     PollType, Queue, TexelCopyBufferInfoBase, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
-    Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
+    Texture, TextureAspect,
 };
 
 use crate::{
@@ -19,6 +19,7 @@ use crate::{
     stroke::{
         CHUNK_BATCH, CHUNK_CAPS, CHUNK_MIPMAP, CHUNK_SIZE, ChunkKey, TABLE_STROKE_CHUNK,
         ThreadInput, ThreadOutput, chunk_distance, chunk_of, chunks_within,
+        chunk_texture_desc,
     },
 };
 
@@ -178,23 +179,7 @@ pub fn loading_thread(
             if let Some(chunk) = table_chunk.get((0, chunk_id))? {
                 let bytes = zstd::decode_all(chunk.value())?;
 
-                let texture = device.create_texture(&TextureDescriptor {
-                    label: Some("stroke_chunk_texture"),
-                    size: Extent3d {
-                        width: CHUNK_SIZE,
-                        height: CHUNK_SIZE,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: TextureFormat::Rgba8Unorm,
-                    usage: TextureUsages::COPY_SRC
-                        | TextureUsages::COPY_DST
-                        | TextureUsages::TEXTURE_BINDING
-                        | TextureUsages::STORAGE_BINDING,
-                    view_formats: &[],
-                });
+                let texture = device.create_texture(&chunk_texture_desc());
 
                 queue.write_texture(
                     TexelCopyTextureInfoBase {

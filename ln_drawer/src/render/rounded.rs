@@ -188,14 +188,11 @@ impl RoundedRect {
     }
 
     fn upload_uniform(desc: &RoundedRectDescriptor, queue: &Queue, buffer: &Buffer) {
+        let linear_color = desc.color.into_linear::<f32, f32>();
+        let linear_shadow_color = desc.shadow_color.into_linear::<f32, f32>();
         let uniform = RoundedRectUniform {
-            color: Vec4::new(
-                desc.color.red,
-                desc.color.green,
-                desc.color.blue,
-                desc.color.alpha,
-            ),
-            shadow_color: Vec4::from(desc.shadow_color.into_components()),
+            color: Vec4::from(linear_color.into_components()),
+            shadow_color: Vec4::from(linear_shadow_color.into_components()),
             origin: IVec2::from_array(desc.rect.origin.into_array()),
             extend: UVec2::from_array(desc.rect.extend.into_array()),
             shadow_offset: desc.shadow_offset,
