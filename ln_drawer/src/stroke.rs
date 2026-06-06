@@ -578,9 +578,10 @@ impl StrokeLayer {
         let brush_preview = world.enter(ui_camera.0, || {
             world.build(RoundedRectDescriptor {
                 rect: Rectangle::new_half(Position::new(0, 0), Size::new(5, 5)),
-                color: Srgba::new(0.0, 0.0, 0.0, 0.1),
+                color: Srgba::new(0.5, 0.5, 0.5, 0.4),
                 shrink: 8.0,
                 value: 8.0,
+                shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.2),
                 shadow_offset: Vec2::ZERO,
                 shadow_blur: 30.0,
                 visible: false,
