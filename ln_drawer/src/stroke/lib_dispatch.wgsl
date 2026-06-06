@@ -35,7 +35,7 @@ fn area(id: vec3u) -> vec2i {
 }
 
 fn area_satisfied(id: vec3u) -> bool {
-    return all(vec4(area(id) > area_min(), area(id) < area_max()));
+    return all(vec4(area(id) >= area_min(), area(id) < area_max()));
 }
 
 // _coords_ is texture-space coords of dispatch
@@ -53,5 +53,5 @@ fn coords(id: vec3u) -> vec2i {
 }
 
 fn coords_satisfied(id: vec3u) -> bool {
-    return all(vec4(coords(id) > coords_min(), coords(id) < coords_max()));
+    return all(vec4(coords(id) >= coords_min(), coords(id) < coords_max()));
 }
