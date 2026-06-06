@@ -52,7 +52,13 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
 
 @fragment
 fn fs_main_debug(vertex: VertexOutput) -> @location(0) vec4f {
-    let a = textureSample(texture, texture_sampler, vertex.uv);
-    let b = vec4f(1, 0, 0, 1);
-    return mix(a, b, log2(f32(rectangle.extend.x) / 512) / 8.0);
+    let intensity = log2(f32(rectangle.extend.x) / 512) / 8.0;
+    let color = textureSample(texture, texture_sampler, vertex.uv);
+    let a = vec4f(color.rgb, 1) * color.a;
+    let b = vec4f(1, 0, 0, 1) * intensity;
+    let c = vec4f(0, 1, 0, 1) * (f32(i32(color.a * 255) % 5) / 5);
+
+    let ab = a * (1 - b.a) + b;
+    let abc = ab * (1 - c.a) + c;
+    return abc;
 }
