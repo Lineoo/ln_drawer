@@ -24,7 +24,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent};
 
 use crate::{lnwin::Lnwindow, render::camera::Camera};
 
-pub const COMPOSITING_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
+pub const COMPOSITING_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
 pub const MSAA_STATE: MultisampleState = MultisampleState {
     count: MSAA_SAMPLE_COUNT,
@@ -312,7 +312,7 @@ impl Render {
                 view: &surface_view,
                 resolve_target: None,
                 ops: Operations {
-                    load: LoadOp::Clear(render.clear_color),
+                    load: LoadOp::Clear(Color::TRANSPARENT),
                     store: StoreOp::Discard,
                 },
                 depth_slice: None,

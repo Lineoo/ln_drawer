@@ -203,7 +203,7 @@ impl StrokeLayer {
                     binding: 1,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: false },
+                        sample_type: TextureSampleType::Float { filterable: true },
                         view_dimension: TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -212,7 +212,7 @@ impl StrokeLayer {
                 BindGroupLayoutEntry {
                     binding: 2,
                     visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -365,8 +365,8 @@ impl StrokeLayer {
             address_mode_u: AddressMode::ClampToEdge,
             address_mode_v: AddressMode::ClampToEdge,
             address_mode_w: AddressMode::ClampToEdge,
-            mag_filter: FilterMode::Nearest,
-            min_filter: FilterMode::Nearest,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
             ..Default::default()
         });
 
@@ -396,7 +396,7 @@ impl StrokeLayer {
             },
             fragment: Some(FragmentState {
                 module: &render_shader,
-                entry_point: Some("fs_main"),
+                entry_point: Some("fs_main_ign"),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
                     format: COMPOSITING_FORMAT,
