@@ -171,6 +171,7 @@ impl Render {
             .formats
             .iter()
             .max_by_key(|&format| match format {
+                TextureFormat::Rgba16Float => 110,
                 TextureFormat::Rgba8UnormSrgb => 100,
                 TextureFormat::Bgra8UnormSrgb => 90,
                 _ if format.is_srgb() => 10,
