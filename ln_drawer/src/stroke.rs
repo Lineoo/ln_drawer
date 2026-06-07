@@ -396,7 +396,7 @@ impl StrokeLayer {
             },
             fragment: Some(FragmentState {
                 module: &render_shader,
-                entry_point: Some("fs_main_ign"),
+                entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
                     format: render.config.format,

@@ -54,7 +54,7 @@ fn fs_main_ign(vertex: VertexOutput) -> @location(0) vec4f {
     let ignx = fract(52.9829189 * fract(dot(vertex.pos.xy, vec2f(0.06711056, 0.00583715))));
     let igny = fract(52.9829189 * fract(dot(vertex.pos.yx, vec2f(0.06711056, 0.00583715))));
     var color = textureSample(texture, texture_sampler, vertex.uv);
-    let uv = vertex.uv + (vec2f(ignx, igny) * 2 - 1) * 0.5 / 512;
+    let uv = vertex.uv + (vec2f(ignx, igny) * 2 - 1) * (fwidth(vertex.uv) * 0.5 + 1 / 512);
     return textureSample(texture, texture_sampler, uv);
 }
 
