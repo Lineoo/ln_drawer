@@ -34,7 +34,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{
-        COMPOSITING_FORMAT, MSAA_STATE, Render, RenderControl, RenderInformation,
+        MSAA_STATE, Render, RenderControl, RenderInformation,
         camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils, UICamera},
         rounded::{RoundedRect, RoundedRectDescriptor},
         vertex::VertexUniform,
@@ -399,7 +399,7 @@ impl StrokeLayer {
                 entry_point: Some("fs_main_ign"),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
-                    format: COMPOSITING_FORMAT,
+                    format: render.config.format,
                     blend: Some(BlendState::ALPHA_BLENDING),
                     write_mask: ColorWrites::ALL,
                 })],
@@ -428,7 +428,7 @@ impl StrokeLayer {
                 entry_point: Some("fs_main_debug"),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
-                    format: COMPOSITING_FORMAT,
+                    format: render.config.format,
                     blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: ColorWrites::ALL,
                 })],

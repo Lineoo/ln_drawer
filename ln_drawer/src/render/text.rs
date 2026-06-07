@@ -15,7 +15,7 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        COMPOSITING_FORMAT, MSAA_STATE, Render, RenderControl,
+        MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
         vertex::VertexUniform,
     },
@@ -134,7 +134,7 @@ impl Descriptor for TextManagerDescriptor {
                     entry_point: Some("fs_main"),
                     compilation_options: Default::default(),
                     targets: &[Some(ColorTargetState {
-                        format: COMPOSITING_FORMAT,
+                        format: render.config.format,
                         blend: Some(BlendState::ALPHA_BLENDING),
                         write_mask: ColorWrites::ALL,
                     })],
