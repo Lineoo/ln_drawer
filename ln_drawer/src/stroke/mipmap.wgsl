@@ -2,10 +2,18 @@
 
 @group(1) @binding(0) var destination: texture_storage_2d<rgba8unorm, read_write>;
 @group(2) @binding(0) var source: texture_storage_2d<rgba8unorm, read_write>;
+@group(2) @binding(1) var<uniform> source_key: vec3i;
 
 @compute @workgroup_size(16, 16)
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     if !(area_satisfied(id) && coords_satisfied(id)) { return; }
+
+    let src_texl_size = i32(exp2(f32(source_key.z)));
+    let src_real_size = texture_base_size * src_texl_size;
+    let src_chunk_min = (source_key.xy) * src_real_size;
+    let src_chunk_max = (source_key.xy + vec2i(1)) * src_real_size;
+    let area = area(id);
+    if area.x < src_chunk_min.x || area.y < src_chunk_min.y || area.x >= src_chunk_max.x || area.y >= src_chunk_max.y { return; }
 
     let smol = coords(id) % 256 * 2;
 
