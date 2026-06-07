@@ -9,7 +9,7 @@ use wgpu::{
 use crate::{
     measures::Rectangle,
     render::{
-        MSAA_STATE, Render, RenderControl,
+        COMPOSITING_FORMAT, MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
     },
 };
@@ -128,7 +128,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
                 entry_point: M::fragment(),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
-                    format: render.config.format,
+                    format: COMPOSITING_FORMAT,
                     blend: Some(BlendState::ALPHA_BLENDING),
                     write_mask: ColorWrites::ALL,
                 })],
