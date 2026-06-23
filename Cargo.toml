@@ -11,5 +11,5 @@ branch = "ln_drawer"
 
 [profile.release]
 strip = "symbols"
-lto = "fat"
+lto = "thin"
 codegen-units = 1
