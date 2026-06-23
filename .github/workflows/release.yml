@@ -136,9 +136,9 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO: ${{ github.repository }}
         ASSETS: >
-          target/x86_64-unknown-linux-gnu/release/ln_drawer|ln_drawer-$VER-linux-x86_64
-          target/x86_64-pc-windows-gnu/release/ln_drawer.exe|ln_drawer-$VER-windows-x86_64.exe
-          target/release/apk/ln_drawer.apk|ln_drawer-$VER-android-aarch64.apk
+          target/x86_64-unknown-linux-gnu/release/ln_drawer|ln_drawer-${{ env.VER }}-linux-x86_64
+          target/x86_64-pc-windows-gnu/release/ln_drawer.exe|ln_drawer-${{ env.VER }}-windows-x86_64.exe
+          target/release/apk/ln_drawer.apk|ln_drawer-${{ env.VER }}-android-aarch64.apk
       run: |
         set -e
 
