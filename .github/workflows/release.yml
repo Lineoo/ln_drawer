@@ -1,0 +1,176 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: 
+      - releases/**
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    if: github.base_ref == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Actions Checkout
+      uses: actions/checkout@v6
+
+    - name: Actions Cache
+      uses: actions/cache@v5
+      with:
+        key: ubuntu-all-cross-build-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ubuntu-all-cross-build-
+        path: |
+          ~/.cargo
+          target
+
+    - name: Install ALSA Library
+      run: sudo apt-get install libasound2-dev
+
+    - name: Install MinGW-w64 for Win32 & Posix
+      run: sudo apt-get install gcc-mingw-w64-x86-64-win32 gcc-mingw-w64-x86-64-posix
+
+    - name: Install Rustup Target x86_64-pc-windows-gnu
+      run: rustup target add x86_64-pc-windows-gnu
+
+    - name: Install Rustup Target aarch64-linux-android
+      run: rustup target add aarch64-linux-android
+
+    - name: Install Rustup Target armv7-linux-androideabi
+      run: rustup target add armv7-linux-androideabi
+
+    - name: Install Cargo Apk
+      run: cargo install cargo-apk
+
+    - name: Prepare Configuration
+      run: ln_drawer/build/release.sh
+
+    - name: Prepare Keystore
+      env:
+        ORG_LINN_KEYSTORE: ${{ secrets.ORG_LINN_KEYSTORE }}
+        CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
+      run: echo "$ORG_LINN_KEYSTORE" | base64 -di > "$CARGO_APK_RELEASE_KEYSTORE"
+
+    - name: Build Artifacts x86_64 Linux
+      run: cargo build --release --package=ln_drawer --bin=ln_drawer --target x86_64-unknown-linux-gnu
+    - uses: actions/upload-artifact@v6
+      with:
+        name: artifacts-x86_64-unknown-linux-gnu
+        path: target/x86_64-unknown-linux-gnu/release/ln_drawer
+
+    - name: Build Artifacts x86_64 Windows
+      run: cargo build --release --package=ln_drawer --bin=ln_drawer --target x86_64-pc-windows-gnu
+    - uses: actions/upload-artifact@v6
+      with:
+        name: artifacts-x86_64-pc-windows-gnu
+        path: target/x86_64-pc-windows-gnu/release/ln_drawer.exe
+
+    - name: Build Artifacts aarch64 Android
+      env:
+        CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
+        CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
+      run: cargo apk build --release --package=ln_drawer --lib --target aarch64-linux-android
+    - uses: actions/upload-artifact@v6
+      with:
+        name: artifacts-aarch64-linux-android
+        path: target/release/apk/ln_drawer.apk
+
+    - name: Prepare Github Actions Bot
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Extract Version
+      env:
+        BRANCH: ${{ github.head_ref }}
+      run: echo "VER=${BRANCH#releases/}" >> $GITHUB_ENV
+
+    - name: Tag Version
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        git tag -a "$VER" -m "Release $VER (Github Action)"
+        git push https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git "$VER"
+
+    - name: Prepare Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -e
+
+        RESPONSE=$(curl -s -X GET \
+          -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/$REPO/releases/tags/$VER")
+
+        RELEASE_ID=$(echo "$RESPONSE" | jq '.id')
+
+        if [ "$RELEASE_ID" = "null" ] || [ -z "$RELEASE_ID" ]; then
+          PAYLOAD=$(jq -n \
+            --arg tag "$VER" \
+            --arg name "LnDrawer $VER" \
+            --arg body "This release is auto-generated from branch release/$VER." \
+            '{tag_name: $tag, name: $name, body: $body, draft: true, prerelease: false}')
+          
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/$REPO/releases" \
+            -d "$PAYLOAD")
+          
+          RELEASE_ID=$(echo "$RESPONSE" | jq '.id')
+          echo "Created Release ID: $RELEASE_ID"
+        fi
+
+        if [ "$RELEASE_ID" = "null" ] || [ -z "$RELEASE_ID" ]; then
+          echo "Failed to obtain Release ID"
+          exit 1
+        fi
+
+        echo "Release ID: $RELEASE_ID"
+        echo "RELEASE_ID=$RELEASE_ID" >> $GITHUB_ENV
+
+    - name: Upload Release Asset
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+        ASSETS: >
+          target/x86_64-unknown-linux-gnu/release/ln_drawer|ln_drawer-$VER-linux-x86_64
+          target/x86_64-pc-windows-gnu/release/ln_drawer.exe|ln_drawer-$VER-windows-x86_64.exe
+          target/release/apk/ln_drawer.apk|ln_drawer-$VER-android-aarch64.apk
+      run: |
+        set -e
+
+        for ASSET in $ASSETS; do
+          [ -e "$ASSET" ] || continue
+          UPLOAD_URL="https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$(basename "$ASSET")"
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$ASSET" \
+            "$UPLOAD_URL"
+          echo "$ASSET Uploaded"
+        done
+        
+        for entry in $ASSETS; do
+          file="$(echo "$entry" | cut -d'|' -f1)"
+          name="$(echo "$entry" | cut -d'|' -f2)"
+
+          [ -f "$file" ] || continue
+          
+          echo "Uploading '$file' as '$name'"
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$file" \
+            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$name"
+        done
