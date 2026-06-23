@@ -676,7 +676,7 @@ impl StrokeLayer {
                 let camera = world.single_fetch::<Camera>().unwrap();
 
                 let view_rect = camera.world_view_rect();
-                let mipmap = mipmap_of(camera.zoom);
+                let mipmap = lower_mipmap_of(camera.zoom);
                 let (chunk_src, chunk_dst) = chunks_within(view_rect, mipmap);
 
                 match stroke.render_debugging {
@@ -1245,6 +1245,10 @@ fn chunk_distance(x: i32, y: i32, z: u8, cx: i32, cy: i32, cz: u8) -> u32 {
 
 fn mipmap_of(zoom: Fract) -> u8 {
     (-zoom.round()).max(0) as u8
+}
+
+fn lower_mipmap_of(zoom: Fract) -> u8 {
+    (-(zoom.floor() + 1)).max(0) as u8
 }
 
 fn chunk_size(mipmap: u8) -> i32 {
