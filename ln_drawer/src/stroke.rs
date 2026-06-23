@@ -744,7 +744,12 @@ impl StrokeLayer {
                     false => rpass.set_pipeline(&stroke.render_pipeline),
                     true => rpass.set_pipeline(&stroke.render_debug_pipeline),
                 }
-                rpass.set_bind_group(0, &stroke.render_group_filtered, &[]);
+
+                if camera.zoom.into_f32().exp2() > 6.0 {
+                    rpass.set_bind_group(0, &stroke.render_group_unfiltered, &[]);
+                } else {
+                    rpass.set_bind_group(0, &stroke.render_group_filtered, &[]);
+                }
 
                 for chunk_x in chunk_src.0..chunk_dst.0 {
                     for chunk_y in chunk_src.1..chunk_dst.1 {
