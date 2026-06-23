@@ -1,11 +1,6 @@
 name: Release
 
-on:
-  pull_request:
-    types:
-      - closed
-    branches: 
-      - releases/**
+on: workflow_dispatch
 
 permissions:
   contents: write
@@ -15,7 +10,6 @@ env:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'releases/')
     runs-on: ubuntu-latest
 
     steps:
