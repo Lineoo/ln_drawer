@@ -26,10 +26,10 @@ struct VertexOutput {
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
+@group(0) @binding(1) var texture_sampler: sampler;
 
 @group(1) @binding(0) var<uniform> rectangle: Rectangle;
 @group(1) @binding(1) var texture: texture_2d<f32>;
-@group(1) @binding(2) var texture_sampler: sampler;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
@@ -44,15 +44,29 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
     return ret;
 }
 
-
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
     return textureSample(texture, texture_sampler, vertex.uv);
 }
 
 @fragment
+fn fs_main_ign(vertex: VertexOutput) -> @location(0) vec4f {
+    let ignx = fract(52.9829189 * fract(dot(vertex.pos.xy, vec2f(0.06711056, 0.00583715))));
+    let igny = fract(52.9829189 * fract(dot(vertex.pos.yx, vec2f(0.06711056, 0.00583715))));
+    var color = textureSample(texture, texture_sampler, vertex.uv);
+    let uv = vertex.uv + (vec2f(ignx, igny) * 2 - 1) * (fwidth(vertex.uv) * 0.5 + 1 / 512);
+    return textureSample(texture, texture_sampler, uv);
+}
+
+@fragment
 fn fs_main_debug(vertex: VertexOutput) -> @location(0) vec4f {
-    let a = textureSample(texture, texture_sampler, vertex.uv);
-    let b = vec4f(1, 0, 0, 1);
-    return mix(a, b, log2(f32(rectangle.extend.x) / 512) / 8.0);
+    let intensity = log2(f32(rectangle.extend.x) / 512) / 8.0;
+    let color = textureSample(texture, texture_sampler, vertex.uv);
+    let a = vec4f(color.rgb, 1) * color.a;
+    let b = vec4f(1, 0, 0, 1) * intensity;
+    let c = vec4f(0, 1, 0, 1) * (f32(i32(color.a * 255) % 5) / 5);
+
+    let ab = a * (1 - b.a) + b;
+    let abc = ab * (1 - c.a) + c;
+    return abc;
 }

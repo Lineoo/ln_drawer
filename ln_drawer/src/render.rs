@@ -13,8 +13,8 @@ use wgpu::{
     ExperimentalFeatures, Extent3d, Features, Instance, Limits, LoadOp, MemoryHints,
     MultisampleState, Operations, PowerPreference, PresentMode, Queue, RenderPass,
     RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface,
-    SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension, TextureUsages,
-    TextureViewDescriptor, Trace,
+    SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureUsages, TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -167,9 +167,20 @@ impl Render {
         size: PhysicalSize<u32>,
     ) -> SurfaceConfiguration {
         let caps = surface.get_capabilities(&adapter);
+        let format = *caps
+            .formats
+            .iter()
+            .max_by_key(|&format| match format {
+                TextureFormat::Rgba16Float => 110,
+                TextureFormat::Rgba8UnormSrgb => 100,
+                TextureFormat::Bgra8UnormSrgb => 90,
+                _ if format.is_srgb() => 10,
+                _ => 0,
+            })
+            .unwrap();
         let config = SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
-            format: *caps.formats.iter().find(|format| format.is_srgb()).unwrap(),
+            format,
             width: size.width.max(1),
             height: size.height.max(1),
             desired_maximum_frame_latency: 2,
@@ -198,10 +209,10 @@ impl Render {
             view_formats: vec![],
         };
 
-        log::trace!("resize in {}, {}", config.width, config.height);
-        log::trace!("texture format {:?}", config.format);
-        log::trace!("present mode {:?} is selected", config.present_mode);
-        log::trace!("alpha mode {:?} is selected", config.alpha_mode);
+        log::debug!("resize in {}, {}", config.width, config.height);
+        log::debug!("texture format {:?}", config.format);
+        log::debug!("present mode {:?} is selected", config.present_mode);
+        log::debug!("alpha mode {:?} is selected", config.alpha_mode);
 
         config
     }

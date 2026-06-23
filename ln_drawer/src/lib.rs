@@ -27,7 +27,10 @@ pub fn desktop_main() {
 pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     use android_logger::{Config, FilterBuilder};
     use ln_world::World;
-    use winit::{event_loop::EventLoop, platform::android::EventLoopBuilderExtAndroid};
+    use winit::{
+        event_loop::EventLoop,
+        platform::android::{EventLoopBuilderExtAndroid, activity::WindowManagerFlags},
+    };
 
     android_logger::init_once(
         Config::default()
@@ -43,6 +46,8 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     );
 
     log::info!("This is LnDrawer Mobile. Welcome!");
+
+    app.set_window_flags(WindowManagerFlags::FULLSCREEN, WindowManagerFlags::empty());
 
     let mut world = World::default();
     world.insert(lnwin::LnAndroid(app.clone()));

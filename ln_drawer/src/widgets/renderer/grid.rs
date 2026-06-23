@@ -39,7 +39,7 @@ impl RectangleMeshMaterial for GridMaterial {
         ShaderSource::Wgsl(
             format!(
                 "{}{}",
-                include_str!("camera.wgsl"),
+                include_str!("lib_camera.wgsl"),
                 include_str!("grid.wgsl")
             )
             .into(),
