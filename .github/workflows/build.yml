@@ -1,4 +1,4 @@
-name: Build Release
+name: Build & Test
 
 on:
   push:
@@ -13,25 +13,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+    - uses: actions/checkout@v6
 
-      - uses: actions/cache@v5
-        with:
-          key: ubuntu-all-test-${{ github.ref_name }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ubuntu-all-test-${{ github.ref_name }}-
-            ubuntu-all-test-
-          path: |
-            ~/.cargo
-            target
+    - uses: actions/cache@v5
+      with:
+        key: ubuntu-all-cross-build-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ubuntu-all-cross-build-
+        path: |
+          ~/.cargo
+          target
 
-      - name: Install ALSA Library
-        run: sudo apt-get install libasound2-dev
+    - name: Install ALSA Library
+      run: sudo apt-get install libasound2-dev
 
-      - name: Cargo Test
-        run: cargo test
+    - name: Cargo Test
+      run: cargo test
 
-  release:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -39,9 +38,8 @@ jobs:
 
     - uses: actions/cache@v5
       with:
-        key: ubuntu-all-cross-build-${{ github.ref_name }}-${{ hashFiles('Cargo.lock') }}
+        key: ubuntu-all-cross-build-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          ubuntu-all-cross-build-${{ github.ref_name }}-
           ubuntu-all-cross-build-
         path: |
           ~/.cargo
