@@ -83,7 +83,7 @@ jobs:
         git config user.email "github-actions[bot]@users.noreply.github.com"
 
     - name: Extract Version
-      run: echo "VER=${GITHUB_REF#releases/}" >> $GITHUB_ENV
+      run: echo "VER=${GITHUB_REF#refs/heads/releases/}" >> $GITHUB_ENV
 
     - name: Tag Version
       env:
