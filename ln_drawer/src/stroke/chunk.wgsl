@@ -26,10 +26,10 @@ struct VertexOutput {
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
+@group(0) @binding(1) var texture_sampler: sampler;
 
 @group(1) @binding(0) var<uniform> rectangle: Rectangle;
 @group(1) @binding(1) var texture: texture_2d<f32>;
-@group(1) @binding(2) var texture_sampler: sampler;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {

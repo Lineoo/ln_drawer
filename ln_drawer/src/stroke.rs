@@ -22,7 +22,7 @@ use wgpu::{
     ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
     ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState,
     PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
-    RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
+    RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
     ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
     TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
     TextureViewDescriptor, TextureViewDimension, VertexState,
@@ -35,7 +35,7 @@ use crate::{
     measures::{Fract, Position, PositionFract, Rectangle, Size},
     render::{
         MSAA_STATE, Render, RenderControl, RenderInformation,
-        camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils, UICamera},
+        camera::{Camera, CameraPositionChanged, CameraUtils, UICamera},
         rounded::{RoundedRect, RoundedRectDescriptor},
         vertex::VertexUniform,
     },
@@ -97,7 +97,9 @@ pub struct StrokeLayer {
     pub render_debugging: bool,
     render_pipeline: RenderPipeline,
     render_debug_pipeline: RenderPipeline,
-    render_sampler: Sampler,
+
+    render_group_unfiltered: BindGroup,
+    render_group_filtered: BindGroup,
 
     mipmap_pipeline: ComputePipeline,
     gamma_fixing_pipeline: ComputePipeline,
@@ -183,40 +185,8 @@ struct ChunkUniform {
 impl StrokeLayer {
     pub fn new(world: &World) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
-        let camera_bind = world.single_fetch::<CameraBind>().unwrap();
+        let camera = world.single_fetch::<Camera>().unwrap();
         let device = &render.device;
-
-        let chunk_render_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("chunk_render"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::VERTEX_FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
 
         let chunk_draw_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("chunk_draw"),
@@ -360,7 +330,17 @@ impl StrokeLayer {
             ],
         });
 
-        let render_sampler = device.create_sampler(&SamplerDescriptor {
+        let render_sampler_unfiltered = device.create_sampler(&SamplerDescriptor {
+            label: Some("stroke_sampler"),
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let render_sampler_filtered = device.create_sampler(&SamplerDescriptor {
             label: Some("stroke_sampler"),
             address_mode_u: AddressMode::ClampToEdge,
             address_mode_v: AddressMode::ClampToEdge,
@@ -370,6 +350,92 @@ impl StrokeLayer {
             ..Default::default()
         });
 
+        let render_camera_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("chunk_render"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let chunk_render_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("chunk_render"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let render_group_unfiltered = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("stroke_render"),
+            layout: &render_camera_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &camera.uniform,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&render_sampler_unfiltered),
+                },
+            ],
+        });
+
+        let render_group_filtered = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("stroke_render"),
+            layout: &render_camera_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &camera.uniform,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&render_sampler_filtered),
+                },
+            ],
+        });
+
         let render_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("stroke_chunk"),
             source: ShaderSource::Wgsl(include_str!("stroke/chunk.wgsl").into()),
@@ -377,7 +443,7 @@ impl StrokeLayer {
 
         let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("stroke_chunk"),
-            bind_group_layouts: &[&camera_bind.layout, &chunk_render_layout],
+            bind_group_layouts: &[&render_camera_layout, &chunk_render_layout],
             immediate_size: 0,
         });
 
@@ -490,7 +556,6 @@ impl StrokeLayer {
             render_debugging: false,
             render_pipeline,
             render_debug_pipeline,
-            render_sampler,
             mipmap_pipeline,
             gamma_fixing_pipeline,
             brush_round_pipeline,
@@ -498,6 +563,8 @@ impl StrokeLayer {
             chunk_draw_layout,
             dispatch,
             draws_length,
+            render_group_filtered,
+            render_group_unfiltered,
             draws_array,
             dispatch_group,
             dispatch_group_draw,
@@ -519,7 +586,6 @@ impl StrokeLayer {
         Self::create_chunk_from_texture(
             &self.chunk_render_layout,
             &self.chunk_draw_layout,
-            &self.render_sampler,
             texture,
             device,
             key,
@@ -534,7 +600,6 @@ impl StrokeLayer {
     fn create_chunk_from_texture(
         render_layout: &BindGroupLayout,
         draw_layout: &BindGroupLayout,
-        render_sampler: &Sampler,
         texture: Texture,
         device: &Device,
         key: ChunkKey,
@@ -587,10 +652,6 @@ impl StrokeLayer {
                 BindGroupEntry {
                     binding: 1,
                     resource: BindingResource::TextureView(&texture_fragment_view),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::Sampler(&render_sampler),
                 },
             ],
         });
@@ -683,7 +744,7 @@ impl StrokeLayer {
                     false => rpass.set_pipeline(&stroke.render_pipeline),
                     true => rpass.set_pipeline(&stroke.render_debug_pipeline),
                 }
-                rpass.set_bind_group(0, &camera.bind, &[]);
+                rpass.set_bind_group(0, &stroke.render_group_filtered, &[]);
 
                 for chunk_x in chunk_src.0..chunk_dst.0 {
                     for chunk_y in chunk_src.1..chunk_dst.1 {
@@ -711,7 +772,6 @@ impl StrokeLayer {
                     let mut new_chunk = Self::create_chunk_from_texture(
                         &self.chunk_render_layout,
                         &self.chunk_draw_layout,
-                        &self.render_sampler,
                         texture,
                         &render.device,
                         chunk_id,
