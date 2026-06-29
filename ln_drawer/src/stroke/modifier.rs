@@ -3,6 +3,7 @@ use palette::{LinSrgba, Srgba};
 
 use crate::{measures::PositionFract, stroke::interpolate::Draw};
 
+#[derive(Clone, Copy)]
 pub struct Modifier {
     pub min_size: f32,
     pub max_size: f32,

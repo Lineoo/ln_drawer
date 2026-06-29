@@ -309,8 +309,8 @@ fn side_panel(world: &mut World) {
         world.trigger(eraser, &ButtonChecked(true));
         let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
         stroke.modifier = Modifier {
-            min_size: 1.0,
-            max_size: 25.0,
+            min_size: 10.0,
+            max_size: 50.0,
             size_force_exp: 1.0,
             min_flow: 0.1,
             max_flow: 1.0,

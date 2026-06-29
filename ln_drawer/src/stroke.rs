@@ -7,10 +7,11 @@ mod stream;
 use std::{
     sync::mpsc::{Receiver, Sender, channel},
     thread::JoinHandle,
+    time::{Duration, Instant},
 };
 
 use bytemuck::{bytes_of, cast_slice};
-use glam::Vec2;
+use glam::{DVec2, Vec2};
 use hashbrown::{HashMap, HashSet};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -127,6 +128,7 @@ pub struct StrokeLayer {
     pub modifier: Modifier,
     pub dirty: Dirty,
     pub shape: u32,
+
     prev: Option<Draw>,
 }
 
@@ -911,6 +913,8 @@ impl StrokeLayer {
         });
 
         let mut pinch_distance = None;
+        let mut drag_start = None;
+        let mut temp_erase_mode = None;
         world.observer(collider, move |event: &MultiTouchGroup, world| {
             let primary = event.members.first().unwrap();
 
@@ -957,6 +961,45 @@ impl StrokeLayer {
                 }
             } else if let MultiTouchStatus::Holding | MultiTouchStatus::Press = primary.status {
                 let mut this = world.fetch_mut(this).unwrap();
+
+                if let MultiTouchStatus::Press = primary.status
+                    && !this.erase
+                {
+                    drag_start = Some((primary.screen, Instant::now()));
+                }
+
+                if let Some((start, timer)) = drag_start {
+                    const DRAG_DISTANCE: f64 = 0.01;
+                    const ERASE_TIMER: f64 = 0.8;
+                    const ERASE_FORCE_THRESHOLD: f32 = 0.6;
+                    const TEMP_ERASE_MODIFIER: Modifier = Modifier {
+                        min_size: 5.0,
+                        max_size: 15.0,
+                        size_force_exp: 1.0,
+                        min_flow: 0.5,
+                        max_flow: 1.0,
+                        flow_force_exp: 1.0,
+                        softness: 0.5,
+                        color: Srgba::new(1.0, 1.0, 1.0, 1.0),
+                    };
+
+                    if DVec2::from_array(primary.screen).distance(DVec2::from_array(start))
+                        > DRAG_DISTANCE
+                    {
+                        drag_start = None;
+                    } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
+                        if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
+                            temp_erase_mode = Some(this.modifier);
+                            this.erase = true;
+                            this.modifier = TEMP_ERASE_MODIFIER;
+                            this.prev = None;
+                            drag_start = None;
+                        } else {
+                            drag_start = None;
+                        }
+                    }
+                }
+
                 let target = Draw {
                     position: primary.position,
                     force: primary.data.force.unwrap_or(1.0),
@@ -964,10 +1007,15 @@ impl StrokeLayer {
 
                 this.paint(target, world);
             } else {
-                world.queue(move |world| {
-                    let mut this = world.fetch_mut(this).unwrap();
-                    this.prev = None;
-                });
+                let mut this = world.fetch_mut(this).unwrap();
+
+                if let Some(ori) = temp_erase_mode {
+                    temp_erase_mode = None;
+                    this.erase = false;
+                    this.modifier = ori;
+                }
+
+                this.prev = None;
             }
         });
     }
