@@ -23,8 +23,11 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     let c3 = srgb_to_linear(textureLoad(source, smol + vec2i(1, 0)));
 
     let a = c0.a + c1.a + c2.a + c3.a;
-    if a < 1e-6 { return; }
 
-    let rgb = (c0.rgb * c0.a + c1.rgb * c1.a + c2.rgb * c2.a + c3.rgb * c3.a) / a;
-    textureStore(destination, coords(id), linear_to_srgb(vec4f(rgb, a / 4)));
+    if a < 1e-6 { 
+        textureStore(destination, coords(id), vec4f(0));
+    } else {
+        let rgb = (c0.rgb * c0.a + c1.rgb * c1.a + c2.rgb * c2.a + c3.rgb * c3.a) / a;
+        textureStore(destination, coords(id), linear_to_srgb(vec4f(rgb, a / 4)));
+    }
 }
