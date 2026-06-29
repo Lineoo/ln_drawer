@@ -211,7 +211,7 @@ impl Element for Lnwindow {
 fn side_panel(world: &mut World) {
     let lnwindow = world.single::<Lnwindow>().unwrap();
 
-    let parent = world.insert(Button {
+    let side_panel = world.insert(Button {
         order: 0,
         color: Srgba::new(0.863, 0.863, 0.863, 1.0),
         active_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
@@ -219,7 +219,7 @@ fn side_panel(world: &mut World) {
         ..Default::default()
     });
 
-    let child0 = world.insert(Button {
+    let pen = world.insert(Button {
         order: 10,
         color: Srgba::new(0.5, 0.5, 0.5, 0.0),
         active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
@@ -235,7 +235,7 @@ fn side_panel(world: &mut World) {
         ..Default::default()
     });
 
-    let child1 = world.insert(Button {
+    let brush = world.insert(Button {
         order: 10,
         color: Srgba::new(0.5, 0.5, 0.5, 0.0),
         active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
@@ -251,27 +251,81 @@ fn side_panel(world: &mut World) {
         ..Default::default()
     });
 
-    let child2 = world.insert(Button {
+    let eraser = world.insert(Button {
         order: 10,
         color: Srgba::new(0.5, 0.5, 0.5, 0.0),
         active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
         press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-        image: None,
+        image: Some(ButtonImage {
+            transform: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+            ),
+            bytes: include_bytes!("../res/interface/eraser.png"),
+        }),
         ..Default::default()
     });
 
-    let child2_color = world.insert(Button {
-        order: 11,
-        color: Srgba::new(0.9, 0.7, 0.7, 1.0),
-        attach_pointer: false,
-        roundness: 16.0,
-        ..Default::default()
+    world.observer(pen, move |&WidgetClick, world| {
+        world.trigger(pen, &ButtonChecked(true));
+        world.trigger(brush, &ButtonChecked(false));
+        world.trigger(eraser, &ButtonChecked(false));
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        stroke.modifier = Modifier {
+            min_size: 0.0,
+            max_size: 6.0,
+            size_force_exp: 1.0,
+            min_flow: 0.7,
+            max_flow: 1.0,
+            flow_force_exp: 2.0,
+            softness: 0.2,
+            ..stroke.modifier
+        };
+        stroke.erase = false;
     });
+
+    world.observer(brush, move |&WidgetClick, world| {
+        world.trigger(pen, &ButtonChecked(false));
+        world.trigger(brush, &ButtonChecked(true));
+        world.trigger(eraser, &ButtonChecked(false));
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        stroke.modifier = Modifier {
+            min_size: 1.0,
+            max_size: 25.0,
+            size_force_exp: 1.0,
+            min_flow: 0.1,
+            max_flow: 1.0,
+            flow_force_exp: 1.0,
+            softness: 0.5,
+            ..stroke.modifier
+        };
+        stroke.erase = false;
+    });
+
+    world.observer(eraser, move |&WidgetClick, world| {
+        world.trigger(pen, &ButtonChecked(false));
+        world.trigger(brush, &ButtonChecked(false));
+        world.trigger(eraser, &ButtonChecked(true));
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        stroke.modifier = Modifier {
+            min_size: 1.0,
+            max_size: 25.0,
+            size_force_exp: 1.0,
+            min_flow: 0.1,
+            max_flow: 1.0,
+            flow_force_exp: 1.0,
+            softness: 0.5,
+            ..stroke.modifier
+        };
+        stroke.erase = true;
+    });
+
+    let color_picker = color_palette(world);
 
     let elastic_blank = world.insert(());
 
-    let child3 = world.insert(Button {
+    let compass = world.insert(Button {
         order: 10,
         color: Srgba::new(0.5, 0.5, 0.5, 0.0),
         active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
@@ -287,6 +341,14 @@ fn side_panel(world: &mut World) {
         ..Default::default()
     });
 
+    world.observer(compass, move |&WidgetClick, world| {
+        let main_camera = world.single_fetch::<MainCamera>().unwrap();
+        let mut camera = world
+            .enter_single_fetch_mut::<Camera>(main_camera.0)
+            .unwrap();
+        camera.center = PositionFract::ZERO;
+    });
+
     world.insert(Transform {
         value: TransformValue {
             left: TransformEdge {
@@ -295,7 +357,7 @@ fn side_panel(world: &mut World) {
             },
             down: TransformEdge {
                 anchor: 0.5,
-                offset: 150,
+                offset: -200,
             },
             right: TransformEdge {
                 anchor: 0.0,
@@ -303,20 +365,22 @@ fn side_panel(world: &mut World) {
             },
             up: TransformEdge {
                 anchor: 0.5,
-                offset: -150,
+                offset: 200,
             },
         },
         source: lnwindow.untyped(),
-        target: parent.untyped(),
+        target: side_panel.untyped(),
     });
 
     world.insert(LuniFlex {
         parent: (
-            parent.untyped(),
+            side_panel.untyped(),
             LuniParent {
                 axis: LuniAxis::Column,
                 template: LuniChildTemplate {
-                    basis: 10,
+                    basis: 54,
+                    shrink: 1.0,
+                    grow: 0.0,
                     margin: LuniRect {
                         left: 2,
                         bottom: 2,
@@ -336,7 +400,7 @@ fn side_panel(world: &mut World) {
         ),
         children: vec![
             (
-                child0.untyped(),
+                pen.untyped(),
                 LuniChild {
                     basis: Some(54),
                     shrink: Some(1.0),
@@ -344,7 +408,7 @@ fn side_panel(world: &mut World) {
                 },
             ),
             (
-                child1.untyped(),
+                brush.untyped(),
                 LuniChild {
                     basis: Some(54),
                     shrink: Some(1.0),
@@ -352,7 +416,15 @@ fn side_panel(world: &mut World) {
                 },
             ),
             (
-                child2.untyped(),
+                eraser.untyped(),
+                LuniChild {
+                    basis: Some(54),
+                    shrink: Some(1.0),
+                    ..Default::default()
+                },
+            ),
+            (
+                color_picker.untyped(),
                 LuniChild {
                     basis: Some(54),
                     shrink: Some(1.0),
@@ -368,7 +440,7 @@ fn side_panel(world: &mut World) {
                 },
             ),
             (
-                child3.untyped(),
+                compass.untyped(),
                 LuniChild {
                     basis: Some(54),
                     shrink: Some(1.0),
@@ -378,53 +450,26 @@ fn side_panel(world: &mut World) {
         ],
     });
 
-    world.insert(Transform {
-        value: TransformValue::anchor(
-            (0.5, 0.5),
-            Rectangle::new_half(Position::ZERO, Size::splat(16)),
-        ),
-        source: child2.untyped(),
-        target: child2_color.untyped(),
+    world.queue_trigger(side_panel, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));
+}
+
+fn color_palette(world: &mut World) -> Handle<Button> {
+    let color_picker = world.insert(Button {
+        order: 10,
+        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
+        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
+        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        image: None,
+        ..Default::default()
     });
 
-    world.observer(child0, move |&WidgetClick, world| {
-        world.trigger(child0, &ButtonChecked(true));
-        world.trigger(child1, &ButtonChecked(false));
-        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-        stroke.modifier = Modifier {
-            min_size: 0.0,
-            max_size: 6.0,
-            size_force_exp: 1.0,
-            min_flow: 0.7,
-            max_flow: 1.0,
-            flow_force_exp: 2.0,
-            softness: 0.2,
-            ..stroke.modifier
-        };
-    });
-
-    world.observer(child1, move |&WidgetClick, world| {
-        world.trigger(child0, &ButtonChecked(false));
-        world.trigger(child1, &ButtonChecked(true));
-        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-        stroke.modifier = Modifier {
-            min_size: 1.0,
-            max_size: 25.0,
-            size_force_exp: 1.0,
-            min_flow: 0.1,
-            max_flow: 1.0,
-            flow_force_exp: 1.0,
-            softness: 0.5,
-            ..stroke.modifier
-        };
-    });
-
-    world.observer(child3, move |&WidgetClick, world| {
-        let main_camera = world.single_fetch::<MainCamera>().unwrap();
-        let mut camera = world
-            .enter_single_fetch_mut::<Camera>(main_camera.0)
-            .unwrap();
-        camera.center = PositionFract::ZERO;
+    let color_picker_color = world.insert(Button {
+        order: 11,
+        color: Srgba::new(0.9, 0.7, 0.7, 1.0),
+        attach_pointer: false,
+        roundness: 16.0,
+        ..Default::default()
     });
 
     let main_panel_transform = TransformValue::anchor(
@@ -456,7 +501,7 @@ fn side_panel(world: &mut World) {
 
     world.insert(Transform {
         value: main_panel_transform,
-        source: child2.untyped(),
+        source: color_picker.untyped(),
         target: main_panel.untyped(),
     });
 
@@ -469,12 +514,12 @@ fn side_panel(world: &mut World) {
     world.observer(palette, move |&WidgetHsla(color), world| {
         let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
         layer.modifier.color = color.into_color();
-        world.queue_trigger(child2_color, ButtonColor(color.into_color()));
+        world.queue_trigger(color_picker_color, ButtonColor(color.into_color()));
     });
 
-    world.observer(child2, move |&WidgetClick, world| {
+    world.observer(color_picker, move |&WidgetClick, world| {
         let main_panel = world.fetch(main_panel).unwrap();
-        let child2 = world.fetch(child2).unwrap();
+        let child2 = world.fetch(color_picker).unwrap();
         world.queue_trigger(main_panel.handle(), WidgetEnabled(!main_panel.enabled));
         world.queue_trigger(palette, WidgetEnabled(!main_panel.enabled));
 
@@ -490,7 +535,15 @@ fn side_panel(world: &mut World) {
         }
     });
 
-    world.queue_trigger(parent, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));
+    world.insert(Transform {
+        value: TransformValue::anchor(
+            (0.5, 0.5),
+            Rectangle::new_half(Position::ZERO, Size::splat(16)),
+        ),
+        source: color_picker.untyped(),
+        target: color_picker_color.untyped(),
+    });
+    color_picker
 }
 
 impl Lnwindow {

@@ -101,9 +101,11 @@ pub struct StrokeLayer {
     render_group_unfiltered: BindGroup,
     render_group_filtered: BindGroup,
 
+    pub erase: bool,
     mipmap_pipeline: ComputePipeline,
     gamma_fixing_pipeline: ComputePipeline,
     brush_round_pipeline: ComputePipeline,
+    erase_round_pipeline: ComputePipeline,
 
     chunk_render_layout: BindGroupLayout,
     chunk_draw_layout: BindGroupLayout,
@@ -510,6 +512,8 @@ impl StrokeLayer {
             gamma_fixing_pipeline(device, &chunk_draw_layout, &dispatch_group_layout);
         let brush_round_pipeline =
             shape::brush_round(&render, &dispatch_group_draw_layout, &chunk_draw_layout);
+        let erase_round_pipeline =
+            shape::erase_round(&render, &dispatch_group_draw_layout, &chunk_draw_layout);
 
         let (thread_input_tx, thread_input_rx) = channel();
         let (thread_output_tx, thread_output_rx) = channel();
@@ -556,15 +560,17 @@ impl StrokeLayer {
             render_debugging: false,
             render_pipeline,
             render_debug_pipeline,
+            render_group_unfiltered,
+            render_group_filtered,
+            erase: false,
             mipmap_pipeline,
             gamma_fixing_pipeline,
             brush_round_pipeline,
+            erase_round_pipeline,
             chunk_render_layout,
             chunk_draw_layout,
             dispatch,
             draws_length,
-            render_group_filtered,
-            render_group_unfiltered,
             draws_array,
             dispatch_group,
             dispatch_group_draw,
@@ -1004,7 +1010,12 @@ impl StrokeLayer {
         let mut encoder = device.create_command_encoder(&ENCODER_DESC);
         let mut cpass = encoder.begin_compute_pass(&CPASS_DESC);
 
-        cpass.set_pipeline(&self.brush_round_pipeline);
+        if !self.erase {
+            cpass.set_pipeline(&self.brush_round_pipeline);
+        } else {
+            cpass.set_pipeline(&self.erase_round_pipeline);
+        }
+
         cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
         for key in paint_chunks {
             let chunk = self.chunks.get(&key).unwrap();
