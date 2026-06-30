@@ -208,6 +208,16 @@ impl Rectangle {
         }
     }
 
+    #[inline]
+    pub const fn horizontal_center(self) -> i32 {
+        self.origin.x + self.extend.w as i32 / 2
+    }
+
+    #[inline]
+    pub const fn vertical_center(self) -> i32 {
+        self.origin.y + self.extend.h as i32 / 2
+    }
+
     pub fn expand(self, val: i32) -> Rectangle {
         Rectangle::new(
             self.origin.x.wrapping_sub(val),

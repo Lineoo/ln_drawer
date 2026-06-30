@@ -29,7 +29,7 @@ use crate::{
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     stroke::{StrokeLayer, modifier::Modifier},
-    theme::ColorScheme,
+    theme::Theme,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
@@ -39,6 +39,7 @@ use crate::{
         button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage},
         palette::hsl::{PaletteHsl, PaletteHslMaterial},
         renderer::grid::{Grid, GridMaterial},
+        slider::VSlider,
     },
 };
 
@@ -141,7 +142,7 @@ impl Element for Lnwindow {
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
             RectangleMesh::<GridMaterial>::init(world);
-            world.insert(ColorScheme::default());
+            world.insert(Theme::default());
         });
 
         world.queue(|world| {
@@ -203,6 +204,18 @@ impl Element for Lnwindow {
                 });
 
                 world.queue(side_panel);
+                world.queue(|world| {
+                    let slider = world.insert(VSlider {
+                        x: 0,
+                        y_min: -100,
+                        y_max: 100,
+                        min: 0.0,
+                        max: 100.0,
+                        value: 67.0,
+                    });
+                    world.flush();
+                    VSlider::create_renderer(slider, world);
+                });
             });
         });
     }
