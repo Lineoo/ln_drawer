@@ -48,7 +48,7 @@ impl VSlider {
         let front = world.build(RoundedRectDescriptor {
             rect: Rectangle::new(instance.x - 10, instance.y_min, instance.x + 10, value),
             color: theme.theme_color,
-            shadow_color: theme.shadow_color,
+            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
             shadow_offset: Vec2::ZERO,
             shadow_blur: 0.0,
             shrink: theme.roundness,
@@ -62,11 +62,11 @@ impl VSlider {
             rect: Rectangle::new_half(Position::new(instance.x, value), Size::new(12, 25)),
             color: theme.primary_color,
             shadow_color: theme.shadow_color,
-            shadow_offset: Vec2::ZERO,
-            shadow_blur: 0.0,
+            shadow_offset: Vec2::new(0.0, -4.0),
+            shadow_blur: 10.0,
             shrink: theme.roundness,
             value: theme.roundness,
-            vertex_extend: 0,
+            vertex_extend: 20,
             visible: true,
             order: 2,
         });

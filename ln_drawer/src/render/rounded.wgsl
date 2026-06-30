@@ -59,10 +59,7 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
     let rect_color = panel(vertex);
     let shadow_color = shadow(vertex);
 
-    return vec4f(
-        rect_color.rgb * rect_color.a + shadow_color.rgb * (1.0 - rect_color.a),
-        rect_color.a + shadow_color.a * (1.0 - rect_color.a)
-    );
+    return vec4f(rect_color.rgb, 1) * rect_color.a + vec4f(shadow_color.rgb, 1) * shadow_color.a * (1.0 - rect_color.a);
     // return vec4f(step(distance, rectangle.value)) * rectangle.color;
     // return vec4f(normalize(vec3f(0.5, 0.5, distance)), fract(distance)) * rectangle.color;
 }
