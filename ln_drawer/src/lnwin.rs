@@ -214,7 +214,9 @@ impl Element for Lnwindow {
                         value: 67.0,
                     });
                     world.flush();
+                    VSlider::receive_event(slider, world);
                     VSlider::create_renderer(slider, world);
+                    VSlider::create_interact(slider, world);
                 });
             });
         });
