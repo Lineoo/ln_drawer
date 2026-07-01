@@ -20,5 +20,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let world_space = clip_to_world(in.uv * 2 - vec2f(1));
     let grid_unit = (world_space + vec2f(f32(grid_size) / 2)) / f32(grid_size);
     let grid_mod = grid_unit - floor(grid_unit) - vec2f(0.5);
-    return vec4f(vec3f(0.8), 1 - smoothstep(10. / f32(grid_size), 15. / f32(grid_size), length(grid_mod)));
+    return vec4f(vec3f(0.8), 1) * (1 - smoothstep(10. / f32(grid_size), 15. / f32(grid_size), length(grid_mod)));
 }

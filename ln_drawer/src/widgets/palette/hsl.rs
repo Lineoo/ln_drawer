@@ -146,7 +146,14 @@ impl RectangleMeshMaterial for PaletteHslMaterial {
     }
 
     fn shader() -> wgpu::ShaderSource<'static> {
-        wgpu::ShaderSource::Wgsl(include_str!("hsl.wgsl").into())
+        wgpu::ShaderSource::Wgsl(
+            format!(
+                "{}{}",
+                include_str!("../../stroke/lib_colorspace.wgsl"),
+                include_str!("hsl.wgsl")
+            )
+            .into(),
+        )
     }
 
     fn fragment() -> Option<&'static str> {
