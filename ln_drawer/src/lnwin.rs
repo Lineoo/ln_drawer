@@ -310,7 +310,7 @@ fn side_panel(world: &mut World) {
             SetSlider {
                 max: slider.max,
                 min: slider.min,
-                value: 6.0,
+                value: (6.0f32 / 40.0 + 1.0).log2() * (slider.max - slider.min) + slider.min,
             },
         );
     });
@@ -338,7 +338,7 @@ fn side_panel(world: &mut World) {
             SetSlider {
                 max: slider.max,
                 min: slider.min,
-                value: 25.0,
+                value: (24.0f32 / 40.0 + 1.0).log2() * (slider.max - slider.min) + slider.min,
             },
         );
     });
@@ -366,7 +366,7 @@ fn side_panel(world: &mut World) {
             SetSlider {
                 max: slider.max,
                 min: slider.min,
-                value: 50.0,
+                value: (40.0f32 / 40.0 + 1.0).log2() * (slider.max - slider.min) + slider.min,
             },
         );
     });
@@ -375,7 +375,7 @@ fn side_panel(world: &mut World) {
         let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
         let percent = (value - min) / (max - min);
         stroke.modifier = Modifier {
-            max_size: stroke.modifier.min_size + (percent.exp2() - 1.0) * 30.0,
+            max_size: stroke.modifier.min_size + (percent.exp2() - 1.0) * 40.0,
             ..stroke.modifier
         };
     });
