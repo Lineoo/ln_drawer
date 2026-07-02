@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use glam::Vec2;
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, ViewOptions, World};
 use palette::{Hsla, IntoColor, RgbHue, Srgba};
@@ -211,20 +212,21 @@ impl Element for Lnwindow {
 
 fn side_panel(world: &mut World) {
     let lnwindow = world.single::<Lnwindow>().unwrap();
+    let theme = world.single_fetch::<Theme>().unwrap();
 
     let side_panel = world.insert(Button {
         order: 0,
-        color: Srgba::new(0.863, 0.863, 0.863, 1.0),
-        active_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
-        press_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
+        color: theme.primary_color,
+        active_color: theme.primary_color,
+        press_color: theme.primary_color,
         ..Default::default()
     });
 
     let pen = world.insert(Button {
         order: 10,
-        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
@@ -238,9 +240,9 @@ fn side_panel(world: &mut World) {
 
     let brush = world.insert(Button {
         order: 10,
-        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
@@ -254,9 +256,9 @@ fn side_panel(world: &mut World) {
 
     let eraser = world.insert(Button {
         order: 10,
-        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
@@ -268,7 +270,7 @@ fn side_panel(world: &mut World) {
         ..Default::default()
     });
 
-    let color_picker = color_palette(world);
+    let color_picker = color_palette(world, &theme);
 
     let elastic_blank = world.insert(());
 
@@ -382,9 +384,9 @@ fn side_panel(world: &mut World) {
 
     let compass = world.insert(Button {
         order: 10,
-        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
@@ -516,12 +518,12 @@ fn side_panel(world: &mut World) {
     world.queue_trigger(side_panel, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));
 }
 
-fn color_palette(world: &mut World) -> Handle<Button> {
+fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
     let color_picker = world.insert(Button {
         order: 10,
-        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
         image: None,
         ..Default::default()
@@ -532,6 +534,7 @@ fn color_palette(world: &mut World) -> Handle<Button> {
         color: Srgba::new(0.9, 0.7, 0.7, 1.0),
         attach_pointer: false,
         roundness: 16.0,
+        shadow_offset: Vec2::ZERO,
         ..Default::default()
     });
 
