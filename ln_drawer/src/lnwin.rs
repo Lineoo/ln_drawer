@@ -130,7 +130,7 @@ impl Element for Lnwindow {
         world.queue(|world| {
             SaveDatabase::init(world);
             world.insert(AutosaveScheduler {
-                autosave_duration: Duration::from_secs(10),
+                autosave_duration: Duration::from_secs(180),
             });
         });
 
