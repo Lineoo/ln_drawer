@@ -28,6 +28,9 @@ const FORMAT_VERSION: u32 = 2;
 /// The number of backup files.
 const BACKUP_SLOT: u32 = 6;
 
+/// The minimum duration before creating another save backup
+const BACKUP_MINIMUM_DURATION: Duration = Duration::from_hours(24);
+
 const TABLE_METADATA: TableDefinition<u32, &[u8]> = TableDefinition::new("metadata");
 
 #[derive(Clone)]
@@ -48,6 +51,7 @@ impl SaveDatabase {
         };
 
         let target = get_file_path(world, "world.lndb");
+        std::fs::create_dir_all(&target.parent().unwrap()).unwrap();
         SaveDatabase::create_backup(&target);
         if let Ok(db) = Database::open(&target) {
             SaveDatabase::touch(&db).unwrap();
@@ -128,6 +132,7 @@ impl SaveDatabase {
         let mut backup = PathBuf::new();
         let mut temp = PathBuf::new();
         let mut oldest = Duration::ZERO;
+        let mut newest = Duration::ZERO;
         for i in 0..BACKUP_SLOT {
             temp.clear();
             temp.push(target);
@@ -152,6 +157,14 @@ impl SaveDatabase {
                 backup.clone_from(&temp);
                 oldest = duration;
             }
+
+            if duration < newest {
+                newest = duration;
+            }
+        }
+
+        if newest < BACKUP_MINIMUM_DURATION {
+            return;
         }
 
         log::debug!("backup file is written to {backup:?}");
