@@ -39,7 +39,7 @@ use crate::{
         button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage},
         palette::hsl::{PaletteHsl, PaletteHslMaterial},
         renderer::grid::{Grid, GridMaterial},
-        slider::VSlider,
+        slider::{SetSlider, VSlider},
     },
 };
 
@@ -204,20 +204,6 @@ impl Element for Lnwindow {
                 });
 
                 world.queue(side_panel);
-                world.queue(|world| {
-                    let slider = world.insert(VSlider {
-                        x: 0,
-                        y_min: -100,
-                        y_max: 100,
-                        min: 0.0,
-                        max: 100.0,
-                        value: 67.0,
-                    });
-                    world.flush();
-                    VSlider::receive_event(slider, world);
-                    VSlider::create_renderer(slider, world);
-                    VSlider::create_interact(slider, world);
-                });
             });
         });
     }
@@ -282,6 +268,25 @@ fn side_panel(world: &mut World) {
         ..Default::default()
     });
 
+    let color_picker = color_palette(world);
+
+    let elastic_blank = world.insert(());
+
+    let slider = world.insert(VSlider {
+        x: 0,
+        y_min: -100,
+        y_max: 100,
+        min: 0.0,
+        max: 100.0,
+        value: 67.0,
+    });
+
+    world.queue(move |world| {
+        VSlider::receive_event(slider, world);
+        VSlider::create_renderer(slider, world);
+        VSlider::create_interact(slider, world);
+    });
+
     world.observer(pen, move |&WidgetClick, world| {
         world.trigger(pen, &ButtonChecked(true));
         world.trigger(brush, &ButtonChecked(false));
@@ -298,6 +303,16 @@ fn side_panel(world: &mut World) {
             ..stroke.modifier
         };
         stroke.erase = false;
+
+        let slider = world.fetch(slider).unwrap();
+        world.queue_trigger(
+            slider.handle(),
+            SetSlider {
+                max: slider.max,
+                min: slider.min,
+                value: 6.0,
+            },
+        );
     });
 
     world.observer(brush, move |&WidgetClick, world| {
@@ -316,6 +331,16 @@ fn side_panel(world: &mut World) {
             ..stroke.modifier
         };
         stroke.erase = false;
+
+        let slider = world.fetch(slider).unwrap();
+        world.queue_trigger(
+            slider.handle(),
+            SetSlider {
+                max: slider.max,
+                min: slider.min,
+                value: 25.0,
+            },
+        );
     });
 
     world.observer(eraser, move |&WidgetClick, world| {
@@ -334,11 +359,26 @@ fn side_panel(world: &mut World) {
             ..stroke.modifier
         };
         stroke.erase = true;
+
+        let slider = world.fetch(slider).unwrap();
+        world.queue_trigger(
+            slider.handle(),
+            SetSlider {
+                max: slider.max,
+                min: slider.min,
+                value: 50.0,
+            },
+        );
     });
 
-    let color_picker = color_palette(world);
-
-    let elastic_blank = world.insert(());
+    world.observer(slider, move |&SetSlider { min, max, value }, world| {
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        let percent = (value - min) / (max - min);
+        stroke.modifier = Modifier {
+            max_size: stroke.modifier.min_size + (percent.exp2() - 1.0) * 30.0,
+            ..stroke.modifier
+        };
+    });
 
     let compass = world.insert(Button {
         order: 10,
@@ -372,7 +412,7 @@ fn side_panel(world: &mut World) {
             },
             down: TransformEdge {
                 anchor: 0.5,
-                offset: -200,
+                offset: -350,
             },
             right: TransformEdge {
                 anchor: 0.0,
@@ -380,7 +420,7 @@ fn side_panel(world: &mut World) {
             },
             up: TransformEdge {
                 anchor: 0.5,
-                offset: 200,
+                offset: 350,
             },
         },
         source: lnwindow.untyped(),
@@ -451,6 +491,14 @@ fn side_panel(world: &mut World) {
                 LuniChild {
                     basis: Some(0),
                     grow: Some(1.0),
+                    ..Default::default()
+                },
+            ),
+            (
+                slider.untyped(),
+                LuniChild {
+                    basis: Some(240),
+                    shrink: Some(1.0),
                     ..Default::default()
                 },
             ),

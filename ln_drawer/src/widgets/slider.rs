@@ -3,7 +3,7 @@ use ln_world::{Element, Handle, World};
 use palette::Srgba;
 
 use crate::{
-    animation::{DirectAnimation, SetAnimationDst},
+    animation::{AnimationType, DirectAnimation, SetAnimationDst},
     measures::{Position, Rectangle, Size},
     render::rounded::RoundedRectDescriptor,
     theme::Theme,
@@ -11,7 +11,7 @@ use crate::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHover, PointerHoverStatus},
     },
-    widgets::WidgetHover,
+    widgets::{WidgetHover, WidgetRectangle},
 };
 
 /// Related events: [`SetSlider`], [`SliderKnobHover`], [`WidgetHover`]
@@ -42,6 +42,13 @@ impl VSlider {
             this.min = min;
             this.max = max;
             this.value = value;
+        });
+
+        world.observer(slider, move |&WidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(slider).unwrap();
+            this.y_max = rect.up();
+            this.y_min = rect.down();
+            this.x = rect.horizontal_center();
         });
     }
 
@@ -144,6 +151,31 @@ impl VSlider {
                 Rectangle::new_half(Position::new(this.x, value), Size::new(8, 2));
         });
 
+        world.observer(slider, move |&WidgetRectangle(rect), world| {
+            let this = world.fetch(slider).unwrap();
+            let mut back_rect_anim = world.fetch_mut(back_rect_anim).unwrap();
+            let mut front = world.fetch_mut(front).unwrap();
+            let mut knob = world.fetch_mut(knob).unwrap();
+            let mut knob_split = world.fetch_mut(knob_split).unwrap();
+
+            let y_max = rect.up();
+            let y_min = rect.down();
+            let x = rect.horizontal_center();
+
+            let y_knob_max = y_max - 23;
+            let y_knob_min = y_min + 23;
+
+            let value = div_height(this.value, this.max, this.min, y_knob_max, y_knob_min);
+
+            let back_rect = Rectangle::new(this.x - 10, this.y_min, this.x + 10, this.y_max);
+            back_rect_anim.dst = back_rect.into_storage();
+            back_rect_anim.src = back_rect.into_storage();
+
+            front.desc.rect = Rectangle::new(x - 10, y_min, x + 10, value);
+            knob.desc.rect = Rectangle::new_half(Position::new(x, value), Size::new(12, 25));
+            knob_split.desc.rect = Rectangle::new_half(Position::new(x, value), Size::new(8, 2));
+        });
+
         world.observer(slider, move |event: &WidgetHover, world| {
             let this = world.fetch(slider).unwrap();
 
@@ -179,11 +211,17 @@ impl VSlider {
             match event {
                 SliderKnobHover::HoverEnter => {
                     world.trigger(knob_color_anim, &SetAnimationDst(theme.secondary_color));
-                    world.trigger(knob_split_color_anim, &SetAnimationDst(theme.significant_color));
+                    world.trigger(
+                        knob_split_color_anim,
+                        &SetAnimationDst(theme.significant_color),
+                    );
                 }
                 SliderKnobHover::HoverLeave => {
                     world.trigger(knob_color_anim, &SetAnimationDst(theme.primary_color));
-                    world.trigger(knob_split_color_anim, &SetAnimationDst(theme.secondary_color));
+                    world.trigger(
+                        knob_split_color_anim,
+                        &SetAnimationDst(theme.secondary_color),
+                    );
                 }
             }
         });
@@ -194,7 +232,7 @@ impl VSlider {
 
         let collider = world.insert(ToolCollider {
             rect: Rectangle::new(this.x - 15, this.y_min, this.x + 15, this.y_max),
-            order: 0,
+            order: 10,
             enabled: true,
         });
 
@@ -249,6 +287,16 @@ impl VSlider {
                 }
                 _ => {}
             }
+        });
+
+        world.observer(slider, move |&WidgetRectangle(rect), world| {
+            let mut collider = world.fetch_mut(collider).unwrap();
+
+            let y_max = rect.up();
+            let y_min = rect.down();
+            let x = rect.horizontal_center();
+
+            collider.rect = Rectangle::new(x - 15, y_min, x + 15, y_max);
         });
     }
 }

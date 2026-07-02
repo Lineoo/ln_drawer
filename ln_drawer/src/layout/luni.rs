@@ -101,8 +101,6 @@ impl LuniFlex {
             lengths.push(child.basis);
         }
 
-        log::debug!("before: {lengths:?}, available: {available:?}");
-
         let mut i = 0;
         while i < self.children.len() {
             let (_, child) = &self.children[i];
@@ -117,8 +115,6 @@ impl LuniFlex {
 
             i += 1;
         }
-
-        log::debug!("after: {lengths:?}");
 
         let mut cursor = rect_main_start(parent.padding, parent.axis);
         for (i, (handle, child)) in self.children.iter().enumerate() {
