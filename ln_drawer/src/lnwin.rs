@@ -19,10 +19,10 @@ use crate::{
         luni::{LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
     },
-    measures::Rectangle,
+    measures::{FI64Ext, Rectangle},
     render::{
         Render,
-        camera::{Camera, CameraUtils, MainCamera, UICamera},
+        camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, UICamera},
         canvas::CanvasManagerDescriptor,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
@@ -161,8 +161,15 @@ impl Element for Lnwindow {
             let camera1 = Camera::build_from_save(world, "camera1");
             world.insert(MainCamera(camera1));
 
-            let camera2 = Camera::build_from_save(world, "camera2");
+            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            let size = lnwindow.window.surface_size();
+            let camera2 = world.build(CameraDescriptor {
+                size: UVec2::new(size.width, size.height),
+                zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
+                ..Default::default()
+            });
             world.insert(UICamera(camera2));
+            drop(lnwindow);
 
             world.flush();
 
@@ -192,12 +199,16 @@ impl Element for Lnwindow {
                     world.insert(CameraUtils::default());
                     let lnwindow = world.single::<Lnwindow>().unwrap();
                     world.observer(lnwindow, move |event: &WindowEvent, world| {
+                        let scale = world.fetch(lnwindow).unwrap().window.scale_factor();
                         if let WindowEvent::SurfaceResized(size) = event {
                             world.trigger(
                                 lnwindow,
                                 &WidgetRectangle(Rectangle::new_half(
                                     IVec2::ZERO,
-                                    UVec2::new(size.width / 2, size.height / 2),
+                                    (UVec2::new(size.width / 2, size.height / 2).as_dvec2()
+                                        / scale)
+                                        .round()
+                                        .as_uvec2(),
                                 )),
                             );
                         }
