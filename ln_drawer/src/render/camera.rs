@@ -1,3 +1,4 @@
+use glam::{DVec2, I64Vec2, UVec2};
 use ln_world::{Descriptor, Element, Handle, World};
 use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 use wgpu::{
@@ -8,7 +9,7 @@ use winit::event::WindowEvent;
 
 use crate::{
     lnwin::Lnwindow,
-    measures::{Fract, PositionFract, Rectangle, Size},
+    measures::{FI64Ext, Rectangle},
     render::Render,
     save::{Autosave, SaveDatabase},
 };
@@ -16,9 +17,9 @@ use crate::{
 const TABLE_CAMERA: TableDefinition<&str, &[u8]> = TableDefinition::new("camera");
 
 pub struct Camera {
-    pub size: Size,
-    pub center: PositionFract,
-    pub zoom: Fract,
+    pub size: UVec2,
+    pub center: I64Vec2,
+    pub zoom: i64,
 
     pub bind: BindGroup,
     pub uniform: Buffer,
@@ -35,15 +36,15 @@ pub struct MainCamera(pub Handle<Camera>);
 pub struct UICamera(pub Handle<Camera>);
 
 pub struct CameraPositionChanged {
-    pub from: PositionFract,
-    pub here: PositionFract,
+    pub from: I64Vec2,
+    pub here: I64Vec2,
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct CameraDescriptor {
-    pub size: Size,
-    pub center: PositionFract,
-    pub zoom: Fract,
+    pub size: UVec2,
+    pub center: I64Vec2,
+    pub zoom: i64,
 }
 
 #[repr(C)]
@@ -67,11 +68,11 @@ impl Descriptor for CameraDescriptor {
         let uniform = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("camera_uniform"),
             contents: bytemuck::bytes_of(&CameraUniform {
-                size: self.size.into_array(),
-                center: self.center.into_array(),
-                center_fract: self.center.into_arrayf(),
-                zoom: self.zoom.n,
-                zoom_fract: self.zoom.nf,
+                size: self.size.into(),
+                center: self.center.q32_floor().into(),
+                center_fract: self.center.q32_fract().into(),
+                zoom: self.zoom.q32_floor(),
+                zoom_fract: self.zoom.q32_fract(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -107,8 +108,8 @@ impl Element for Camera {
             if let WindowEvent::SurfaceResized(size) = event {
                 let mut camera = world.fetch_mut(this).unwrap();
 
-                camera.size.w = size.width;
-                camera.size.h = size.height;
+                camera.size.x = size.width;
+                camera.size.y = size.height;
             }
         });
     }
@@ -118,11 +119,11 @@ impl Element for Camera {
             &self.uniform,
             0,
             bytemuck::bytes_of(&CameraUniform {
-                size: Size::new(self.size.w.max(1), self.size.h.max(1)).into_array(),
-                center: self.center.into_array(),
-                center_fract: self.center.into_arrayf(),
-                zoom: self.zoom.n,
-                zoom_fract: self.zoom.nf,
+                size: UVec2::new(self.size.x.max(1), self.size.y.max(1)).into(),
+                center: self.center.q32_floor().into(),
+                center_fract: self.center.q32_fract().into(),
+                zoom: self.zoom.q32_floor(),
+                zoom_fract: self.zoom.q32_fract(),
             }),
         );
 
@@ -135,40 +136,34 @@ impl Element for CameraBind {}
 
 impl Camera {
     #[inline]
-    pub fn screen_to_world_absolute(&self, point: [f64; 2]) -> PositionFract {
+    pub fn screen_to_world_absolute(&self, point: [f64; 2]) -> I64Vec2 {
         self.center + self.screen_to_world_relative(point)
     }
 
-    pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> PositionFract {
-        let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
-        let x = delta[0] / scale * self.size.w as f64 / 2.0;
-        let y = delta[1] / scale * self.size.h as f64 / 2.0;
-        PositionFract::new(Fract::from_f64(x), Fract::from_f64(y))
+    pub fn screen_to_world_relative(&self, delta: [f64; 2]) -> I64Vec2 {
+        let scale = self.zoom.q32_as_f64().exp2();
+        let pf = DVec2::from(delta) / scale * self.size.as_dvec2() / 2.0;
+        I64Vec2::q32_from_f64(pf)
     }
 
-    pub fn world_to_screen_absolute(&self, point: PositionFract) -> [f64; 2] {
+    pub fn world_to_screen_absolute(&self, point: I64Vec2) -> [f64; 2] {
         self.world_to_screen_relative(point - self.center)
     }
 
-    pub fn world_to_screen_relative(&self, point: PositionFract) -> [f64; 2] {
-        let scale = (self.zoom.n as f64 + self.zoom.nf as f64 * (-32f64).exp2()).exp2();
-        let x = point.x.into_f64() * 2.0 / self.size.w as f64 * scale;
-        let y = point.y.into_f64() * 2.0 / self.size.h as f64 * scale;
-        [x, y]
+    pub fn world_to_screen_relative(&self, point: I64Vec2) -> [f64; 2] {
+        let scale = self.zoom.q32_as_f64().exp2();
+        let pf = point.q32_as_f64() * 2.0 / self.size.as_dvec2() * scale;
+        pf.into()
     }
 
     pub fn world_view_rect(&self) -> Rectangle {
         Self::manual_view_rect(self.zoom, self.size, self.center)
     }
 
-    pub fn manual_view_rect(zoom: Fract, size: Size, center: PositionFract) -> Rectangle {
-        let scale = (zoom.n as f64 + zoom.nf as f64 * (-32f64).exp2()).exp2();
-        let width = size.w as f64 / scale * 0.5;
-        let height = size.h as f64 / scale * 0.5;
-        Rectangle::new_half(
-            center.round(),
-            Size::new(width.ceil() as u32, height.ceil() as u32),
-        )
+    pub fn manual_view_rect(zoom: i64, size: UVec2, center: I64Vec2) -> Rectangle {
+        let scale = zoom.q32_as_f64().exp2();
+        let view_size = size.as_dvec2() / scale * 0.5;
+        Rectangle::new_half(center.q32_round(), view_size.ceil().as_uvec2())
     }
 
     pub fn init(world: &mut World) {
@@ -208,7 +203,7 @@ impl Camera {
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         let size = lnwindow.window.surface_size();
         let camera = world.build(CameraDescriptor {
-            size: Size::new(size.width, size.height),
+            size: UVec2::new(size.width, size.height),
             ..camera_desc
         });
 
@@ -258,7 +253,7 @@ pub struct CameraUtils {
 
     // camera: PositionFract      = camera.center
     // cursor_in_camera: [f64; 2] = cursor
-    anchor: PositionFract,
+    anchor: I64Vec2,
     cursor_in_anchor: [f64; 2],
 
     locked: bool,
@@ -266,7 +261,7 @@ pub struct CameraUtils {
 
 impl CameraUtils {
     /// Adjust zoom value, zooming in/out the anchor.
-    pub fn zoom_delta(&mut self, world: &World, delta: Fract) {
+    pub fn zoom_delta(&mut self, world: &World, delta: i64) {
         let mut camera = world.single_fetch_mut::<Camera>().unwrap();
         let zoom_center = camera.screen_to_world_absolute(self.cursor);
 
@@ -288,7 +283,7 @@ impl CameraUtils {
         self.update(world);
     }
 
-    pub fn anchor(&mut self, world: &World, anchor: PositionFract) {
+    pub fn anchor(&mut self, world: &World, anchor: I64Vec2) {
         self.anchor = anchor;
         self.update(world);
     }

@@ -110,7 +110,7 @@ impl Descriptor for TextManagerDescriptor {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("text_pipeline_layout"),
-                bind_group_layouts: &[&camera.layout, &bind_layout],
+                bind_group_layouts: &[Some(&camera.layout), Some(&bind_layout)],
                 immediate_size: 0,
             });
 
@@ -180,8 +180,8 @@ impl Descriptor for TextDescriptor<'_> {
         let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("text_uniform"),
             contents: bytemuck::bytes_of(&VertexUniform {
-                origin: self.rect.origin.into_array(),
-                extend: self.rect.extend.into_array(),
+                origin: self.rect.origin.into(),
+                extend: self.rect.extend.into(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });

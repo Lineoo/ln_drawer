@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use glam::{I64Vec2, IVec2, UVec2, Vec2};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, ViewOptions, World};
 use palette::{Hsla, IntoColor, RgbHue, Srgba};
@@ -18,7 +19,7 @@ use crate::{
         luni::{LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
     },
-    measures::{Position, PositionFract, Rectangle, Size},
+    measures::Rectangle,
     render::{
         Render,
         camera::{Camera, CameraUtils, MainCamera, UICamera},
@@ -29,7 +30,7 @@ use crate::{
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     stroke::{StrokeLayer, modifier::Modifier},
-    theme::ColorScheme,
+    theme::Theme,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
@@ -39,6 +40,7 @@ use crate::{
         button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage},
         palette::hsl::{PaletteHsl, PaletteHslMaterial},
         renderer::grid::{Grid, GridMaterial},
+        slider::{SetSlider, VSlider},
     },
 };
 
@@ -128,7 +130,7 @@ impl Element for Lnwindow {
         world.queue(|world| {
             SaveDatabase::init(world);
             world.insert(AutosaveScheduler {
-                autosave_duration: Duration::from_secs(10),
+                autosave_duration: Duration::from_secs(180),
             });
         });
 
@@ -141,7 +143,7 @@ impl Element for Lnwindow {
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
             RectangleMesh::<GridMaterial>::init(world);
-            world.insert(ColorScheme::default());
+            world.insert(Theme::default());
         });
 
         world.queue(|world| {
@@ -194,8 +196,8 @@ impl Element for Lnwindow {
                             world.trigger(
                                 lnwindow,
                                 &WidgetRectangle(Rectangle::new_half(
-                                    Position::ZERO,
-                                    Size::new(size.width / 2, size.height / 2),
+                                    IVec2::ZERO,
+                                    UVec2::new(size.width / 2, size.height / 2),
                                 )),
                             );
                         }
@@ -210,81 +212,198 @@ impl Element for Lnwindow {
 
 fn side_panel(world: &mut World) {
     let lnwindow = world.single::<Lnwindow>().unwrap();
+    let theme = world.single_fetch::<Theme>().unwrap();
 
-    let parent = world.insert(Button {
+    let side_panel = world.insert(Button {
         order: 0,
-        color: Srgba::new(0.863, 0.863, 0.863, 1.0),
-        active_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
-        press_color: Srgba::new(0.863, 0.863, 0.863, 1.0),
+        color: theme.primary_color,
+        active_color: theme.primary_color,
+        press_color: theme.primary_color,
         ..Default::default()
     });
 
-    let child0 = world.insert(Button {
+    let pen = world.insert(Button {
         order: 10,
-        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
             ),
             bytes: include_bytes!("../res/interface/pen.png"),
         }),
         ..Default::default()
     });
 
-    let child1 = world.insert(Button {
+    let brush = world.insert(Button {
         order: 10,
-        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
             ),
             bytes: include_bytes!("../res/interface/brush.png"),
         }),
         ..Default::default()
     });
 
-    let child2 = world.insert(Button {
+    let eraser = world.insert(Button {
         order: 10,
-        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
-        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-        image: None,
-        ..Default::default()
-    });
-
-    let child2_color = world.insert(Button {
-        order: 11,
-        color: Srgba::new(0.9, 0.7, 0.7, 1.0),
-        attach_pointer: false,
-        roundness: 16.0,
-        ..Default::default()
-    });
-
-    let elastic_blank = world.insert(());
-
-    let child3 = world.insert(Button {
-        order: 10,
-        color: Srgba::new(0.5, 0.5, 0.5, 0.0),
-        active_color: Srgba::new(0.5, 0.5, 0.5, 0.2),
-        press_color: Srgba::new(0.5, 0.5, 0.5, 0.3),
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+            ),
+            bytes: include_bytes!("../res/interface/eraser.png"),
+        }),
+        ..Default::default()
+    });
+
+    let color_picker = color_palette(world, &theme);
+
+    let elastic_blank = world.insert(());
+
+    let slider = world.insert(VSlider {
+        x: 0,
+        y_min: -100,
+        y_max: 100,
+        min: 0.0,
+        max: 100.0,
+        value: 67.0,
+    });
+
+    world.queue(move |world| {
+        VSlider::receive_event(slider, world);
+        VSlider::create_renderer(slider, world);
+        VSlider::create_interact(slider, world);
+    });
+
+    world.observer(pen, move |&WidgetClick, world| {
+        world.trigger(pen, &ButtonChecked(true));
+        world.trigger(brush, &ButtonChecked(false));
+        world.trigger(eraser, &ButtonChecked(false));
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        stroke.modifier = Modifier {
+            min_size: 0.0,
+            max_size: 6.0,
+            size_force_exp: 1.0,
+            min_flow: 0.7,
+            max_flow: 1.0,
+            flow_force_exp: 2.0,
+            softness: 0.2,
+            ..stroke.modifier
+        };
+        stroke.erase = false;
+
+        let slider = world.fetch(slider).unwrap();
+        world.queue_trigger(
+            slider.handle(),
+            SetSlider {
+                max: slider.max,
+                min: slider.min,
+                value: (6.0f32 / 40.0 + 1.0).log2() * (slider.max - slider.min) + slider.min,
+            },
+        );
+    });
+
+    world.observer(brush, move |&WidgetClick, world| {
+        world.trigger(pen, &ButtonChecked(false));
+        world.trigger(brush, &ButtonChecked(true));
+        world.trigger(eraser, &ButtonChecked(false));
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        stroke.modifier = Modifier {
+            min_size: 1.0,
+            max_size: 25.0,
+            size_force_exp: 1.0,
+            min_flow: 0.1,
+            max_flow: 1.0,
+            flow_force_exp: 1.0,
+            softness: 0.5,
+            ..stroke.modifier
+        };
+        stroke.erase = false;
+
+        let slider = world.fetch(slider).unwrap();
+        world.queue_trigger(
+            slider.handle(),
+            SetSlider {
+                max: slider.max,
+                min: slider.min,
+                value: (24.0f32 / 40.0 + 1.0).log2() * (slider.max - slider.min) + slider.min,
+            },
+        );
+    });
+
+    world.observer(eraser, move |&WidgetClick, world| {
+        world.trigger(pen, &ButtonChecked(false));
+        world.trigger(brush, &ButtonChecked(false));
+        world.trigger(eraser, &ButtonChecked(true));
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        stroke.modifier = Modifier {
+            min_size: 10.0,
+            max_size: 50.0,
+            size_force_exp: 1.0,
+            min_flow: 0.1,
+            max_flow: 1.0,
+            flow_force_exp: 1.0,
+            softness: 0.5,
+            ..stroke.modifier
+        };
+        stroke.erase = true;
+
+        let slider = world.fetch(slider).unwrap();
+        world.queue_trigger(
+            slider.handle(),
+            SetSlider {
+                max: slider.max,
+                min: slider.min,
+                value: (40.0f32 / 40.0 + 1.0).log2() * (slider.max - slider.min) + slider.min,
+            },
+        );
+    });
+
+    world.observer(slider, move |&SetSlider { min, max, value }, world| {
+        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        let percent = (value - min) / (max - min);
+        stroke.modifier = Modifier {
+            max_size: stroke.modifier.min_size + (percent.exp2() - 1.0) * 40.0,
+            ..stroke.modifier
+        };
+    });
+
+    let compass = world.insert(Button {
+        order: 10,
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
+        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        image: Some(ButtonImage {
+            transform: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
             ),
             bytes: include_bytes!("../res/interface/compass.png"),
         }),
         ..Default::default()
+    });
+
+    world.observer(compass, move |&WidgetClick, world| {
+        let main_camera = world.single_fetch::<MainCamera>().unwrap();
+        let mut camera = world
+            .enter_single_fetch_mut::<Camera>(main_camera.0)
+            .unwrap();
+        camera.center = I64Vec2::ZERO;
     });
 
     world.insert(Transform {
@@ -295,7 +414,7 @@ fn side_panel(world: &mut World) {
             },
             down: TransformEdge {
                 anchor: 0.5,
-                offset: 150,
+                offset: -350,
             },
             right: TransformEdge {
                 anchor: 0.0,
@@ -303,20 +422,22 @@ fn side_panel(world: &mut World) {
             },
             up: TransformEdge {
                 anchor: 0.5,
-                offset: -150,
+                offset: 350,
             },
         },
         source: lnwindow.untyped(),
-        target: parent.untyped(),
+        target: side_panel.untyped(),
     });
 
     world.insert(LuniFlex {
         parent: (
-            parent.untyped(),
+            side_panel.untyped(),
             LuniParent {
                 axis: LuniAxis::Column,
                 template: LuniChildTemplate {
-                    basis: 10,
+                    basis: 54,
+                    shrink: 1.0,
+                    grow: 0.0,
                     margin: LuniRect {
                         left: 2,
                         bottom: 2,
@@ -336,7 +457,7 @@ fn side_panel(world: &mut World) {
         ),
         children: vec![
             (
-                child0.untyped(),
+                pen.untyped(),
                 LuniChild {
                     basis: Some(54),
                     shrink: Some(1.0),
@@ -344,7 +465,7 @@ fn side_panel(world: &mut World) {
                 },
             ),
             (
-                child1.untyped(),
+                brush.untyped(),
                 LuniChild {
                     basis: Some(54),
                     shrink: Some(1.0),
@@ -352,7 +473,15 @@ fn side_panel(world: &mut World) {
                 },
             ),
             (
-                child2.untyped(),
+                eraser.untyped(),
+                LuniChild {
+                    basis: Some(54),
+                    shrink: Some(1.0),
+                    ..Default::default()
+                },
+            ),
+            (
+                color_picker.untyped(),
                 LuniChild {
                     basis: Some(54),
                     shrink: Some(1.0),
@@ -368,7 +497,15 @@ fn side_panel(world: &mut World) {
                 },
             ),
             (
-                child3.untyped(),
+                slider.untyped(),
+                LuniChild {
+                    basis: Some(240),
+                    shrink: Some(1.0),
+                    ..Default::default()
+                },
+            ),
+            (
+                compass.untyped(),
                 LuniChild {
                     basis: Some(54),
                     shrink: Some(1.0),
@@ -378,63 +515,37 @@ fn side_panel(world: &mut World) {
         ],
     });
 
-    world.insert(Transform {
-        value: TransformValue::anchor(
-            (0.5, 0.5),
-            Rectangle::new_half(Position::ZERO, Size::splat(16)),
-        ),
-        source: child2.untyped(),
-        target: child2_color.untyped(),
+    world.queue_trigger(side_panel, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));
+}
+
+fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
+    let color_picker = world.insert(Button {
+        order: 10,
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
+        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        image: None,
+        ..Default::default()
     });
 
-    world.observer(child0, move |&WidgetClick, world| {
-        world.trigger(child0, &ButtonChecked(true));
-        world.trigger(child1, &ButtonChecked(false));
-        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-        stroke.modifier = Modifier {
-            min_size: 0.0,
-            max_size: 6.0,
-            size_force_exp: 1.0,
-            min_flow: 0.7,
-            max_flow: 1.0,
-            flow_force_exp: 2.0,
-            softness: 0.2,
-            ..stroke.modifier
-        };
-    });
-
-    world.observer(child1, move |&WidgetClick, world| {
-        world.trigger(child0, &ButtonChecked(false));
-        world.trigger(child1, &ButtonChecked(true));
-        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
-        stroke.modifier = Modifier {
-            min_size: 1.0,
-            max_size: 25.0,
-            size_force_exp: 1.0,
-            min_flow: 0.1,
-            max_flow: 1.0,
-            flow_force_exp: 1.0,
-            softness: 0.5,
-            ..stroke.modifier
-        };
-    });
-
-    world.observer(child3, move |&WidgetClick, world| {
-        let main_camera = world.single_fetch::<MainCamera>().unwrap();
-        let mut camera = world
-            .enter_single_fetch_mut::<Camera>(main_camera.0)
-            .unwrap();
-        camera.center = PositionFract::ZERO;
+    let color_picker_color = world.insert(Button {
+        order: 11,
+        color: Srgba::new(0.9, 0.7, 0.7, 1.0),
+        attach_pointer: false,
+        roundness: 16.0,
+        shadow_offset: Vec2::ZERO,
+        ..Default::default()
     });
 
     let main_panel_transform = TransformValue::anchor(
         (1.0, 0.5),
-        Rectangle::new_half(Position::new(220, 0), Size::splat(180)),
+        Rectangle::new_half(IVec2::new(220, 0), UVec2::splat(180)),
     );
 
     let main_panel_transform_start = TransformValue::anchor(
         (1.0, 0.5),
-        Rectangle::new_half(Position::new(110, 0), Size::splat(90)),
+        Rectangle::new_half(IVec2::new(110, 0), UVec2::splat(90)),
     );
 
     let palette_transform = TransformValue::scale(0.8, 0.8);
@@ -456,7 +567,7 @@ fn side_panel(world: &mut World) {
 
     world.insert(Transform {
         value: main_panel_transform,
-        source: child2.untyped(),
+        source: color_picker.untyped(),
         target: main_panel.untyped(),
     });
 
@@ -469,12 +580,12 @@ fn side_panel(world: &mut World) {
     world.observer(palette, move |&WidgetHsla(color), world| {
         let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
         layer.modifier.color = color.into_color();
-        world.queue_trigger(child2_color, ButtonColor(color.into_color()));
+        world.queue_trigger(color_picker_color, ButtonColor(color.into_color()));
     });
 
-    world.observer(child2, move |&WidgetClick, world| {
+    world.observer(color_picker, move |&WidgetClick, world| {
         let main_panel = world.fetch(main_panel).unwrap();
-        let child2 = world.fetch(child2).unwrap();
+        let child2 = world.fetch(color_picker).unwrap();
         world.queue_trigger(main_panel.handle(), WidgetEnabled(!main_panel.enabled));
         world.queue_trigger(palette, WidgetEnabled(!main_panel.enabled));
 
@@ -490,7 +601,15 @@ fn side_panel(world: &mut World) {
         }
     });
 
-    world.queue_trigger(parent, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));
+    world.insert(Transform {
+        value: TransformValue::anchor(
+            (0.5, 0.5),
+            Rectangle::new_half(IVec2::ZERO, UVec2::splat(16)),
+        ),
+        source: color_picker.untyped(),
+        target: color_picker_color.untyped(),
+    });
+    color_picker
 }
 
 impl Lnwindow {

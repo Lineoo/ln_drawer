@@ -1,3 +1,5 @@
+// include! colorspace
+
 struct PaletteHsl {
     band_width: f32,
     main_knob_size: f32,
@@ -10,6 +12,8 @@ struct PaletteHsl {
 @group(1) @binding(1) var<uniform> palette: PaletteHsl;
 
 const TAU: f32 = 6.28318530717958647692528676655900577;
+const WHITE: vec4f = vec4f(1);
+const BLACK: vec4f = vec4f(vec3f(0), 1);
 
 struct VertexOutput {
     @builtin(position) pos: vec4f,
@@ -27,21 +31,28 @@ fn main(in: VertexOutput) -> @location(0) vec4f {
 
     let cmp = color_main_palette(sq_uv);
     let chb = color_hue_band(radius, angle);
-    let bg = mix(cmp, chb, chb.a);
+    let bg = cmp + (1 - cmp.a) * chb;
 
     let cmk = color_main_knob(sq_uv);
     let chk = color_hue_knob(radius, angle);
-    let kb = mix(cmk, chk, chk.a);
+    let kb = cmk + (1 - cmk.a) * chk;
 
-    return srgb_to_linear(mix(bg, kb, kb.a));
+    return kb + (1 - kb.a) * bg;
 }
 
 fn color_main_palette(uv: vec2f) -> vec4f {
-    if uv.x > 0 && uv.x < 1 && uv.y > 0 && uv.y < 1 {
-        return vec4f(hsl_to_rgb(palette.hue, uv.x, uv.y), 1.0);
-    }
+    let within = step(0, uv.x) * (1 - step(1, uv.x))
+        * step(0, uv.y) * (1 - step(1, uv.y));
+    
+    let color = srgb_to_linear(vec4f(hsl_to_rgb(palette.hue, uv.x, uv.y), 1));
+    return color * within;
+}
 
-    return vec4f();
+fn color_hue_band(radius: f32, angle: f32) -> vec4f {
+    let alpha = hue_alpha(radius);
+
+    let color = srgb_to_linear(vec4f(hsl_to_rgb(fract(angle / TAU + 1), palette.saturation, palette.lightness), 1));
+    return color * alpha;
 }
 
 fn color_main_knob(uv: vec2f) -> vec4f {
@@ -49,33 +60,19 @@ fn color_main_knob(uv: vec2f) -> vec4f {
     let width = fwidth(diff) * 0.5;
     if diff < 0.002 {
         let factor = smoothstep(-width, width, diff);
-        return mix(vec4f(hsl_to_rgb(palette.hue, palette.saturation, palette.lightness), 1), vec4f(1, 1, 1, 1), factor);
+        let color = srgb_to_linear(vec4f(hsl_to_rgb(palette.hue, palette.saturation, palette.lightness), 1));
+        return mix(color, WHITE, factor);
     } else if diff < 0.006 {
         let factor = smoothstep(-width, width, diff - 0.004);
-        return mix(vec4f(1, 1, 1, 1), vec4f(0, 0, 0, 1), factor);
+        return mix(WHITE, BLACK, factor);
     } else {
         let factor = smoothstep(-width, width, diff - 0.008);
-        return mix(vec4f(0, 0, 0, 1), vec4f(), factor);
+        return mix(BLACK, vec4f(), factor);
     }
 }
 
-fn color_hue_band(radius: f32, angle: f32) -> vec4f {
-    let r_width = max(1e-6, fwidth(radius) * 0.5);
-    let alpha = min(
-        smoothstep(0.5 - palette.band_width - r_width, 0.5 - palette.band_width + r_width, radius),
-        smoothstep(0.5 + r_width, 0.5 - r_width, radius),
-    );
-
-    let hue = fract(angle / TAU + 1);
-    return vec4f(hsl_to_rgb(hue, palette.saturation, palette.lightness), alpha);
-}
-
 fn color_hue_knob(radius: f32, angle: f32) -> vec4f {
-    let r_width = max(1e-6, fwidth(radius) * 0.5);
-    let alpha = min(
-        smoothstep(0.5 - r_width, 0.5 + r_width, radius + palette.band_width),
-        smoothstep(0.5 + r_width, 0.5 - r_width, radius),
-    );
+    let alpha = hue_alpha(radius);
 
     let hue = fract(angle / TAU);
     let diff_d = abs(palette.hue - hue);
@@ -84,28 +81,21 @@ fn color_hue_knob(radius: f32, angle: f32) -> vec4f {
 
     if diff < 0.0005 {
         let factor = smoothstep(-width, width, diff);
-        let color = hsl_to_rgb(palette.hue, palette.saturation, palette.lightness);
-        return mix(vec4f(color, alpha), vec4f(vec3f(1), alpha), factor);
+        let color = srgb_to_linear(vec4f(hsl_to_rgb(palette.hue, palette.saturation, palette.lightness), 1));
+        return mix(color, WHITE, factor) * alpha;
     } else if diff < 0.0015 {
         let factor = smoothstep(-width, width, diff - 0.001);
-        return vec4f(vec3f(1) - factor, alpha);
+        return mix(WHITE, BLACK, factor) * alpha;
     } else {
         let factor = smoothstep(-width, width, diff - 0.002);
-        return vec4f(vec3f(0), alpha * (1 - factor));
+        return mix(BLACK, vec4f(), factor) * alpha;
     }
 }
 
-fn hsl_to_rgb(h: f32, s: f32, l: f32) -> vec3f {
-    return l + s * (hue_to_rgb(h) - 0.5) * (1.0 - abs(2.0 * l - 1.0));
-}
-
-fn hue_to_rgb(h: f32) -> vec3f {
-    return clamp(abs(((h * 6.0 + vec3f(0.0, 4.0, 2.0)) % 6.0) - 3.0) - 1.0, vec3f(0.0), vec3f(1.0));
-}
-
-fn srgb_to_linear(v: vec4f) -> vec4f {
-    let threshold = vec3(0.04045);
-    let low = v.rgb / 12.92;
-    let high = pow((v.rgb + 0.055) / 1.055, vec3(2.4));
-    return vec4f(select(high, low, v.rgb < threshold), v.a);
+fn hue_alpha(radius: f32) -> f32 {
+    let r_width = max(1e-6, fwidth(radius) * 0.5);
+    return min(
+        smoothstep(0.5 - r_width, 0.5 + r_width, radius + palette.band_width),
+        smoothstep(0.5 + r_width, 0.5 - r_width, radius),
+    );
 }

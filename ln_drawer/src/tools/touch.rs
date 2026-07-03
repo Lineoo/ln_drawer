@@ -1,12 +1,11 @@
+use glam::I64Vec2;
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
 };
 
-use crate::{
-    lnwin::Lnwindow, measures::PositionFract, render::camera::Camera, tools::collider::ToolCollider,
-};
+use crate::{lnwin::Lnwindow, render::camera::Camera, tools::collider::ToolCollider};
 
 /// Multi touch actions that allow inputs with more points than [`PointerTool`] but no hovering
 #[derive(Default)]
@@ -23,7 +22,7 @@ impl Element for MultiTouchTool {
 
 #[derive(Debug, Clone, Copy)]
 pub struct MultiTouch {
-    pub position: PositionFract,
+    pub position: I64Vec2,
     pub screen: [f64; 2],
     pub view: Handle<Camera>,
     pub status: MultiTouchStatus,

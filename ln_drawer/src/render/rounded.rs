@@ -96,7 +96,7 @@ impl RoundedRect {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("rounded"),
-            bind_group_layouts: &[&camera.layout, &bind],
+            bind_group_layouts: &[Some(&camera.layout), Some(&bind)],
             immediate_size: 0,
         });
 
@@ -119,7 +119,7 @@ impl RoundedRect {
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
                     format: render.config.format,
-                    blend: Some(BlendState::ALPHA_BLENDING),
+                    blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: ColorWrites::ALL,
                 })],
             }),
@@ -193,8 +193,8 @@ impl RoundedRect {
         let uniform = RoundedRectUniform {
             color: Vec4::from(linear_color.into_components()),
             shadow_color: Vec4::from(linear_shadow_color.into_components()),
-            origin: IVec2::from_array(desc.rect.origin.into_array()),
-            extend: UVec2::from_array(desc.rect.extend.into_array()),
+            origin: desc.rect.origin,
+            extend: desc.rect.extend,
             shadow_offset: desc.shadow_offset,
             shadow_blur: desc.shadow_blur,
             shrink: desc.shrink,

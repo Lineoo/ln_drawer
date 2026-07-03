@@ -10,11 +10,28 @@ pub fn brush_round(
     dispatch: &BindGroupLayout,
     chunk: &BindGroupLayout,
 ) -> ComputePipeline {
+    raw_round(render, dispatch, chunk, "cs_main")
+}
+
+pub fn erase_round(
+    render: &Render,
+    dispatch: &BindGroupLayout,
+    chunk: &BindGroupLayout,
+) -> ComputePipeline {
+    raw_round(render, dispatch, chunk, "cs_erase")
+}
+
+fn raw_round(
+    render: &Render,
+    dispatch: &BindGroupLayout,
+    chunk: &BindGroupLayout,
+    entry: &str,
+) -> ComputePipeline {
     let device = &render.device;
 
     let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("round_brush"),
-        bind_group_layouts: &[dispatch, chunk],
+        bind_group_layouts: &[Some(dispatch), Some(chunk)],
         immediate_size: 0,
     });
 
@@ -35,7 +52,7 @@ pub fn brush_round(
         label: Some("round_brush"),
         layout: Some(&pipeline),
         module: &shader,
-        entry_point: Some("cs_main"),
+        entry_point: Some(entry),
         compilation_options: Default::default(),
         cache: None,
     })

@@ -3,7 +3,10 @@ use ln_world::{Element, Handle, World};
 use palette::Srgba;
 
 use crate::{
-    animation::{AnimationDescriptor, AnimationValue, SimpleAnimationDescriptor},
+    animation::{
+        AnimationDescriptor, AnimationType, AnimationValue, SetAnimationDst,
+        SimpleAnimationDescriptor,
+    },
     layout::transform::{Transform, TransformValue},
     measures::Rectangle,
     render::{canvas::CanvasDescriptor, rounded::RoundedRectDescriptor},
@@ -120,11 +123,10 @@ impl Button {
         world.observer(this, move |&ButtonChecked(checked), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.checked = checked;
-            let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match checked {
-                true => frame_anim_color.dst = this.press_color,
-                false => frame_anim_color.dst = this.color,
-            }
+                true => world.trigger(frame_anim_color, &SetAnimationDst(this.press_color)),
+                false => world.trigger(frame_anim_color, &SetAnimationDst(this.color)),
+            };
         });
 
         world.observer(this, move |event: &WidgetHover, world| {
@@ -132,17 +134,20 @@ impl Button {
             if this.checked {
                 return;
             }
-            let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
-                WidgetHover::HoverEnter => frame_anim_color.dst = this.active_color,
-                WidgetHover::HoverLeave => frame_anim_color.dst = this.color,
-            }
+                WidgetHover::HoverEnter => {
+                    world.trigger(frame_anim_color, &SetAnimationDst(this.active_color))
+                }
+                WidgetHover::HoverLeave => {
+                    world.trigger(frame_anim_color, &SetAnimationDst(this.color))
+                }
+            };
         });
 
         world.observer(this, move |&ButtonColor(color), world| {
             let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
-            frame_anim_color.src = color;
-            frame_anim_color.dst = color;
+            frame_anim_color.src = color.into_storage();
+            frame_anim_color.dst = color.into_storage();
         });
 
         world.observer(this, move |event: &WidgetButton, world| {
@@ -150,11 +155,14 @@ impl Button {
             if this.checked {
                 return;
             }
-            let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
             match event {
-                WidgetButton::ButtonPress => frame_anim_color.dst = this.press_color,
-                WidgetButton::ButtonRelease => frame_anim_color.dst = this.active_color,
-            }
+                WidgetButton::ButtonPress => {
+                    world.trigger(frame_anim_color, &SetAnimationDst(this.press_color))
+                }
+                WidgetButton::ButtonRelease => {
+                    world.trigger(frame_anim_color, &SetAnimationDst(this.active_color))
+                }
+            };
         });
 
         world.observer(this, move |&WidgetRectangle(rect), world| {
@@ -295,9 +303,9 @@ impl Default for Button {
             attach_pointer: true,
             checked: false,
             order: 10,
-            color: Srgba::new(0.863, 0.863, 0.863, 1.0),
-            active_color: Srgba::new(0.808, 0.808, 0.808, 1.0),
-            press_color: Srgba::new(0.737, 0.737, 0.737, 1.0),
+            color: Srgba::new(0.949, 0.949, 0.949, 1.0),
+            active_color: Srgba::new(0.898, 0.898, 0.898, 1.0),
+            press_color: Srgba::new(0.722, 0.722, 0.722, 1.0),
             roundness: 5.0,
             shadow_color: palette::Srgba::new(0.0, 0.0, 0.0, 0.5),
             shadow_offset: Vec2::new(0.0, -4.0),

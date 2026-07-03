@@ -7,10 +7,11 @@ mod stream;
 use std::{
     sync::mpsc::{Receiver, Sender, channel},
     thread::JoinHandle,
+    time::{Duration, Instant},
 };
 
 use bytemuck::{bytes_of, cast_slice};
-use glam::Vec2;
+use glam::{DVec2, I64Vec2, IVec2, UVec2, Vec2};
 use hashbrown::{HashMap, HashSet};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -32,7 +33,7 @@ use winit::event::PointerKind;
 
 use crate::{
     lnwin::Lnwindow,
-    measures::{Fract, Position, PositionFract, Rectangle, Size},
+    measures::{FI64Ext, Rectangle},
     render::{
         MSAA_STATE, Render, RenderControl, RenderInformation,
         camera::{Camera, CameraPositionChanged, CameraUtils, UICamera},
@@ -82,8 +83,8 @@ const DEFAULT_MODIFIER: Modifier = Modifier {
 const DEFAULT_DIRTY: Dirty = Dirty {
     bounding: |draw| {
         Rectangle::new_half(
-            draw.position.round(),
-            Size::splat((draw.size * 2.0).ceil() as u32),
+            draw.position.q32_round(),
+            UVec2::splat((draw.size * 2.0).ceil() as u32),
         )
     },
 };
@@ -101,9 +102,11 @@ pub struct StrokeLayer {
     render_group_unfiltered: BindGroup,
     render_group_filtered: BindGroup,
 
+    pub erase: bool,
     mipmap_pipeline: ComputePipeline,
     gamma_fixing_pipeline: ComputePipeline,
     brush_round_pipeline: ComputePipeline,
+    erase_round_pipeline: ComputePipeline,
 
     chunk_render_layout: BindGroupLayout,
     chunk_draw_layout: BindGroupLayout,
@@ -125,6 +128,7 @@ pub struct StrokeLayer {
     pub modifier: Modifier,
     pub dirty: Dirty,
     pub shape: u32,
+
     prev: Option<Draw>,
 }
 
@@ -156,7 +160,7 @@ struct ChunkBind {
 }
 
 enum ThreadInput {
-    SetStreamCamera(Fract, Size, PositionFract),
+    SetStreamCamera(i64, UVec2, I64Vec2),
     MarkUnsaved(ChunkKey),
     Create(ChunkKey, Texture),
     Autosave,
@@ -443,7 +447,7 @@ impl StrokeLayer {
 
         let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("stroke_chunk"),
-            bind_group_layouts: &[&render_camera_layout, &chunk_render_layout],
+            bind_group_layouts: &[Some(&render_camera_layout), Some(&chunk_render_layout)],
             immediate_size: 0,
         });
 
@@ -510,6 +514,8 @@ impl StrokeLayer {
             gamma_fixing_pipeline(device, &chunk_draw_layout, &dispatch_group_layout);
         let brush_round_pipeline =
             shape::brush_round(&render, &dispatch_group_draw_layout, &chunk_draw_layout);
+        let erase_round_pipeline =
+            shape::erase_round(&render, &dispatch_group_draw_layout, &chunk_draw_layout);
 
         let (thread_input_tx, thread_input_rx) = channel();
         let (thread_output_tx, thread_output_rx) = channel();
@@ -536,7 +542,7 @@ impl StrokeLayer {
         let ui_camera = world.single_fetch::<UICamera>().unwrap();
         let brush_preview = world.enter(ui_camera.0, || {
             world.build(RoundedRectDescriptor {
-                rect: Rectangle::new_half(Position::new(0, 0), Size::new(5, 5)),
+                rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(5, 5)),
                 color: Srgba::new(0.5, 0.5, 0.5, 0.4),
                 shrink: 8.0,
                 value: 8.0,
@@ -556,15 +562,17 @@ impl StrokeLayer {
             render_debugging: false,
             render_pipeline,
             render_debug_pipeline,
+            render_group_unfiltered,
+            render_group_filtered,
+            erase: false,
             mipmap_pipeline,
             gamma_fixing_pipeline,
             brush_round_pipeline,
+            erase_round_pipeline,
             chunk_render_layout,
             chunk_draw_layout,
             dispatch,
             draws_length,
-            render_group_filtered,
-            render_group_unfiltered,
             draws_array,
             dispatch_group,
             dispatch_group_draw,
@@ -608,8 +616,8 @@ impl StrokeLayer {
         let rectangle = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("stroke_chunk_rectangle"),
             contents: bytes_of(&VertexUniform {
-                origin: rect.origin.into_array(),
-                extend: rect.extend.into_array(),
+                origin: rect.origin.into(),
+                extend: rect.extend.into(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -745,7 +753,7 @@ impl StrokeLayer {
                     true => rpass.set_pipeline(&stroke.render_debug_pipeline),
                 }
 
-                if camera.zoom.into_f32().exp2() > 6.0 {
+                if camera.zoom.q32_as_f64().exp2() > 6.0 {
                     rpass.set_bind_group(0, &stroke.render_group_unfiltered, &[]);
                 } else {
                     rpass.set_bind_group(0, &stroke.render_group_filtered, &[]);
@@ -887,8 +895,8 @@ impl StrokeLayer {
                     WidgetRectangle(Rectangle::new_half(
                         camera
                             .screen_to_world_absolute(event.pointer.screen)
-                            .round(),
-                        Size::new(5, 5),
+                            .q32_round(),
+                        UVec2::new(5, 5),
                     )),
                 );
 
@@ -905,6 +913,8 @@ impl StrokeLayer {
         });
 
         let mut pinch_distance = None;
+        let mut drag_start = None;
+        let mut temp_erase_mode = None;
         world.observer(collider, move |event: &MultiTouchGroup, world| {
             let primary = event.members.first().unwrap();
 
@@ -944,13 +954,52 @@ impl StrokeLayer {
                     let (x, y) = (first[0] - last[0], first[1] - last[1]);
                     let cur = (x * x + y * y).sqrt();
                     let prev = pinch_distance.get_or_insert(cur);
-                    camera_utils.zoom_delta(world, Fract::from_f64((cur - *prev) * 2.0));
+                    camera_utils.zoom_delta(world, i64::q32_from_f64((cur - *prev) * 2.0));
                     *prev = cur;
                 } else {
                     pinch_distance = None;
                 }
             } else if let MultiTouchStatus::Holding | MultiTouchStatus::Press = primary.status {
                 let mut this = world.fetch_mut(this).unwrap();
+
+                if let MultiTouchStatus::Press = primary.status
+                    && !this.erase
+                {
+                    drag_start = Some((primary.screen, Instant::now()));
+                }
+
+                if let Some((start, timer)) = drag_start {
+                    const DRAG_DISTANCE: f64 = 0.01;
+                    const ERASE_TIMER: f64 = 0.8;
+                    const ERASE_FORCE_THRESHOLD: f32 = 0.6;
+                    const TEMP_ERASE_MODIFIER: Modifier = Modifier {
+                        min_size: 5.0,
+                        max_size: 15.0,
+                        size_force_exp: 1.0,
+                        min_flow: 0.5,
+                        max_flow: 1.0,
+                        flow_force_exp: 1.0,
+                        softness: 0.5,
+                        color: Srgba::new(1.0, 1.0, 1.0, 1.0),
+                    };
+
+                    if DVec2::from_array(primary.screen).distance(DVec2::from_array(start))
+                        > DRAG_DISTANCE
+                    {
+                        drag_start = None;
+                    } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
+                        if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
+                            temp_erase_mode = Some(this.modifier);
+                            this.erase = true;
+                            this.modifier = TEMP_ERASE_MODIFIER;
+                            this.prev = None;
+                            drag_start = None;
+                        } else {
+                            drag_start = None;
+                        }
+                    }
+                }
+
                 let target = Draw {
                     position: primary.position,
                     force: primary.data.force.unwrap_or(1.0),
@@ -958,10 +1007,15 @@ impl StrokeLayer {
 
                 this.paint(target, world);
             } else {
-                world.queue(move |world| {
-                    let mut this = world.fetch_mut(this).unwrap();
-                    this.prev = None;
-                });
+                let mut this = world.fetch_mut(this).unwrap();
+
+                if let Some(ori) = temp_erase_mode {
+                    temp_erase_mode = None;
+                    this.erase = false;
+                    this.modifier = ori;
+                }
+
+                this.prev = None;
             }
         });
     }
@@ -975,8 +1029,8 @@ impl StrokeLayer {
             .interpolate(self.prev, next, &self.modifier, &mut draw_buf);
         self.prev = Some(curr);
 
-        let dirty = self.dirty.compute(curr.position.round(), &draw_buf);
-        if dirty.extend.w == 0 || dirty.extend.h == 0 {
+        let dirty = self.dirty.compute(curr.position.q32_round(), &draw_buf);
+        if dirty.extend.x == 0 || dirty.extend.y == 0 {
             return;
         }
 
@@ -1004,7 +1058,12 @@ impl StrokeLayer {
         let mut encoder = device.create_command_encoder(&ENCODER_DESC);
         let mut cpass = encoder.begin_compute_pass(&CPASS_DESC);
 
-        cpass.set_pipeline(&self.brush_round_pipeline);
+        if !self.erase {
+            cpass.set_pipeline(&self.brush_round_pipeline);
+        } else {
+            cpass.set_pipeline(&self.erase_round_pipeline);
+        }
+
         cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
         for key in paint_chunks {
             let chunk = self.chunks.get(&key).unwrap();
@@ -1103,8 +1162,8 @@ impl StrokeLayer {
 
     fn upload_dispatch(&mut self, dirty: Rectangle, queue: &Queue) {
         let dispatch = DispatchUniform {
-            dispatch_coords: dirty.origin.into_array(),
-            dispatch_size: dirty.extend.into_array(),
+            dispatch_coords: dirty.origin.into(),
+            dispatch_size: dirty.extend.into(),
         };
         queue.write_buffer(&self.dispatch, 0, bytes_of(&dispatch));
     }
@@ -1203,7 +1262,11 @@ fn mipmap_pipeline(
 
     let mipmap_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("stroke_mipmap"),
-        bind_group_layouts: &[dispatch_group_layout, chunk_draw_layout, chunk_draw_layout],
+        bind_group_layouts: &[
+            Some(dispatch_group_layout),
+            Some(chunk_draw_layout),
+            Some(chunk_draw_layout),
+        ],
         immediate_size: 0,
     });
 
@@ -1238,7 +1301,7 @@ fn gamma_fixing_pipeline(
 
     let gamma_fixing_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("stroke_mipmap"),
-        bind_group_layouts: &[dispatch_group_layout, chunk_draw_layout],
+        bind_group_layouts: &[Some(dispatch_group_layout), Some(chunk_draw_layout)],
         immediate_size: 0,
     });
 
@@ -1263,10 +1326,10 @@ const CPASS_DESC: ComputePassDescriptor<'_> = ComputePassDescriptor {
 };
 
 fn cpass_dispatch(dirty: Rectangle, cpass: &mut ComputePass, key: (i32, i32, u8)) {
-    const WORKGROUP_SIZE: Size = Size::new(16, 16);
+    const WORKGROUP_SIZE: UVec2 = UVec2::new(16, 16);
     cpass.dispatch_workgroups(
-        (dirty.extend.w - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.w + 1,
-        (dirty.extend.h - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.h + 1,
+        (dirty.extend.x - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.x + 1,
+        (dirty.extend.y - 1) / 2u32.pow(key.2 as u32) / WORKGROUP_SIZE.y + 1,
         1,
     );
 }
@@ -1293,8 +1356,8 @@ fn chunk_texture_desc() -> TextureDescriptor<'static> {
 
 fn chunk_rect(key: (i32, i32, u8)) -> Rectangle {
     Rectangle {
-        origin: Position::new(key.0 * chunk_size(key.2), key.1 * chunk_size(key.2)),
-        extend: Size::splat(chunk_size(key.2) as u32),
+        origin: IVec2::new(key.0 * chunk_size(key.2), key.1 * chunk_size(key.2)),
+        extend: UVec2::splat(chunk_size(key.2) as u32),
     }
 }
 
@@ -1308,12 +1371,12 @@ fn chunk_distance(x: i32, y: i32, z: u8, cx: i32, cy: i32, cz: u8) -> u32 {
     dx.unsigned_abs() + dy.unsigned_abs() + dz.unsigned_abs()
 }
 
-fn mipmap_of(zoom: Fract) -> u8 {
-    (-zoom.round()).max(0) as u8
+fn mipmap_of(zoom: i64) -> u8 {
+    (-zoom.q32_round()).max(0) as u8
 }
 
-fn lower_mipmap_of(zoom: Fract) -> u8 {
-    (-(zoom.floor() + 1)).max(0) as u8
+fn lower_mipmap_of(zoom: i64) -> u8 {
+    (-(zoom.q32_floor() + 1)).max(0) as u8
 }
 
 fn chunk_size(mipmap: u8) -> i32 {
@@ -1341,7 +1404,7 @@ fn upper_chunk_of(chunk: ChunkKey) -> ChunkKey {
     (chunk.0.div_euclid(2), chunk.1.div_euclid(2), chunk.2 + 1)
 }
 
-fn chunk_of(center: Position, zoom: Fract) -> ChunkKey {
+fn chunk_of(center: IVec2, zoom: i64) -> ChunkKey {
     (
         center.x.div_euclid(chunk_size(mipmap_of(zoom))),
         center.y.div_euclid(chunk_size(mipmap_of(zoom))),

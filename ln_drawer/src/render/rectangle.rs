@@ -98,7 +98,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(M::label()),
-            bind_group_layouts: &[&camera.layout, &bind],
+            bind_group_layouts: &[Some(&camera.layout), Some(&bind)],
             immediate_size: 0,
         });
 
@@ -129,7 +129,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
                     format: render.config.format,
-                    blend: Some(BlendState::ALPHA_BLENDING),
+                    blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: ColorWrites::ALL,
                 })],
             }),
@@ -154,8 +154,8 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
         let rectangle = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("rectangle"),
             contents: bytemuck::bytes_of(&RectangleUniform {
-                origin: desc.rect.origin.into_array(),
-                extend: desc.rect.extend.into_array(),
+                origin: desc.rect.origin.into(),
+                extend: desc.rect.extend.into(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -213,8 +213,8 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
     fn update_buffer(&mut self) {
         let rectangle = RectangleUniform {
-            origin: self.desc.rect.origin.into_array(),
-            extend: self.desc.rect.extend.into_array(),
+            origin: self.desc.rect.origin.into(),
+            extend: self.desc.rect.extend.into(),
         };
 
         let rectangle = bytemuck::bytes_of(&rectangle);
