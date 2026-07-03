@@ -1,3 +1,4 @@
+use glam::IVec2;
 use ln_world::{Element, Handle, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, MouseScrollDelta, PointerSource, WindowEvent,
@@ -5,7 +6,7 @@ use winit::event::{
 
 use crate::{
     lnwin::Lnwindow,
-    measures::{Fract, Position},
+    measures::FI64Ext,
     render::camera::{Camera, CameraUtils, MainCamera},
     tools::collider::ToolCollider,
 };
@@ -16,7 +17,7 @@ pub struct MouseTool;
 
 /// Right-click events.
 #[derive(Clone, Copy)]
-pub struct MouseMenu(pub Position);
+pub struct MouseMenu(pub IVec2);
 
 impl Element for MouseTool {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
@@ -40,7 +41,7 @@ impl Element for MouseTool {
 
                 let position = world.enter(view, || {
                     let camera = world.single_fetch::<Camera>().unwrap();
-                    camera.screen_to_world_absolute(screen).floor()
+                    camera.screen_to_world_absolute(screen).q32_floor()
                 });
 
                 world.queue_trigger(target, MouseMenu(position));
@@ -104,8 +105,10 @@ impl Element for MouseTool {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                     let zoom_delta = match delta {
-                        MouseScrollDelta::LineDelta(_rows, lines) => Fract::from_f32(*lines / 4.0),
-                        MouseScrollDelta::PixelDelta(delta) => Fract::from_f64(delta.y / 16.0),
+                        MouseScrollDelta::LineDelta(_rows, lines) => {
+                            i64::q32_from_f64(*lines as f64 / 4.0)
+                        }
+                        MouseScrollDelta::PixelDelta(delta) => i64::q32_from_f64(delta.y / 16.0),
                     };
 
                     camera_utils.zoom_delta(world, zoom_delta);

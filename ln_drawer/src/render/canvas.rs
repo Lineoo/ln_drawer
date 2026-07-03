@@ -165,8 +165,8 @@ impl Descriptor for CanvasDescriptor {
         let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("canvas_uniform"),
             contents: bytemuck::bytes_of(&VertexUniform {
-                origin: self.rect.origin.into_array(),
-                extend: self.rect.extend.into_array(),
+                origin: self.rect.origin.into(),
+                extend: self.rect.extend.into(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -277,8 +277,8 @@ impl Element for Canvas {
         RenderControl::reorder(self.visible.then_some(self.order), world, self.control);
 
         let uniform = VertexUniform {
-            origin: self.rect.origin.into_array(),
-            extend: self.rect.extend.into_array(),
+            origin: self.rect.origin.into(),
+            extend: self.rect.extend.into(),
         };
 
         let bytes = bytemuck::bytes_of(&uniform);

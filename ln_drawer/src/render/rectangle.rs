@@ -154,8 +154,8 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
         let rectangle = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("rectangle"),
             contents: bytemuck::bytes_of(&RectangleUniform {
-                origin: desc.rect.origin.into_array(),
-                extend: desc.rect.extend.into_array(),
+                origin: desc.rect.origin.into(),
+                extend: desc.rect.extend.into(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -213,8 +213,8 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
     fn update_buffer(&mut self) {
         let rectangle = RectangleUniform {
-            origin: self.desc.rect.origin.into_array(),
-            extend: self.desc.rect.extend.into_array(),
+            origin: self.desc.rect.origin.into(),
+            extend: self.desc.rect.extend.into(),
         };
 
         let rectangle = bytemuck::bytes_of(&rectangle);

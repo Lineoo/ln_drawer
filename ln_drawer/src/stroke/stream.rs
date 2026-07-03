@@ -3,6 +3,7 @@ use std::{
     sync::mpsc::{Receiver, RecvError, Sender, TryRecvError},
 };
 
+use glam::{IVec2, UVec2};
 use hashbrown::HashSet;
 use indexmap::{IndexMap, IndexSet};
 use redb::ReadableDatabase;
@@ -13,13 +14,12 @@ use wgpu::{
 };
 
 use crate::{
-    measures::{Position, Rectangle, Size},
+    measures::{FI64Ext, Rectangle},
     render::camera::Camera,
     save::SaveDatabase,
     stroke::{
         CHUNK_BATCH, CHUNK_CAPS, CHUNK_MIPMAP, CHUNK_SIZE, ChunkKey, TABLE_STROKE_CHUNK,
-        ThreadInput, ThreadOutput, chunk_distance, chunk_of, chunks_within,
-        chunk_texture_desc,
+        ThreadInput, ThreadOutput, chunk_distance, chunk_of, chunk_texture_desc, chunks_within,
     },
 };
 
@@ -35,7 +35,7 @@ pub fn loading_thread(
     let mut texel_unsaved = HashSet::new();
 
     let mut stream_center = (0, 0, 0);
-    let mut stream_rect = Rectangle::new_half(Position::ZERO, Size::splat(50));
+    let mut stream_rect = Rectangle::new_half(IVec2::ZERO, UVec2::splat(50));
     let mut stream_range = chunks_within(stream_rect, 0);
     let mut stream_outdated = false;
 
@@ -59,7 +59,7 @@ pub fn loading_thread(
         match input {
             Some(ThreadInput::SetStreamCamera(zoom, size, center)) => {
                 stream_rect = Camera::manual_view_rect(zoom, size, center);
-                let stream_center_new = chunk_of(center.round(), zoom);
+                let stream_center_new = chunk_of(center.q32_round(), zoom);
                 let stream_range_new = chunks_within(stream_rect, stream_center.2);
                 if stream_range_new != stream_range || stream_center_new != stream_center {
                     stream_range = stream_range_new;

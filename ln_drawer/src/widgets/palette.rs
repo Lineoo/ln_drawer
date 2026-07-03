@@ -3,7 +3,7 @@ use palette::{Hsla, IntoColor, RgbHue};
 
 use crate::{
     layout::transform::{Transform, TransformValue},
-    measures::Rectangle,
+    measures::{FI64Ext, Rectangle},
     stroke::StrokeLayer,
     widgets::{
         WidgetAnimatedRectangle, WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
@@ -53,7 +53,7 @@ impl ColorPicker {
             }
 
             if let Some(start) = drag_start {
-                let rect = start + (drag.here.position - drag.from.position).round();
+                let rect = start + (drag.here.position - drag.from.position).q32_round();
                 this.rect = rect;
                 let expanded = match this.expanded {
                     false => rect,

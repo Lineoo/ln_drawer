@@ -1,10 +1,10 @@
-use glam::Vec2;
+use glam::I64Vec2;
 use ln_world::{Element, Handle, World};
 use palette::{Hsla, RgbHue};
 
 use crate::{
     layout::transform::{Transform, TransformValue},
-    measures::Rectangle,
+    measures::{FI64Ext, Rectangle},
     render::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
     tools::{
         collider::ToolCollider,
@@ -103,11 +103,9 @@ impl PaletteHsl {
         let mut lock = 0;
         world.observer(collider, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this).unwrap();
-            let delta = event.position - this.rect.origin.into_fract();
+            let delta = event.position - I64Vec2::q32_from_i32(this.rect.origin);
 
-            let u = delta.x.into_f32() / this.rect.extend.w as f32;
-            let v = delta.y.into_f32() / this.rect.extend.h as f32;
-            let uv = Vec2::new(u, v);
+            let uv = (delta.q32_as_f64() / this.rect.extend.as_dvec2()).as_vec2();
             let size = (0.5 - BAND_WIDTH) * 2f32.sqrt();
             let suv = (uv - 0.5) / size + 0.5;
 

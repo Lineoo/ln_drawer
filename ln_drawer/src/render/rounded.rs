@@ -193,8 +193,8 @@ impl RoundedRect {
         let uniform = RoundedRectUniform {
             color: Vec4::from(linear_color.into_components()),
             shadow_color: Vec4::from(linear_shadow_color.into_components()),
-            origin: IVec2::from_array(desc.rect.origin.into_array()),
-            extend: UVec2::from_array(desc.rect.extend.into_array()),
+            origin: desc.rect.origin,
+            extend: desc.rect.extend,
             shadow_offset: desc.shadow_offset,
             shadow_blur: desc.shadow_blur,
             shrink: desc.shrink,

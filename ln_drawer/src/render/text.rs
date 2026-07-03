@@ -180,8 +180,8 @@ impl Descriptor for TextDescriptor<'_> {
         let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("text_uniform"),
             contents: bytemuck::bytes_of(&VertexUniform {
-                origin: self.rect.origin.into_array(),
-                extend: self.rect.extend.into_array(),
+                origin: self.rect.origin.into(),
+                extend: self.rect.extend.into(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });

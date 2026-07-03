@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use glam::Vec2;
+use glam::{I64Vec2, IVec2, UVec2, Vec2};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, ViewOptions, World};
 use palette::{Hsla, IntoColor, RgbHue, Srgba};
@@ -19,7 +19,7 @@ use crate::{
         luni::{LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
     },
-    measures::{Position, PositionFract, Rectangle, Size},
+    measures::Rectangle,
     render::{
         Render,
         camera::{Camera, CameraUtils, MainCamera, UICamera},
@@ -196,8 +196,8 @@ impl Element for Lnwindow {
                             world.trigger(
                                 lnwindow,
                                 &WidgetRectangle(Rectangle::new_half(
-                                    Position::ZERO,
-                                    Size::new(size.width / 2, size.height / 2),
+                                    IVec2::ZERO,
+                                    UVec2::new(size.width / 2, size.height / 2),
                                 )),
                             );
                         }
@@ -231,7 +231,7 @@ fn side_panel(world: &mut World) {
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
             ),
             bytes: include_bytes!("../res/interface/pen.png"),
         }),
@@ -247,7 +247,7 @@ fn side_panel(world: &mut World) {
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
             ),
             bytes: include_bytes!("../res/interface/brush.png"),
         }),
@@ -263,7 +263,7 @@ fn side_panel(world: &mut World) {
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
             ),
             bytes: include_bytes!("../res/interface/eraser.png"),
         }),
@@ -391,7 +391,7 @@ fn side_panel(world: &mut World) {
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(Position::ZERO, Size::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
             ),
             bytes: include_bytes!("../res/interface/compass.png"),
         }),
@@ -403,7 +403,7 @@ fn side_panel(world: &mut World) {
         let mut camera = world
             .enter_single_fetch_mut::<Camera>(main_camera.0)
             .unwrap();
-        camera.center = PositionFract::ZERO;
+        camera.center = I64Vec2::ZERO;
     });
 
     world.insert(Transform {
@@ -540,12 +540,12 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
 
     let main_panel_transform = TransformValue::anchor(
         (1.0, 0.5),
-        Rectangle::new_half(Position::new(220, 0), Size::splat(180)),
+        Rectangle::new_half(IVec2::new(220, 0), UVec2::splat(180)),
     );
 
     let main_panel_transform_start = TransformValue::anchor(
         (1.0, 0.5),
-        Rectangle::new_half(Position::new(110, 0), Size::splat(90)),
+        Rectangle::new_half(IVec2::new(110, 0), UVec2::splat(90)),
     );
 
     let palette_transform = TransformValue::scale(0.8, 0.8);
@@ -604,7 +604,7 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
     world.insert(Transform {
         value: TransformValue::anchor(
             (0.5, 0.5),
-            Rectangle::new_half(Position::ZERO, Size::splat(16)),
+            Rectangle::new_half(IVec2::ZERO, UVec2::splat(16)),
         ),
         source: color_picker.untyped(),
         target: color_picker_color.untyped(),

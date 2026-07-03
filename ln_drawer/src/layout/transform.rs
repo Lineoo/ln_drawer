@@ -108,16 +108,16 @@ impl TransformValue {
     }
 
     pub fn compute(&self, source: Rectangle) -> Rectangle {
-        let left = source.extend.w as f32 * self.left.anchor;
+        let left = source.extend.x as f32 * self.left.anchor;
         let left = source.origin.x + left.round() as i32 + self.left.offset;
 
-        let down = source.extend.h as f32 * self.down.anchor;
+        let down = source.extend.y as f32 * self.down.anchor;
         let down = source.origin.y + down.round() as i32 + self.down.offset;
 
-        let right = source.extend.w as f32 * self.right.anchor;
+        let right = source.extend.x as f32 * self.right.anchor;
         let right = source.origin.x + right.round() as i32 + self.right.offset;
 
-        let up = source.extend.h as f32 * self.up.anchor;
+        let up = source.extend.y as f32 * self.up.anchor;
         let up = source.origin.y + up.round() as i32 + self.up.offset;
 
         Rectangle::new(left, down, right, up)

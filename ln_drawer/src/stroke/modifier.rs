@@ -1,7 +1,7 @@
-use glam::Vec4;
+use glam::{I64Vec2, Vec4};
 use palette::{LinSrgba, Srgba};
 
-use crate::{measures::PositionFract, stroke::interpolate::Draw};
+use crate::{measures::FI64Ext, stroke::interpolate::Draw};
 
 #[derive(Clone, Copy)]
 pub struct Modifier {
@@ -18,7 +18,7 @@ pub struct Modifier {
 #[derive(Clone, Copy)]
 pub struct DrawProcessed {
     pub color: LinSrgba,
-    pub position: PositionFract,
+    pub position: I64Vec2,
     pub softness: f32,
     pub size: f32,
     pub flow: f32,
@@ -60,8 +60,8 @@ impl DrawProcessed {
     pub fn into_storage(self) -> DrawProcessedStorage {
         DrawProcessedStorage {
             color: Vec4::from(self.color.into_components()),
-            position: self.position.into_array(),
-            position_fract: self.position.into_arrayf(),
+            position: self.position.q32_floor().into(),
+            position_fract: self.position.q32_fract().into(),
             softness: self.softness,
             size: self.size,
             flow: self.flow,

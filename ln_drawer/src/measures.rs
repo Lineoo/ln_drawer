@@ -1,13 +1,7 @@
 //! This module is about the measures used in this app.
 
-mod fract;
-mod position;
-mod position_fract;
+mod fixed;
 mod rectangle;
-mod size;
 
-pub use fract::Fract;
-pub use position::Position;
-pub use position_fract::PositionFract;
+pub use fixed::FI64Ext;
 pub use rectangle::Rectangle;
-pub use size::Size;

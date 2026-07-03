@@ -1,11 +1,11 @@
 use std::{fmt, ops};
 
-use crate::measures::{Position, Size};
+use glam::{IVec2, UVec2};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rectangle {
-    pub origin: Position,
-    pub extend: Size,
+    pub origin: IVec2,
+    pub extend: UVec2,
 }
 
 impl fmt::Debug for Rectangle {
@@ -30,9 +30,9 @@ impl fmt::Display for Rectangle {
     }
 }
 
-impl ops::Add<Position> for Rectangle {
+impl ops::Add<IVec2> for Rectangle {
     type Output = Rectangle;
-    fn add(self, rhs: Position) -> Self::Output {
+    fn add(self, rhs: IVec2) -> Self::Output {
         Rectangle {
             origin: self.origin + rhs,
             extend: self.extend,
@@ -40,9 +40,9 @@ impl ops::Add<Position> for Rectangle {
     }
 }
 
-impl ops::Sub<Position> for Rectangle {
+impl ops::Sub<IVec2> for Rectangle {
     type Output = Rectangle;
-    fn sub(self, rhs: Position) -> Self::Output {
+    fn sub(self, rhs: IVec2) -> Self::Output {
         Rectangle {
             origin: self.origin - rhs,
             extend: self.extend,
@@ -50,14 +50,14 @@ impl ops::Sub<Position> for Rectangle {
     }
 }
 
-impl ops::AddAssign<Position> for Rectangle {
-    fn add_assign(&mut self, rhs: Position) {
+impl ops::AddAssign<IVec2> for Rectangle {
+    fn add_assign(&mut self, rhs: IVec2) {
         self.origin += rhs;
     }
 }
 
-impl ops::SubAssign<Position> for Rectangle {
-    fn sub_assign(&mut self, rhs: Position) {
+impl ops::SubAssign<IVec2> for Rectangle {
+    fn sub_assign(&mut self, rhs: IVec2) {
         self.origin -= rhs;
     }
 }
@@ -65,26 +65,26 @@ impl ops::SubAssign<Position> for Rectangle {
 impl Rectangle {
     pub fn new(left: i32, down: i32, right: i32, up: i32) -> Rectangle {
         Rectangle {
-            origin: Position::new(left.min(right), down.min(up)),
-            extend: Size::new((right - left).unsigned_abs(), (up - down).unsigned_abs()),
+            origin: IVec2::new(left.min(right), down.min(up)),
+            extend: UVec2::new((right - left).unsigned_abs(), (up - down).unsigned_abs()),
         }
     }
 
-    pub fn new_half(center: Position, half: Size) -> Rectangle {
+    pub fn new_half(center: IVec2, half: UVec2) -> Rectangle {
         Rectangle {
-            origin: center - Position::new(half.w as i32, half.h as i32),
+            origin: center - half.as_ivec2(),
             extend: half * 2,
         }
     }
 
     #[inline]
     pub const fn width(self) -> u32 {
-        self.extend.w
+        self.extend.x
     }
 
     #[inline]
     pub const fn height(self) -> u32 {
-        self.extend.h
+        self.extend.y
     }
 
     #[inline]
@@ -99,40 +99,40 @@ impl Rectangle {
 
     #[inline]
     pub const fn right(self) -> i32 {
-        self.origin.x.wrapping_add_unsigned(self.extend.w)
+        self.origin.x.wrapping_add_unsigned(self.extend.x)
     }
 
     #[inline]
     pub const fn up(self) -> i32 {
-        self.origin.y.wrapping_add_unsigned(self.extend.h)
+        self.origin.y.wrapping_add_unsigned(self.extend.y)
     }
 
     #[inline]
-    pub const fn left_down(self) -> Position {
+    pub const fn left_down(self) -> IVec2 {
         self.origin
     }
 
     #[inline]
-    pub const fn left_up(self) -> Position {
-        Position::new(
+    pub const fn left_up(self) -> IVec2 {
+        IVec2::new(
             self.origin.x,
-            self.origin.y.wrapping_add_unsigned(self.extend.h),
+            self.origin.y.wrapping_add_unsigned(self.extend.x),
         )
     }
 
     #[inline]
-    pub const fn right_down(self) -> Position {
-        Position::new(
-            self.origin.x.wrapping_add_unsigned(self.extend.w),
+    pub const fn right_down(self) -> IVec2 {
+        IVec2::new(
+            self.origin.x.wrapping_add_unsigned(self.extend.y),
             self.origin.y,
         )
     }
 
     #[inline]
-    pub const fn right_up(self) -> Position {
-        Position::new(
-            self.origin.x.wrapping_add_unsigned(self.extend.w),
-            self.origin.y.wrapping_add_unsigned(self.extend.h),
+    pub const fn right_up(self) -> IVec2 {
+        IVec2::new(
+            self.origin.x.wrapping_add_unsigned(self.extend.x),
+            self.origin.y.wrapping_add_unsigned(self.extend.y),
         )
     }
 
@@ -157,65 +157,33 @@ impl Rectangle {
     }
 
     #[inline]
-    pub fn with_left_down(self, corner: Position) -> Rectangle {
+    pub fn with_left_down(self, corner: IVec2) -> Rectangle {
         Rectangle::new(corner.x, corner.y, self.right(), self.up())
     }
 
     #[inline]
-    pub fn with_left_up(self, corner: Position) -> Rectangle {
+    pub fn with_left_up(self, corner: IVec2) -> Rectangle {
         Rectangle::new(corner.x, self.down(), self.right(), corner.y)
     }
 
     #[inline]
-    pub fn with_right_down(self, corner: Position) -> Rectangle {
+    pub fn with_right_down(self, corner: IVec2) -> Rectangle {
         Rectangle::new(self.left(), corner.y, corner.x, self.up())
     }
 
     #[inline]
-    pub fn with_right_up(self, corner: Position) -> Rectangle {
+    pub fn with_right_up(self, corner: IVec2) -> Rectangle {
         Rectangle::new(self.left(), self.down(), corner.x, corner.y)
     }
 
     #[inline]
-    pub fn pad_left(self, left: i32, n: usize) -> Rectangle {
-        Rectangle {
-            origin: self.origin - Position::new(self.extend.w as i32 + left, 0) * n as i32,
-            extend: self.extend,
-        }
-    }
-
-    #[inline]
-    pub fn pad_down(self, down: i32, n: usize) -> Rectangle {
-        Rectangle {
-            origin: self.origin - Position::new(0, self.extend.h as i32 + down) * n as i32,
-            extend: self.extend,
-        }
-    }
-
-    #[inline]
-    pub fn pad_right(self, right: i32, n: usize) -> Rectangle {
-        Rectangle {
-            origin: self.origin + Position::new(self.extend.w as i32 + right, 0) * n as i32,
-            extend: self.extend,
-        }
-    }
-
-    #[inline]
-    pub fn pad_up(self, up: i32, n: usize) -> Rectangle {
-        Rectangle {
-            origin: self.origin + Position::new(0, self.extend.h as i32 + up) * n as i32,
-            extend: self.extend,
-        }
-    }
-
-    #[inline]
     pub const fn horizontal_center(self) -> i32 {
-        self.origin.x + self.extend.w as i32 / 2
+        self.origin.x + self.extend.x as i32 / 2
     }
 
     #[inline]
     pub const fn vertical_center(self) -> i32 {
-        self.origin.y + self.extend.h as i32 / 2
+        self.origin.y + self.extend.y as i32 / 2
     }
 
     pub fn expand(self, val: i32) -> Rectangle {
@@ -223,10 +191,10 @@ impl Rectangle {
             self.origin.x.wrapping_sub(val),
             self.origin.y.wrapping_sub(val),
             (self.origin.x)
-                .wrapping_add_unsigned(self.extend.w)
+                .wrapping_add_unsigned(self.extend.x)
                 .wrapping_add(val),
             (self.origin.y)
-                .wrapping_add_unsigned(self.extend.h)
+                .wrapping_add_unsigned(self.extend.y)
                 .wrapping_add(val),
         )
     }
@@ -240,23 +208,8 @@ impl Rectangle {
         )
     }
 
-    /// will cause precise loss
-    pub fn lerp(self, rhs: Rectangle, factor: f32) -> Rectangle {
-        let x = self.origin.x as f32 * (1.0 - factor) + rhs.origin.x as f32 * factor;
-        let y = self.origin.y as f32 * (1.0 - factor) + rhs.origin.y as f32 * factor;
-
-        let w = self.extend.w as f32 * (1.0 - factor) + rhs.extend.w as f32 * factor;
-        let h = self.extend.h as f32 * (1.0 - factor) + rhs.extend.h as f32 * factor;
-
-        Rectangle {
-            origin: Position {
-                x: x.floor() as i32,
-                y: y.floor() as i32,
-            },
-            extend: Size {
-                w: w.floor() as u32,
-                h: h.floor() as u32,
-            },
-        }
+    pub fn contains(self, p: IVec2) -> bool {
+        let delta = p.wrapping_sub(self.origin).as_uvec2();
+        delta.x < self.extend.x && delta.y < self.extend.y
     }
 }

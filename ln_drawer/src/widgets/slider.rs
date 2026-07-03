@@ -1,10 +1,10 @@
-use glam::Vec2;
+use glam::{IVec2, UVec2, Vec2};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
 
 use crate::{
     animation::{AnimationType, DirectAnimation, SetAnimationDst},
-    measures::{Position, Rectangle, Size},
+    measures::{FI64Ext, Rectangle},
     render::rounded::RoundedRectDescriptor,
     theme::Theme,
     tools::{
@@ -88,7 +88,7 @@ impl VSlider {
         });
 
         let knob = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new_half(Position::new(this.x, value), Size::new(12, 25)),
+            rect: Rectangle::new_half(IVec2::new(this.x, value), UVec2::new(12, 25)),
             color: theme.primary_color,
             shadow_color: theme.shadow_color,
             shadow_offset: Vec2::new(0.0, -4.0),
@@ -101,7 +101,7 @@ impl VSlider {
         });
 
         let knob_split = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new_half(Position::new(this.x, value), Size::new(8, 2)),
+            rect: Rectangle::new_half(IVec2::new(this.x, value), UVec2::new(8, 2)),
             color: theme.secondary_color,
             shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
             shadow_offset: Vec2::ZERO,
@@ -146,9 +146,8 @@ impl VSlider {
             let value = div_height(value, max, min, y_knob_max, y_knob_min);
 
             front.desc.rect = Rectangle::new(this.x - 10, this.y_min, this.x + 10, value);
-            knob.desc.rect = Rectangle::new_half(Position::new(this.x, value), Size::new(12, 25));
-            knob_split.desc.rect =
-                Rectangle::new_half(Position::new(this.x, value), Size::new(8, 2));
+            knob.desc.rect = Rectangle::new_half(IVec2::new(this.x, value), UVec2::new(12, 25));
+            knob_split.desc.rect = Rectangle::new_half(IVec2::new(this.x, value), UVec2::new(8, 2));
         });
 
         world.observer(slider, move |&WidgetRectangle(rect), world| {
@@ -172,8 +171,8 @@ impl VSlider {
             back_rect_anim.src = back_rect.into_storage();
 
             front.desc.rect = Rectangle::new(x - 10, y_min, x + 10, value);
-            knob.desc.rect = Rectangle::new_half(Position::new(x, value), Size::new(12, 25));
-            knob_split.desc.rect = Rectangle::new_half(Position::new(x, value), Size::new(8, 2));
+            knob.desc.rect = Rectangle::new_half(IVec2::new(x, value), UVec2::new(12, 25));
+            knob_split.desc.rect = Rectangle::new_half(IVec2::new(x, value), UVec2::new(8, 2));
         });
 
         world.observer(slider, move |event: &WidgetHover, world| {
@@ -246,7 +245,7 @@ impl VSlider {
                     max: this.max,
                     min: this.min,
                     value: div_height_rev(
-                        event.position.round().y,
+                        event.position.q32_round().y,
                         this.max,
                         this.min,
                         y_knob_max,
@@ -263,9 +262,9 @@ impl VSlider {
             let y_knob_min = this.y_min + 23;
 
             let value = div_height(this.value, this.max, this.min, y_knob_max, y_knob_min);
-            let knob_rect = Rectangle::new_half(Position::new(this.x, value), Size::new(12, 25));
+            let knob_rect = Rectangle::new_half(IVec2::new(this.x, value), UVec2::new(12, 25));
 
-            let knob_hover_next = event.position.round().within(knob_rect);
+            let knob_hover_next = knob_rect.contains(event.position.q32_round());
             if knob_hover_next && !knob_hover {
                 knob_hover = true;
                 world.trigger(slider, &SliderKnobHover::HoverEnter);

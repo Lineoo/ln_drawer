@@ -1,7 +1,8 @@
+use glam::{IVec2, UVec2};
 use ln_world::{Element, Handle, World};
 
 use crate::{
-    measures::{Position, Rectangle, Size},
+    measures::{FI64Ext, Rectangle},
     render::camera::Camera,
     widgets::WidgetRectangle,
 };
@@ -21,8 +22,8 @@ impl ToolCollider {
     pub const fn fullscreen(order: isize) -> ToolCollider {
         ToolCollider {
             rect: Rectangle {
-                origin: Position::MIN,
-                extend: Size::MAX,
+                origin: IVec2::MIN,
+                extend: UVec2::MAX,
             },
             order,
             enabled: true,
@@ -36,9 +37,9 @@ impl ToolCollider {
         let mut buf = Vec::new();
         world.foreach_enter::<Camera>(|camera| {
             let camera = world.fetch(camera).unwrap();
-            let position = camera.screen_to_world_absolute(screen).floor();
+            let position = camera.screen_to_world_absolute(screen).q32_floor();
             world.foreach_fetch::<ToolCollider>(|collider| {
-                if collider.enabled && position.within(collider.rect) {
+                if collider.enabled && collider.rect.contains(position) {
                     buf.push((collider.handle(), camera.handle(), collider.order));
                 }
             });

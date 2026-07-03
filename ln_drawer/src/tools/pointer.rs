@@ -1,4 +1,4 @@
-use glam::{I8Vec2, Vec2};
+use glam::{I8Vec2, I64Vec2, Vec2};
 use ln_world::{Element, Handle, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
@@ -6,7 +6,6 @@ use winit::event::{
 
 use crate::{
     lnwin::Lnwindow,
-    measures::PositionFract,
     render::camera::Camera,
     tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
 };
@@ -20,7 +19,7 @@ pub struct PointerTool {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHit {
-    pub position: PositionFract,
+    pub position: I64Vec2,
     pub pointer: PointerData,
     pub status: PointerHitStatus,
     pub data: PointerHitData,
@@ -28,7 +27,7 @@ pub struct PointerHit {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHover {
-    pub position: PositionFract,
+    pub position: I64Vec2,
     pub pointer: PointerData,
     pub status: PointerHoverStatus,
 }
@@ -67,7 +66,7 @@ struct Pointer {
 
 #[derive(Clone, Copy)]
 struct Hover {
-    position: PositionFract,
+    position: I64Vec2,
     view: Handle<Camera>,
     handle: Handle<ToolCollider>,
 }
