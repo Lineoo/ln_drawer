@@ -255,7 +255,7 @@ fn chunk_readback(texture: &Texture, device: &Device, queue: &Queue) -> Vec<u8> 
     readback_buffer.map_async(MapMode::Read, .., move |ret| {
         ret.unwrap();
 
-        let view = inner.get_mapped_range(..);
+        let view = inner.get_mapped_range(..).unwrap();
         tx.send(view.to_vec()).unwrap();
     });
 

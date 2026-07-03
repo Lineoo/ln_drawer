@@ -110,7 +110,7 @@ impl Descriptor for TextManagerDescriptor {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("text_pipeline_layout"),
-                bind_group_layouts: &[&camera.layout, &bind_layout],
+                bind_group_layouts: &[Some(&camera.layout), Some(&bind_layout)],
                 immediate_size: 0,
             });
 

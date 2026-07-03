@@ -9,12 +9,12 @@ use std::time::Instant;
 
 use ln_world::{Element, Handle, World};
 use wgpu::{
-    Adapter, Color, CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor,
-    ExperimentalFeatures, Extent3d, Features, Instance, Limits, LoadOp, MemoryHints,
-    MultisampleState, Operations, PowerPreference, PresentMode, Queue, RenderPass,
+    Adapter, Color, CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device,
+    DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, Instance, Limits, LoadOp,
+    MemoryHints, MultisampleState, Operations, PowerPreference, PresentMode, Queue, RenderPass,
     RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface,
-    SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureUsages, TextureViewDescriptor, Trace,
+    SurfaceColorSpace, SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension,
+    TextureFormat, TextureUsages, TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -81,6 +81,7 @@ impl Render {
                 power_preference: PowerPreference::LowPower,
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface),
+                apply_limit_buckets: false,
             })
             .await
             .unwrap();
@@ -156,7 +157,7 @@ impl Render {
             sample_count: MSAA_SAMPLE_COUNT,
             dimension: TextureDimension::D2,
             format: config.format,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT,
             view_formats: &[],
         }
     }
@@ -180,6 +181,7 @@ impl Render {
             .unwrap();
         let config = SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
+            color_space: SurfaceColorSpace::Auto,
             format,
             width: size.width.max(1),
             height: size.height.max(1),
@@ -265,7 +267,16 @@ impl Render {
 
         // setup render pass
 
-        let texture = render.surface.get_current_texture().unwrap();
+        let texture = match render.surface.get_current_texture() {
+            CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
+            CurrentSurfaceTexture::Suboptimal(surface_texture) => surface_texture,
+            CurrentSurfaceTexture::Timeout => todo!(),
+            CurrentSurfaceTexture::Occluded => todo!(),
+            CurrentSurfaceTexture::Outdated => todo!(),
+            CurrentSurfaceTexture::Lost => todo!(),
+            CurrentSurfaceTexture::Validation => todo!(),
+        };
+
         let view = texture
             .texture
             .create_view(&TextureViewDescriptor::default());
@@ -307,7 +318,7 @@ impl Render {
 
         drop(rpass);
         render.queue.submit([encoder.finish()]);
-        texture.present();
+        render.queue.present(texture);
 
         // active refreshing
 

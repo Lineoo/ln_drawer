@@ -447,7 +447,7 @@ impl StrokeLayer {
 
         let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("stroke_chunk"),
-            bind_group_layouts: &[&render_camera_layout, &chunk_render_layout],
+            bind_group_layouts: &[Some(&render_camera_layout), Some(&chunk_render_layout)],
             immediate_size: 0,
         });
 
@@ -1262,7 +1262,11 @@ fn mipmap_pipeline(
 
     let mipmap_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("stroke_mipmap"),
-        bind_group_layouts: &[dispatch_group_layout, chunk_draw_layout, chunk_draw_layout],
+        bind_group_layouts: &[
+            Some(dispatch_group_layout),
+            Some(chunk_draw_layout),
+            Some(chunk_draw_layout),
+        ],
         immediate_size: 0,
     });
 
@@ -1297,7 +1301,7 @@ fn gamma_fixing_pipeline(
 
     let gamma_fixing_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("stroke_mipmap"),
-        bind_group_layouts: &[dispatch_group_layout, chunk_draw_layout],
+        bind_group_layouts: &[Some(dispatch_group_layout), Some(chunk_draw_layout)],
         immediate_size: 0,
     });
 
