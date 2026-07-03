@@ -27,6 +27,9 @@ jobs:
     - name: Install ALSA Library
       run: sudo apt-get install libasound2-dev
 
+    - name: Cargo Fmt
+      run: cargo fmt --all --check
+
     - name: Cargo Test
       run: cargo test
 

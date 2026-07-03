@@ -1,6 +1,12 @@
 name: Release
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release Version'
+        required: true
+        default: 'x.x.x-xb'
 
 permissions:
   contents: write
@@ -82,12 +88,10 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
 
-    - name: Extract Version
-      run: echo "VER=${GITHUB_REF#refs/heads/releases/}" >> $GITHUB_ENV
-
     - name: Tag Version
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VER: ${{ inputs.version }}
       run: |
         git tag -a "$VER" -m "Release $VER (Github Action)"
         git push https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git "$VER"
@@ -96,6 +100,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO: ${{ github.repository }}
+        VER: ${{ inputs.version }}
       run: |
         set -e
 
@@ -136,9 +141,9 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO: ${{ github.repository }}
         ASSETS: >
-          target/x86_64-unknown-linux-gnu/release/ln_drawer|ln_drawer-${{ env.VER }}-linux-x86_64
-          target/x86_64-pc-windows-gnu/release/ln_drawer.exe|ln_drawer-${{ env.VER }}-windows-x86_64.exe
-          target/release/apk/ln_drawer.apk|ln_drawer-${{ env.VER }}-android-aarch64.apk
+          target/x86_64-unknown-linux-gnu/release/ln_drawer|ln_drawer-${{ inputs.version }}-linux-x86_64
+          target/x86_64-pc-windows-gnu/release/ln_drawer.exe|ln_drawer-${{ inputs.version }}-windows-x86_64.exe
+          target/release/apk/ln_drawer.apk|ln_drawer-${{ inputs.version }}-android-aarch64.apk
       run: |
         set -e
 
