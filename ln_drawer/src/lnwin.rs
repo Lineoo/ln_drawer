@@ -242,7 +242,7 @@ fn side_panel(world: &mut World) {
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
             ),
             bytes: include_bytes!("../res/interface/pen.png"),
         }),
@@ -258,7 +258,7 @@ fn side_panel(world: &mut World) {
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
             ),
             bytes: include_bytes!("../res/interface/brush.png"),
         }),
@@ -274,7 +274,7 @@ fn side_panel(world: &mut World) {
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
             ),
             bytes: include_bytes!("../res/interface/eraser.png"),
         }),
@@ -402,7 +402,7 @@ fn side_panel(world: &mut World) {
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
             ),
             bytes: include_bytes!("../res/interface/compass.png"),
         }),
@@ -421,19 +421,19 @@ fn side_panel(world: &mut World) {
         value: TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
-                offset: 50,
+                offset: 40,
             },
             down: TransformEdge {
                 anchor: 0.5,
-                offset: -350,
+                offset: -240,
             },
             right: TransformEdge {
                 anchor: 0.0,
-                offset: 120,
+                offset: 40 + 44,
             },
             up: TransformEdge {
                 anchor: 0.5,
-                offset: 350,
+                offset: 240,
             },
         },
         source: lnwindow.untyped(),
@@ -446,59 +446,25 @@ fn side_panel(world: &mut World) {
             LuniParent {
                 axis: LuniAxis::Column,
                 template: LuniChildTemplate {
-                    basis: 54,
-                    shrink: 1.0,
-                    grow: 0.0,
-                    margin: LuniRect {
-                        left: 2,
-                        bottom: 2,
-                        right: 2,
-                        top: 2,
-                    },
+                    basis: 40,
+                    cross: 40,
                     ..Default::default()
                 },
                 padding: LuniRect {
-                    left: 6,
-                    bottom: 6,
-                    right: 6,
-                    top: 6,
+                    left: 2,
+                    bottom: 12,
+                    right: 2,
+                    top: 12,
                 },
+                gap: 4,
                 ..Default::default()
             },
         ),
         children: vec![
-            (
-                pen.untyped(),
-                LuniChild {
-                    basis: Some(54),
-                    shrink: Some(1.0),
-                    ..Default::default()
-                },
-            ),
-            (
-                brush.untyped(),
-                LuniChild {
-                    basis: Some(54),
-                    shrink: Some(1.0),
-                    ..Default::default()
-                },
-            ),
-            (
-                eraser.untyped(),
-                LuniChild {
-                    basis: Some(54),
-                    shrink: Some(1.0),
-                    ..Default::default()
-                },
-            ),
-            (
-                color_picker.untyped(),
-                LuniChild {
-                    basis: Some(54),
-                    shrink: Some(1.0),
-                    ..Default::default()
-                },
-            ),
+            (pen.untyped(), LuniChild::default()),
+            (brush.untyped(), LuniChild::default()),
+            (eraser.untyped(), LuniChild::default()),
+            (color_picker.untyped(), LuniChild::default()),
             (
                 elastic_blank.untyped(),
                 LuniChild {
@@ -510,19 +476,18 @@ fn side_panel(world: &mut World) {
             (
                 slider.untyped(),
                 LuniChild {
-                    basis: Some(240),
+                    basis: Some(160),
                     shrink: Some(1.0),
+                    margin: Some(LuniRect {
+                        left: 0,
+                        bottom: 5,
+                        right: 0,
+                        top: 5,
+                    }),
                     ..Default::default()
                 },
             ),
-            (
-                compass.untyped(),
-                LuniChild {
-                    basis: Some(54),
-                    shrink: Some(1.0),
-                    ..Default::default()
-                },
-            ),
+            (compass.untyped(), LuniChild::default()),
         ],
     });
 
@@ -544,19 +509,19 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
         order: 11,
         color: Srgba::new(0.9, 0.7, 0.7, 1.0),
         attach_pointer: false,
-        roundness: 16.0,
+        roundness: 12.0,
         shadow_offset: Vec2::ZERO,
         ..Default::default()
     });
 
     let main_panel_transform = TransformValue::anchor(
         (1.0, 0.5),
-        Rectangle::new_half(IVec2::new(220, 0), UVec2::splat(180)),
+        Rectangle::new_half(IVec2::new(144 + 20, 0), UVec2::splat(144)),
     );
 
     let main_panel_transform_start = TransformValue::anchor(
         (1.0, 0.5),
-        Rectangle::new_half(IVec2::new(110, 0), UVec2::splat(90)),
+        Rectangle::new_half(IVec2::new(144 / 4 + 20, 0), UVec2::splat(144 / 4)),
     );
 
     let palette_transform = TransformValue::scale(0.8, 0.8);
@@ -615,7 +580,7 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
     world.insert(Transform {
         value: TransformValue::anchor(
             (0.5, 0.5),
-            Rectangle::new_half(IVec2::ZERO, UVec2::splat(16)),
+            Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
         ),
         source: color_picker.untyped(),
         target: color_picker_color.untyped(),

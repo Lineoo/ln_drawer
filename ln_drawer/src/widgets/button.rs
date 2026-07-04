@@ -309,7 +309,7 @@ impl Default for Button {
             roundness: 5.0,
             shadow_color: palette::Srgba::new(0.0, 0.0, 0.0, 0.5),
             shadow_offset: Vec2::new(0.0, -4.0),
-            shadow_blur: 10.0,
+            shadow_blur: 4.0,
             press_roundness: 15.0,
             anim_factor: 30.0,
             anim_factor_menu: 50.0,

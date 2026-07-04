@@ -1,16 +1,7 @@
 use ln_world::{Descriptor, Element, Handle, World};
 use palette::{Srgba, blend::Compose};
 use wgpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
-    BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, Extent3d, FragmentState,
-    Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPipeline,
-    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture,
-    TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
-    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
-    util::{BufferInitDescriptor, DeviceExt},
-    wgt::TextureDataOrder,
+    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding, BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, Extent3d, FilterMode, FragmentState, Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState, util::{BufferInitDescriptor, DeviceExt}, wgt::TextureDataOrder,
 };
 
 use crate::{
@@ -90,7 +81,7 @@ impl Descriptor for CanvasManagerDescriptor {
                         binding: 1,
                         visibility: ShaderStages::VERTEX_FRAGMENT,
                         ty: BindingType::Texture {
-                            sample_type: TextureSampleType::Float { filterable: false },
+                            sample_type: TextureSampleType::Float { filterable: true },
                             view_dimension: TextureViewDimension::D2,
                             multisampled: false,
                         },
@@ -99,7 +90,7 @@ impl Descriptor for CanvasManagerDescriptor {
                     BindGroupLayoutEntry {
                         binding: 2,
                         visibility: ShaderStages::VERTEX_FRAGMENT,
-                        ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                        ty: BindingType::Sampler(SamplerBindingType::Filtering),
                         count: None,
                     },
                 ],
@@ -205,6 +196,8 @@ impl Descriptor for CanvasDescriptor {
 
         let sampler = render.device.create_sampler(&SamplerDescriptor {
             label: Some("canvas"),
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
             ..Default::default()
         });
 

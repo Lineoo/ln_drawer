@@ -9,11 +9,9 @@ pub struct Theme {
     pub theme_color: Srgba,
     pub symbolic_color: Srgba,
     pub shadow_color: Srgba,
-
+    pub shadow_blur: f32,
     pub roundness: f32,
-    pub press_roundness: f32,
     pub anim_factor: f32,
-    pub pad: i32,
 }
 
 impl Default for Theme {
@@ -25,11 +23,10 @@ impl Default for Theme {
             significant_color: Srgba::new(0.722, 0.722, 0.722, 1.0),
             theme_color: Srgba::new(0.863, 0.729, 0.588, 1.0),
             symbolic_color: Srgba::new(0.0, 0.0, 0.0, 1.0),
-            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.5),
-            roundness: 5.0,
-            press_roundness: 15.0,
+            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.25),
+            shadow_blur: 4.0,
+            roundness: 4.0,
             anim_factor: 30.0,
-            pad: 5,
         }
     }
 }

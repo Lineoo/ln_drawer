@@ -542,11 +542,11 @@ impl StrokeLayer {
         let ui_camera = world.single_fetch::<UICamera>().unwrap();
         let brush_preview = world.enter(ui_camera.0, || {
             world.build(RoundedRectDescriptor {
-                rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(5, 5)),
+                rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
                 color: Srgba::new(0.5, 0.5, 0.5, 0.4),
-                shrink: 8.0,
-                value: 8.0,
-                shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.2),
+                shrink: 0.5,
+                value: 0.5,
+                shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.3),
                 shadow_offset: Vec2::ZERO,
                 shadow_blur: 30.0,
                 visible: false,
@@ -896,7 +896,7 @@ impl StrokeLayer {
                         camera
                             .screen_to_world_absolute(event.pointer.screen)
                             .q32_round(),
-                        UVec2::new(5, 5),
+                        UVec2::new(1, 1),
                     )),
                 );
 
