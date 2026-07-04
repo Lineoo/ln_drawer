@@ -195,15 +195,18 @@ impl Element for Lnwindow {
                 world.option(ViewOptions {
                     refs: vec![here, stroke.untyped()],
                 });
-                world.queue(|world| {
+                world.queue(move |world| {
                     world.insert(CameraUtils::default());
                     let lnwindow = world.single::<Lnwindow>().unwrap();
                     world.observer(lnwindow, move |event: &WindowEvent, world| {
-                        let scale = world.fetch(lnwindow).unwrap().window.scale_factor();
                         if let WindowEvent::SurfaceResized(size) = event {
-                            world.trigger(
-                                lnwindow,
-                                &WidgetRectangle(Rectangle::new_half(
+                            let lnwindow = world.fetch(lnwindow).unwrap();
+                            let mut camera2 = world.fetch_mut(camera2).unwrap();
+
+                            let scale = lnwindow.window.scale_factor();
+                            world.queue_trigger(
+                                lnwindow.handle(),
+                                WidgetRectangle(Rectangle::new_half(
                                     IVec2::ZERO,
                                     (UVec2::new(size.width / 2, size.height / 2).as_dvec2()
                                         / scale)
@@ -211,6 +214,8 @@ impl Element for Lnwindow {
                                         .as_uvec2(),
                                 )),
                             );
+
+                            camera2.zoom = i64::q32_from_f64(scale.log2());
                         }
                     });
                 });
