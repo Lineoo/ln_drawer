@@ -58,15 +58,15 @@ fn color_hue_band(radius: f32, angle: f32) -> vec4f {
 fn color_main_knob(uv: vec2f) -> vec4f {
     let diff = distance(uv, vec2f(palette.saturation, palette.lightness)) - palette.main_knob_size;
     let width = fwidth(diff) * 0.5;
-    if diff < 0.002 {
-        let factor = smoothstep(-width, width, diff);
+    if diff < 0.010 {
+        let factor = smoothstep(-width, width, diff - 0.008);
         let color = srgb_to_linear(vec4f(hsl_to_rgb(palette.hue, palette.saturation, palette.lightness), 1));
         return mix(color, WHITE, factor);
-    } else if diff < 0.006 {
-        let factor = smoothstep(-width, width, diff - 0.004);
+    } else if diff < 0.014 {
+        let factor = smoothstep(-width, width, diff - 0.012);
         return mix(WHITE, BLACK, factor);
     } else {
-        let factor = smoothstep(-width, width, diff - 0.008);
+        let factor = smoothstep(-width, width, diff - 0.016);
         return mix(BLACK, vec4f(), factor);
     }
 }
@@ -79,15 +79,15 @@ fn color_hue_knob(radius: f32, angle: f32) -> vec4f {
     let diff = min(diff_d, 1 - diff_d) - palette.hue_knob_size;
     let width = fwidth(diff) * 0.5;
 
-    if diff < 0.0005 {
-        let factor = smoothstep(-width, width, diff);
+    if diff < 0.0010 {
+        let factor = smoothstep(-width, width, diff - 0.0005);
         let color = srgb_to_linear(vec4f(hsl_to_rgb(palette.hue, palette.saturation, palette.lightness), 1));
         return mix(color, WHITE, factor) * alpha;
-    } else if diff < 0.0015 {
-        let factor = smoothstep(-width, width, diff - 0.001);
+    } else if diff < 0.0020 {
+        let factor = smoothstep(-width, width, diff - 0.0015);
         return mix(WHITE, BLACK, factor) * alpha;
     } else {
-        let factor = smoothstep(-width, width, diff - 0.002);
+        let factor = smoothstep(-width, width, diff - 0.0025);
         return mix(BLACK, vec4f(), factor) * alpha;
     }
 }
