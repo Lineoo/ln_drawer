@@ -17,7 +17,7 @@ use winit::{
 
 use crate::{
     layout::{
-        luni::{LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
+        luni::{LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
     },
     measures::{FI64Ext, Rectangle},
@@ -246,6 +246,7 @@ fn side_panel(world: &mut World) {
         color: theme.primary_color,
         active_color: theme.primary_color,
         press_color: theme.primary_color,
+        roundness: theme.roundness,
         ..Default::default()
     });
 
@@ -255,10 +256,11 @@ fn side_panel(world: &mut World) {
         active_color: theme.secondary_color,
         press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        roundness: theme.roundness,
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
             ),
             bytes: include_bytes!("../res/interface/pen.png"),
         }),
@@ -271,10 +273,11 @@ fn side_panel(world: &mut World) {
         active_color: theme.secondary_color,
         press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        roundness: theme.roundness,
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
             ),
             bytes: include_bytes!("../res/interface/brush.png"),
         }),
@@ -287,10 +290,11 @@ fn side_panel(world: &mut World) {
         active_color: theme.secondary_color,
         press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        roundness: theme.roundness,
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
             ),
             bytes: include_bytes!("../res/interface/eraser.png"),
         }),
@@ -415,10 +419,11 @@ fn side_panel(world: &mut World) {
         active_color: theme.secondary_color,
         press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        roundness: theme.roundness,
         image: Some(ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
             ),
             bytes: include_bytes!("../res/interface/compass.png"),
         }),
@@ -462,15 +467,16 @@ fn side_panel(world: &mut World) {
             LuniParent {
                 axis: LuniAxis::Column,
                 template: LuniChildTemplate {
-                    basis: 40,
-                    cross: 40,
+                    basis: 36,
+                    cross: 36,
+                    align: LuniAlign::Center,
                     ..Default::default()
                 },
                 padding: LuniRect {
-                    left: 2,
-                    bottom: 12,
-                    right: 2,
-                    top: 12,
+                    left: 0,
+                    bottom: 4,
+                    right: 0,
+                    top: 4,
                 },
                 gap: 4,
                 ..Default::default()
@@ -517,6 +523,7 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
         active_color: theme.secondary_color,
         press_color: theme.highlight_color,
         shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        roundness: theme.roundness,
         image: None,
         ..Default::default()
     });
@@ -525,7 +532,7 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
         order: 11,
         color: Srgba::new(0.9, 0.7, 0.7, 1.0),
         attach_pointer: false,
-        roundness: 12.0,
+        roundness: 10.0,
         shadow_offset: Vec2::ZERO,
         ..Default::default()
     });
@@ -596,7 +603,7 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
     world.insert(Transform {
         value: TransformValue::anchor(
             (0.5, 0.5),
-            Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+            Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
         ),
         source: color_picker.untyped(),
         target: color_picker_color.untyped(),
