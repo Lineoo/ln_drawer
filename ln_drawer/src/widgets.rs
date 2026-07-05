@@ -19,6 +19,8 @@ pub enum WidgetButton {
     ButtonRelease,
 }
 
+pub struct WidgetUpdate;
+
 /// Send when widget is clicked.
 pub struct WidgetClick;
 

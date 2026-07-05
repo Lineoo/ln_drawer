@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use cosmic_text::Metrics;
 use glam::{I64Vec2, IVec2, UVec2, Vec2};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, ViewOptions, World};
@@ -23,10 +24,10 @@ use crate::{
     render::{
         Render,
         camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, UICamera},
-        canvas::CanvasManagerDescriptor,
+        canvas::Canvas,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
-        text::TextManagerDescriptor,
+        text::Text,
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     stroke::{StrokeLayer, modifier::Modifier},
@@ -138,8 +139,8 @@ impl Element for Lnwindow {
             Camera::init(world);
             world.flush();
 
-            world.build(CanvasManagerDescriptor);
-            world.build(TextManagerDescriptor);
+            Canvas::init(world);
+            Text::init(world);
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
             RectangleMesh::<GridMaterial>::init(world);
@@ -221,6 +222,16 @@ impl Element for Lnwindow {
                 });
 
                 world.queue(side_panel);
+                world.queue(|world| {
+                    world.insert(Text {
+                        text: "Hi there".into(),
+                        rect: Rectangle::new_half(IVec2::ZERO, UVec2::new(80, 12)),
+                        metrics: Metrics::new(12.0, 12.0),
+                        upscale: 2.0,
+                        order: 1,
+                        visible: true,
+                    });
+                });
             });
         });
     }

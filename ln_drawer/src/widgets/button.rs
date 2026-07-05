@@ -331,8 +331,8 @@ impl Element for Button {
         {
             let data = data.into_rgba8();
             let canvas = world.build(CanvasDescriptor {
-                width: data.width(),
-                height: data.height(),
+                data_width: data.width(),
+                data_height: data.height(),
                 rect: image.transform.compute(self.rect),
                 order: self.order + 1,
                 visible: self.enabled,
