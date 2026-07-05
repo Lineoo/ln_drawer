@@ -270,11 +270,15 @@ impl Render {
         let texture = match render.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
             CurrentSurfaceTexture::Suboptimal(surface_texture) => surface_texture,
-            CurrentSurfaceTexture::Timeout => todo!(),
-            CurrentSurfaceTexture::Occluded => todo!(),
-            CurrentSurfaceTexture::Outdated => todo!(),
-            CurrentSurfaceTexture::Lost => todo!(),
-            CurrentSurfaceTexture::Validation => todo!(),
+            CurrentSurfaceTexture::Timeout => return,
+            CurrentSurfaceTexture::Occluded => return,
+            CurrentSurfaceTexture::Outdated => {
+                render.surface.configure(&render.device, &render.config);
+                return;
+            }
+            // TODO not correctly handled
+            CurrentSurfaceTexture::Lost => return,
+            CurrentSurfaceTexture::Validation => return,
         };
 
         let view = texture
