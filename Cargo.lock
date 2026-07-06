@@ -1557,6 +1557,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "smallvec",
+ "swash",
  "thiserror 2.0.18",
  "tokio",
  "wgpu",

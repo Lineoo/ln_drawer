@@ -1,10 +1,14 @@
-use cosmic_text::{Attrs, Color, Family, FontSystem, Metrics, Shaping, SwashCache};
+use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache};
 use ln_world::{Element, Handle, World};
-use palette::Srgba;
+use palette::{Srgba, WithAlpha};
+use swash::scale::image::Content;
 
 use crate::{
     measures::Rectangle,
-    render::canvas::CanvasDescriptor,
+    render::{
+        RenderControl,
+        canvas::{Canvas, CanvasDescriptor},
+    },
     widgets::{WidgetEnabled, WidgetRectangle},
 };
 
@@ -16,6 +20,8 @@ pub struct Text {
     pub upscale: f32,
     pub order: isize,
     pub visible: bool,
+    /// will delay text draw to next render prepare phase
+    pub outdated: bool,
 }
 
 pub struct TextChanged;
@@ -35,6 +41,7 @@ impl Default for Text {
             upscale: 2.0,
             order: 100,
             visible: true,
+            outdated: false,
         }
     }
 }
@@ -73,40 +80,46 @@ impl Text {
             visible: self.visible,
         });
 
+        let upscale_metrics = self.metrics.scale(self.upscale);
+        let manager = &mut *world.single_fetch_mut::<TextPipeline>().unwrap();
+        let mut buffer = Buffer::new(&mut manager.font_system, upscale_metrics);
+
+        let control = world.insert(RenderControl {
+            prepare: Some(Box::new(move |world| {
+                let mut this = world.fetch_mut(this).unwrap();
+
+                if !this.outdated || !this.visible {
+                    return None;
+                }
+                this.outdated = false;
+
+                let mut canvas = world.fetch_mut(canvas).unwrap();
+
+                canvas.clear_transparent();
+
+                let upscale_metrics = this.metrics.scale(this.upscale);
+                let manager = &mut *world.single_fetch_mut::<TextPipeline>().unwrap();
+                let mut buffer_font = buffer.borrow_with(&mut manager.font_system);
+
+                let attrs = Attrs::new().family(Family::Name("Source Han Sans CN"));
+                buffer_font.set_metrics(upscale_metrics);
+                buffer_font.set_size(Some(upscale_width), Some(upscale_height));
+                buffer_font.set_text(&this.text, &attrs, Shaping::Basic);
+
+                draw_buffer(&buffer, &this, &mut canvas, manager);
+
+                canvas.upload_full();
+
+                None
+            })),
+            draw: None,
+        });
+
+        RenderControl::reorder(Some(0), world, control);
+
         world.observer(this, move |&TextChanged, world| {
-            let mut canvas = world.fetch_mut(canvas).unwrap();
-            let this = world.fetch(this).unwrap();
-            let manager = &mut *world.single_fetch_mut::<TextPipeline>().unwrap();
-
-            canvas.clear_transparent();
-
-            let upscale_metrics = this.metrics.scale(this.upscale);
-            let mut buffer_owned =
-                cosmic_text::Buffer::new(&mut manager.font_system, upscale_metrics);
-
-            let mut buffer = buffer_owned.borrow_with(&mut manager.font_system);
-            let attrs = Attrs::new().family(Family::Name("Source Han Sans CN"));
-            buffer.set_size(Some(upscale_width), Some(upscale_height));
-            buffer.set_text(&this.text, &attrs, Shaping::Advanced);
-            buffer.shape_until_scroll(true);
-            buffer.draw(
-                &mut manager.swash_cache,
-                Color::rgba(
-                    this.color.red,
-                    this.color.green,
-                    this.color.blue,
-                    this.color.alpha,
-                ),
-                |x, y, w, h, color| {
-                    for x in x..(x + w as i32) {
-                        for y in y..(y + h as i32) {
-                            canvas.draw_over(x, y, Srgba::from(color.as_rgba()).into_format());
-                        }
-                    }
-                },
-            );
-
-            canvas.upload_full();
+            let mut this = world.fetch_mut(this).unwrap();
+            this.outdated = true;
         });
 
         world.observer(this, move |&WidgetEnabled(enabled), world| {
@@ -119,312 +132,65 @@ impl Text {
             canvas.rect = rect;
         });
 
-        world.queue_trigger(this, TextChanged);
+        self.outdated = true;
+    }
+}
+
+fn draw_buffer(buffer: &Buffer, this: &Text, canvas: &mut Canvas, manager: &mut TextPipeline) {
+    for run in buffer.layout_runs() {
+        for glyph in run.glyphs.iter() {
+            let physical_glyph = glyph.physical((0., 0.), 1.0);
+
+            let Some(image) = manager
+                .swash_cache
+                .get_image(&mut manager.font_system, physical_glyph.cache_key)
+            else {
+                continue;
+            };
+
+            let x = image.placement.left;
+            let y = -image.placement.top;
+
+            match image.content {
+                Content::Mask => {
+                    let mut i = 0;
+                    for off_y in 0..image.placement.height as i32 {
+                        for off_x in 0..image.placement.width as i32 {
+                            canvas.draw_over(
+                                physical_glyph.x + x + off_x,
+                                run.line_y as i32 + physical_glyph.y + y + off_y,
+                                this.color.with_alpha(image.data[i]).into_format(),
+                            );
+                            i += 1;
+                        }
+                    }
+                }
+                Content::Color => {
+                    let mut i = 0;
+                    for off_y in 0..image.placement.height as i32 {
+                        for off_x in 0..image.placement.width as i32 {
+                            canvas.draw_over(
+                                x + off_x,
+                                y + off_y,
+                                Srgba::<u8>::new(
+                                    image.data[i],
+                                    image.data[i + 1],
+                                    image.data[i + 2],
+                                    image.data[i + 3],
+                                )
+                                .into_format(),
+                            );
+                            i += 4;
+                        }
+                    }
+                }
+                Content::SubpixelMask => {
+                    log::warn!("TODO: SubpixelMask");
+                }
+            }
+        }
     }
 }
 
 impl Element for Text {}
 impl Element for TextPipeline {}
-
-#[cfg(false)]
-pub struct TextEdit {
-    inner: Painter,
-    editor: Editor<'static>,
-    font_system: Arc<Mutex<FontSystem>>,
-    swash_cache: Arc<Mutex<SwashCache>>,
-
-    redraw: bool,
-}
-
-#[cfg(false)]
-impl Element for TextEdit {
-    fn when_inserted(&mut self, world: &World, this: Handle<Self>) {
-        let collider = world.insert(PointerCollider {
-            rect: self.inner.get_rect(),
-            z_order: self.inner.get_z_order(),
-        });
-
-        world.dependency(collider, this);
-
-        world.observer(collider, move |&PointerHit(event), world| match event {
-            PointerEvent::Pressed(position) => {
-                let fetched = &mut *world.fetch_mut(this).unwrap();
-
-                let point = position - fetched.inner.get_rect().left_up();
-                let point = Position::new(point.x, -point.y);
-
-                let mut font_system = fetched.font_system.lock();
-                fetched.editor.action(
-                    &mut font_system,
-                    Action::Click {
-                        x: point.x,
-                        y: point.y,
-                    },
-                );
-
-                drop(font_system);
-
-                let focus = world.single::<Focus>().unwrap();
-                world.trigger(focus, RequestFocus(Some(this.untyped())));
-
-                fetched.redraw = true;
-            }
-            PointerEvent::Moved(position) => {
-                let fetched = &mut *world.fetch_mut(this).unwrap();
-
-                let point = position - fetched.inner.get_rect().left_up();
-                let point = Position::new(point.x, -point.y);
-
-                let mut font_system = fetched.font_system.lock();
-                fetched.editor.action(
-                    &mut font_system,
-                    Action::Drag {
-                        x: point.x,
-                        y: point.y,
-                    },
-                );
-
-                drop(font_system);
-
-                fetched.redraw = true;
-            }
-            _ => {}
-        });
-
-        world.observer(this, |FocusInput(event), world, this| {
-            if !event.state.is_pressed() {
-                return;
-            }
-
-            let fetched = &mut *world.fetch_mut(this).unwrap();
-
-            let mut font_system = fetched.font_system.lock();
-            let mut editor = fetched.editor.borrow_with(&mut font_system);
-
-            let modifiers = world.single_fetch::<LnwinModifiers>().unwrap();
-            let ctrl_down = modifiers.0.state().control_key();
-            let shift_down = modifiers.0.state().shift_key();
-
-            if shift_down && let Selection::None = editor.selection() {
-                let cursor = editor.cursor();
-                editor.set_selection(Selection::Normal(cursor));
-            }
-
-            match &event.logical_key {
-                Key::Named(NamedKey::ArrowLeft) if ctrl_down => {
-                    if !shift_down {
-                        editor.set_selection(Selection::None);
-                    }
-                    editor.action(Action::Motion(Motion::LeftWord))
-                }
-                Key::Named(NamedKey::ArrowRight) if ctrl_down => {
-                    if !shift_down {
-                        editor.set_selection(Selection::None);
-                    }
-                    editor.action(Action::Motion(Motion::RightWord))
-                }
-                Key::Named(NamedKey::ArrowLeft) => {
-                    if !shift_down {
-                        editor.set_selection(Selection::None);
-                    }
-                    editor.action(Action::Motion(Motion::Left));
-                }
-                Key::Named(NamedKey::ArrowRight) => {
-                    if !shift_down {
-                        editor.set_selection(Selection::None);
-                    }
-                    editor.action(Action::Motion(Motion::Right));
-                }
-                Key::Named(NamedKey::ArrowUp) => {
-                    if !shift_down {
-                        editor.set_selection(Selection::None);
-                    }
-                    editor.action(Action::Motion(Motion::Up));
-                }
-                Key::Named(NamedKey::ArrowDown) => {
-                    if !shift_down {
-                        editor.set_selection(Selection::None);
-                    }
-                    editor.action(Action::Motion(Motion::Down));
-                }
-                Key::Named(NamedKey::Home) => editor.action(Action::Motion(Motion::Home)),
-                Key::Named(NamedKey::End) => editor.action(Action::Motion(Motion::End)),
-                Key::Named(NamedKey::PageUp) => editor.action(Action::Motion(Motion::PageUp)),
-                Key::Named(NamedKey::PageDown) => editor.action(Action::Motion(Motion::PageDown)),
-                Key::Named(NamedKey::Escape) => editor.action(Action::Escape),
-                Key::Named(NamedKey::Enter) => {
-                    editor.delete_selection();
-                    editor.action(Action::Enter);
-                }
-                Key::Named(NamedKey::Backspace) if ctrl_down => {
-                    if !editor.delete_selection() {
-                        let cursor = editor.cursor();
-                        editor.set_selection(Selection::Normal(cursor));
-                        editor.action(Action::Motion(Motion::PreviousWord));
-                        editor.delete_selection();
-                        editor.set_selection(Selection::None);
-                    }
-                }
-                Key::Named(NamedKey::Delete) if ctrl_down => {
-                    if !editor.delete_selection() {
-                        let cursor = editor.cursor();
-                        editor.set_selection(Selection::Normal(cursor));
-                        editor.action(Action::Motion(Motion::NextWord));
-                        editor.delete_selection();
-                        editor.set_selection(Selection::None);
-                    }
-                    let cursor = editor.cursor();
-                    editor.set_selection(Selection::Normal(cursor));
-                    editor.action(Action::Motion(Motion::NextWord));
-                    editor.delete_selection();
-                    editor.set_selection(Selection::None);
-                }
-                Key::Named(NamedKey::Backspace) => {
-                    if !editor.delete_selection() {
-                        editor.action(Action::Backspace);
-                    }
-                }
-                Key::Named(NamedKey::Delete) => {
-                    if !editor.delete_selection() {
-                        editor.action(Action::Delete);
-                    }
-                }
-                Key::Named(key) => {
-                    if let Some(text) = key.to_text() {
-                        editor.delete_selection();
-                        for c in text.chars() {
-                            editor.action(Action::Insert(c));
-                        }
-                    }
-                }
-                Key::Character(text) => {
-                    editor.delete_selection();
-                    for c in text.chars() {
-                        editor.action(Action::Insert(c));
-                    }
-                }
-                _ => {}
-            }
-
-            drop(font_system);
-
-            fetched.redraw = true;
-        });
-
-        world.observer(collider, move |&PointerMenu(position), world| {
-            world.insert(world.build(MenuDescriptor {
-                position,
-                entries: vec![MenuEntryDescriptor {
-                    label: "Remove".into(),
-                    action: Box::new(move |world| {
-                        world.remove(this);
-                    }),
-                }],
-                ..Default::default()
-            }));
-        });
-
-        let interface = world.single::<Interface>().unwrap();
-
-        let tracker = world.observer(interface, move |Redraw, world| {
-            let mut this = world.fetch_mut(this).unwrap();
-
-            if this.redraw {
-                this.redraw();
-            }
-        });
-
-        world.dependency(tracker, this);
-    }
-}
-
-#[cfg(false)]
-impl TextEdit {
-    pub fn new(
-        rect: Rectangle,
-        text: String,
-        manager: &mut TextPipeline,
-        interface: &mut Interface,
-    ) -> TextEdit {
-        let mut font_system = manager.font_system.lock();
-        let mut swash_cache = manager.swash_cache.lock();
-
-        let metrics = Metrics::new(24.0, 20.0);
-
-        let mut buffer = Buffer::new(&mut font_system, metrics);
-        let mut buffer_borrow = buffer.borrow_with(&mut font_system);
-
-        let attrs = Attrs::new().family(Family::Name("Source Han Sans CN"));
-        buffer_borrow.set_size(Some(rect.width() as f32), Some(rect.height() as f32));
-        buffer_borrow.set_text(&text, &attrs, Shaping::Advanced);
-        buffer_borrow.shape_until_scroll(true);
-
-        let mut data = vec![0; (rect.width() * rect.height() * 4) as usize];
-
-        buffer_borrow.draw(
-            &mut swash_cache,
-            Color::rgb(0xFF, 0xFF, 0xFF),
-            |x, y, _, _, color| {
-                let start = ((x + y * rect.width() as i32) * 4) as usize;
-                let rgba = color.as_rgba();
-                data[start] = rgba[0];
-                data[start + 1] = rgba[1];
-                data[start + 2] = rgba[2];
-                data[start + 3] = rgba[3];
-            },
-        );
-
-        let inner = Painter::new_with(rect, data, interface);
-
-        TextEdit {
-            inner,
-            editor: Editor::new(buffer),
-            font_system: manager.font_system.clone(),
-            swash_cache: manager.swash_cache.clone(),
-            redraw: false,
-        }
-    }
-
-    pub fn clone_text(&self) -> String {
-        self.editor.with_buffer(|buffer| {
-            let mut selection = String::new();
-
-            if let Some(line) = buffer.lines.first() {
-                selection.push_str(line.text());
-                for line_i in 1..buffer.lines.len() {
-                    selection.push('\n');
-                    selection.push_str(buffer.lines[line_i].text());
-                }
-            }
-
-            selection
-        })
-    }
-
-    fn redraw(&mut self) {
-        self.redraw = false;
-
-        let mut font_system = self.font_system.lock();
-        let mut swash_cache = self.swash_cache.lock();
-
-        let mut writer = self.inner.open_writer();
-        writer.clear([0; 4]);
-        self.editor.shape_as_needed(&mut font_system, true);
-        self.editor.draw(
-            &mut font_system,
-            &mut swash_cache,
-            Color::rgba(255, 255, 255, 255),
-            Color::rgba(255, 255, 255, 127),
-            Color::rgba(127, 127, 255, 127),
-            Color::rgba(255, 255, 255, 255),
-            |x, y, w, h, color| {
-                let rgba = color.as_rgba();
-                for x in x..(x + w as i32) {
-                    for y in y..(y + h as i32) {
-                        writer.draw(x, y, rgba);
-                    }
-                }
-            },
-        );
-    }
-}

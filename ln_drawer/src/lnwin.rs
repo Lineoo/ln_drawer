@@ -630,6 +630,7 @@ fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
         upscale: 2.0,
         order: 1,
         visible: false,
+        outdated: true,
     });
 
     world.queue(move |world| {
