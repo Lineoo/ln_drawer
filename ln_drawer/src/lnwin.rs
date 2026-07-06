@@ -442,7 +442,7 @@ fn side_panel(world: &mut World) {
         value: TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
-                offset: 40,
+                offset: 24,
             },
             down: TransformEdge {
                 anchor: 0.5,
@@ -450,7 +450,7 @@ fn side_panel(world: &mut World) {
             },
             right: TransformEdge {
                 anchor: 0.0,
-                offset: 40 + 44,
+                offset: 24 + 44,
             },
             up: TransformEdge {
                 anchor: 0.5,
