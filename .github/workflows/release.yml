@@ -60,6 +60,8 @@ jobs:
       run: echo "$ORG_LINN_KEYSTORE" | base64 -di > "$CARGO_APK_RELEASE_KEYSTORE"
 
     - name: Build Artifacts x86_64 Linux
+      env: 
+        LN_SAVE_FILE_LOCATION: LnDrawer
       run: cargo build --release --package=ln_drawer --bin=ln_drawer --target x86_64-unknown-linux-gnu
     - uses: actions/upload-artifact@v6
       with:
@@ -67,6 +69,8 @@ jobs:
         path: target/x86_64-unknown-linux-gnu/release/ln_drawer
 
     - name: Build Artifacts x86_64 Windows
+      env:
+        LN_SAVE_FILE_LOCATION: LnDrawer
       run: cargo build --release --package=ln_drawer --bin=ln_drawer --target x86_64-pc-windows-gnu
     - uses: actions/upload-artifact@v6
       with:
