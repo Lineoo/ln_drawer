@@ -309,7 +309,7 @@ impl Default for Button {
             roundness: 5.0,
             shadow_color: palette::Srgba::new(0.0, 0.0, 0.0, 0.5),
             shadow_offset: Vec2::new(0.0, -4.0),
-            shadow_blur: 10.0,
+            shadow_blur: 4.0,
             press_roundness: 15.0,
             anim_factor: 30.0,
             anim_factor_menu: 50.0,
@@ -331,8 +331,8 @@ impl Element for Button {
         {
             let data = data.into_rgba8();
             let canvas = world.build(CanvasDescriptor {
-                width: data.width(),
-                height: data.height(),
+                data_width: data.width(),
+                data_height: data.height(),
                 rect: image.transform.compute(self.rect),
                 order: self.order + 1,
                 visible: self.enabled,

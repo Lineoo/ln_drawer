@@ -17,3 +17,6 @@ sed -i '/^\[package\.metadata\.android\.application\]/,/^\[/ s/^label = "\(.*\) 
 # [package.metadata.android.application]
 # icon = "@mipmap/icon_dev"
 sed -i '/^\[package\.metadata\.android\.application\]/,/^\[/ s/^icon = "\(.*\)_dev"$/icon = "\1"/' ln_drawer/Cargo.toml
+
+# src/save.rs::get_file_path
+export LN_SAVE_FILE_LOCATION=LnDrawer

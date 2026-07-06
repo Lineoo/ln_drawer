@@ -64,7 +64,7 @@ impl Default for RoundedRectDescriptor {
             visible: true,
             shadow_color: palette::Srgba::new(0.0, 0.0, 0.0, 0.5),
             shadow_offset: Vec2::new(0.0, -4.0),
-            shadow_blur: 10.0,
+            shadow_blur: 4.0,
         }
     }
 }
@@ -96,7 +96,7 @@ impl RoundedRect {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("rounded"),
-            bind_group_layouts: &[Some(&camera.layout), Some(&bind)],
+            bind_group_layouts: &[&camera.layout, &bind],
             immediate_size: 0,
         });
 

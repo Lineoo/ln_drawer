@@ -11,7 +11,7 @@ use std::{
 };
 
 use bytemuck::{bytes_of, cast_slice};
-use glam::{DVec2, I64Vec2, IVec2, UVec2, Vec2};
+use glam::{DVec2, IVec2, UVec2, Vec2};
 use hashbrown::{HashMap, HashSet};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -45,6 +45,7 @@ use crate::{
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
         modifier::{DrawProcessed, DrawProcessedStorage, Modifier},
+        stream::{ThreadInput, ThreadOutput},
     },
     tools::{
         collider::ToolCollider,
@@ -132,6 +133,8 @@ pub struct StrokeLayer {
     prev: Option<Draw>,
 }
 
+pub struct StrokeLayerDebugMessage(pub String);
+
 struct Chunk {
     bind: ChunkBind,
     meta0: ChunkMeta0,
@@ -157,19 +160,6 @@ struct ChunkBind {
     texture: Texture,
     render: BindGroup,
     draw: BindGroup,
-}
-
-enum ThreadInput {
-    SetStreamCamera(i64, UVec2, I64Vec2),
-    MarkUnsaved(ChunkKey),
-    Create(ChunkKey, Texture),
-    Autosave,
-    Finish,
-}
-
-enum ThreadOutput {
-    Insert(ChunkKey, Option<Texture>),
-    Remove(ChunkKey),
 }
 
 #[repr(C)]
@@ -447,7 +437,7 @@ impl StrokeLayer {
 
         let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("stroke_chunk"),
-            bind_group_layouts: &[Some(&render_camera_layout), Some(&chunk_render_layout)],
+            bind_group_layouts: &[&render_camera_layout, &chunk_render_layout],
             immediate_size: 0,
         });
 
@@ -542,11 +532,11 @@ impl StrokeLayer {
         let ui_camera = world.single_fetch::<UICamera>().unwrap();
         let brush_preview = world.enter(ui_camera.0, || {
             world.build(RoundedRectDescriptor {
-                rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(5, 5)),
+                rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
                 color: Srgba::new(0.5, 0.5, 0.5, 0.4),
-                shrink: 8.0,
-                value: 8.0,
-                shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.2),
+                shrink: 0.5,
+                value: 0.5,
+                shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.3),
                 shadow_offset: Vec2::ZERO,
                 shadow_blur: 30.0,
                 visible: false,
@@ -775,6 +765,12 @@ impl StrokeLayer {
 
     fn process_thread_output(&mut self, world: &World, output: ThreadOutput) {
         match output {
+            ThreadOutput::ThreadDebugMessage(msg) => {
+                world.queue_trigger(
+                    world.single::<StrokeLayer>().unwrap(),
+                    StrokeLayerDebugMessage(msg),
+                );
+            }
             ThreadOutput::Insert(chunk_id, texture) => {
                 debug_assert!(!self.chunks.contains_key(&chunk_id));
 
@@ -896,7 +892,7 @@ impl StrokeLayer {
                         camera
                             .screen_to_world_absolute(event.pointer.screen)
                             .q32_round(),
-                        UVec2::new(5, 5),
+                        UVec2::new(1, 1),
                     )),
                 );
 
@@ -1262,11 +1258,7 @@ fn mipmap_pipeline(
 
     let mipmap_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("stroke_mipmap"),
-        bind_group_layouts: &[
-            Some(dispatch_group_layout),
-            Some(chunk_draw_layout),
-            Some(chunk_draw_layout),
-        ],
+        bind_group_layouts: &[dispatch_group_layout, chunk_draw_layout, chunk_draw_layout],
         immediate_size: 0,
     });
 
@@ -1301,7 +1293,7 @@ fn gamma_fixing_pipeline(
 
     let gamma_fixing_pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("stroke_mipmap"),
-        bind_group_layouts: &[Some(dispatch_group_layout), Some(chunk_draw_layout)],
+        bind_group_layouts: &[dispatch_group_layout, chunk_draw_layout],
         immediate_size: 0,
     });
 

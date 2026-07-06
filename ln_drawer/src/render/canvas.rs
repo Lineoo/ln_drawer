@@ -3,12 +3,13 @@ use palette::{Srgba, blend::Compose};
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
-    BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, Extent3d, FragmentState,
-    Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPipeline,
-    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture,
-    TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
-    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
+    BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, Extent3d, FilterMode,
+    FragmentState, Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
+    RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, TexelCopyBufferLayout,
+    TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension,
+    TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension,
+    VertexState,
     util::{BufferInitDescriptor, DeviceExt},
     wgt::TextureDataOrder,
 };
@@ -27,37 +28,34 @@ pub struct Canvas {
     pub order: isize,
     pub visible: bool,
 
-    data: Vec<u8>,
-    width: u32,
-    height: u32,
+    pub data: Vec<u8>,
+    pub data_width: u32,
+    pub data_height: u32,
 
     control: Handle<RenderControl>,
-    vertex: Buffer,
+    buffer: Buffer,
     texture: Texture,
     queue: Queue,
 }
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default)]
 pub struct CanvasDescriptor {
-    pub data: Option<Vec<u8>>,
-    pub width: u32,
-    pub height: u32,
     pub rect: Rectangle,
     pub order: isize,
     pub visible: bool,
+
+    pub data: Option<Vec<u8>>,
+    pub data_width: u32,
+    pub data_height: u32,
 }
 
-pub struct CanvasManager {
+struct CanvasManager {
     pipeline: RenderPipeline,
     bind_layout: BindGroupLayout,
 }
 
-pub struct CanvasManagerDescriptor;
-
-impl Descriptor for CanvasManagerDescriptor {
-    type Target = Handle<CanvasManager>;
-
-    fn when_build(self, world: &World) -> Self::Target {
+impl Canvas {
+    pub fn init(world: &mut World) {
         let render = world.single_fetch::<Render>().unwrap();
         let camera = world.single_fetch::<CameraBind>().unwrap();
 
@@ -90,7 +88,7 @@ impl Descriptor for CanvasManagerDescriptor {
                         binding: 1,
                         visibility: ShaderStages::VERTEX_FRAGMENT,
                         ty: BindingType::Texture {
-                            sample_type: TextureSampleType::Float { filterable: false },
+                            sample_type: TextureSampleType::Float { filterable: true },
                             view_dimension: TextureViewDimension::D2,
                             multisampled: false,
                         },
@@ -99,7 +97,7 @@ impl Descriptor for CanvasManagerDescriptor {
                     BindGroupLayoutEntry {
                         binding: 2,
                         visibility: ShaderStages::VERTEX_FRAGMENT,
-                        ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                        ty: BindingType::Sampler(SamplerBindingType::Filtering),
                         count: None,
                     },
                 ],
@@ -109,7 +107,7 @@ impl Descriptor for CanvasManagerDescriptor {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("canvas_pipeline_layout"),
-                bind_group_layouts: &[Some(&camera.layout), Some(&bind_layout)],
+                bind_group_layouts: &[&camera.layout, &bind_layout],
                 immediate_size: 0,
             });
 
@@ -147,11 +145,83 @@ impl Descriptor for CanvasManagerDescriptor {
         world.insert(CanvasManager {
             pipeline,
             bind_layout,
-        })
+        });
+    }
+
+    pub fn read(&self, x: i32, y: i32) -> Srgba {
+        let x = x.rem_euclid(self.data_width as i32);
+        let y = y.rem_euclid(self.data_height as i32);
+
+        let start = self.offset(x, y);
+        if start + 3 >= self.data.len() {
+            return Srgba::new(0.0, 0.0, 0.0, 0.0);
+        }
+
+        Srgba::new(
+            self.data[start],
+            self.data[start + 1],
+            self.data[start + 2],
+            self.data[start + 3],
+        )
+        .into_format()
+    }
+
+    pub fn write(&mut self, x: i32, y: i32, color: Srgba) {
+        let x = x.rem_euclid(self.data_width as i32);
+        let y = y.rem_euclid(self.data_height as i32);
+
+        let start = self.offset(x, y);
+        if start + 3 >= self.data.len() {
+            return;
+        }
+
+        let color = Srgba::<u8>::from_format(color);
+        self.data[start] = color.red;
+        self.data[start + 1] = color.green;
+        self.data[start + 2] = color.blue;
+        self.data[start + 3] = color.alpha;
+    }
+
+    pub fn draw_over(&mut self, x: i32, y: i32, color: Srgba) {
+        let prev = self.read(x, y);
+        let next = color.over(prev);
+        self.write(x, y, next);
+    }
+
+    pub fn clear_transparent(&mut self) {
+        self.data.fill(0);
+    }
+
+    pub fn upload(&self, x: i32, y: i32, w: u32, h: u32, data: &[u8]) {
+        self.queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &data,
+            TexelCopyBufferLayout {
+                offset: self.offset(x, y) as u64,
+                bytes_per_row: Some(w * 4),
+                rows_per_image: Some(h),
+            },
+            Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
+    pub fn upload_full(&self) {
+        self.upload(0, 0, self.data_width, self.data_height, &self.data);
+    }
+
+    fn offset(&self, x: i32, y: i32) -> usize {
+        ((x + y * self.data_width as i32) * 4) as usize
     }
 }
-
-impl Element for CanvasManager {}
 
 impl Descriptor for CanvasDescriptor {
     type Target = Handle<Canvas>;
@@ -160,9 +230,7 @@ impl Descriptor for CanvasDescriptor {
         let render = world.single_fetch::<Render>().unwrap();
         let manager = &mut *world.single_fetch_mut::<CanvasManager>().unwrap();
 
-        // instance //
-
-        let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
+        let buffer = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("canvas_uniform"),
             contents: bytemuck::bytes_of(&VertexUniform {
                 origin: self.rect.origin.into(),
@@ -174,8 +242,8 @@ impl Descriptor for CanvasDescriptor {
         let desc = TextureDescriptor {
             label: Some("canvas_texture"),
             size: Extent3d {
-                width: self.width,
-                height: self.height,
+                width: self.data_width,
+                height: self.data_height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -190,7 +258,7 @@ impl Descriptor for CanvasDescriptor {
             Some(data) => {
                 assert_eq!(
                     data.len(),
-                    (self.width * self.height) as usize * 4,
+                    (self.data_width * self.data_height) as usize * 4,
                     "data is not matched with its size"
                 );
                 render.device.create_texture_with_data(
@@ -205,6 +273,8 @@ impl Descriptor for CanvasDescriptor {
 
         let sampler = render.device.create_sampler(&SamplerDescriptor {
             label: Some("canvas"),
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
             ..Default::default()
         });
 
@@ -220,7 +290,7 @@ impl Descriptor for CanvasDescriptor {
                 BindGroupEntry {
                     binding: 0,
                     resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &uniform,
+                        buffer: &buffer,
                         offset: 0,
                         size: None,
                     }),
@@ -252,15 +322,15 @@ impl Descriptor for CanvasDescriptor {
         world.insert(Canvas {
             data: match self.data {
                 Some(bytes) => bytes.to_vec(),
-                None => vec![0; (self.rect.width() * self.rect.height()) as usize * 4],
+                None => vec![0; (self.data_width * self.data_height) as usize * 4],
             },
-            width: self.width,
-            height: self.height,
+            data_width: self.data_width,
+            data_height: self.data_height,
             rect: self.rect,
             order: self.order,
             visible: self.visible,
             control,
-            vertex: uniform,
+            buffer,
             texture,
             queue: render.queue.clone(),
         })
@@ -282,154 +352,8 @@ impl Element for Canvas {
         };
 
         let bytes = bytemuck::bytes_of(&uniform);
-        self.queue.write_buffer(&self.vertex, 0, bytes);
+        self.queue.write_buffer(&self.buffer, 0, bytes);
     }
 }
 
-impl Canvas {
-    pub fn to_descriptor(&self) -> CanvasDescriptor {
-        CanvasDescriptor {
-            data: Some(self.data.clone()),
-            width: self.width,
-            height: self.height,
-            rect: self.rect,
-            order: self.order,
-            visible: self.visible,
-        }
-    }
-
-    pub fn open_writer(&mut self) -> CanvasWriter<'_> {
-        CanvasWriter { canvas: self }
-    }
-
-    pub fn read(&self, x: i32, y: i32) -> Srgba {
-        let x = x.rem_euclid(self.width as i32);
-        let y = y.rem_euclid(self.height as i32);
-
-        let start = ((x + y * self.width as i32) * 4) as usize;
-        let data = &self.data;
-
-        Srgba::new(
-            data[start],
-            data[start + 1],
-            data[start + 2],
-            data[start + 3],
-        )
-        .into_format()
-    }
-
-    pub fn write(&mut self, x: i32, y: i32, color: Srgba) {
-        let x = x.rem_euclid(self.width as i32);
-        let y = y.rem_euclid(self.height as i32);
-
-        let start = ((x + y * self.width as i32) * 4) as usize;
-        let data = &mut self.data;
-
-        let color = Srgba::<u8>::from_format(color);
-        data[start] = color.red;
-        data[start + 1] = color.green;
-        data[start + 2] = color.blue;
-        data[start + 3] = color.alpha;
-
-        let data = self.data[start..start + 4].to_vec();
-        self.queue.write_texture(
-            TexelCopyTextureInfo {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: Origin3d {
-                    x: x as u32,
-                    y: y as u32,
-                    z: 0,
-                },
-                aspect: TextureAspect::All,
-            },
-            &data,
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4),
-                rows_per_image: Some(1),
-            },
-            Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-        );
-    }
-
-    pub fn draw(&mut self, x: i32, y: i32, color: Srgba) {
-        let prev = self.read(x, y);
-        let next = color.over(prev);
-        self.write(x, y, next);
-    }
-}
-
-/// A more efficient way to write lots of data into canvas' Buffer
-pub struct CanvasWriter<'painter> {
-    pub canvas: &'painter mut Canvas,
-}
-
-impl CanvasWriter<'_> {
-    pub fn read(&self, x: i32, y: i32) -> Srgba {
-        let x = x.rem_euclid(self.canvas.width as i32);
-        let y = y.rem_euclid(self.canvas.height as i32);
-
-        let start = ((x + y * self.canvas.width as i32) * 4) as usize;
-        let data = &self.canvas.data;
-
-        Srgba::new(
-            data[start],
-            data[start + 1],
-            data[start + 2],
-            data[start + 3],
-        )
-        .into_format()
-    }
-
-    pub fn write(&mut self, x: i32, y: i32, color: Srgba) {
-        let x = x.rem_euclid(self.canvas.width as i32);
-        let y = y.rem_euclid(self.canvas.height as i32);
-
-        let start = ((x + y * self.canvas.width as i32) * 4) as usize;
-        let data = &mut self.canvas.data;
-
-        let color = Srgba::<u8>::from_format(color);
-        data[start] = color.red;
-        data[start + 1] = color.green;
-        data[start + 2] = color.blue;
-        data[start + 3] = color.alpha;
-    }
-
-    pub fn draw(&mut self, x: i32, y: i32, color: Srgba) {
-        let prev = self.read(x, y);
-        let next = color.over(prev);
-        self.write(x, y, next);
-    }
-}
-
-impl Drop for CanvasWriter<'_> {
-    fn drop(&mut self) {
-        let rect = self.canvas.rect;
-        let data = self.canvas.data.clone();
-
-        self.canvas.queue.write_texture(
-            TexelCopyTextureInfo {
-                texture: &self.canvas.texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            &data,
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(rect.width() * 4),
-                rows_per_image: Some(rect.height()),
-            },
-            Extent3d {
-                width: rect.width(),
-                height: rect.height(),
-                depth_or_array_layers: 1,
-            },
-        );
-    }
-}
+impl Element for CanvasManager {}

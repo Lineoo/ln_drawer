@@ -4,6 +4,7 @@ use crate::measures::Rectangle;
 
 pub mod button;
 pub mod palette;
+pub mod panel;
 pub mod renderer;
 pub mod slider;
 
@@ -18,6 +19,8 @@ pub enum WidgetButton {
     ButtonPress,
     ButtonRelease,
 }
+
+pub struct WidgetUpdate;
 
 /// Send when widget is clicked.
 pub struct WidgetClick;

@@ -15,6 +15,7 @@ pub struct LuniParent {
     pub axis: LuniAxis,
     pub distribution: LuniDistribution,
     pub padding: LuniRect,
+    pub gap: i32,
     pub template: LuniChildTemplate,
 }
 
@@ -89,17 +90,21 @@ impl LuniFlex {
 
         let (_, parent) = &self.parent;
 
+        // First loop - sum up all grow, shrink and required length
+
         let mut grow_sum = 0.0;
         let mut shrink_sum = 0.0;
-        let mut available =
-            rect_main_lenth(rect, parent.axis) - rect_main_padding(parent.padding, parent.axis);
+        let mut available = parent.gap + rect_main_lenth(rect, parent.axis)
+            - rect_main_padding(parent.padding, parent.axis);
         for (_, child) in &self.children {
             let child = child.apply(&parent.template);
             grow_sum += child.grow;
             shrink_sum += child.shrink * child.basis as f32;
-            available -= child.basis + rect_main_margin(child.margin, parent.axis);
+            available -= child.basis + parent.gap + rect_main_margin(child.margin, parent.axis);
             lengths.push(child.basis);
         }
+
+        // Second loop - calculate and distribute real length
 
         let mut i = 0;
         while i < self.children.len() {
@@ -116,6 +121,8 @@ impl LuniFlex {
             i += 1;
         }
 
+        // Third loop - assign final position
+
         let mut cursor = rect_main_start(parent.padding, parent.axis);
         for (i, (handle, child)) in self.children.iter().enumerate() {
             let child = child.apply(&parent.template);
@@ -127,13 +134,14 @@ impl LuniFlex {
                     rect,
                     parent.padding,
                     child.margin,
+                    child.cross,
                     length,
                     child.align,
                     parent.axis,
                 ),
             ));
 
-            cursor += rect_main_margin(child.margin, parent.axis) + length;
+            cursor += length + parent.gap + rect_main_margin(child.margin, parent.axis);
         }
 
         result
@@ -175,45 +183,116 @@ fn cursor_assign(
     rect: Rectangle,
     padding: LuniRect,
     margin: LuniRect,
+    cross: i32,
     length: i32,
     align: LuniAlign,
     axis: LuniAxis,
 ) -> Rectangle {
-    let (start, end) = match align {
+    match align {
         LuniAlign::Stretch => match axis {
-            LuniAxis::Column | LuniAxis::ColumnReverse => (padding.left, padding.right),
-            LuniAxis::Row | LuniAxis::RowReverse => (padding.top, padding.bottom),
+            LuniAxis::Row => Rectangle::new(
+                rect.left() + cursor + margin.left,
+                rect.down() + padding.bottom + margin.bottom,
+                rect.left() + cursor + margin.left + length,
+                rect.up() - padding.top - margin.top,
+            ),
+            LuniAxis::RowReverse => Rectangle::new(
+                rect.right() - cursor - margin.right,
+                rect.down() + padding.bottom + margin.bottom,
+                rect.right() - cursor - margin.right - length,
+                rect.up() - padding.top - margin.top,
+            ),
+            LuniAxis::Column => Rectangle::new(
+                rect.left() + padding.left + margin.left,
+                rect.up() - cursor - margin.top - length,
+                rect.right() - padding.right - margin.right,
+                rect.up() - cursor - margin.top,
+            ),
+            LuniAxis::ColumnReverse => Rectangle::new(
+                rect.left() + padding.left + margin.left,
+                rect.down() + cursor + margin.top,
+                rect.right() - padding.right - margin.right,
+                rect.down() + cursor + margin.top + length,
+            ),
         },
-        LuniAlign::FlexStart => todo!(),
-        LuniAlign::FlexEnd => todo!(),
-        LuniAlign::Center => todo!(),
-    };
-
-    match axis {
-        LuniAxis::Row => Rectangle::new(
-            rect.left() + cursor + margin.left,
-            rect.down() + start + margin.bottom,
-            rect.left() + cursor + margin.left + length,
-            rect.up() - end - margin.top,
-        ),
-        LuniAxis::RowReverse => Rectangle::new(
-            rect.right() - cursor - margin.right,
-            rect.down() + start + margin.bottom,
-            rect.right() - cursor - margin.right - length,
-            rect.up() - end - margin.top,
-        ),
-        LuniAxis::Column => Rectangle::new(
-            rect.left() + start + margin.left,
-            rect.up() - cursor - margin.top - length,
-            rect.right() - end - margin.right,
-            rect.up() - cursor - margin.top,
-        ),
-        LuniAxis::ColumnReverse => Rectangle::new(
-            rect.left() + start + margin.left,
-            rect.down() + cursor + margin.top,
-            rect.right() - end - margin.right,
-            rect.down() + cursor + margin.top + length,
-        ),
+        LuniAlign::FlexStart => match axis {
+            LuniAxis::Row => Rectangle::new(
+                rect.left() + cursor + margin.left,
+                rect.up() - padding.top - margin.top - cross,
+                rect.left() + cursor + margin.left + length,
+                rect.up() - padding.top - margin.top,
+            ),
+            LuniAxis::RowReverse => Rectangle::new(
+                rect.right() - cursor - margin.right,
+                rect.up() - padding.top - margin.top - cross,
+                rect.right() - cursor - margin.right - length,
+                rect.up() - padding.top - margin.top,
+            ),
+            LuniAxis::Column => Rectangle::new(
+                rect.left() + padding.left + margin.left,
+                rect.up() - cursor - margin.top - length,
+                rect.left() + padding.left + margin.left + cross,
+                rect.up() - cursor - margin.top,
+            ),
+            LuniAxis::ColumnReverse => Rectangle::new(
+                rect.left() + padding.left + margin.left,
+                rect.down() + cursor + margin.top,
+                rect.left() + padding.left + margin.left + cross,
+                rect.down() + cursor + margin.top + length,
+            ),
+        },
+        LuniAlign::FlexEnd => match axis {
+            LuniAxis::Row => Rectangle::new(
+                rect.left() + cursor + margin.left,
+                rect.down() + padding.bottom + margin.bottom,
+                rect.left() + cursor + margin.left + length,
+                rect.down() + padding.bottom + margin.bottom + cross,
+            ),
+            LuniAxis::RowReverse => Rectangle::new(
+                rect.right() - cursor - margin.right,
+                rect.down() + padding.bottom + margin.bottom,
+                rect.right() - cursor - margin.right - length,
+                rect.down() + padding.bottom + margin.bottom + cross,
+            ),
+            LuniAxis::Column => Rectangle::new(
+                rect.right() - padding.right - margin.right - cross,
+                rect.up() - cursor - margin.top - length,
+                rect.right() - padding.right - margin.right,
+                rect.up() - cursor - margin.top,
+            ),
+            LuniAxis::ColumnReverse => Rectangle::new(
+                rect.right() - padding.right - margin.right - cross,
+                rect.down() + cursor + margin.top,
+                rect.right() - padding.right - margin.right,
+                rect.down() + cursor + margin.top + length,
+            ),
+        },
+        LuniAlign::Center => match axis {
+            LuniAxis::Row => Rectangle::new(
+                rect.left() + cursor + margin.left,
+                rect.vertical_center() - cross / 2,
+                rect.left() + cursor + margin.left + length,
+                rect.vertical_center() + cross / 2,
+            ),
+            LuniAxis::RowReverse => Rectangle::new(
+                rect.right() - cursor - margin.right,
+                rect.vertical_center() - cross / 2,
+                rect.right() - cursor - margin.right - length,
+                rect.vertical_center() + cross / 2,
+            ),
+            LuniAxis::Column => Rectangle::new(
+                rect.horizontal_center() - cross / 2,
+                rect.up() - cursor - margin.top - length,
+                rect.horizontal_center() + cross / 2,
+                rect.up() - cursor - margin.top,
+            ),
+            LuniAxis::ColumnReverse => Rectangle::new(
+                rect.horizontal_center() - cross / 2,
+                rect.down() + cursor + margin.top,
+                rect.horizontal_center() + cross / 2,
+                rect.down() + cursor + margin.top + length,
+            ),
+        },
     }
 }
 

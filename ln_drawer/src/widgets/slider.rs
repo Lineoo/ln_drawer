@@ -9,12 +9,12 @@ use crate::{
     theme::Theme,
     tools::{
         collider::ToolCollider,
-        pointer::{PointerHit, PointerHover, PointerHoverStatus},
+        pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{WidgetHover, WidgetRectangle},
+    widgets::WidgetRectangle,
 };
 
-/// Related events: [`SetSlider`], [`SliderKnobHover`], [`WidgetHover`]
+/// Related events: [`SetSlider`]
 pub struct VSlider {
     pub x: i32,
     pub y_min: i32,
@@ -30,10 +30,11 @@ pub struct SetSlider {
     pub value: f32,
 }
 
-pub enum SliderKnobHover {
-    HoverEnter,
-    HoverLeave,
-}
+const BAR_HW: i32 = 6;
+const BAR_EX: i32 = 5;
+const KNOB_EDGE_OFF: i32 = 17;
+const KNOB_SIZE: UVec2 = UVec2::new(9, 20);
+const KNOB_SPLIT_SIZE: UVec2 = UVec2::new(6, 2);
 
 impl VSlider {
     pub fn receive_event(slider: Handle<VSlider>, world: &World) {
@@ -56,11 +57,11 @@ impl VSlider {
         let this = world.fetch(slider).unwrap();
         let theme = world.single_fetch::<Theme>().unwrap();
 
-        let y_knob_max = this.y_max - 23;
-        let y_knob_min = this.y_min + 23;
+        let y_knob_max = this.y_max - KNOB_EDGE_OFF;
+        let y_knob_min = this.y_min + KNOB_EDGE_OFF;
 
         let back = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new(this.x - 10, this.y_min, this.x + 10, this.y_max),
+            rect: Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, this.y_max),
             color: theme.secondary_color,
             shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
             shadow_offset: Vec2::ZERO,
@@ -75,7 +76,7 @@ impl VSlider {
         let value = div_height(this.value, this.max, this.min, y_knob_max, y_knob_min);
 
         let front = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new(this.x - 10, this.y_min, this.x + 10, value),
+            rect: Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, value),
             color: theme.theme_color,
             shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
             shadow_offset: Vec2::ZERO,
@@ -88,11 +89,11 @@ impl VSlider {
         });
 
         let knob = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new_half(IVec2::new(this.x, value), UVec2::new(12, 25)),
+            rect: Rectangle::new_half(IVec2::new(this.x, value), KNOB_SIZE),
             color: theme.primary_color,
             shadow_color: theme.shadow_color,
             shadow_offset: Vec2::new(0.0, -4.0),
-            shadow_blur: 10.0,
+            shadow_blur: theme.shadow_blur,
             shrink: theme.roundness,
             value: theme.roundness,
             vertex_extend: 20,
@@ -101,7 +102,7 @@ impl VSlider {
         });
 
         let knob_split = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new_half(IVec2::new(this.x, value), UVec2::new(8, 2)),
+            rect: Rectangle::new_half(IVec2::new(this.x, value), KNOB_SPLIT_SIZE),
             color: theme.secondary_color,
             shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
             shadow_offset: Vec2::ZERO,
@@ -114,7 +115,7 @@ impl VSlider {
         });
 
         let back_rect_anim = world.build(DirectAnimation {
-            init: Rectangle::new(this.x - 10, this.y_min, this.x + 10, this.y_max),
+            init: Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, this.y_max),
             factor: theme.anim_factor,
             widget: back,
             access: |back| &mut back.desc.rect,
@@ -140,14 +141,14 @@ impl VSlider {
             let mut knob = world.fetch_mut(knob).unwrap();
             let mut knob_split = world.fetch_mut(knob_split).unwrap();
 
-            let y_knob_max = this.y_max - 23;
-            let y_knob_min = this.y_min + 23;
+            let y_knob_max = this.y_max - KNOB_EDGE_OFF;
+            let y_knob_min = this.y_min + KNOB_EDGE_OFF;
 
             let value = div_height(value, max, min, y_knob_max, y_knob_min);
 
-            front.desc.rect = Rectangle::new(this.x - 10, this.y_min, this.x + 10, value);
-            knob.desc.rect = Rectangle::new_half(IVec2::new(this.x, value), UVec2::new(12, 25));
-            knob_split.desc.rect = Rectangle::new_half(IVec2::new(this.x, value), UVec2::new(8, 2));
+            front.desc.rect = Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, value);
+            knob.desc.rect = Rectangle::new_half(IVec2::new(this.x, value), KNOB_SIZE);
+            knob_split.desc.rect = Rectangle::new_half(IVec2::new(this.x, value), KNOB_SPLIT_SIZE);
         });
 
         world.observer(slider, move |&WidgetRectangle(rect), world| {
@@ -161,67 +162,70 @@ impl VSlider {
             let y_min = rect.down();
             let x = rect.horizontal_center();
 
-            let y_knob_max = y_max - 23;
-            let y_knob_min = y_min + 23;
+            let y_knob_max = y_max - KNOB_EDGE_OFF;
+            let y_knob_min = y_min + KNOB_EDGE_OFF;
 
             let value = div_height(this.value, this.max, this.min, y_knob_max, y_knob_min);
 
-            let back_rect = Rectangle::new(this.x - 10, this.y_min, this.x + 10, this.y_max);
+            let back_rect =
+                Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, this.y_max);
             back_rect_anim.dst = back_rect.into_storage();
             back_rect_anim.src = back_rect.into_storage();
 
-            front.desc.rect = Rectangle::new(x - 10, y_min, x + 10, value);
-            knob.desc.rect = Rectangle::new_half(IVec2::new(x, value), UVec2::new(12, 25));
-            knob_split.desc.rect = Rectangle::new_half(IVec2::new(x, value), UVec2::new(8, 2));
+            front.desc.rect = Rectangle::new(x - BAR_HW, y_min, x + BAR_HW, value);
+            knob.desc.rect = Rectangle::new_half(IVec2::new(x, value), KNOB_SIZE);
+            knob_split.desc.rect = Rectangle::new_half(IVec2::new(x, value), KNOB_SPLIT_SIZE);
         });
 
-        world.observer(slider, move |event: &WidgetHover, world| {
+        world.observer(slider, move |event: &PointerHover, world| {
             let this = world.fetch(slider).unwrap();
 
-            match event {
-                WidgetHover::HoverEnter => {
+            match event.status {
+                PointerHoverStatus::Enter => {
                     world.trigger(
                         back_rect_anim,
                         &SetAnimationDst(Rectangle::new(
-                            this.x - 15,
-                            this.y_min - 5,
-                            this.x + 15,
-                            this.y_max + 5,
+                            this.x - BAR_HW - BAR_EX,
+                            this.y_min - BAR_EX,
+                            this.x + BAR_HW + BAR_EX,
+                            this.y_max + BAR_EX,
                         )),
                     );
                 }
-                WidgetHover::HoverLeave => {
+                PointerHoverStatus::Leave => {
                     world.trigger(
                         back_rect_anim,
                         &SetAnimationDst(Rectangle::new(
-                            this.x - 10,
+                            this.x - BAR_HW,
                             this.y_min,
-                            this.x + 10,
+                            this.x + BAR_HW,
                             this.y_max,
                         )),
                     );
                 }
+                _ => {}
             }
         });
 
-        world.observer(slider, move |event: &SliderKnobHover, world| {
+        world.observer(slider, move |event: &PointerHit, world| {
             let theme = world.single_fetch::<Theme>().unwrap();
 
-            match event {
-                SliderKnobHover::HoverEnter => {
-                    world.trigger(knob_color_anim, &SetAnimationDst(theme.secondary_color));
+            match event.status {
+                PointerHitStatus::Press => {
+                    world.trigger(knob_color_anim, &SetAnimationDst(theme.highlight_color));
                     world.trigger(
                         knob_split_color_anim,
                         &SetAnimationDst(theme.significant_color),
                     );
                 }
-                SliderKnobHover::HoverLeave => {
+                PointerHitStatus::Release => {
                     world.trigger(knob_color_anim, &SetAnimationDst(theme.primary_color));
                     world.trigger(
                         knob_split_color_anim,
                         &SetAnimationDst(theme.secondary_color),
                     );
                 }
+                _ => {}
             }
         });
     }
@@ -230,15 +234,15 @@ impl VSlider {
         let this = world.fetch(slider).unwrap();
 
         let collider = world.insert(ToolCollider {
-            rect: Rectangle::new(this.x - 15, this.y_min, this.x + 15, this.y_max),
+            rect: Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, this.y_max),
             order: 10,
             enabled: true,
         });
 
         world.observer(collider, move |event: &PointerHit, world| {
             let this = world.fetch(slider).unwrap();
-            let y_knob_max = this.y_max - 23;
-            let y_knob_min = this.y_min + 23;
+            let y_knob_max = this.y_max - KNOB_EDGE_OFF;
+            let y_knob_min = this.y_min + KNOB_EDGE_OFF;
             world.queue_trigger(
                 slider,
                 SetSlider {
@@ -255,37 +259,12 @@ impl VSlider {
             );
         });
 
-        let mut knob_hover = false;
         world.observer(collider, move |event: &PointerHover, world| {
-            let this = world.fetch(slider).unwrap();
-            let y_knob_max = this.y_max - 23;
-            let y_knob_min = this.y_min + 23;
+            world.trigger(slider, event);
+        });
 
-            let value = div_height(this.value, this.max, this.min, y_knob_max, y_knob_min);
-            let knob_rect = Rectangle::new_half(IVec2::new(this.x, value), UVec2::new(12, 25));
-
-            let knob_hover_next = knob_rect.contains(event.position.q32_round());
-            if knob_hover_next && !knob_hover {
-                knob_hover = true;
-                world.trigger(slider, &SliderKnobHover::HoverEnter);
-            } else if !knob_hover_next && knob_hover {
-                knob_hover = false;
-                world.trigger(slider, &SliderKnobHover::HoverLeave);
-            }
-
-            match event.status {
-                PointerHoverStatus::Enter => {
-                    world.trigger(slider, &WidgetHover::HoverEnter);
-                }
-                PointerHoverStatus::Leave => {
-                    world.trigger(slider, &WidgetHover::HoverLeave);
-                    if knob_hover {
-                        knob_hover = false;
-                        world.trigger(slider, &SliderKnobHover::HoverLeave);
-                    }
-                }
-                _ => {}
-            }
+        world.observer(collider, move |event: &PointerHit, world| {
+            world.trigger(slider, event);
         });
 
         world.observer(slider, move |&WidgetRectangle(rect), world| {
@@ -295,7 +274,7 @@ impl VSlider {
             let y_min = rect.down();
             let x = rect.horizontal_center();
 
-            collider.rect = Rectangle::new(x - 15, y_min, x + 15, y_max);
+            collider.rect = Rectangle::new(x - BAR_HW, y_min, x + BAR_HW, y_max);
         });
     }
 }
