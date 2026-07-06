@@ -6,7 +6,6 @@ on:
       version:
         description: 'Release Version'
         required: true
-        default: 'x.x.x-xb'
 
 permissions:
   contents: write
