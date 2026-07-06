@@ -4,7 +4,7 @@ use std::{
     time::Instant,
 };
 
-use glam::{IVec2, UVec2};
+use glam::{I64Vec2, IVec2, UVec2};
 use hashbrown::HashSet;
 use indexmap::{IndexMap, IndexSet};
 use redb::ReadableDatabase;
@@ -20,9 +20,22 @@ use crate::{
     save::SaveDatabase,
     stroke::{
         CHUNK_BATCH, CHUNK_CAPS, CHUNK_MIPMAP, CHUNK_SIZE, ChunkKey, TABLE_STROKE_CHUNK,
-        ThreadInput, ThreadOutput, chunk_distance, chunk_of, chunk_texture_desc, chunks_within,
+        chunk_distance, chunk_of, chunk_texture_desc, chunks_within,
     },
 };
+
+pub enum ThreadInput {
+    SetStreamCamera(i64, UVec2, I64Vec2),
+    MarkUnsaved(ChunkKey),
+    Create(ChunkKey, Texture),
+    Autosave,
+    Finish,
+}
+
+pub enum ThreadOutput {
+    Insert(ChunkKey, Option<Texture>),
+    Remove(ChunkKey),
+}
 
 pub fn loading_thread(
     database: SaveDatabase,

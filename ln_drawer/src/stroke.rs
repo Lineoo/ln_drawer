@@ -11,7 +11,7 @@ use std::{
 };
 
 use bytemuck::{bytes_of, cast_slice};
-use glam::{DVec2, I64Vec2, IVec2, UVec2, Vec2};
+use glam::{DVec2, IVec2, UVec2, Vec2};
 use hashbrown::{HashMap, HashSet};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -45,6 +45,7 @@ use crate::{
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
         modifier::{DrawProcessed, DrawProcessedStorage, Modifier},
+        stream::{ThreadInput, ThreadOutput},
     },
     tools::{
         collider::ToolCollider,
@@ -157,19 +158,6 @@ struct ChunkBind {
     texture: Texture,
     render: BindGroup,
     draw: BindGroup,
-}
-
-enum ThreadInput {
-    SetStreamCamera(i64, UVec2, I64Vec2),
-    MarkUnsaved(ChunkKey),
-    Create(ChunkKey, Texture),
-    Autosave,
-    Finish,
-}
-
-enum ThreadOutput {
-    Insert(ChunkKey, Option<Texture>),
-    Remove(ChunkKey),
 }
 
 #[repr(C)]
