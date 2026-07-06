@@ -102,27 +102,40 @@ pub fn loading_thread(
                 continue;
             }
             Some(ThreadInput::Autosave) => {
-                let write = database.0.begin_write()?;
                 let now = Instant::now();
-                {
-                    let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
-                    for key in texel_unsaved.drain() {
-                        let Some(Some(texture)) = texel.get(&key) else {
-                            continue;
-                        };
 
-                        let bytes = chunk_readback(&texture, &device, &queue);
-                        let compressed = zstd::encode_all(&bytes[..], 0)?;
-                        table_chunk.insert((0, key), &compressed[..])?;
+                let write = database.0.begin_write()?;
+                let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
 
-                        debug_encode_cnt += 1;
-                    }
+                let mut tasks = Vec::new();
+
+                for &key in &texel_unsaved {
+                    let Some(Some(texture)) = texel.get(&key) else {
+                        continue;
+                    };
+
+                    tasks.push((key, chunk_readback(&texture, &device, &queue)));
                 }
+
+                device.poll(PollType::wait_indefinitely()).unwrap();
+
+                for (key, rx) in tasks {
+                    let bytes = rx.recv().unwrap();
+                    let compressed = zstd::encode_all(&bytes[..], 0)?;
+                    table_chunk.insert((0, key), &compressed[..])?;
+                    texel_unsaved.remove(&key);
+
+                    debug_encode_cnt += 1;
+                }
+
+                drop(table_chunk);
                 write.commit()?;
+
                 log::info!(
                     "Stroke stream autosave finished in {:?}",
                     Instant::now().duration_since(now)
                 );
+
                 continue;
             }
             Some(ThreadInput::Finish) => {
@@ -206,11 +219,14 @@ pub fn loading_thread(
             output_tx.send(ThreadOutput::Remove(key))?;
 
             if let Some(texture) = &texture
-                && texel_unsaved.remove(&key)
+                && texel_unsaved.contains(&key)
             {
-                let bytes = chunk_readback(texture, &device, &queue);
+                let rx = chunk_readback(texture, &device, &queue);
+                device.poll(PollType::wait_indefinitely()).unwrap();
+                let bytes = rx.recv().unwrap();
                 let compressed = zstd::encode_all(&bytes[..], 0)?;
                 table_chunk.insert((0, key), &compressed[..])?;
+                texel_unsaved.remove(&key);
 
                 debug_encode_cnt += 1;
             }
@@ -266,7 +282,7 @@ pub fn loading_thread(
     }
 }
 
-fn chunk_readback(texture: &Texture, device: &Device, queue: &Queue) -> Vec<u8> {
+fn chunk_readback(texture: &Texture, device: &Device, queue: &Queue) -> Receiver<Vec<u8>> {
     let (tx, rx) = std::sync::mpsc::channel();
 
     let readback_buffer = device.create_buffer(&BufferDescriptor {
@@ -302,18 +318,15 @@ fn chunk_readback(texture: &Texture, device: &Device, queue: &Queue) -> Vec<u8> 
         },
     );
 
-    let command = encoder.finish();
-
-    queue.submit([command]);
-
     let inner = readback_buffer.clone();
-    readback_buffer.map_async(MapMode::Read, .., move |ret| {
+    encoder.map_buffer_on_submit(&readback_buffer, MapMode::Read, .., move |ret| {
         ret.unwrap();
 
         let view = inner.get_mapped_range(..);
         tx.send(view.to_vec()).unwrap();
     });
 
-    device.poll(PollType::wait_indefinitely()).unwrap();
-    rx.recv().unwrap()
+    queue.submit([encoder.finish()]);
+
+    rx
 }
