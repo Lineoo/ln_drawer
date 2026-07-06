@@ -104,7 +104,8 @@ impl Text {
                 let attrs = Attrs::new().family(Family::Name("Source Han Sans CN"));
                 buffer_font.set_metrics(upscale_metrics);
                 buffer_font.set_size(Some(upscale_width), Some(upscale_height));
-                buffer_font.set_text(&this.text, &attrs, Shaping::Basic);
+                buffer_font.set_text(&this.text, &attrs, Shaping::Basic, None);
+                buffer_font.shape_until_scroll(true);
 
                 draw_buffer(&buffer, &this, &mut canvas, manager);
 
