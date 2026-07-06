@@ -1,7 +1,7 @@
 [package]
 name = "ln_drawer"
 license = "LGPL-3.0-or-later"
-version = "0.1.4-dev"
+version = "0.1.5-dev"
 edition.workspace = true
 
 [lib]
@@ -30,7 +30,7 @@ serde_bytes = "0.11.19"
 smallvec = "1.15.1"
 thiserror = "2.0.16"
 tokio = "1.47.1"
-wgpu = "30.0.0"
+wgpu = "28.0"
 zstd = "0.13.3"
 
 [dependencies.ln_world]

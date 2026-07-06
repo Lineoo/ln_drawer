@@ -98,7 +98,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(M::label()),
-            bind_group_layouts: &[Some(&camera.layout), Some(&bind)],
+            bind_group_layouts: &[&camera.layout, &bind],
             immediate_size: 0,
         });
 

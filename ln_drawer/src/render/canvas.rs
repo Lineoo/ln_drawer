@@ -107,7 +107,7 @@ impl Canvas {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("canvas_pipeline_layout"),
-                bind_group_layouts: &[Some(&camera.layout), Some(&bind_layout)],
+                bind_group_layouts: &[&camera.layout, &bind_layout],
                 immediate_size: 0,
             });
 
