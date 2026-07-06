@@ -40,6 +40,7 @@ use crate::{
         WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
         button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage},
         palette::hsl::{PaletteHsl, PaletteHslMaterial},
+        panel::{Panel, PanelAnimation},
         renderer::grid::{Grid, GridMaterial},
         slider::{SetSlider, VSlider},
     },
@@ -222,16 +223,6 @@ impl Element for Lnwindow {
                 });
 
                 world.queue(side_panel);
-                world.queue(|world| {
-                    world.insert(Text {
-                        text: "Hi there".into(),
-                        rect: Rectangle::new_half(IVec2::ZERO, UVec2::new(80, 12)),
-                        metrics: Metrics::new(12.0, 12.0),
-                        upscale: 2.0,
-                        order: 1,
-                        visible: true,
-                    });
-                });
             });
         });
     }
@@ -438,6 +429,8 @@ fn side_panel(world: &mut World) {
         camera.center = I64Vec2::ZERO;
     });
 
+    let debug = debug_panel(world, &theme);
+
     world.insert(Transform {
         value: TransformValue {
             left: TransformEdge {
@@ -510,6 +503,7 @@ fn side_panel(world: &mut World) {
                 },
             ),
             (compass.untyped(), LuniChild::default()),
+            (debug.untyped(), LuniChild::default()),
         ],
     });
 
@@ -609,6 +603,86 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
         target: color_picker_color.untyped(),
     });
     color_picker
+}
+
+fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
+    let button = world.insert(Button {
+        order: 10,
+        color: theme.primary_color,
+        active_color: theme.secondary_color,
+        press_color: theme.highlight_color,
+        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+        roundness: theme.roundness,
+        image: None,
+        ..Default::default()
+    });
+
+    let submenu = world.insert(Panel {
+        rect: Rectangle::default(),
+        visible: false,
+    });
+
+    let debug_text = world.insert(Text {
+        text: "Hi there".into(),
+        rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(120)),
+        metrics: Metrics::new(12.0, 12.0),
+        color: Srgba::new(0, 0, 0, 1),
+        upscale: 2.0,
+        order: 1,
+        visible: false,
+    });
+
+    world.queue(move |world| {
+        Panel::receive_event(submenu, world);
+        Panel::create_renderer(submenu, world);
+        Panel::create_interact(submenu, world);
+        world
+            .fetch_mut(debug_text)
+            .unwrap()
+            .bind_render(world, debug_text);
+    });
+
+    let submenu_transform = TransformValue::anchor(
+        (1.0, 0.0),
+        Rectangle::new_half(IVec2::new(144 + 20, 144), UVec2::splat(144)),
+    );
+
+    let submenu_transform_start = TransformValue::anchor(
+        (1.0, 0.0),
+        Rectangle::new_half(IVec2::new(144 / 4 + 20, 144 / 4), UVec2::splat(144 / 4)),
+    );
+
+    world.insert(Transform {
+        value: submenu_transform,
+        source: button.untyped(),
+        target: submenu.untyped(),
+    });
+
+    world.insert(Transform {
+        value: TransformValue::shrink(24, 24),
+        source: submenu.untyped(),
+        target: debug_text.untyped(),
+    });
+
+    world.observer(button, move |&WidgetClick, world| {
+        let submenu = world.fetch(submenu).unwrap();
+        let child2 = world.fetch(button).unwrap();
+        world.queue_trigger(submenu.handle(), WidgetEnabled(!submenu.visible));
+        world.queue_trigger(debug_text, WidgetEnabled(!submenu.visible));
+
+        if !submenu.visible {
+            world.queue_trigger(
+                submenu.handle(),
+                PanelAnimation {
+                    src: submenu_transform_start.compute(child2.rect),
+                    dst: submenu_transform.compute(child2.rect),
+                    hidden_after_finished: false,
+                },
+            );
+        }
+    });
+
+    button
 }
 
 impl Lnwindow {

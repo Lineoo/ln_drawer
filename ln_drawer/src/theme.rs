@@ -1,3 +1,4 @@
+use glam::Vec2;
 use ln_world::Element;
 use palette::Srgba;
 
@@ -9,6 +10,7 @@ pub struct Theme {
     pub theme_color: Srgba,
     pub symbolic_color: Srgba,
     pub shadow_color: Srgba,
+    pub shadow_offset: Vec2,
     pub shadow_blur: f32,
     pub roundness: f32,
     pub anim_factor: f32,
@@ -24,6 +26,7 @@ impl Default for Theme {
             theme_color: Srgba::new(0.863, 0.729, 0.588, 1.0),
             symbolic_color: Srgba::new(0.0, 0.0, 0.0, 1.0),
             shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.25),
+            shadow_offset: Vec2::new(0.0, -4.0),
             shadow_blur: 4.0,
             roundness: 4.0,
             anim_factor: 30.0,

@@ -1,6 +1,7 @@
 use std::{
     error::Error,
     sync::mpsc::{Receiver, RecvError, Sender, TryRecvError},
+    time::Instant,
 };
 
 use glam::{IVec2, UVec2};
@@ -82,6 +83,7 @@ pub fn loading_thread(
             }
             Some(ThreadInput::Autosave) => {
                 let write = database.0.begin_write()?;
+                let now = Instant::now();
                 {
                     let mut table_chunk = write.open_table(TABLE_STROKE_CHUNK)?;
                     for key in texel_unsaved.drain() {
@@ -95,6 +97,10 @@ pub fn loading_thread(
                     }
                 }
                 write.commit()?;
+                log::info!(
+                    "Stroke stream autosave finished in {:?}",
+                    Instant::now().duration_since(now)
+                );
                 continue;
             }
             Some(ThreadInput::Finish) => {

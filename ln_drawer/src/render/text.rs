@@ -2,12 +2,17 @@ use cosmic_text::{Attrs, Color, Family, FontSystem, Metrics, Shaping, SwashCache
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
 
-use crate::{measures::Rectangle, render::canvas::CanvasDescriptor};
+use crate::{
+    measures::Rectangle,
+    render::canvas::CanvasDescriptor,
+    widgets::{WidgetEnabled, WidgetRectangle},
+};
 
 pub struct Text {
     pub text: String,
     pub rect: Rectangle,
     pub metrics: Metrics,
+    pub color: Srgba<u8>,
     pub upscale: f32,
     pub order: isize,
     pub visible: bool,
@@ -15,7 +20,7 @@ pub struct Text {
 
 pub struct TextChanged;
 
-struct TextManager {
+struct TextPipeline {
     font_system: FontSystem,
     swash_cache: SwashCache,
 }
@@ -26,6 +31,7 @@ impl Default for Text {
             text: Default::default(),
             rect: Rectangle::new(0, 0, 200, 24),
             metrics: Metrics::new(24.0, 20.0),
+            color: Srgba::new(0, 0, 0, 0),
             upscale: 2.0,
             order: 100,
             visible: true,
@@ -46,15 +52,13 @@ impl Text {
 
         let swash_cache = SwashCache::new();
 
-        world.insert(TextManager {
+        world.insert(TextPipeline {
             font_system,
             swash_cache,
         });
     }
-}
 
-impl Element for Text {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+    pub fn bind_render(&mut self, world: &World, this: Handle<Text>) {
         let upscale_width = self.rect.width() as f32 * self.upscale;
         let upscale_height = self.rect.height() as f32 * self.upscale;
         let upscale_width_int = upscale_width.ceil() as u32;
@@ -72,7 +76,7 @@ impl Element for Text {
         world.observer(this, move |&TextChanged, world| {
             let mut canvas = world.fetch_mut(canvas).unwrap();
             let this = world.fetch(this).unwrap();
-            let manager = &mut *world.single_fetch_mut::<TextManager>().unwrap();
+            let manager = &mut *world.single_fetch_mut::<TextPipeline>().unwrap();
 
             let upscale_metrics = this.metrics.scale(this.upscale);
             let mut buffer_owned =
@@ -84,7 +88,12 @@ impl Element for Text {
             buffer.shape_until_scroll(true);
             buffer.draw(
                 &mut manager.swash_cache,
-                Color::rgb(0xFF, 0xFF, 0xFF),
+                Color::rgba(
+                    this.color.red,
+                    this.color.green,
+                    this.color.blue,
+                    this.color.alpha,
+                ),
                 |x, y, w, h, color| {
                     for x in x..(x + w as i32) {
                         for y in y..(y + h as i32) {
@@ -93,14 +102,26 @@ impl Element for Text {
                     }
                 },
             );
+
             canvas.upload_full();
+        });
+
+        world.observer(this, move |&WidgetEnabled(enabled), world| {
+            let mut canvas = world.fetch_mut(canvas).unwrap();
+            canvas.visible = enabled;
+        });
+
+        world.observer(this, move |&WidgetRectangle(rect), world| {
+            let mut canvas = world.fetch_mut(canvas).unwrap();
+            canvas.rect = rect;
         });
 
         world.queue_trigger(this, TextChanged);
     }
 }
 
-impl Element for TextManager {}
+impl Element for Text {}
+impl Element for TextPipeline {}
 
 #[cfg(false)]
 pub struct TextEdit {
@@ -319,7 +340,7 @@ impl TextEdit {
     pub fn new(
         rect: Rectangle,
         text: String,
-        manager: &mut TextManager,
+        manager: &mut TextPipeline,
         interface: &mut Interface,
     ) -> TextEdit {
         let mut font_system = manager.font_system.lock();
