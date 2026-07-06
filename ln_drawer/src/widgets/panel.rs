@@ -82,12 +82,17 @@ impl Panel {
         let collider = world.insert(ToolCollider {
             rect: this.rect,
             order: 10,
-            enabled: true,
+            enabled: this.visible,
         });
 
         world.observer(panel, move |&WidgetRectangle(rect), world| {
             let mut collider = world.fetch_mut(collider).unwrap();
             collider.rect = rect;
+        });
+
+        world.observer(panel, move |&WidgetEnabled(enabled), world| {
+            let mut collider = world.fetch_mut(collider).unwrap();
+            collider.enabled = enabled;
         });
     }
 }

@@ -622,12 +622,14 @@ fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
         visible: false,
     });
 
+    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+
     let debug_text = world.insert(Text {
         text: "Hi there".into(),
         rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(120)),
         metrics: Metrics::new(12.0, 18.0),
         color: Srgba::new(0, 0, 0, 1),
-        upscale: 2.0,
+        upscale: lnwindow.window.scale_factor() as f32,
         order: 1,
         visible: false,
         outdated: true,
@@ -687,8 +689,10 @@ fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
         world.single::<StrokeLayer>().unwrap(),
         move |StrokeLayerDebugMessage(msg), world| {
             let mut text = world.fetch_mut(debug_text).unwrap();
-            text.text.clone_from(msg);
-            world.queue_trigger(debug_text, TextChanged);
+            if text.text != *msg {
+                text.text.clone_from(msg);
+                world.queue_trigger(debug_text, TextChanged);
+            }
         },
     );
 

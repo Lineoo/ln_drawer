@@ -123,7 +123,9 @@ impl Text {
         });
 
         world.observer(this, move |&WidgetEnabled(enabled), world| {
+            let mut this = world.fetch_mut(this).unwrap();
             let mut canvas = world.fetch_mut(canvas).unwrap();
+            this.visible = enabled;
             canvas.visible = enabled;
         });
 
