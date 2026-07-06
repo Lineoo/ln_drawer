@@ -78,9 +78,12 @@ impl Text {
             let this = world.fetch(this).unwrap();
             let manager = &mut *world.single_fetch_mut::<TextPipeline>().unwrap();
 
+            canvas.clear_transparent();
+
             let upscale_metrics = this.metrics.scale(this.upscale);
             let mut buffer_owned =
                 cosmic_text::Buffer::new(&mut manager.font_system, upscale_metrics);
+
             let mut buffer = buffer_owned.borrow_with(&mut manager.font_system);
             let attrs = Attrs::new().family(Family::Name("Source Han Sans CN"));
             buffer.set_size(Some(upscale_width), Some(upscale_height));
@@ -97,7 +100,7 @@ impl Text {
                 |x, y, w, h, color| {
                     for x in x..(x + w as i32) {
                         for y in y..(y + h as i32) {
-                            canvas.write(x, y, Srgba::from(color.as_rgba()).into_format());
+                            canvas.draw_over(x, y, Srgba::from(color.as_rgba()).into_format());
                         }
                     }
                 },

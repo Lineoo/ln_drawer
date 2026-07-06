@@ -33,6 +33,7 @@ pub enum ThreadInput {
 }
 
 pub enum ThreadOutput {
+    ThreadDebugMessage(String),
     Insert(ChunkKey, Option<Texture>),
     Remove(ChunkKey),
 }
@@ -55,6 +56,12 @@ pub fn loading_thread(
 
     let mut stream_front = 0;
     let mut stream_queue = IndexSet::with_capacity(400);
+
+    let mut debug_load_cnt = 0;
+    let mut debug_unload_cnt = 0;
+    let mut debug_load_real_cnt = 0;
+    let mut debug_unload_real_cnt = 0;
+    let mut debug_encode_cnt = 0;
 
     loop {
         let input = if stream_front < stream_queue.len() || stream_outdated {
@@ -107,6 +114,8 @@ pub fn loading_thread(
                         let bytes = chunk_readback(&texture, &device, &queue);
                         let compressed = zstd::encode_all(&bytes[..], 0)?;
                         table_chunk.insert((0, key), &compressed[..])?;
+
+                        debug_encode_cnt += 1;
                     }
                 }
                 write.commit()?;
@@ -121,6 +130,22 @@ pub fn loading_thread(
             }
             None => {}
         };
+
+        output_tx.send(ThreadOutput::ThreadDebugMessage(format!(
+            "Loading Queue: length {} - pending {} \n\
+            Texture Index: real {} / total {} \n\
+            Debug Counter: \n    \
+                | load {debug_load_cnt} | load_read {debug_load_real_cnt} | \n    \
+                | unload {debug_unload_cnt} | unload_real {debug_unload_real_cnt} | \n    \
+                | encode {debug_encode_cnt} | \n\
+            Camera Center: {:?} \n\
+            ",
+            stream_queue.len(),
+            stream_queue.len() - stream_front,
+            texel.values().flatten().count(),
+            texel.len(),
+            stream_center
+        )))?;
 
         // Stream
         if stream_outdated {
@@ -180,13 +205,20 @@ pub fn loading_thread(
             let (key, texture) = texel.swap_remove_index(frnt).unwrap();
             output_tx.send(ThreadOutput::Remove(key))?;
 
-            if let Some(texture) = texture
+            if let Some(texture) = &texture
                 && texel_unsaved.remove(&key)
             {
-                let bytes = chunk_readback(&texture, &device, &queue);
+                let bytes = chunk_readback(texture, &device, &queue);
                 let compressed = zstd::encode_all(&bytes[..], 0)?;
                 table_chunk.insert((0, key), &compressed[..])?;
+
+                debug_encode_cnt += 1;
             }
+
+            if texture.is_some() {
+                debug_unload_real_cnt += 1;
+            }
+            debug_unload_cnt += 1;
         }
         drop(table_chunk);
         write.commit()?;
@@ -222,10 +254,14 @@ pub fn loading_thread(
 
                 texel.insert(chunk_id, Some(texture.clone()));
                 output_tx.send(ThreadOutput::Insert(chunk_id, Some(texture)))?;
+
+                debug_load_real_cnt += 1;
             } else {
                 texel.insert(chunk_id, None);
                 output_tx.send(ThreadOutput::Insert(chunk_id, None))?;
             }
+
+            debug_load_cnt += 1;
         }
     }
 }

@@ -27,10 +27,10 @@ use crate::{
         canvas::Canvas,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
-        text::Text,
+        text::{Text, TextChanged},
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
-    stroke::{StrokeLayer, modifier::Modifier},
+    stroke::{StrokeLayer, StrokeLayerDebugMessage, modifier::Modifier},
     theme::Theme,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
@@ -625,7 +625,7 @@ fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
     let debug_text = world.insert(Text {
         text: "Hi there".into(),
         rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(120)),
-        metrics: Metrics::new(12.0, 12.0),
+        metrics: Metrics::new(12.0, 18.0),
         color: Srgba::new(0, 0, 0, 1),
         upscale: 2.0,
         order: 1,
@@ -681,6 +681,15 @@ fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
             );
         }
     });
+
+    world.observer(
+        world.single::<StrokeLayer>().unwrap(),
+        move |StrokeLayerDebugMessage(msg), world| {
+            let mut text = world.fetch_mut(debug_text).unwrap();
+            text.text.clone_from(msg);
+            world.queue_trigger(debug_text, TextChanged);
+        },
+    );
 
     button
 }

@@ -188,6 +188,10 @@ impl Canvas {
         self.write(x, y, next);
     }
 
+    pub fn clear_transparent(&mut self) {
+        self.data.fill(0);
+    }
+
     pub fn upload(&self, x: i32, y: i32, w: u32, h: u32, data: &[u8]) {
         self.queue.write_texture(
             TexelCopyTextureInfo {

@@ -133,6 +133,8 @@ pub struct StrokeLayer {
     prev: Option<Draw>,
 }
 
+pub struct StrokeLayerDebugMessage(pub String);
+
 struct Chunk {
     bind: ChunkBind,
     meta0: ChunkMeta0,
@@ -763,6 +765,12 @@ impl StrokeLayer {
 
     fn process_thread_output(&mut self, world: &World, output: ThreadOutput) {
         match output {
+            ThreadOutput::ThreadDebugMessage(msg) => {
+                world.queue_trigger(
+                    world.single::<StrokeLayer>().unwrap(),
+                    StrokeLayerDebugMessage(msg),
+                );
+            }
             ThreadOutput::Insert(chunk_id, texture) => {
                 debug_assert!(!self.chunks.contains_key(&chunk_id));
 
