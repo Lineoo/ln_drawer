@@ -8,10 +8,10 @@ struct VertexOutput {
     @location(0) uv: vec2f,
 }
 
-@group(0) @binding(1) var texture_sampler: sampler;
+@group(1) @binding(0) var texture_sampler: sampler;
 
-@group(1) @binding(0) var<uniform> rectangle: Rectangle;
-@group(1) @binding(1) var texture: texture_2d<f32>;
+@group(2) @binding(0) var<uniform> rectangle: Rectangle;
+@group(2) @binding(1) var texture: texture_2d<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
@@ -29,15 +29,6 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
     return textureSample(texture, texture_sampler, vertex.uv);
-}
-
-@fragment
-fn fs_main_ign(vertex: VertexOutput) -> @location(0) vec4f {
-    let ignx = fract(52.9829189 * fract(dot(vertex.pos.xy, vec2f(0.06711056, 0.00583715))));
-    let igny = fract(52.9829189 * fract(dot(vertex.pos.yx, vec2f(0.06711056, 0.00583715))));
-    var color = textureSample(texture, texture_sampler, vertex.uv);
-    let uv = vertex.uv + (vec2f(ignx, igny) * 2 - 1) * (fwidth(vertex.uv) * 0.5 + 1 / 512);
-    return textureSample(texture, texture_sampler, uv);
 }
 
 @fragment

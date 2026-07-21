@@ -1,4 +1,5 @@
 pub mod animation;
+pub mod layer;
 pub mod layout;
 pub mod lnwin;
 pub mod measures;

@@ -432,7 +432,14 @@ impl StrokeLayer {
 
         let render_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("stroke_chunk"),
-            source: ShaderSource::Wgsl(include_str!("stroke/chunk.wgsl").into()),
+            source: ShaderSource::Wgsl(
+                format!(
+                    "{}{}",
+                    include_str!("widgets/renderer/lib_camera.wgsl"),
+                    include_str!("stroke/chunk.wgsl"),
+                )
+                .into(),
+            ),
         });
 
         let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
