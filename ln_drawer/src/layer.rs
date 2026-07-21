@@ -1,3 +1,4 @@
+pub mod brush;
 pub mod stream;
 pub mod wrapper;
 
@@ -170,7 +171,7 @@ impl Layer {
             return;
         }
 
-        self.upload_dispatch(dirty);
+        write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
 
         let mut encoder = self
             .device
@@ -259,18 +260,17 @@ impl Layer {
             key,
         )
     }
-
-    fn upload_dispatch(&self, dirty: Rectangle) {
-        let uniform = DispatchUniform {
-            dispatch_coords: dirty.origin.into(),
-            dispatch_size: dirty.extend.into(),
-        };
-        self.queue
-            .write_buffer(&self.dispatch, 0, bytes_of(&uniform));
-    }
 }
 
 // --- Utils --- //
+
+fn write_dispatch_uniform(queue: &Queue, buffer: &Buffer, dirty: Rectangle) {
+    let uniform = DispatchUniform {
+        dispatch_coords: dirty.origin.into(),
+        dispatch_size: dirty.extend.into(),
+    };
+    queue.write_buffer(buffer, 0, bytes_of(&uniform));
+}
 
 fn mipmap_floor(zoom: i64) -> u8 {
     (-(zoom.q32_floor() + 1)).max(0) as u8

@@ -30,7 +30,8 @@ use crate::{
         text::{Text, TextChanged},
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
-    stroke::{StrokeLayer, StrokeLayerDebugMessage, modifier::Modifier},
+    layer::wrapper::{LayerDebugMessage, LayerWrapper},
+    stroke::modifier::Modifier,
     theme::Theme,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
@@ -185,7 +186,7 @@ impl Element for Lnwindow {
             world.flush();
             world.enter(camera1, || {
                 world.queue(|world| {
-                    world.insert(StrokeLayer::new(world));
+                    world.insert(LayerWrapper::new(world));
                     world.insert(Grid);
                     world.insert(CameraUtils::default());
                 });
@@ -193,7 +194,7 @@ impl Element for Lnwindow {
 
             world.flush();
             world.enter(camera2, || {
-                let stroke = world.enter(camera1, || world.single::<StrokeLayer>().unwrap());
+                let stroke = world.enter(camera1, || world.single::<LayerWrapper>().unwrap());
                 world.option(ViewOptions {
                     refs: vec![here, stroke.untyped()],
                 });
@@ -315,7 +316,7 @@ fn side_panel(world: &mut World) {
         world.trigger(pen, &ButtonChecked(true));
         world.trigger(brush, &ButtonChecked(false));
         world.trigger(eraser, &ButtonChecked(false));
-        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
         stroke.modifier = Modifier {
             min_size: 0.0,
             max_size: 6.0,
@@ -343,7 +344,7 @@ fn side_panel(world: &mut World) {
         world.trigger(pen, &ButtonChecked(false));
         world.trigger(brush, &ButtonChecked(true));
         world.trigger(eraser, &ButtonChecked(false));
-        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
         stroke.modifier = Modifier {
             min_size: 1.0,
             max_size: 25.0,
@@ -371,7 +372,7 @@ fn side_panel(world: &mut World) {
         world.trigger(pen, &ButtonChecked(false));
         world.trigger(brush, &ButtonChecked(false));
         world.trigger(eraser, &ButtonChecked(true));
-        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
         stroke.modifier = Modifier {
             min_size: 10.0,
             max_size: 50.0,
@@ -396,7 +397,7 @@ fn side_panel(world: &mut World) {
     });
 
     world.observer(slider, move |&SetSlider { min, max, value }, world| {
-        let mut stroke = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
         let percent = (value - min) / (max - min);
         stroke.modifier = Modifier {
             max_size: stroke.modifier.min_size + (percent.exp2() - 1.0) * 40.0,
@@ -571,7 +572,7 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
     });
 
     world.observer(palette, move |&WidgetHsla(color), world| {
-        let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
+        let mut layer = world.single_fetch_mut::<LayerWrapper>().unwrap();
         layer.modifier.color = color.into_color();
         world.queue_trigger(color_picker_color, ButtonColor(color.into_color()));
     });
@@ -686,8 +687,8 @@ fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
     });
 
     world.observer(
-        world.single::<StrokeLayer>().unwrap(),
-        move |StrokeLayerDebugMessage(msg), world| {
+        world.single::<LayerWrapper>().unwrap(),
+        move |LayerDebugMessage(msg), world| {
             let mut text = world.fetch_mut(debug_text).unwrap();
             if text.text != *msg {
                 text.text.clone_from(msg);
