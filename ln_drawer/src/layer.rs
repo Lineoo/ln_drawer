@@ -5,7 +5,7 @@ pub mod wrapper;
 use std::mem::size_of;
 
 use bytemuck::bytes_of;
-use glam::{IVec2, UVec2};
+use glam::UVec2;
 use hashbrown::HashMap;
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
@@ -24,7 +24,7 @@ use wgpu::{
 
 use crate::{
     measures::{FI64Ext, Rectangle},
-    render::{MSAA_STATE, camera::Camera, vertex::VertexUniform},
+    render::{MSAA_STATE, camera::Camera},
 };
 
 pub type ChunkKey = (i32, i32, u8);
@@ -276,14 +276,6 @@ fn mipmap_floor(zoom: i64) -> u8 {
     (-(zoom.q32_floor() + 1)).max(0) as u8
 }
 
-fn chunk_to_rect(key: ChunkKey, chunk_size: u32) -> Rectangle {
-    let size = chunk_size as i32 * (1i32 << key.2 as i32);
-    Rectangle {
-        origin: IVec2::new(key.0 * size, key.1 * size),
-        extend: UVec2::splat(size as u32),
-    }
-}
-
 fn rect_to_chunks(rect: Rectangle, mipmap: u8, chunk_size: u32) -> ((i32, i32), (i32, i32)) {
     let size = chunk_size as i32 * (1i32 << mipmap as i32);
     let chunk_src = (rect.left().div_euclid(size), rect.down().div_euclid(size));
@@ -322,23 +314,12 @@ fn create_chunk_texture(device: &Device, chunk_size: u32) -> Texture {
 
 fn create_chunk(
     device: &Device,
-    chunk_size: u32,
+    _chunk_size: u32,
     chunk_render_layout: &BindGroupLayout,
     chunk_draw_layout: &BindGroupLayout,
     texture: Texture,
     key: ChunkKey,
 ) -> Chunk {
-    let rect = chunk_to_rect(key, chunk_size);
-
-    let rectangle = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("layer_chunk_rectangle"),
-        contents: bytes_of(&VertexUniform {
-            origin: rect.origin.into(),
-            extend: rect.extend.into(),
-        }),
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-    });
-
     let key_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("layer_chunk_key"),
         contents: bytes_of(&ChunkUniform {
@@ -369,7 +350,7 @@ fn create_chunk(
             BindGroupEntry {
                 binding: 0,
                 resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &rectangle,
+                    buffer: &key_buffer,
                     offset: 0,
                     size: None,
                 }),
