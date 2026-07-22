@@ -42,7 +42,7 @@ impl ColorPicker {
 
         world.observer(palette, move |&WidgetHsla(color), world| {
             let mut layer = world.single_fetch_mut::<LayerWrapper>().unwrap();
-            layer.modifier.color = color.into_color();
+            layer.brush.modifier.color = color.into_color();
         });
 
         let mut drag_start = None;

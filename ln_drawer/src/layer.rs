@@ -49,13 +49,11 @@ pub struct Layer {
     device: Device,
     queue: Queue,
 
-    chunk_size: u32,
-    mipmap_levels: u8,
-    controlled: bool,
+    pub chunk_size: u32,
+    pub mipmap_levels: u8,
+    pub controlled: bool,
 
     chunks: HashMap<ChunkKey, Chunk>,
-
-    pub render_debugging: bool,
 
     dispatch: Buffer,
 
@@ -69,6 +67,7 @@ pub struct Layer {
     render_pipeline: RenderPipeline,
     render_debug_pipeline: RenderPipeline,
     mipmap_pipeline: ComputePipeline,
+    merge_pipeline: ComputePipeline,
 }
 
 pub struct Chunk {
@@ -111,6 +110,7 @@ impl Layer {
             render_pipelines(&config, device, sampler_layout, &chunk_render_layout);
 
         let mipmap_pipeline = mipmap_pipeline(device, &chunk_draw_layout, &dispatch_layout);
+        let merge_pipeline = merge_pipeline(device, &chunk_draw_layout, &dispatch_layout);
 
         Layer {
             device: config.device,
@@ -119,7 +119,6 @@ impl Layer {
             mipmap_levels: config.mipmap_levels,
             controlled: config.controlled,
             chunks: HashMap::new(),
-            render_debugging: false,
             dispatch,
             chunk_render_layout,
             chunk_draw_layout,
@@ -129,27 +128,42 @@ impl Layer {
             render_pipeline,
             render_debug_pipeline,
             mipmap_pipeline,
+            merge_pipeline,
         }
     }
 
     pub fn validate_chunks(&mut self, dirty: Rectangle) -> bool {
         for mipmap in 0..self.mipmap_levels {
-            let (chunk_src, chunk_dst) = rect_to_chunks(dirty, mipmap, self.chunk_size);
-            for chunk_x in chunk_src.0..chunk_dst.0 {
-                for chunk_y in chunk_src.1..chunk_dst.1 {
-                    let chunk_id = (chunk_x, chunk_y, mipmap);
-
-                    if !self.chunks.contains_key(&chunk_id) {
+            let (src, dst) = rect_to_chunks(dirty, mipmap, self.chunk_size);
+            for x in src.0..dst.0 {
+                for y in src.1..dst.1 {
+                    let key = (x, y, mipmap);
+                    if !self.chunks.contains_key(&key) {
                         return false;
                     }
                 }
             }
         }
-
-        true
+        return true;
     }
 
-    /// Assume `validate_chunks` result is true and `self.controlled` is false.
+    pub fn missing_chunks(&self, dirty: Rectangle) -> Vec<ChunkKey> {
+        let mut missing = Vec::new();
+        for mipmap in 0..self.mipmap_levels {
+            let (src, dst) = rect_to_chunks(dirty, mipmap, self.chunk_size);
+            for x in src.0..dst.0 {
+                for y in src.1..dst.1 {
+                    let key = (x, y, mipmap);
+                    if !self.chunks.contains_key(&key) {
+                        missing.push(key);
+                    }
+                }
+            }
+        }
+        missing
+    }
+
+    /// Assume `self.controlled` is false.
     pub fn prepare_chunks(&mut self, rect: Rectangle) {
         debug_assert!(!self.controlled, "controlled layer cannot prepare chunks");
         for mipmap in 0..self.mipmap_levels {
@@ -209,6 +223,49 @@ impl Layer {
                         1,
                     );
                 }
+            }
+        }
+
+        drop(cpass);
+        self.queue.submit([encoder.finish()]);
+    }
+
+    pub fn merge_from(&self, scratch: &Layer, dirty: Rectangle) {
+        write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("layer_merge"),
+            });
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_merge"),
+            timestamp_writes: None,
+        });
+
+        cpass.set_pipeline(&self.merge_pipeline);
+        cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
+
+        let (src, dst) = rect_to_chunks(dirty, 0, self.chunk_size);
+        for x in src.0..dst.0 {
+            for y in src.1..dst.1 {
+                let key = (x, y, 0);
+
+                let Some(main_chunk) = self.chunks.get(&key) else {
+                    continue;
+                };
+
+                let Some(scratch_chunk) = scratch.chunks.get(&key) else {
+                    continue;
+                };
+
+                cpass.set_bind_group(1, Some(&scratch_chunk.draw), &[]);
+                cpass.set_bind_group(2, Some(&main_chunk.draw), &[]);
+                cpass.dispatch_workgroups(
+                    dirty.extend.x.saturating_sub(1) / WORKGROUP_SIZE.x + 1,
+                    dirty.extend.y.saturating_sub(1) / WORKGROUP_SIZE.y + 1,
+                    1,
+                );
             }
         }
 
@@ -659,6 +716,40 @@ fn mipmap_pipeline(
 
     device.create_compute_pipeline(&ComputePipelineDescriptor {
         label: Some("layer_mipmap"),
+        layout: Some(&layout),
+        module: &shader,
+        entry_point: Some("cs_main"),
+        compilation_options: PipelineCompilationOptions::default(),
+        cache: None,
+    })
+}
+
+fn merge_pipeline(
+    device: &Device,
+    chunk_draw_layout: &BindGroupLayout,
+    dispatch_layout: &BindGroupLayout,
+) -> ComputePipeline {
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("layer_merge"),
+        source: ShaderSource::Wgsl(
+            format!(
+                "{}{}{}",
+                include_str!("stroke/lib_colorspace.wgsl"),
+                include_str!("stroke/lib_dispatch.wgsl"),
+                include_str!("layer/merge.wgsl"),
+            )
+            .into(),
+        ),
+    });
+
+    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_merge"),
+        bind_group_layouts: &[dispatch_layout, chunk_draw_layout, chunk_draw_layout],
+        immediate_size: 0,
+    });
+
+    device.create_compute_pipeline(&ComputePipelineDescriptor {
+        label: Some("layer_merge"),
         layout: Some(&layout),
         module: &shader,
         entry_point: Some("cs_main"),

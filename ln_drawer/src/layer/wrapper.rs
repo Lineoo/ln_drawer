@@ -1,4 +1,8 @@
-use std::{sync::mpsc::channel, thread::JoinHandle, time::{Duration, Instant}};
+use std::{
+    sync::mpsc::channel,
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
 
 use glam::{DVec2, IVec2, UVec2, Vec2};
 use ln_world::{Element, Handle, World};
@@ -19,39 +23,13 @@ use crate::{
         rounded::{RoundedRect, RoundedRectDescriptor},
     },
     save::{Autosave, SaveDatabase},
-    stroke::{
-        dirty::Dirty,
-        interpolate::{Draw, Interpolation},
-        modifier::{DrawProcessedStorage, Modifier},
-    },
+    stroke::{interpolate::Draw, modifier::Modifier},
     tools::{
         collider::ToolCollider,
         pointer::{PointerHover, PointerHoverStatus},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
     widgets::{WidgetEnabled, WidgetRectangle},
-};
-
-const DEFAULT_INTERPOLATION: Interpolation = Interpolation {
-    step: |draw| draw.size / 5.0,
-};
-const DEFAULT_MODIFIER: Modifier = Modifier {
-    min_size: 0.5,
-    max_size: 6.0,
-    size_force_exp: 1.0,
-    min_flow: 0.1,
-    max_flow: 1.0,
-    flow_force_exp: 2.0,
-    softness: 0.2,
-    color: Srgba::new(0.0, 0.0, 0.0, 1.0),
-};
-const DEFAULT_DIRTY: Dirty = Dirty {
-    bounding: |draw| {
-        Rectangle::new_half(
-            draw.position.q32_round(),
-            UVec2::splat((draw.size * 2.0).ceil() as u32),
-        )
-    },
 };
 
 pub struct LayerDebugMessage(pub String);
@@ -61,12 +39,6 @@ pub struct LayerWrapper {
     pub brush: Brush,
     pub render_debugging: bool,
 
-    pub erase: bool,
-    pub interpolation: Interpolation,
-    pub modifier: Modifier,
-    pub dirty: Dirty,
-
-    prev: Option<Draw>,
     brush_preview: Handle<RoundedRect>,
 
     thread_tx: std::sync::mpsc::Sender<ThreadInput>,
@@ -93,6 +65,15 @@ impl LayerWrapper {
             device: render.device.clone(),
             queue: render.queue.clone(),
             chunk_draw_layout: layer.chunk_draw_layout.clone(),
+            scratch: LayerConfig {
+                device: render.device.clone(),
+                queue: render.queue.clone(),
+                surface_format: render.config.format,
+                mipmap_levels: 1,
+                chunk_size: 512,
+                controlled: false,
+                camera_bind_layout: camera_bind.layout.clone(),
+            },
         });
 
         let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
@@ -143,89 +124,12 @@ impl LayerWrapper {
         LayerWrapper {
             layer,
             brush,
-            render_debugging: false,
-            erase: false,
-            interpolation: DEFAULT_INTERPOLATION,
-            modifier: DEFAULT_MODIFIER,
-            dirty: DEFAULT_DIRTY,
-            prev: None,
+            render_debugging: true,
             brush_preview,
             thread_tx: input_tx,
             thread_rx: output_rx,
             thread: Some(thread),
         }
-    }
-
-    fn paint_gpu(
-        &mut self,
-        dirty: Rectangle,
-        draws: &[DrawProcessedStorage],
-        erase: bool,
-    ) {
-        if dirty.extend.x == 0 || dirty.extend.y == 0 {
-            return;
-        }
-
-        if !self.layer.validate_chunks(dirty) {
-            if self.layer.controlled {
-                for key in missing_chunks(
-                    dirty,
-                    self.layer.chunk_size,
-                    self.layer.mipmap_levels,
-                    &self.layer.chunks,
-                ) {
-                    self.thread_tx.send(ThreadInput::RequestReal(key)).unwrap();
-                }
-            } else {
-                self.layer.prepare_chunks(dirty);
-            }
-            return;
-        }
-
-        let (src, dst) =
-            super::rect_to_chunks(dirty, 0, self.layer.chunk_size);
-        let mut paint_chunks = Vec::new();
-        for x in src.0..dst.0 {
-            for y in src.1..dst.1 {
-                if let Some(chunk) = self.layer.chunks.get(&(x, y, 0)) {
-                    paint_chunks.push(((x, y, 0), &chunk.draw));
-                }
-            }
-        }
-
-        self.brush.paint(dirty, draws, &paint_chunks, erase);
-        self.layer.generate_mipmaps(dirty);
-
-        for mipmap in 0..self.layer.mipmap_levels {
-            let (s, d) = super::rect_to_chunks(dirty, mipmap, self.layer.chunk_size);
-            for x in s.0..d.0 {
-                for y in s.1..d.1 {
-                    self.thread_tx
-                        .send(ThreadInput::MarkUnsaved((x, y, mipmap)))
-                        .unwrap();
-                }
-            }
-        }
-    }
-
-    fn paint(&mut self, next: Draw, world: &World) {
-        let mut draw_buf = Vec::new();
-        let curr = self
-            .interpolation
-            .interpolate(self.prev, next, &self.modifier, &mut draw_buf);
-        self.prev = Some(curr);
-
-        let dirty = self.dirty.compute(curr.position.q32_round(), &draw_buf);
-
-        let mut draw_stg = Vec::with_capacity(draw_buf.len());
-        for draw in draw_buf {
-            draw_stg.push(draw.into_storage());
-        }
-
-        self.paint_gpu(dirty, &draw_stg, self.erase);
-
-        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-        lnwindow.window.request_redraw();
     }
 
     fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
@@ -313,10 +217,10 @@ impl LayerWrapper {
                     pinch_distance = None;
                 }
             } else if let MultiTouchStatus::Holding | MultiTouchStatus::Press = primary.status {
-                let mut this = world.fetch_mut(this).unwrap();
+                let this = &mut *world.fetch_mut(this).unwrap();
 
                 if let MultiTouchStatus::Press = primary.status
-                    && !this.erase
+                    && !this.brush.erase
                 {
                     drag_start = Some((primary.screen, Instant::now()));
                 }
@@ -342,10 +246,10 @@ impl LayerWrapper {
                         drag_start = None;
                     } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
-                            temp_erase_mode = Some(this.modifier);
-                            this.erase = true;
-                            this.modifier = TEMP_ERASE_MODIFIER;
-                            this.prev = None;
+                            this.brush.submit(&mut this.layer);
+                            temp_erase_mode = Some(this.brush.modifier);
+                            this.brush.erase = true;
+                            this.brush.modifier = TEMP_ERASE_MODIFIER;
                             drag_start = None;
                         } else {
                             drag_start = None;
@@ -353,22 +257,23 @@ impl LayerWrapper {
                     }
                 }
 
-                let target = Draw {
+                this.brush.paint(Draw {
                     position: primary.position,
                     force: primary.data.force.unwrap_or(1.0),
-                };
+                });
 
-                this.paint(target, world);
+                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                lnwindow.window.request_redraw();
             } else {
-                let mut this = world.fetch_mut(this).unwrap();
+                let this = &mut *world.fetch_mut(this).unwrap();
 
                 if let Some(ori) = temp_erase_mode {
                     temp_erase_mode = None;
-                    this.erase = false;
-                    this.modifier = ori;
+                    this.brush.erase = false;
+                    this.brush.modifier = ori;
                 }
 
-                this.prev = None;
+                this.brush.submit(&mut this.layer);
             }
         });
     }
@@ -391,27 +296,6 @@ impl LayerWrapper {
             }
         }
     }
-}
-
-fn missing_chunks(
-    dirty: Rectangle,
-    chunk_size: u32,
-    mipmap_levels: u8,
-    chunks: &hashbrown::HashMap<super::ChunkKey, super::Chunk>,
-) -> Vec<super::ChunkKey> {
-    let mut missing = Vec::new();
-    for mipmap in 0..mipmap_levels {
-        let (src, dst) = super::rect_to_chunks(dirty, mipmap, chunk_size);
-        for x in src.0..dst.0 {
-            for y in src.1..dst.1 {
-                let key = (x, y, mipmap);
-                if !chunks.contains_key(&key) {
-                    missing.push(key);
-                }
-            }
-        }
-    }
-    missing
 }
 
 impl Drop for LayerWrapper {

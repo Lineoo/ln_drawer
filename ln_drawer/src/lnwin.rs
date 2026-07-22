@@ -317,7 +317,7 @@ fn side_panel(world: &mut World) {
         world.trigger(brush, &ButtonChecked(false));
         world.trigger(eraser, &ButtonChecked(false));
         let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-        stroke.modifier = Modifier {
+        stroke.brush.modifier = Modifier {
             min_size: 0.0,
             max_size: 6.0,
             size_force_exp: 1.0,
@@ -325,9 +325,9 @@ fn side_panel(world: &mut World) {
             max_flow: 1.0,
             flow_force_exp: 2.0,
             softness: 0.2,
-            ..stroke.modifier
+            ..stroke.brush.modifier
         };
-        stroke.erase = false;
+        stroke.brush.erase = false;
 
         let slider = world.fetch(slider).unwrap();
         world.queue_trigger(
@@ -345,7 +345,7 @@ fn side_panel(world: &mut World) {
         world.trigger(brush, &ButtonChecked(true));
         world.trigger(eraser, &ButtonChecked(false));
         let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-        stroke.modifier = Modifier {
+        stroke.brush.modifier = Modifier {
             min_size: 1.0,
             max_size: 25.0,
             size_force_exp: 1.0,
@@ -353,9 +353,9 @@ fn side_panel(world: &mut World) {
             max_flow: 1.0,
             flow_force_exp: 1.0,
             softness: 0.5,
-            ..stroke.modifier
+            ..stroke.brush.modifier
         };
-        stroke.erase = false;
+        stroke.brush.erase = false;
 
         let slider = world.fetch(slider).unwrap();
         world.queue_trigger(
@@ -373,7 +373,7 @@ fn side_panel(world: &mut World) {
         world.trigger(brush, &ButtonChecked(false));
         world.trigger(eraser, &ButtonChecked(true));
         let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-        stroke.modifier = Modifier {
+        stroke.brush.modifier = Modifier {
             min_size: 10.0,
             max_size: 50.0,
             size_force_exp: 1.0,
@@ -381,9 +381,9 @@ fn side_panel(world: &mut World) {
             max_flow: 1.0,
             flow_force_exp: 1.0,
             softness: 0.5,
-            ..stroke.modifier
+            ..stroke.brush.modifier
         };
-        stroke.erase = true;
+        stroke.brush.erase = true;
 
         let slider = world.fetch(slider).unwrap();
         world.queue_trigger(
@@ -399,9 +399,9 @@ fn side_panel(world: &mut World) {
     world.observer(slider, move |&SetSlider { min, max, value }, world| {
         let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
         let percent = (value - min) / (max - min);
-        stroke.modifier = Modifier {
-            max_size: stroke.modifier.min_size + (percent.exp2() - 1.0) * 40.0,
-            ..stroke.modifier
+        stroke.brush.modifier = Modifier {
+            max_size: stroke.brush.modifier.min_size + (percent.exp2() - 1.0) * 40.0,
+            ..stroke.brush.modifier
         };
     });
 
@@ -573,7 +573,7 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
 
     world.observer(palette, move |&WidgetHsla(color), world| {
         let mut layer = world.single_fetch_mut::<LayerWrapper>().unwrap();
-        layer.modifier.color = color.into_color();
+        layer.brush.modifier.color = color.into_color();
         world.queue_trigger(color_picker_color, ButtonColor(color.into_color()));
     });
 

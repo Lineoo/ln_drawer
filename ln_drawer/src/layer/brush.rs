@@ -1,22 +1,50 @@
 use std::mem::size_of;
 
 use bytemuck::{bytes_of, cast_slice};
+use glam::UVec2;
+use palette::Srgba;
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer,
-    BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, CommandEncoderDescriptor,
-    ComputePass, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
-    PipelineCompilationOptions, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor,
+    ComputePipeline, ComputePipelineDescriptor, Device, PipelineCompilationOptions,
+    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
 };
 
 use crate::{
-    measures::Rectangle,
-    stroke::modifier::DrawProcessedStorage,
+    layer::{Layer, LayerConfig},
+    measures::{FI64Ext, Rectangle},
+    stroke::{
+        dirty::Dirty,
+        interpolate::{Draw, Interpolation},
+        modifier::{DrawProcessedStorage, Modifier},
+    },
 };
 
 const WORKGROUP_SIZE: u32 = 16;
 const MAX_STROKE: u64 = 200;
+
+const DEFAULT_INTERPOLATION: Interpolation = Interpolation {
+    step: |draw| draw.size / 5.0,
+};
+const DEFAULT_MODIFIER: Modifier = Modifier {
+    min_size: 0.5,
+    max_size: 6.0,
+    size_force_exp: 1.0,
+    min_flow: 0.1,
+    max_flow: 1.0,
+    flow_force_exp: 2.0,
+    softness: 0.2,
+    color: Srgba::new(0.0, 0.0, 0.0, 1.0),
+};
+const DEFAULT_DIRTY: Dirty = Dirty {
+    bounding: |draw| {
+        Rectangle::new_half(
+            draw.position.q32_round(),
+            UVec2::splat((draw.size * 2.0).ceil() as u32),
+        )
+    },
+};
 
 const LAYOUT_DISPATCH_DRAW: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
     label: Some("layer_brush_dispatch_draw"),
@@ -58,6 +86,8 @@ pub struct Brush {
     device: Device,
     queue: Queue,
 
+    scratch: Layer,
+
     brush_round: ComputePipeline,
     erase_round: ComputePipeline,
 
@@ -66,118 +96,202 @@ pub struct Brush {
     draws_array: Buffer,
 
     dispatch_group_draw: BindGroup,
+
+    pub erase: bool,
+    pub interpolation: Interpolation,
+    pub modifier: Modifier,
+    pub dirty: Dirty,
+
+    prev: Option<Draw>,
+    stroke: Option<Stroke>,
+}
+
+struct Stroke {
+    dirty: Rectangle,
 }
 
 pub struct BrushConfig {
     pub device: Device,
     pub queue: Queue,
     pub chunk_draw_layout: BindGroupLayout,
+    pub scratch: LayerConfig,
 }
 
 impl Brush {
     pub fn new(config: BrushConfig) -> Self {
         let device = &config.device;
 
-        let dispatch_draw_layout =
-            device.create_bind_group_layout(&LAYOUT_DISPATCH_DRAW);
+        let dispatch_draw_layout = device.create_bind_group_layout(&LAYOUT_DISPATCH_DRAW);
 
-        let dispatch = device.create_buffer(&BufferDescriptor {
-            label: Some("layer_brush_dispatch"),
-            size: size_of::<u32>() as u64 * 8,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let draws_length = device.create_buffer(&BufferDescriptor {
-            label: Some("layer_brush_draws_length"),
-            size: size_of::<u32>() as u64,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let draws_array = device.create_buffer(&BufferDescriptor {
-            label: Some("layer_brush_draws_array"),
-            size: size_of::<DrawProcessedStorage>() as u64 * MAX_STROKE,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let dispatch_group_draw = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("layer_brush_dispatch_draw"),
-            layout: &dispatch_draw_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &dispatch,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &draws_length,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &draws_array,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-            ],
-        });
+        let (dispatch, draws_length, draws_array, dispatch_group_draw) =
+            dispatch_group(device, &dispatch_draw_layout);
 
         let (brush_round, erase_round) =
             brush_pipelines(device, &dispatch_draw_layout, &config.chunk_draw_layout);
 
+        let scratch = Layer::new(config.scratch);
+
         Brush {
             device: config.device,
             queue: config.queue,
+            scratch,
             brush_round,
             erase_round,
             dispatch,
             draws_length,
             draws_array,
             dispatch_group_draw,
+            erase: false,
+            interpolation: DEFAULT_INTERPOLATION,
+            modifier: DEFAULT_MODIFIER,
+            dirty: DEFAULT_DIRTY,
+            prev: None,
+            stroke: None,
         }
     }
 
-    pub fn paint(
-        &self,
-        dirty: Rectangle,
-        draws: &[DrawProcessedStorage],
-        paint_chunks: &[(super::ChunkKey, &BindGroup)],
-        erase: bool,
-    ) {
+    /// CPU-end draw process
+    pub fn paint(&mut self, next: Draw) {
+        let mut draw_buf = Vec::new();
+        let curr = self
+            .interpolation
+            .interpolate(self.prev, next, &self.modifier, &mut draw_buf);
+        self.prev = Some(curr);
+
+        let dirty = self.dirty.compute(curr.position.q32_round(), &draw_buf);
+
+        if dirty.extend.x == 0 || dirty.extend.y == 0 {
+            return;
+        }
+
+        if let Some(stroke) = &mut self.stroke {
+            stroke.dirty = stroke.dirty.grow(dirty);
+        } else {
+            self.stroke = Some(Stroke { dirty });
+        }
+
+        let mut draw_stg = Vec::with_capacity(draw_buf.len());
+        for draw in draw_buf {
+            draw_stg.push(draw.into_storage());
+        }
+
+        self.paint_dispatch(dirty, &draw_stg);
+    }
+
+    /// dispatch to GPU for the rest
+    fn paint_dispatch(&mut self, dirty: Rectangle, draws: &[DrawProcessedStorage]) {
+        // Brush always use independent layer as scratch
+        self.scratch.prepare_chunks(dirty);
+
         super::write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
         upload_draws(&self.draws_length, &self.draws_array, draws, &self.queue);
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&ENCODER_DESC);
+        let mut encoder = self.device.create_command_encoder(&ENCODER_DESC);
         let mut cpass = encoder.begin_compute_pass(&CPASS_DESC);
 
-        if erase {
+        if self.erase {
             cpass.set_pipeline(&self.erase_round);
         } else {
             cpass.set_pipeline(&self.brush_round);
         }
 
         cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
-        for &(key, chunk_bind) in paint_chunks {
-            cpass.set_bind_group(1, Some(chunk_bind), &[]);
-            dispatch_workgroups(dirty, key, &mut cpass);
+
+        let (src, dst) = super::rect_to_chunks(dirty, 0, self.scratch.chunk_size);
+        for x in src.0..dst.0 {
+            for y in src.1..dst.1 {
+                if let Some(chunk) = self.scratch.chunks.get(&(x, y, 0)) {
+                    cpass.set_bind_group(1, Some(&chunk.draw), &[]);
+                    dispatch_workgroups(dirty, (x, y, 0), &mut cpass);
+                }
+            }
         }
 
         drop(cpass);
         self.queue.submit([encoder.finish()]);
     }
+
+    /// All finished, merge to main layer
+    pub fn submit(&mut self, main: &mut Layer) {
+        self.prev = None;
+        let Some(stroke) = self.stroke.take() else {
+            return;
+        };
+
+        main.merge_from(&self.scratch, stroke.dirty);
+
+        self.scratch.chunks.clear();
+
+        main.generate_mipmaps(stroke.dirty);
+
+        // TODO for stream layer
+        // for level in 0..main.mipmap_levels {
+        //     let (s, d) = super::rect_to_chunks(dirty, level, main.chunk_size);
+        //     for x in s.0..d.0 {
+        //         for y in s.1..d.1 {
+        //             tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();
+        //         }
+        //     }
+        // }
+    }
+}
+
+fn dispatch_group(
+    device: &Device,
+    dispatch_draw_layout: &BindGroupLayout,
+) -> (Buffer, Buffer, Buffer, BindGroup) {
+    let dispatch = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_brush_dispatch"),
+        size: size_of::<u32>() as u64 * 8,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let draws_length = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_brush_draws_length"),
+        size: size_of::<u32>() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let draws_array = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_brush_draws_array"),
+        size: size_of::<DrawProcessedStorage>() as u64 * MAX_STROKE,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let dispatch_group_draw = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_brush_dispatch_draw"),
+        layout: dispatch_draw_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &dispatch,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &draws_length,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &draws_array,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+    (dispatch, draws_length, draws_array, dispatch_group_draw)
 }
 
 // --- Pipelines ---
@@ -227,6 +341,8 @@ fn brush_pipelines(
     (brush_round, erase_round)
 }
 
+// --- Upload ---
+
 fn upload_draws(
     draws_length: &Buffer,
     draws_array: &Buffer,
@@ -239,11 +355,7 @@ fn upload_draws(
 
 // --- Dispatch ---
 
-fn dispatch_workgroups(
-    dirty: Rectangle,
-    key: super::ChunkKey,
-    cpass: &mut ComputePass,
-) {
+fn dispatch_workgroups(dirty: Rectangle, key: super::ChunkKey, cpass: &mut ComputePass) {
     let scale = 2u32.pow(key.2 as u32);
     cpass.dispatch_workgroups(
         dirty.extend.x.saturating_sub(1) / scale / WORKGROUP_SIZE + 1,
