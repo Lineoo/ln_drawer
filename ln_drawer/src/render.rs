@@ -21,14 +21,14 @@ use winit::{dpi::PhysicalSize, event::WindowEvent};
 
 use crate::{lnwin::Lnwindow, render::camera::Camera};
 
-pub const MSAA_SAMPLE_COUNT: u32 = 4;
+pub const MSAA_SAMPLE_COUNT: u32 = 1;
 pub const MSAA_STATE: MultisampleState = MultisampleState {
     count: MSAA_SAMPLE_COUNT,
     mask: !0,
     alpha_to_coverage_enabled: false,
 };
 
-const TIMESTAMP_COUNT: u32 = 16;
+const TIMESTAMP_COUNT: u32 = 256;
 const TIMESTAMP_BUFFER_SIZE: u64 = (TIMESTAMP_COUNT * 8) as u64;
 
 pub struct Render {
@@ -58,14 +58,14 @@ pub struct Render {
     last_redraw: Option<Instant>,
 
     // diagnosis
+    timestamp_poll: bool,
     timestamp_resolver: Buffer,
     timestamp_mapper: Buffer,
     timestamp_query: QuerySet,
 }
 
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;
-type RenderDrawCommand =
-    Box<dyn for<'a, 'b> FnMut(&World, &mut RenderPass<'a>, RenderDiagnosis<'b>)>;
+type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, &mut RenderDiagnosis<'_>)>;
 
 /// Need to call `RenderControl::reorder` before it can render normally.
 pub struct RenderControl {
@@ -82,7 +82,8 @@ pub struct RenderInformation {
 
 pub struct RenderDiagnosis<'a> {
     pub query: &'a QuerySet,
-    pub slots: &'a mut Vec<((usize, usize), &'static str)>,
+    pub slots: Vec<((usize, usize), &'static str)>,
+    pub front: usize,
 }
 
 impl Render {
@@ -156,6 +157,7 @@ impl Render {
             seq_remove: Vec::new(),
             sequence: Vec::new(),
             last_redraw: None,
+            timestamp_poll: false,
             timestamp_mapper,
             timestamp_resolver,
             timestamp_query,
@@ -211,7 +213,7 @@ impl Render {
             .formats
             .iter()
             .max_by_key(|&format| match format {
-                TextureFormat::Rgba16Float => 110,
+                TextureFormat::Rgba16Float => 50,
                 TextureFormat::Rgba8UnormSrgb => 100,
                 TextureFormat::Bgra8UnormSrgb => 90,
                 _ if format.is_srgb() => 10,
@@ -341,9 +343,6 @@ impl Render {
             }
         };
 
-        let mut timestamp_slots = Vec::new();
-        timestamp_slots.push(((0, 1), "render_pass"));
-
         let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
             color_attachments: &[Some(attachment)],
             timestamp_writes: Some(RenderPassTimestampWrites {
@@ -354,20 +353,19 @@ impl Render {
             ..Default::default()
         });
 
+        let mut diagnosis = RenderDiagnosis {
+            query: &render.timestamp_query,
+            slots: vec![((0, 1), "render_pass")],
+            front: 2,
+        };
+
         // draw
 
         for &(control, view, _) in &render.sequence {
             world.enter(view, || {
                 let mut control = world.fetch_mut(control).unwrap();
                 if let Some(draw) = &mut control.draw {
-                    draw(
-                        world,
-                        &mut rpass,
-                        RenderDiagnosis {
-                            query: &render.timestamp_query,
-                            slots: &mut timestamp_slots,
-                        },
-                    );
+                    draw(world, &mut rpass, &mut diagnosis);
                 }
             });
         }
@@ -402,6 +400,35 @@ impl Render {
             lnwindow.window.request_redraw();
         }
 
+        // GPU profiling
+
+        if render.timestamp_poll {
+            render.timestamp_mapper.map_async(MapMode::Read, .., |_| {});
+            render.device.poll(PollType::wait_indefinitely()).unwrap();
+            let period = render.queue.get_timestamp_period() as u64;
+            let view = render.timestamp_mapper.get_mapped_range(..);
+            let (chunks, _) = view.as_chunks::<8>();
+            let mut timestamps = [0u64; TIMESTAMP_COUNT as usize];
+            for (i, &chunk) in chunks.iter().enumerate() {
+                timestamps[i] = u64::from_le_bytes(chunk) * period;
+            }
+            drop(view);
+            render.timestamp_mapper.unmap();
+
+            let mut pairs = indexmap::IndexMap::<&'static str, Duration>::new();
+            for ((start, end), name) in diagnosis.slots {
+                let duration = pairs.entry(name).or_default();
+                *duration += Duration::from_nanos(timestamps[end] - timestamps[start]);
+            }
+
+            pairs.sort_unstable_keys();
+            let mut output = String::new();
+            for (name, duration) in pairs {
+                output += &format!("{name}: {duration:?}\t");
+            }
+            log::debug!("{output}");
+        }
+
         // CPU time tracing
 
         if let Some(last) = render.last_redraw {
@@ -417,24 +444,6 @@ impl Render {
         }
 
         render.last_redraw = Some(now);
-
-        // GPU profiling
-
-        render.timestamp_mapper.map_async(MapMode::Read, .., |_| {});
-        render.device.poll(PollType::wait_indefinitely()).unwrap();
-        let period = render.queue.get_timestamp_period() as u64;
-        let view = render.timestamp_mapper.get_mapped_range(..);
-        let (chunks, _) = view.as_chunks::<8>();
-        let mut timestamps = [0u64; TIMESTAMP_COUNT as usize];
-        for (i, &chunk) in chunks.iter().enumerate() {
-            timestamps[i] = u64::from_le_bytes(chunk) * period;
-        }
-        for slot in timestamp_slots {
-            let duration = Duration::from_nanos(timestamps[slot.0.1] - timestamps[slot.0.0]);
-            log::debug!("{}: {:?}", slot.1, duration);
-        }
-        drop(view);
-        render.timestamp_mapper.unmap();
     }
 }
 
@@ -458,6 +467,24 @@ impl RenderControl {
         } else {
             render.seq_remove.push(handle);
         }
+    }
+}
+
+impl RenderDiagnosis<'_> {
+    pub fn assign(&mut self, name: &'static str) -> (u32, u32) {
+        assert!(
+            self.front + 1 < TIMESTAMP_BUFFER_SIZE as usize,
+            "too many timestamps"
+        );
+
+        let pair = (self.front, self.front + 1);
+        self.slots.push((pair, name));
+        self.front += 2;
+        (pair.0 as u32, pair.1 as u32)
+    }
+
+    pub fn write(&mut self, rpass: &mut RenderPass, index: u32) {
+        rpass.write_timestamp(&self.query, index);
     }
 }
 

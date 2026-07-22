@@ -353,7 +353,8 @@ impl Element for LayerWrapper {
                 let this = world.single_fetch::<LayerWrapper>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
 
-                rpass.write_timestamp(&diagnosis.query, 2);
+                let (start, end) = diagnosis.assign("layer_wrapper");
+                diagnosis.write(rpass, start);
 
                 this.layer
                     .render(rpass, &camera, this.render_debugging, false);
@@ -362,9 +363,7 @@ impl Element for LayerWrapper {
                     .scratch
                     .render(rpass, &camera, this.render_debugging, this.erase);
 
-                rpass.write_timestamp(&diagnosis.query, 3);
-
-                diagnosis.slots.push(((2, 3), "layer_wrapper"));
+                diagnosis.write(rpass, end);
             })),
         });
 
