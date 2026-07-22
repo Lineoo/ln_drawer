@@ -737,7 +737,7 @@ impl StrokeLayer {
                     keep_redrawing: false,
                 })
             })),
-            draw: Some(Box::new(|world, rpass| {
+            draw: Some(Box::new(|world, rpass, _| {
                 let stroke = world.single_fetch::<StrokeLayer>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
 

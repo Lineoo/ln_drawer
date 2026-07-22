@@ -125,7 +125,7 @@ impl LayerWrapper {
         LayerWrapper {
             layer,
             brush,
-            render_debugging: true,
+            render_debugging: false,
             erase: false,
             brush_preview,
             thread_tx: input_tx,
@@ -349,9 +349,11 @@ impl Element for LayerWrapper {
                     keep_redrawing: false,
                 })
             })),
-            draw: Some(Box::new(move |world, rpass| {
+            draw: Some(Box::new(move |world, rpass, diagnosis| {
                 let this = world.single_fetch::<LayerWrapper>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
+
+                rpass.write_timestamp(&diagnosis.query, 2);
 
                 this.layer
                     .render(rpass, &camera, this.render_debugging, false);
@@ -360,22 +362,9 @@ impl Element for LayerWrapper {
                     .scratch
                     .render(rpass, &camera, this.render_debugging, this.erase);
 
-                // if !this.brush.scratch.chunks.is_empty() {
-                //     let mut encoder = this.layer
-                //         .device
-                //         .create_command_encoder(&CommandEncoderDescriptor {
-                //             label: Some("layer_scratch_encoder"),
-                //         });
+                rpass.write_timestamp(&diagnosis.query, 3);
 
-                //         encoder.begin_render_pass(&RenderPassDescriptor {
-                //             label: todo!(),
-                //             color_attachments: todo!(),
-                //             depth_stencil_attachment: todo!(),
-                //             timestamp_writes: todo!(),
-                //             occlusion_query_set: todo!(),
-                //             multiview_mask: todo!(),
-                //         });
-                // }
+                diagnosis.slots.push(((2, 3), "layer_wrapper"));
             })),
         });
 

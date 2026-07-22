@@ -158,7 +158,7 @@ impl RoundedRect {
 
         let control = world.insert(RenderControl {
             prepare: None,
-            draw: Some(Box::new(move |world, rpass| {
+            draw: Some(Box::new(move |world, rpass, _| {
                 let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
 

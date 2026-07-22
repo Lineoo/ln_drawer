@@ -5,16 +5,17 @@ pub mod rounded;
 pub mod text;
 pub mod vertex;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ln_world::{Element, Handle, World};
 use wgpu::{
-    Adapter, Color, CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor,
-    ExperimentalFeatures, Extent3d, Features, Instance, Limits, LoadOp, MemoryHints,
-    MultisampleState, Operations, PowerPreference, PresentMode, Queue, RenderPass,
-    RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface,
-    SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureUsages, TextureViewDescriptor, Trace,
+    Adapter, Buffer, BufferDescriptor, BufferUsages, Color, CommandEncoderDescriptor,
+    CompositeAlphaMode, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features,
+    Instance, Limits, LoadOp, MapMode, MemoryHints, MultisampleState, Operations, PollType,
+    PowerPreference, PresentMode, QuerySet, QuerySetDescriptor, QueryType, Queue, RenderPass,
+    RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites,
+    RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration, Texture, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -26,6 +27,9 @@ pub const MSAA_STATE: MultisampleState = MultisampleState {
     mask: !0,
     alpha_to_coverage_enabled: false,
 };
+
+const TIMESTAMP_COUNT: u32 = 16;
+const TIMESTAMP_BUFFER_SIZE: u64 = (TIMESTAMP_COUNT * 8) as u64;
 
 pub struct Render {
     // wgpu surface
@@ -52,10 +56,16 @@ pub struct Render {
 
     // time tracing
     last_redraw: Option<Instant>,
+
+    // diagnosis
+    timestamp_resolver: Buffer,
+    timestamp_mapper: Buffer,
+    timestamp_query: QuerySet,
 }
 
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;
-type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'static>)>;
+type RenderDrawCommand =
+    Box<dyn for<'a, 'b> FnMut(&World, &mut RenderPass<'a>, RenderDiagnosis<'b>)>;
 
 /// Need to call `RenderControl::reorder` before it can render normally.
 pub struct RenderControl {
@@ -68,6 +78,11 @@ pub struct RenderControl {
 
 pub struct RenderInformation {
     pub keep_redrawing: bool,
+}
+
+pub struct RenderDiagnosis<'a> {
+    pub query: &'a QuerySet,
+    pub slots: &'a mut Vec<((usize, usize), &'static str)>,
 }
 
 impl Render {
@@ -90,7 +105,9 @@ impl Render {
         let (device, queue) = adapter
             .request_device(&DeviceDescriptor {
                 label: None,
-                required_features: Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                required_features: Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+                    | Features::TIMESTAMP_QUERY
+                    | Features::TIMESTAMP_QUERY_INSIDE_PASSES,
                 required_limits: Limits::defaults(),
                 experimental_features: ExperimentalFeatures::disabled(),
                 memory_hints: MemoryHints::MemoryUsage,
@@ -104,6 +121,26 @@ impl Render {
         surface.configure(&device, &config);
 
         let msaa_texture = device.create_texture(&Render::msaa_texel(size, &config));
+
+        let timestamp_resolver = device.create_buffer(&BufferDescriptor {
+            label: Some("timestamp_buffer_resolver"),
+            size: TIMESTAMP_BUFFER_SIZE,
+            usage: BufferUsages::QUERY_RESOLVE | BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let timestamp_mapper = device.create_buffer(&BufferDescriptor {
+            label: Some("timestamp_buffer_mapper"),
+            size: (TIMESTAMP_COUNT * 8) as u64,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let timestamp_query = device.create_query_set(&QuerySetDescriptor {
+            label: Some("timestamp_query"),
+            ty: QueryType::Timestamp,
+            count: TIMESTAMP_COUNT,
+        });
 
         Render {
             surface,
@@ -119,6 +156,9 @@ impl Render {
             seq_remove: Vec::new(),
             sequence: Vec::new(),
             last_redraw: None,
+            timestamp_mapper,
+            timestamp_resolver,
+            timestamp_query,
         }
     }
 
@@ -301,25 +341,57 @@ impl Render {
             }
         };
 
-        let mut rpass = encoder
-            .begin_render_pass(&RenderPassDescriptor {
-                color_attachments: &[Some(attachment)],
-                ..Default::default()
-            })
-            .forget_lifetime();
+        let mut timestamp_slots = Vec::new();
+        timestamp_slots.push(((0, 1), "render_pass"));
 
-        // draw and submit
+        let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
+            color_attachments: &[Some(attachment)],
+            timestamp_writes: Some(RenderPassTimestampWrites {
+                query_set: &render.timestamp_query,
+                beginning_of_pass_write_index: Some(0),
+                end_of_pass_write_index: Some(1),
+            }),
+            ..Default::default()
+        });
+
+        // draw
 
         for &(control, view, _) in &render.sequence {
             world.enter(view, || {
                 let mut control = world.fetch_mut(control).unwrap();
-                if let Some(render) = &mut control.draw {
-                    render(world, &mut rpass);
+                if let Some(draw) = &mut control.draw {
+                    draw(
+                        world,
+                        &mut rpass,
+                        RenderDiagnosis {
+                            query: &render.timestamp_query,
+                            slots: &mut timestamp_slots,
+                        },
+                    );
                 }
             });
         }
 
         drop(rpass);
+
+        // GPU timestamp resolve
+
+        encoder.resolve_query_set(
+            &render.timestamp_query,
+            0..TIMESTAMP_COUNT,
+            &render.timestamp_resolver,
+            0,
+        );
+        encoder.copy_buffer_to_buffer(
+            &render.timestamp_resolver,
+            0,
+            &render.timestamp_mapper,
+            0,
+            TIMESTAMP_BUFFER_SIZE,
+        );
+
+        // tasks submission
+
         render.queue.submit([encoder.finish()]);
         texture.present();
 
@@ -330,7 +402,7 @@ impl Render {
             lnwindow.window.request_redraw();
         }
 
-        // time tracing
+        // CPU time tracing
 
         if let Some(last) = render.last_redraw {
             let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
@@ -345,6 +417,24 @@ impl Render {
         }
 
         render.last_redraw = Some(now);
+
+        // GPU profiling
+
+        render.timestamp_mapper.map_async(MapMode::Read, .., |_| {});
+        render.device.poll(PollType::wait_indefinitely()).unwrap();
+        let period = render.queue.get_timestamp_period() as u64;
+        let view = render.timestamp_mapper.get_mapped_range(..);
+        let (chunks, _) = view.as_chunks::<8>();
+        let mut timestamps = [0u64; TIMESTAMP_COUNT as usize];
+        for (i, &chunk) in chunks.iter().enumerate() {
+            timestamps[i] = u64::from_le_bytes(chunk) * period;
+        }
+        for slot in timestamp_slots {
+            let duration = Duration::from_nanos(timestamps[slot.0.1] - timestamps[slot.0.0]);
+            log::debug!("{}: {:?}", slot.1, duration);
+        }
+        drop(view);
+        render.timestamp_mapper.unmap();
     }
 }
 
