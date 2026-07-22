@@ -38,6 +38,7 @@ pub struct LayerWrapper {
     pub layer: Layer,
     pub brush: Brush,
     pub render_debugging: bool,
+    pub erase: bool,
 
     brush_preview: Handle<RoundedRect>,
 
@@ -125,6 +126,7 @@ impl LayerWrapper {
             layer,
             brush,
             render_debugging: true,
+            erase: false,
             brush_preview,
             thread_tx: input_tx,
             thread_rx: output_rx,
@@ -220,7 +222,7 @@ impl LayerWrapper {
                 let this = &mut *world.fetch_mut(this).unwrap();
 
                 if let MultiTouchStatus::Press = primary.status
-                    && !this.brush.erase
+                    && !this.erase
                 {
                     drag_start = Some((primary.screen, Instant::now()));
                 }
@@ -246,9 +248,10 @@ impl LayerWrapper {
                         drag_start = None;
                     } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
-                            this.brush.submit_stream(&mut this.layer, &this.thread_tx);
+                            this.brush
+                                .submit_stream(&mut this.layer, &this.thread_tx, this.erase);
                             temp_erase_mode = Some(this.brush.modifier);
-                            this.brush.erase = true;
+                            this.erase = true;
                             this.brush.modifier = TEMP_ERASE_MODIFIER;
                             drag_start = None;
                         } else {
@@ -271,11 +274,12 @@ impl LayerWrapper {
 
                 if let Some(ori) = temp_erase_mode {
                     temp_erase_mode = None;
-                    this.brush.erase = false;
+                    this.erase = false;
                     this.brush.modifier = ori;
                 }
 
-                this.brush.submit_stream(&mut this.layer, &this.thread_tx);
+                this.brush
+                    .submit_stream(&mut this.layer, &this.thread_tx, this.erase);
             }
         });
     }
@@ -349,8 +353,29 @@ impl Element for LayerWrapper {
                 let this = world.single_fetch::<LayerWrapper>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
 
-                this.layer.render(rpass, &camera, this.render_debugging);
-                this.brush.scratch.render(rpass, &camera, this.render_debugging);
+                this.layer
+                    .render(rpass, &camera, this.render_debugging, false);
+
+                this.brush
+                    .scratch
+                    .render(rpass, &camera, this.render_debugging, this.erase);
+
+                // if !this.brush.scratch.chunks.is_empty() {
+                //     let mut encoder = this.layer
+                //         .device
+                //         .create_command_encoder(&CommandEncoderDescriptor {
+                //             label: Some("layer_scratch_encoder"),
+                //         });
+
+                //         encoder.begin_render_pass(&RenderPassDescriptor {
+                //             label: todo!(),
+                //             color_attachments: todo!(),
+                //             depth_stencil_attachment: todo!(),
+                //             timestamp_writes: todo!(),
+                //             occlusion_query_set: todo!(),
+                //             multiview_mask: todo!(),
+                //         });
+                // }
             })),
         });
 

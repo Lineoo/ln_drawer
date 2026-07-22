@@ -9,16 +9,15 @@ use glam::UVec2;
 use hashbrown::HashMap;
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
-    Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
-    ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState,
-    PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState,
-    PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
-    SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderModuleDescriptor, ShaderSource,
-    ShaderStages, StorageTextureAccess, Texture, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension,
-    VertexState,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent,
+    BlendFactor, BlendOperation, BlendState, Buffer, BufferBinding, BufferBindingType,
+    BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
+    ComputePass, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
+    Extent3d, FilterMode, FragmentState, PipelineCompilationOptions, PipelineLayoutDescriptor,
+    PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
+    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, Texture, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -65,10 +64,9 @@ pub struct Layer {
     sampler_group_unfiltered: BindGroup,
     sampler_group_filtered: BindGroup,
 
-    render_pipeline: RenderPipeline,
-    render_debug_pipeline: RenderPipeline,
+    render_pipelines: RenderPipelines,
+    merge_pipelines: MergePipelines,
     mipmap_pipeline: ComputePipeline,
-    merge_pipeline: ComputePipeline,
     clear_pipeline: ComputePipeline,
 }
 
@@ -77,6 +75,17 @@ pub struct Chunk {
     pub texture: Texture,
     pub render: BindGroup,
     pub draw: BindGroup,
+}
+
+struct RenderPipelines {
+    over: RenderPipeline,
+    over_debug: RenderPipeline,
+    erase: RenderPipeline,
+}
+
+struct MergePipelines {
+    over: ComputePipeline,
+    erase: ComputePipeline,
 }
 
 #[repr(C)]
@@ -109,11 +118,11 @@ impl Layer {
         let (sampler_group_unfiltered, sampler_group_filtered) =
             sampler_groups(device, &sampler_layout);
 
-        let (render_pipeline, render_debug_pipeline) =
+        let render_pipelines =
             render_pipelines(&config, device, sampler_layout, &chunk_render_layout);
 
+        let merge_pipelines = merge_pipelines(device, &chunk_draw_layout, &dispatch_layout);
         let mipmap_pipeline = mipmap_pipeline(device, &chunk_draw_layout, &dispatch_layout);
-        let merge_pipeline = merge_pipeline(device, &chunk_draw_layout, &dispatch_layout);
         let clear_pipeline = clear_pipeline(device, &chunk_draw_layout);
 
         Layer {
@@ -130,10 +139,9 @@ impl Layer {
             dispatch_group,
             sampler_group_unfiltered,
             sampler_group_filtered,
-            render_pipeline,
-            render_debug_pipeline,
+            render_pipelines,
             mipmap_pipeline,
-            merge_pipeline,
+            merge_pipelines,
             clear_pipeline,
         }
     }
@@ -232,7 +240,7 @@ impl Layer {
         self.queue.submit([encoder.finish()]);
     }
 
-    pub fn merge_from(&self, scratch: &Layer, dirty: Rectangle) {
+    pub fn merge_from(&self, scratch: &Layer, dirty: Rectangle, erase: bool) {
         write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
 
         let mut encoder = self
@@ -245,7 +253,11 @@ impl Layer {
             timestamp_writes: None,
         });
 
-        cpass.set_pipeline(&self.merge_pipeline);
+        match erase {
+            false => cpass.set_pipeline(&self.merge_pipelines.over),
+            true => cpass.set_pipeline(&self.merge_pipelines.erase),
+        }
+
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
 
         let (src, dst) = rect_to_chunks(dirty, 0, self.chunk_size);
@@ -300,15 +312,16 @@ impl Layer {
         self.queue.submit([encoder.finish()]);
     }
 
-    pub fn render(&self, rpass: &mut RenderPass, camera: &Camera, debug: bool) {
+    pub fn render(&self, rpass: &mut RenderPass, camera: &Camera, debug: bool, erase: bool) {
         let view_rect = camera.world_view_rect();
         let mipmap = mipmap_floor(camera.zoom);
         let actual_mipmap = mipmap.min(self.mipmap_levels.saturating_sub(1));
         let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, self.chunk_size);
 
-        match debug {
-            false => rpass.set_pipeline(&self.render_pipeline),
-            true => rpass.set_pipeline(&self.render_debug_pipeline),
+        match (debug, erase) {
+            (false, false) => rpass.set_pipeline(&self.render_pipelines.over),
+            (true, false) => rpass.set_pipeline(&self.render_pipelines.over_debug),
+            (_, true) => rpass.set_pipeline(&self.render_pipelines.erase),
         }
 
         rpass.set_bind_group(0, &camera.bind, &[]);
@@ -641,7 +654,7 @@ fn render_pipelines(
     device: &Device,
     sampler_layout: BindGroupLayout,
     chunk_render_layout: &BindGroupLayout,
-) -> (RenderPipeline, RenderPipeline) {
+) -> RenderPipelines {
     let render_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_chunk"),
         source: ShaderSource::Wgsl(
@@ -664,71 +677,61 @@ fn render_pipelines(
         immediate_size: 0,
     });
 
-    let surface_format = config.surface_format;
-    let render_shader: &ShaderModule = &render_shader;
-    let render_pipeline_layout: &PipelineLayout = &render_pipeline_layout;
-    let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("layer_chunk"),
-        layout: Some(render_pipeline_layout),
-        vertex: VertexState {
-            module: render_shader,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        primitive: PrimitiveState {
-            topology: PrimitiveTopology::TriangleStrip,
-            ..Default::default()
-        },
-        fragment: Some(FragmentState {
-            module: render_shader,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(ColorTargetState {
-                format: surface_format,
-                blend: Some(BlendState::ALPHA_BLENDING),
-                write_mask: ColorWrites::ALL,
-            })],
-        }),
-        depth_stencil: None,
-        multisample: MSAA_STATE,
-        multiview_mask: None,
-        cache: None,
-    });
+    let new_pipeline = |blend: BlendState, label: &str, fs_entry: &str| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&render_pipeline_layout),
+            vertex: VertexState {
+                module: &render_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            fragment: Some(FragmentState {
+                module: &render_shader,
+                entry_point: Some(fs_entry),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState {
+                    format: config.surface_format,
+                    blend: Some(blend),
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            depth_stencil: None,
+            multisample: MSAA_STATE,
+            multiview_mask: None,
+            cache: None,
+        })
+    };
 
-    let surface_format = config.surface_format;
-    let render_shader: &ShaderModule = &render_shader;
-    let render_pipeline_layout: &PipelineLayout = &render_pipeline_layout;
-    let render_debug_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("layer_chunk_debug"),
-        layout: Some(&render_pipeline_layout),
-        vertex: VertexState {
-            module: &render_shader,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        primitive: PrimitiveState {
-            topology: PrimitiveTopology::TriangleStrip,
-            ..Default::default()
-        },
-        fragment: Some(FragmentState {
-            module: &render_shader,
-            entry_point: Some("fs_main_debug"),
-            compilation_options: Default::default(),
-            targets: &[Some(ColorTargetState {
-                format: surface_format,
-                blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: ColorWrites::ALL,
-            })],
-        }),
-        depth_stencil: None,
-        multisample: MSAA_STATE,
-        multiview_mask: None,
-        cache: None,
-    });
-
-    (render_pipeline, render_debug_pipeline)
+    RenderPipelines {
+        over: new_pipeline(BlendState::ALPHA_BLENDING, "layer_chunk_over", "fs_main"),
+        over_debug: new_pipeline(
+            BlendState::PREMULTIPLIED_ALPHA_BLENDING,
+            "layer_chunk_over_debug",
+            "fs_main_debug",
+        ),
+        erase: new_pipeline(
+            BlendState {
+                color: BlendComponent {
+                    src_factor: BlendFactor::Zero,
+                    dst_factor: BlendFactor::OneMinusSrcAlpha,
+                    operation: BlendOperation::Add,
+                },
+                alpha: BlendComponent {
+                    src_factor: BlendFactor::Zero,
+                    dst_factor: BlendFactor::OneMinusSrcAlpha,
+                    operation: BlendOperation::Add,
+                },
+            },
+            "layer_chunk_erase",
+            "fs_main",
+        ),
+    }
 }
 
 fn mipmap_pipeline(
@@ -765,11 +768,11 @@ fn mipmap_pipeline(
     })
 }
 
-fn merge_pipeline(
+fn merge_pipelines(
     device: &Device,
     chunk_draw_layout: &BindGroupLayout,
     dispatch_layout: &BindGroupLayout,
-) -> ComputePipeline {
+) -> MergePipelines {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_merge"),
         source: ShaderSource::Wgsl(
@@ -789,14 +792,21 @@ fn merge_pipeline(
         immediate_size: 0,
     });
 
-    device.create_compute_pipeline(&ComputePipelineDescriptor {
-        label: Some("layer_merge"),
-        layout: Some(&layout),
-        module: &shader,
-        entry_point: Some("cs_main"),
-        compilation_options: PipelineCompilationOptions::default(),
-        cache: None,
-    })
+    let new_pipeline = |label, cs_entry| {
+        device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: Some(cs_entry),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    };
+
+    MergePipelines {
+        over: new_pipeline("layer_merge", "cs_main"),
+        erase: new_pipeline("layer_merge_erase", "cs_erase"),
+    }
 }
 
 fn clear_pipeline(device: &Device, chunk_draw_layout: &BindGroupLayout) -> ComputePipeline {

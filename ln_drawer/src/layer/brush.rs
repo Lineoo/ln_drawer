@@ -197,10 +197,9 @@ impl Brush {
             timestamp_writes: None,
         });
 
-        if self.erase {
-            cpass.set_pipeline(&self.erase_round);
-        } else {
-            cpass.set_pipeline(&self.brush_round);
+        match self.erase {
+            true => cpass.set_pipeline(&self.erase_round),
+            false => cpass.set_pipeline(&self.brush_round),
         }
 
         cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
@@ -235,7 +234,7 @@ impl Brush {
     }
 
     /// All finished, merge to main layer
-    pub fn submit(&mut self, main: &mut Layer) {
+    pub fn submit(&mut self, main: &mut Layer, erase: bool) {
         self.prev = None;
         let Some(stroke) = self.stroke.take() else {
             return;
@@ -244,7 +243,7 @@ impl Brush {
         // TODO may prepare more chunks than you need, we might need
         //      to record extra chunks information
         main.prepare_chunks(stroke.dirty);
-        main.merge_from(&self.scratch, stroke.dirty);
+        main.merge_from(&self.scratch, stroke.dirty, erase);
         main.generate_mipmaps(stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
@@ -253,13 +252,13 @@ impl Brush {
     }
 
     /// All finished, merge to main layer and notify stream thread unsaved chunks
-    pub fn submit_stream(&mut self, main: &mut Layer, tx: &Sender<ThreadInput>) {
+    pub fn submit_stream(&mut self, main: &mut Layer, tx: &Sender<ThreadInput>, erase: bool) {
         self.prev = None;
         let Some(stroke) = self.stroke.take() else {
             return;
         };
 
-        main.merge_from(&self.scratch, stroke.dirty);
+        main.merge_from(&self.scratch, stroke.dirty, erase);
         main.generate_mipmaps(stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {

@@ -327,7 +327,7 @@ fn side_panel(world: &mut World) {
             softness: 0.2,
             ..stroke.brush.modifier
         };
-        stroke.brush.erase = false;
+        stroke.erase = false;
 
         let slider = world.fetch(slider).unwrap();
         world.queue_trigger(
@@ -355,7 +355,7 @@ fn side_panel(world: &mut World) {
             softness: 0.5,
             ..stroke.brush.modifier
         };
-        stroke.brush.erase = false;
+        stroke.erase = false;
 
         let slider = world.fetch(slider).unwrap();
         world.queue_trigger(
@@ -383,7 +383,7 @@ fn side_panel(world: &mut World) {
             softness: 0.5,
             ..stroke.brush.modifier
         };
-        stroke.brush.erase = true;
+        stroke.erase = true;
 
         let slider = world.fetch(slider).unwrap();
         world.queue_trigger(
