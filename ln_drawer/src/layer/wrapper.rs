@@ -350,7 +350,7 @@ impl Element for LayerWrapper {
                 let camera = world.single_fetch::<Camera>().unwrap();
 
                 this.layer.render(rpass, &camera, this.render_debugging);
-                this.brush.scratch.render(rpass, &camera, false);
+                this.brush.scratch.render(rpass, &camera, this.render_debugging);
             })),
         });
 

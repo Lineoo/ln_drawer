@@ -33,10 +33,12 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
 
 @fragment
 fn fs_main_debug(vertex: VertexOutput) -> @location(0) vec4f {
-    let intensity = f32(chunk_key.z) / 8.0;
     let color = textureSample(texture, texture_sampler, vertex.uv);
+    let grid = max(1 - step(vec2f(1. / 512), vertex.uv), step(vec2f(1 - 1. / 512), vertex.uv));
+    let grid_float = max(grid.x, grid.y);
+
     let a = vec4f(color.rgb, 1) * color.a;
-    let b = vec4f(1, 0, 0, 1) * intensity;
+    let b = vec4f(vertex.uv, 0.5, 1) * grid_float;
     let c = vec4f(0, 1, 0, 1) * (f32(i32(color.a * 255) % 5) / 5);
 
     let ab = a * (1 - b.a) + b;
