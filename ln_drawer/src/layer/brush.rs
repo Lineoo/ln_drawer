@@ -245,8 +245,11 @@ impl Brush {
         //      to record extra chunks information
         main.prepare_chunks(stroke.dirty);
         main.merge_from(&self.scratch, stroke.dirty);
-        self.scratch.chunks.clear();
         main.generate_mipmaps(stroke.dirty);
+
+        for (_key, chunk) in self.scratch.chunks.drain() {
+            self.scratch.pool.push(chunk);
+        }
     }
 
     /// All finished, merge to main layer and notify stream thread unsaved chunks
@@ -257,8 +260,11 @@ impl Brush {
         };
 
         main.merge_from(&self.scratch, stroke.dirty);
-        self.scratch.chunks.clear();
         main.generate_mipmaps(stroke.dirty);
+
+        for (_key, chunk) in self.scratch.chunks.drain() {
+            self.scratch.pool.push(chunk);
+        }
 
         for level in 0..main.mipmap_levels {
             let (src, dst) = super::rect_to_chunks(stroke.dirty, level, main.chunk_size);

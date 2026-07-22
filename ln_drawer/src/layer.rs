@@ -11,7 +11,7 @@ use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
     Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
-    ColorWrites, CommandEncoderDescriptor, ComputePassDescriptor, ComputePipeline,
+    ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
     ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState,
     PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState,
     PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
@@ -49,17 +49,17 @@ pub struct Layer {
     device: Device,
     queue: Queue,
 
-    pub chunk_size: u32,
-    pub mipmap_levels: u8,
-    pub controlled: bool,
+    chunk_size: u32,
+    mipmap_levels: u8,
+    controlled: bool,
 
     chunks: HashMap<ChunkKey, Chunk>,
     pool: Vec<Chunk>,
 
     dispatch: Buffer,
 
-    pub chunk_render_layout: BindGroupLayout,
-    pub chunk_draw_layout: BindGroupLayout,
+    chunk_render_layout: BindGroupLayout,
+    chunk_draw_layout: BindGroupLayout,
 
     dispatch_group: BindGroup,
     sampler_group_unfiltered: BindGroup,
@@ -69,9 +69,11 @@ pub struct Layer {
     render_debug_pipeline: RenderPipeline,
     mipmap_pipeline: ComputePipeline,
     merge_pipeline: ComputePipeline,
+    clear_pipeline: ComputePipeline,
 }
 
 pub struct Chunk {
+    pub key: Buffer,
     pub texture: Texture,
     pub render: BindGroup,
     pub draw: BindGroup,
@@ -112,6 +114,7 @@ impl Layer {
 
         let mipmap_pipeline = mipmap_pipeline(device, &chunk_draw_layout, &dispatch_layout);
         let merge_pipeline = merge_pipeline(device, &chunk_draw_layout, &dispatch_layout);
+        let clear_pipeline = clear_pipeline(device, &chunk_draw_layout);
 
         Layer {
             device: config.device,
@@ -131,6 +134,7 @@ impl Layer {
             render_debug_pipeline,
             mipmap_pipeline,
             merge_pipeline,
+            clear_pipeline,
         }
     }
 
@@ -219,11 +223,7 @@ impl Layer {
 
                     cpass.set_bind_group(1, Some(&dst_chunk.draw), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.draw), &[]);
-                    cpass.dispatch_workgroups(
-                        dirty.extend.x.saturating_sub(1) / scale / WORKGROUP_SIZE.x + 1,
-                        dirty.extend.y.saturating_sub(1) / scale / WORKGROUP_SIZE.y + 1,
-                        1,
-                    );
+                    dispatch_workgroups(&mut cpass, dirty.extend / scale);
                 }
             }
         }
@@ -263,13 +263,38 @@ impl Layer {
 
                 cpass.set_bind_group(1, Some(&scratch_chunk.draw), &[]);
                 cpass.set_bind_group(2, Some(&main_chunk.draw), &[]);
-                cpass.dispatch_workgroups(
-                    dirty.extend.x.saturating_sub(1) / WORKGROUP_SIZE.x + 1,
-                    dirty.extend.y.saturating_sub(1) / WORKGROUP_SIZE.y + 1,
-                    1,
-                );
+                dispatch_workgroups(&mut cpass, dirty.extend);
             }
         }
+
+        drop(cpass);
+        self.queue.submit([encoder.finish()]);
+    }
+
+    pub fn recycle_chunk(&mut self, chunk: &Chunk, key: ChunkKey) {
+        self.queue.write_buffer(
+            &chunk.key,
+            0,
+            bytes_of(&ChunkUniform {
+                chunk: [key.0, key.1, key.2 as i32],
+                _pad: 0,
+            }),
+        );
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("layer_clear"),
+            });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_clear"),
+            timestamp_writes: None,
+        });
+
+        cpass.set_pipeline(&self.clear_pipeline);
+        cpass.set_bind_group(0, Some(&chunk.draw), &[]);
+        dispatch_workgroups(&mut cpass, UVec2::splat(self.chunk_size));
 
         drop(cpass);
         self.queue.submit([encoder.finish()]);
@@ -304,9 +329,14 @@ impl Layer {
         }
     }
 
-    fn create_empty_chunk(&self, key: ChunkKey) -> Chunk {
-        let texture = create_chunk_texture(&self.device, self.chunk_size);
-        self.create_chunk(texture, key)
+    fn create_empty_chunk(&mut self, key: ChunkKey) -> Chunk {
+        if let Some(chunk) = self.pool.pop() {
+            self.recycle_chunk(&chunk, key);
+            chunk
+        } else {
+            let texture = create_chunk_texture(&self.device, self.chunk_size);
+            self.create_chunk(texture, key)
+        }
     }
 
     fn create_chunk(&self, texture: Texture, key: ChunkKey) -> Chunk {
@@ -319,6 +349,14 @@ impl Layer {
             key,
         )
     }
+}
+
+fn dispatch_workgroups(cpass: &mut ComputePass, size: UVec2) {
+    cpass.dispatch_workgroups(
+        size.x.saturating_sub(1) / WORKGROUP_SIZE.x + 1,
+        size.y.saturating_sub(1) / WORKGROUP_SIZE.y + 1,
+        1,
+    );
 }
 
 // --- Utils --- //
@@ -441,6 +479,7 @@ fn create_chunk(
     });
 
     Chunk {
+        key: key_buffer,
         texture,
         render: render_bind,
         draw: draw_bind,
@@ -752,6 +791,28 @@ fn merge_pipeline(
 
     device.create_compute_pipeline(&ComputePipelineDescriptor {
         label: Some("layer_merge"),
+        layout: Some(&layout),
+        module: &shader,
+        entry_point: Some("cs_main"),
+        compilation_options: PipelineCompilationOptions::default(),
+        cache: None,
+    })
+}
+
+fn clear_pipeline(device: &Device, chunk_draw_layout: &BindGroupLayout) -> ComputePipeline {
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("layer_clear"),
+        source: ShaderSource::Wgsl(include_str!("layer/clear.wgsl").into()),
+    });
+
+    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_clear"),
+        bind_group_layouts: &[chunk_draw_layout],
+        immediate_size: 0,
+    });
+
+    device.create_compute_pipeline(&ComputePipelineDescriptor {
+        label: Some("layer_clear"),
         layout: Some(&layout),
         module: &shader,
         entry_point: Some("cs_main"),
