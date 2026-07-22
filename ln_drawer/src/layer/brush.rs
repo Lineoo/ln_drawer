@@ -1,4 +1,4 @@
-use std::mem::size_of;
+use std::{mem::size_of, sync::mpsc::Sender};
 
 use bytemuck::{bytes_of, cast_slice};
 use glam::UVec2;
@@ -12,7 +12,7 @@ use wgpu::{
 };
 
 use crate::{
-    layer::{Layer, LayerConfig},
+    layer::{Layer, LayerConfig, stream::ThreadInput},
     measures::{FI64Ext, Rectangle},
     stroke::{
         dirty::Dirty,
@@ -86,7 +86,7 @@ pub struct Brush {
     device: Device,
     queue: Queue,
 
-    scratch: Layer,
+    pub scratch: Layer,
 
     brush_round: ComputePipeline,
     erase_round: ComputePipeline,
@@ -186,8 +186,16 @@ impl Brush {
         super::write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
         upload_draws(&self.draws_length, &self.draws_array, draws, &self.queue);
 
-        let mut encoder = self.device.create_command_encoder(&ENCODER_DESC);
-        let mut cpass = encoder.begin_compute_pass(&CPASS_DESC);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("layer_brush"),
+            });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_brush"),
+            timestamp_writes: None,
+        });
 
         if self.erase {
             cpass.set_pipeline(&self.erase_round);
@@ -211,6 +219,21 @@ impl Brush {
         self.queue.submit([encoder.finish()]);
     }
 
+    pub fn request_stream(&mut self, main: &mut Layer, tx: &Sender<ThreadInput>) {
+        let Some(stroke) = &self.stroke else {
+            return;
+        };
+
+        for level in 0..main.mipmap_levels {
+            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, main.chunk_size);
+            for x in src.0..dst.0 {
+                for y in src.1..dst.1 {
+                    tx.send(ThreadInput::RequestReal((x, y, level))).unwrap();
+                }
+            }
+        }
+    }
+
     /// All finished, merge to main layer
     pub fn submit(&mut self, main: &mut Layer) {
         self.prev = None;
@@ -218,23 +241,37 @@ impl Brush {
             return;
         };
 
+        // TODO may prepare more chunks than you need, we might need
+        //      to record extra chunks information
+        main.prepare_chunks(stroke.dirty);
         main.merge_from(&self.scratch, stroke.dirty);
-
         self.scratch.chunks.clear();
+        main.generate_mipmaps(stroke.dirty);
+    }
 
+    /// All finished, merge to main layer and notify stream thread unsaved chunks
+    pub fn submit_stream(&mut self, main: &mut Layer, tx: &Sender<ThreadInput>) {
+        self.prev = None;
+        let Some(stroke) = self.stroke.take() else {
+            return;
+        };
+
+        main.merge_from(&self.scratch, stroke.dirty);
+        self.scratch.chunks.clear();
         main.generate_mipmaps(stroke.dirty);
 
-        // TODO for stream layer
-        // for level in 0..main.mipmap_levels {
-        //     let (s, d) = super::rect_to_chunks(dirty, level, main.chunk_size);
-        //     for x in s.0..d.0 {
-        //         for y in s.1..d.1 {
-        //             tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();
-        //         }
-        //     }
-        // }
+        for level in 0..main.mipmap_levels {
+            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, main.chunk_size);
+            for x in src.0..dst.0 {
+                for y in src.1..dst.1 {
+                    tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();
+                }
+            }
+        }
     }
 }
+
+// --- Resources --- //
 
 fn dispatch_group(
     device: &Device,
@@ -294,8 +331,6 @@ fn dispatch_group(
     (dispatch, draws_length, draws_array, dispatch_group_draw)
 }
 
-// --- Pipelines ---
-
 fn brush_pipelines(
     device: &Device,
     dispatch_draw_layout: &BindGroupLayout,
@@ -341,7 +376,7 @@ fn brush_pipelines(
     (brush_round, erase_round)
 }
 
-// --- Upload ---
+// --- Utils --- //
 
 fn upload_draws(
     draws_length: &Buffer,
@@ -353,8 +388,6 @@ fn upload_draws(
     queue.write_buffer(draws_array, 0, cast_slice(draws));
 }
 
-// --- Dispatch ---
-
 fn dispatch_workgroups(dirty: Rectangle, key: super::ChunkKey, cpass: &mut ComputePass) {
     let scale = 2u32.pow(key.2 as u32);
     cpass.dispatch_workgroups(
@@ -363,12 +396,3 @@ fn dispatch_workgroups(dirty: Rectangle, key: super::ChunkKey, cpass: &mut Compu
         1,
     );
 }
-
-const ENCODER_DESC: CommandEncoderDescriptor<'_> = CommandEncoderDescriptor {
-    label: Some("layer_brush"),
-};
-
-const CPASS_DESC: ComputePassDescriptor<'_> = ComputePassDescriptor {
-    label: Some("layer_brush"),
-    timestamp_writes: None,
-};

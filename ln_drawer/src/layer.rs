@@ -54,6 +54,7 @@ pub struct Layer {
     pub controlled: bool,
 
     chunks: HashMap<ChunkKey, Chunk>,
+    pool: Vec<Chunk>,
 
     dispatch: Buffer,
 
@@ -119,6 +120,7 @@ impl Layer {
             mipmap_levels: config.mipmap_levels,
             controlled: config.controlled,
             chunks: HashMap::new(),
+            pool: Vec::new(),
             dispatch,
             chunk_render_layout,
             chunk_draw_layout,
@@ -172,7 +174,7 @@ impl Layer {
                 for chunk_y in src.1..dst.1 {
                     let key = (chunk_x, chunk_y, mipmap);
                     if !self.chunks.contains_key(&key) {
-                        let chunk = self.create_chunk(key);
+                        let chunk = self.create_empty_chunk(key);
                         self.chunks.insert(key, chunk);
                     }
                 }
@@ -302,12 +304,12 @@ impl Layer {
         }
     }
 
-    fn create_chunk(&self, key: ChunkKey) -> Chunk {
+    fn create_empty_chunk(&self, key: ChunkKey) -> Chunk {
         let texture = create_chunk_texture(&self.device, self.chunk_size);
-        self.create_chunk_from_texture(texture, key)
+        self.create_chunk(texture, key)
     }
 
-    fn create_chunk_from_texture(&self, texture: Texture, key: ChunkKey) -> Chunk {
+    fn create_chunk(&self, texture: Texture, key: ChunkKey) -> Chunk {
         create_chunk(
             &self.device,
             self.chunk_size,

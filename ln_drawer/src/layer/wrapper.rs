@@ -246,7 +246,7 @@ impl LayerWrapper {
                         drag_start = None;
                     } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
-                            this.brush.submit(&mut this.layer);
+                            this.brush.submit_stream(&mut this.layer, &this.thread_tx);
                             temp_erase_mode = Some(this.brush.modifier);
                             this.brush.erase = true;
                             this.brush.modifier = TEMP_ERASE_MODIFIER;
@@ -262,6 +262,8 @@ impl LayerWrapper {
                     force: primary.data.force.unwrap_or(1.0),
                 });
 
+                this.brush.request_stream(&mut this.layer, &this.thread_tx);
+
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 lnwindow.window.request_redraw();
             } else {
@@ -273,7 +275,7 @@ impl LayerWrapper {
                     this.brush.modifier = ori;
                 }
 
-                this.brush.submit(&mut this.layer);
+                this.brush.submit_stream(&mut this.layer, &this.thread_tx);
             }
         });
     }
@@ -348,6 +350,7 @@ impl Element for LayerWrapper {
                 let camera = world.single_fetch::<Camera>().unwrap();
 
                 this.layer.render(rpass, &camera, this.render_debugging);
+                this.brush.scratch.render(rpass, &camera, false);
             })),
         });
 
