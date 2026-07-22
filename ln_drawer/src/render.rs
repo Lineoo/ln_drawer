@@ -279,17 +279,31 @@ impl Render {
                 label: Some("main_encoder"),
             });
 
+        let attachment = if MSAA_SAMPLE_COUNT > 1 {
+            RenderPassColorAttachment {
+                view: &msaa_view,
+                resolve_target: Some(&view),
+                ops: Operations {
+                    load: LoadOp::Clear(render.clear_color),
+                    store: StoreOp::Discard,
+                },
+                depth_slice: None,
+            }
+        } else {
+            RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(render.clear_color),
+                    store: StoreOp::Discard,
+                },
+                depth_slice: None,
+            }
+        };
+
         let mut rpass = encoder
             .begin_render_pass(&RenderPassDescriptor {
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &msaa_view,
-                    resolve_target: Some(&view),
-                    ops: Operations {
-                        load: LoadOp::Clear(render.clear_color),
-                        store: StoreOp::Discard,
-                    },
-                    depth_slice: None,
-                })],
+                color_attachments: &[Some(attachment)],
                 ..Default::default()
             })
             .forget_lifetime();
