@@ -15,7 +15,7 @@ use wgpu::{
     Operations, PollType, PowerPreference, PresentMode, QuerySet, QuerySetDescriptor, QueryType,
     Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites,
     RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration, Texture, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor, Trace,
+    TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -28,8 +28,9 @@ pub const MSAA_STATE: MultisampleState = MultisampleState {
     alpha_to_coverage_enabled: false,
 };
 
-const TIMESTAMP_COUNT: u32 = 256;
-const TIMESTAMP_BUFFER_SIZE: u64 = (TIMESTAMP_COUNT * 8) as u64;
+pub const TIMESTAMP_POLL: bool = false;
+pub const TIMESTAMP_COUNT: u32 = 256;
+pub const TIMESTAMP_BUFFER_SIZE: u64 = (TIMESTAMP_COUNT * 8) as u64;
 
 pub struct Render {
     // wgpu surface
@@ -58,7 +59,6 @@ pub struct Render {
     last_redraw: Option<Instant>,
 
     // diagnosis
-    timestamp_poll: bool,
     timestamp_resolver: Buffer,
     timestamp_mapper: Buffer,
     timestamp_query: QuerySet,
@@ -82,13 +82,16 @@ pub struct RenderInformation {
 
 #[non_exhaustive]
 pub struct RenderExtra<'a, 'b> {
+    pub device: &'a Device,
+    pub queue: &'a Queue,
     pub early_encoder: &'a mut CommandEncoder,
+    pub surface_config: &'a SurfaceConfiguration,
     pub diagnosis: &'a mut RenderDiagnosis<'b>,
 }
 
 pub struct RenderDiagnosis<'a> {
     pub query: &'a QuerySet,
-    pub slots: Vec<((usize, usize), &'static str)>,
+    pub slots: Vec<((usize, usize), String)>,
     pub front: usize,
 }
 
@@ -161,7 +164,6 @@ impl Render {
             seq_remove: Vec::new(),
             sequence: Vec::new(),
             last_redraw: None,
-            timestamp_poll: false,
             timestamp_mapper,
             timestamp_resolver,
             timestamp_query,
@@ -186,10 +188,9 @@ impl Render {
         self.msaa_texture = None;
     }
 
-    fn screen_texel(
+    pub fn screen_texture(
         label: &'static str,
         config: &SurfaceConfiguration,
-        sample_count: u32,
         usage: TextureUsages,
     ) -> TextureDescriptor<'static> {
         TextureDescriptor {
@@ -200,7 +201,7 @@ impl Render {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count,
+            sample_count: 1,
             dimension: TextureDimension::D2,
             format: config.format,
             usage,
@@ -208,13 +209,21 @@ impl Render {
         }
     }
 
-    fn msaa_texel(config: &SurfaceConfiguration) -> TextureDescriptor<'_> {
-        Self::screen_texel(
-            "render_msaa",
-            config,
-            MSAA_SAMPLE_COUNT,
-            TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT,
-        )
+    fn msaa_texture(config: &SurfaceConfiguration) -> TextureDescriptor<'_> {
+        TextureDescriptor {
+            label: Some("render_msaa"),
+            size: Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: MSAA_SAMPLE_COUNT,
+            dimension: TextureDimension::D2,
+            format: config.format,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT,
+            view_formats: &[],
+        }
     }
 
     fn configuration(
@@ -345,7 +354,7 @@ impl Render {
 
         let mut diagnosis = RenderDiagnosis {
             query: &render.timestamp_query,
-            slots: vec![((0, 1), "render_pass")],
+            slots: vec![((0, 1), "main".into())],
             front: 2,
         };
 
@@ -359,7 +368,10 @@ impl Render {
                         world,
                         &mut rpass,
                         RenderExtra {
+                            device: &render.device,
+                            queue: &render.queue,
                             early_encoder: &mut early_encoder,
+                            surface_config: &render.config,
                             diagnosis: &mut diagnosis,
                         },
                     );
@@ -400,7 +412,7 @@ impl Render {
 
         // GPU profiling
 
-        if render.timestamp_poll {
+        if TIMESTAMP_POLL {
             render.timestamp_mapper.map_async(MapMode::Read, .., |_| {});
             render.device.poll(PollType::wait_indefinitely()).unwrap();
             let period = render.queue.get_timestamp_period() as u64;
@@ -413,18 +425,20 @@ impl Render {
             drop(view);
             render.timestamp_mapper.unmap();
 
-            let mut pairs = indexmap::IndexMap::<&'static str, Duration>::new();
+            let mut pairs = indexmap::IndexMap::<String, Duration>::new();
             for ((start, end), name) in diagnosis.slots {
                 let duration = pairs.entry(name).or_default();
                 *duration += Duration::from_nanos(timestamps[end] - timestamps[start]);
             }
 
             pairs.sort_unstable_keys();
-            let mut output = String::new();
+            let mut output = String::from("\n");
             for (name, duration) in pairs {
-                output += &format!("{name}: {duration:?}\t");
+                let milis = duration.as_secs_f64() * (1e3f64);
+                output += &format!("{name:<30}{milis:>6.3}ms\n");
             }
-            log::debug!("{output}");
+
+            world.queue_trigger(world.single::<Render>().unwrap(), output);
         }
 
         // CPU time tracing
@@ -447,12 +461,12 @@ impl Render {
 
 fn msaa_rpass<'encoder>(
     render: &mut Render,
-    surface_view: &wgpu::TextureView,
+    surface_view: &TextureView,
     encoder: &'encoder mut CommandEncoder,
 ) -> RenderPass<'encoder> {
     // prepare msaa texture if not exist
     let msaa_texture = render.msaa_texture.get_or_insert_with(|| {
-        let desc = Render::msaa_texel(&render.config);
+        let desc = Render::msaa_texture(&render.config);
         render.device.create_texture(&desc)
     });
 
@@ -480,7 +494,7 @@ fn msaa_rpass<'encoder>(
 
 fn plain_rpass<'encoder>(
     render: &mut Render,
-    surface_view: &wgpu::TextureView,
+    surface_view: &TextureView,
     encoder: &'encoder mut CommandEncoder,
 ) -> RenderPass<'encoder> {
     encoder.begin_render_pass(&RenderPassDescriptor {
@@ -526,18 +540,12 @@ impl RenderControl {
     }
 }
 
-impl RenderExtra<'_, '_> {
-    pub fn profile_assign(&mut self, name: &'static str) -> (u32, u32) {
-        self.diagnosis.assign(name)
-    }
-
-    pub fn profile_write(&mut self, rpass: &mut RenderPass, index: u32) {
-        self.diagnosis.write(rpass, index);
-    }
-}
-
 impl RenderDiagnosis<'_> {
-    pub fn assign(&mut self, name: &'static str) -> (u32, u32) {
+    pub fn assign(&mut self, name: &str) -> (u32, u32) {
+        self.assign_string(name.into())
+    }
+
+    pub fn assign_string(&mut self, name: String) -> (u32, u32) {
         assert!(
             self.front + 1 < TIMESTAMP_BUFFER_SIZE as usize,
             "too many timestamps"

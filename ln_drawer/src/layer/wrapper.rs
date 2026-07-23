@@ -7,6 +7,15 @@ use std::{
 use glam::{DVec2, IVec2, UVec2, Vec2};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
+use wgpu::{
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Color, ColorTargetState,
+    ColorWrites, Device, FragmentState, LoadOp, Operations, PipelineLayoutDescriptor,
+    PrimitiveState, PrimitiveTopology, RenderPass, RenderPassColorAttachment, RenderPassDescriptor,
+    RenderPassTimestampWrites, RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StoreOp, SurfaceConfiguration, Texture, TextureSampleType,
+    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
+};
 use winit::event::PointerKind;
 
 use crate::{
@@ -18,7 +27,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{
-        Render, RenderControl, RenderInformation,
+        MSAA_STATE, Render, RenderControl, RenderExtra, RenderInformation,
         camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils, UICamera},
         rounded::{RoundedRect, RoundedRectDescriptor},
     },
@@ -41,6 +50,11 @@ pub struct LayerWrapper {
     pub erase: bool,
 
     brush_preview: Handle<RoundedRect>,
+    compositing_texture: Texture,
+    compositing_config: SurfaceConfiguration,
+    compositing_render_bind: BindGroup,
+
+    present_pipeline: RenderPipeline,
 
     thread_tx: std::sync::mpsc::Sender<ThreadInput>,
     thread_rx: std::sync::mpsc::Receiver<ThreadOutput>,
@@ -122,12 +136,21 @@ impl LayerWrapper {
             })
         });
 
+        let (compositing_texture, compositing_render_bind) =
+            compositing_resources(&render.device, &render.config);
+
+        let present_pipeline = present_pipeline(&render.device, &render.config);
+
         LayerWrapper {
             layer,
             brush,
             render_debugging: false,
             erase: false,
             brush_preview,
+            compositing_texture,
+            compositing_config: render.config.clone(),
+            compositing_render_bind,
+            present_pipeline,
             thread_tx: input_tx,
             thread_rx: output_rx,
             thread: Some(thread),
@@ -302,6 +325,154 @@ impl LayerWrapper {
             }
         }
     }
+
+    fn layers_render(&mut self, camera: &Camera, extra: &mut RenderExtra) {
+        // prepare rpass
+        let (start, end) = extra.diagnosis.assign("layers");
+        let compositing_view = self
+            .compositing_texture
+            .create_view(&TextureViewDescriptor::default());
+        let mut rpass = extra
+            .early_encoder
+            .begin_render_pass(&RenderPassDescriptor {
+                label: Some("in_layer_rpass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &compositing_view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::TRANSPARENT),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: Some(RenderPassTimestampWrites {
+                    query_set: extra.diagnosis.query,
+                    beginning_of_pass_write_index: Some(start),
+                    end_of_pass_write_index: Some(end),
+                }),
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+        // draw layers
+
+        let (start, end) = extra.diagnosis.assign("layers > main");
+        extra.diagnosis.write(&mut rpass, start);
+        self.layer
+            .render(&mut rpass, &camera, self.render_debugging, false);
+        extra.diagnosis.write(&mut rpass, end);
+
+        let (start, end) = extra.diagnosis.assign("layers > scratch");
+        extra.diagnosis.write(&mut rpass, start);
+        self.brush
+            .scratch
+            .render(&mut rpass, &camera, self.render_debugging, self.erase);
+        extra.diagnosis.write(&mut rpass, end);
+    }
+
+    fn render(&mut self, camera: &Camera, rpass: &mut RenderPass, mut extra: RenderExtra) {
+        // compositing texture
+        if self.compositing_config != *extra.surface_config {
+            self.compositing_config = extra.surface_config.clone();
+            (self.compositing_texture, self.compositing_render_bind) =
+                compositing_resources(extra.device, extra.surface_config)
+        }
+
+        // in-layer render pass
+        self.layers_render(camera, &mut extra);
+
+        // final screen draw
+        let (start, end) = extra.diagnosis.assign("main > layers_present");
+        extra.diagnosis.write(rpass, start);
+
+        rpass.set_pipeline(&self.present_pipeline);
+        rpass.set_bind_group(0, &self.compositing_render_bind, &[]);
+        rpass.draw(0..3, 0..1);
+
+        extra.diagnosis.write(rpass, end);
+    }
+}
+
+const LAYOUT_COMPOSITING_PRESENT: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("compositing_render"),
+    entries: &[BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStages::FRAGMENT,
+        ty: BindingType::Texture {
+            sample_type: TextureSampleType::Float { filterable: false },
+            view_dimension: TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }],
+};
+
+fn compositing_resources(device: &Device, config: &SurfaceConfiguration) -> (Texture, BindGroup) {
+    let texture = device.create_texture(&Render::screen_texture(
+        "compositing",
+        &config,
+        TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+    ));
+
+    let layout = device.create_bind_group_layout(&LAYOUT_COMPOSITING_PRESENT);
+
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("compositing_render"),
+        layout: &layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::TextureView(
+                &texture.create_view(&TextureViewDescriptor::default()),
+            ),
+        }],
+    });
+
+    (texture, bind_group)
+}
+
+fn present_pipeline(device: &Device, config: &SurfaceConfiguration) -> RenderPipeline {
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("wrapper_present_shader"),
+        source: ShaderSource::Wgsl(include_str!("present.wgsl").into()),
+    });
+
+    let compositing_render_layout = device.create_bind_group_layout(&LAYOUT_COMPOSITING_PRESENT);
+
+    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[&compositing_render_layout],
+        immediate_size: 0,
+    });
+
+    device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("wrapper_present_pipeline"),
+        layout: Some(&layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::TriangleStrip,
+            ..Default::default()
+        },
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(ColorTargetState {
+                format: config.format,
+                blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        depth_stencil: None,
+        multisample: MSAA_STATE,
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 impl Drop for LayerWrapper {
@@ -349,21 +520,10 @@ impl Element for LayerWrapper {
                     keep_redrawing: false,
                 })
             })),
-            draw: Some(Box::new(move |world, rpass, mut extra| {
-                let this = world.single_fetch::<LayerWrapper>().unwrap();
+            draw: Some(Box::new(move |world, rpass, extra| {
+                let mut this = world.single_fetch_mut::<LayerWrapper>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
-
-                let (start, end) = extra.profile_assign("layer_wrapper");
-                extra.profile_write(rpass, start);
-
-                this.layer
-                    .render(rpass, &camera, this.render_debugging, false);
-
-                this.brush
-                    .scratch
-                    .render(rpass, &camera, this.render_debugging, this.erase);
-
-                extra.profile_write(rpass, end);
+                this.render(&camera, rpass, extra);
             })),
         });
 

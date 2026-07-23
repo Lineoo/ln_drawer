@@ -101,7 +101,7 @@ impl Text {
                 let manager = &mut *world.single_fetch_mut::<TextPipeline>().unwrap();
                 let mut buffer_font = buffer.borrow_with(&mut manager.font_system);
 
-                let attrs = Attrs::new().family(Family::Name("Source Han Sans CN"));
+                let attrs = Attrs::new().family(Family::Monospace);
                 buffer_font.set_metrics(upscale_metrics);
                 buffer_font.set_size(Some(upscale_width), Some(upscale_height));
                 buffer_font.set_text(&this.text, &attrs, Shaping::Basic, None);

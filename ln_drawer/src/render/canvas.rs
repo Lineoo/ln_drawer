@@ -308,19 +308,19 @@ impl Descriptor for CanvasDescriptor {
 
         let control = world.insert(RenderControl {
             prepare: None,
-            draw: Some(Box::new(move |world, rpass, mut extra| {
+            draw: Some(Box::new(move |world, rpass, extra| {
                 let manager = world.single_fetch::<CanvasManager>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
 
-                let (start, end) = extra.profile_assign("canvas");
-                extra.profile_write(rpass, start);
+                let (start, end) = extra.diagnosis.assign("main > canvas");
+                extra.diagnosis.write(rpass, start);
 
                 rpass.set_pipeline(&manager.pipeline);
                 rpass.set_bind_group(0, &camera.bind, &[]);
                 rpass.set_bind_group(1, &bind, &[]);
                 rpass.draw(0..4, 0..1);
 
-                extra.profile_write(rpass, end);
+                extra.diagnosis.write(rpass, end);
             })),
         });
 
