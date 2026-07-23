@@ -670,9 +670,9 @@ fn render_pipelines(
     let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_chunk"),
         bind_group_layouts: &[
-            &config.camera_bind_layout,
-            &sampler_layout,
-            chunk_render_layout,
+            Some(&config.camera_bind_layout),
+            Some(&sampler_layout),
+            Some(chunk_render_layout),
         ],
         immediate_size: 0,
     });
@@ -754,7 +754,11 @@ fn mipmap_pipeline(
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_mipmap"),
-        bind_group_layouts: &[dispatch_layout, chunk_draw_layout, chunk_draw_layout],
+        bind_group_layouts: &[
+            Some(dispatch_layout),
+            Some(chunk_draw_layout),
+            Some(chunk_draw_layout),
+        ],
         immediate_size: 0,
     });
 
@@ -788,7 +792,11 @@ fn merge_pipelines(
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_merge"),
-        bind_group_layouts: &[dispatch_layout, chunk_draw_layout, chunk_draw_layout],
+        bind_group_layouts: &[
+            Some(dispatch_layout),
+            Some(chunk_draw_layout),
+            Some(chunk_draw_layout),
+        ],
         immediate_size: 0,
     });
 
@@ -817,7 +825,7 @@ fn clear_pipeline(device: &Device, chunk_draw_layout: &BindGroupLayout) -> Compu
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_clear"),
-        bind_group_layouts: &[chunk_draw_layout],
+        bind_group_layouts: &[Some(chunk_draw_layout)],
         immediate_size: 0,
     });
 

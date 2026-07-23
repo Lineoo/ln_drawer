@@ -10,12 +10,13 @@ use std::time::{Duration, Instant};
 use ln_world::{Element, Handle, World};
 use wgpu::{
     Adapter, Buffer, BufferDescriptor, BufferUsages, Color, CommandEncoder,
-    CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor, ExperimentalFeatures,
-    Extent3d, Features, Instance, Limits, LoadOp, MapMode, MemoryHints, MultisampleState,
-    Operations, PollType, PowerPreference, PresentMode, QuerySet, QuerySetDescriptor, QueryType,
-    Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites,
-    RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration, Texture, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, Trace,
+    CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device, DeviceDescriptor,
+    ExperimentalFeatures, Extent3d, Features, Instance, Limits, LoadOp, MapMode, MemoryHints,
+    MultisampleState, Operations, PollType, PowerPreference, PresentMode, QuerySet,
+    QuerySetDescriptor, QueryType, Queue, RenderPass, RenderPassColorAttachment,
+    RenderPassDescriptor, RenderPassTimestampWrites, RequestAdapterOptions, StoreOp, Surface,
+    SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureUsages, TextureView, TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -335,7 +336,20 @@ impl Render {
 
         // setup render pass
 
-        let surface = render.surface.get_current_texture().unwrap();
+        let surface = match render.surface.get_current_texture() {
+            CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
+            CurrentSurfaceTexture::Suboptimal(surface_texture) => surface_texture,
+            CurrentSurfaceTexture::Timeout => return,
+            CurrentSurfaceTexture::Occluded => return,
+            CurrentSurfaceTexture::Outdated => {
+                render.surface.configure(&render.device, &render.config);
+                return;
+            }
+            // TODO not correctly handled
+            CurrentSurfaceTexture::Lost => return,
+            CurrentSurfaceTexture::Validation => return,
+        };
+
         let surface_texture = &surface.texture;
         let surface_view = surface_texture.create_view(&TextureViewDescriptor::default());
 

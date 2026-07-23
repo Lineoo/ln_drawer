@@ -96,7 +96,7 @@ impl RoundedRect {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("rounded"),
-            bind_group_layouts: &[&camera.layout, &bind],
+            bind_group_layouts: &[Some(&camera.layout), Some(&bind)],
             immediate_size: 0,
         });
 

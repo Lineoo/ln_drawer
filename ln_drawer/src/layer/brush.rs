@@ -343,7 +343,7 @@ fn brush_pipelines(
 ) -> (ComputePipeline, ComputePipeline) {
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_brush"),
-        bind_group_layouts: &[dispatch_draw_layout, chunk_draw_layout],
+        bind_group_layouts: &[Some(dispatch_draw_layout), Some(chunk_draw_layout)],
         immediate_size: 0,
     });
 

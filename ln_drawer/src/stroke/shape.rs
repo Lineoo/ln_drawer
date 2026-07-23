@@ -31,7 +31,7 @@ fn raw_round(
 
     let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("round_brush"),
-        bind_group_layouts: &[dispatch, chunk],
+        bind_group_layouts: &[Some(dispatch), Some(chunk)],
         immediate_size: 0,
     });
 

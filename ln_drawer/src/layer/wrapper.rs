@@ -441,7 +441,7 @@ fn present_pipeline(device: &Device, config: &SurfaceConfiguration) -> RenderPip
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[&compositing_render_layout],
+        bind_group_layouts: &[Some(&compositing_render_layout)],
         immediate_size: 0,
     });
 

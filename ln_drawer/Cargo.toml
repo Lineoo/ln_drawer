@@ -31,7 +31,7 @@ smallvec = "1.15.1"
 swash = "0.2.9"
 thiserror = "2.0.16"
 tokio = "1.47.1"
-wgpu = "28.0"
+wgpu = "29.0"
 zstd = "0.13.3"
 
 [dependencies.ln_world]
