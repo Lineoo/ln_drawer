@@ -23,7 +23,7 @@ use crate::{
     },
     measures::{FI64Ext, Rectangle},
     render::{
-        Render, TIMESTAMP_POLL,
+        Render,
         camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, UICamera},
         canvas::Canvas,
         rectangle::RectangleMesh,
@@ -656,7 +656,10 @@ fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
 
     let submenu_transform_start = TransformValue::anchor(
         (1.0, 0.0),
-        Rectangle::new_half(HALF_OUTER.as_ivec2() / 4 + IVec2::new(20, 0), HALF_OUTER / 4),
+        Rectangle::new_half(
+            HALF_OUTER.as_ivec2() / 4 + IVec2::new(20, 0),
+            HALF_OUTER / 4,
+        ),
     );
 
     world.insert(Transform {
@@ -689,29 +692,32 @@ fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
         }
     });
 
-    if TIMESTAMP_POLL {
-        world.observer(
-            world.single::<Render>().unwrap(),
-            move |msg: &String, world| {
-                let mut text = world.fetch_mut(debug_text).unwrap();
-                if text.text != *msg {
-                    text.text.clone_from(msg);
-                    world.queue_trigger(debug_text, TextChanged);
-                }
-            },
-        );
-    } else {
-        world.observer(
-            world.single::<LayerWrapper>().unwrap(),
-            move |LayerDebugMessage(msg), world| {
-                let mut text = world.fetch_mut(debug_text).unwrap();
-                if text.text != *msg {
-                    text.text.clone_from(msg);
-                    world.queue_trigger(debug_text, TextChanged);
-                }
-            },
-        );
-    }
+    world.observer(
+        world.single::<Render>().unwrap(),
+        move |msg: &String, world| {
+            let mut text = world.fetch_mut(debug_text).unwrap();
+            if text.text != *msg {
+                text.text.clone_from(msg);
+                world.queue_trigger(debug_text, TextChanged);
+            }
+        },
+    );
+
+    world.observer(
+        world.single::<LayerWrapper>().unwrap(),
+        move |LayerDebugMessage(msg), world| {
+            let render = world.single_fetch::<Render>().unwrap();
+            if render.timestamp_poll {
+                return;
+            }
+
+            let mut text = world.fetch_mut(debug_text).unwrap();
+            if text.text != *msg {
+                text.text.clone_from(msg);
+                world.queue_trigger(debug_text, TextChanged);
+            }
+        },
+    );
 
     button
 }

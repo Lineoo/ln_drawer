@@ -28,7 +28,6 @@ pub const MSAA_STATE: MultisampleState = MultisampleState {
     alpha_to_coverage_enabled: false,
 };
 
-pub const TIMESTAMP_POLL: bool = false;
 pub const TIMESTAMP_COUNT: u32 = 256;
 pub const TIMESTAMP_BUFFER_SIZE: u64 = (TIMESTAMP_COUNT * 8) as u64;
 
@@ -59,9 +58,10 @@ pub struct Render {
     last_redraw: Option<Instant>,
 
     // diagnosis
-    timestamp_resolver: Buffer,
-    timestamp_mapper: Buffer,
-    timestamp_query: QuerySet,
+    pub timestamp_poll: bool,
+    pub timestamp_resolver: Buffer,
+    pub timestamp_mapper: Buffer,
+    pub timestamp_query: QuerySet,
 }
 
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;
@@ -164,6 +164,7 @@ impl Render {
             seq_remove: Vec::new(),
             sequence: Vec::new(),
             last_redraw: None,
+            timestamp_poll: false,
             timestamp_mapper,
             timestamp_resolver,
             timestamp_query,
@@ -210,7 +211,10 @@ impl Render {
     }
 
     fn msaa_texture(config: &SurfaceConfiguration) -> TextureDescriptor<'_> {
-        assert!(MSAA_SAMPLE_COUNT > 1, "msaa texture should be created only when msaa sample count > 1");
+        assert!(
+            MSAA_SAMPLE_COUNT > 1,
+            "msaa texture should be created only when msaa sample count > 1"
+        );
         TextureDescriptor {
             label: Some("render_msaa"),
             size: Extent3d {
@@ -413,7 +417,7 @@ impl Render {
 
         // GPU profiling
 
-        if TIMESTAMP_POLL {
+        if render.timestamp_poll {
             render.timestamp_mapper.map_async(MapMode::Read, .., |_| {});
             render.device.poll(PollType::wait_indefinitely()).unwrap();
             let period = render.queue.get_timestamp_period() as u64;
@@ -433,28 +437,36 @@ impl Render {
             }
 
             pairs.sort_unstable_keys();
-            let mut output = String::from("\n");
+
+            let mut output = String::new();
+
+            output += &format!(
+                "CPU redraw time: {:.3?}\n",
+                Instant::now().duration_since(now)
+            );
+
+            if let Some(last) = render.last_redraw {
+                output += &format!(
+                    "CPU frame time: {:.3?} | {}\n",
+                    (now - last),
+                    match refreshing {
+                        true => "ACTIVE",
+                        false => "INACTIVE",
+                    },
+                )
+            };
+
+            output += &format!("GPU timestamp period: {} ns\n", period);
+
             for (name, duration) in pairs {
                 let milis = duration.as_secs_f64() * (1e3f64);
-                output += &format!("{name:<30}{milis:>6.3}ms\n");
+                output += &format!("{name:<30}{milis:>6.3} ms\n");
             }
 
             world.queue_trigger(world.single::<Render>().unwrap(), output);
         }
 
         // CPU time tracing
-
-        if let Some(last) = render.last_redraw {
-            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-            lnwindow.window.set_title(&format!(
-                "frame time: {:.4} | {}",
-                (now - last).as_secs_f32(),
-                match refreshing {
-                    true => "ACTIVE",
-                    false => "INACTIVE",
-                },
-            ));
-        }
 
         render.last_redraw = Some(now);
     }
