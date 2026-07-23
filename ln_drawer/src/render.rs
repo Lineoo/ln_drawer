@@ -210,6 +210,7 @@ impl Render {
     }
 
     fn msaa_texture(config: &SurfaceConfiguration) -> TextureDescriptor<'_> {
+        assert!(MSAA_SAMPLE_COUNT > 1, "msaa texture should be created only when msaa sample count > 1");
         TextureDescriptor {
             label: Some("render_msaa"),
             size: Extent3d {
@@ -504,7 +505,7 @@ fn plain_rpass<'encoder>(
             resolve_target: None,
             ops: Operations {
                 load: LoadOp::Clear(render.clear_color),
-                store: StoreOp::Discard,
+                store: StoreOp::Store,
             },
             depth_slice: None,
         })],

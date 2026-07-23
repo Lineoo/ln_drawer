@@ -23,7 +23,7 @@ use wgpu::{
 
 use crate::{
     measures::{FI64Ext, Rectangle},
-    render::{MSAA_STATE, camera::Camera},
+    render::camera::Camera,
 };
 
 pub type ChunkKey = (i32, i32, u8);
@@ -702,7 +702,7 @@ fn render_pipelines(
                 })],
             }),
             depth_stencil: None,
-            multisample: MSAA_STATE,
+            multisample: Default::default(),
             multiview_mask: None,
             cache: None,
         })
