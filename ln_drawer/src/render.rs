@@ -43,7 +43,7 @@ pub struct Render {
     pub queue: Queue,
 
     // msaa
-    msaa_texture: Texture,
+    msaa_texture: Option<Texture>,
 
     // render pass
     pub clear_color: Color,
@@ -127,8 +127,6 @@ impl Render {
         let config = Render::configuration(&surface, &adapter, size);
         surface.configure(&device, &config);
 
-        let msaa_texture = device.create_texture(&Render::msaa_texel(size, &config));
-
         let timestamp_resolver = device.create_buffer(&BufferDescriptor {
             label: Some("timestamp_buffer_resolver"),
             size: TIMESTAMP_BUFFER_SIZE,
@@ -156,7 +154,7 @@ impl Render {
             adapter,
             device,
             queue,
-            msaa_texture,
+            msaa_texture: None,
             clear_color: Color::WHITE,
             preparing: false,
             seq_dirty: Vec::new(),
@@ -178,35 +176,45 @@ impl Render {
         let size = lnwindow.window.surface_size();
         self.config = Render::configuration(&self.surface, &self.adapter, size);
         self.surface.configure(&self.device, &self.config);
-
-        let desc = Render::msaa_texel(size, &self.config);
-        self.msaa_texture = self.device.create_texture(&desc);
+        self.msaa_texture = None;
     }
 
     pub fn surface_resize(&mut self, size: PhysicalSize<u32>) {
         self.config.width = size.width.max(1);
         self.config.height = size.height.max(1);
         self.surface.configure(&self.device, &self.config);
-
-        let desc = Render::msaa_texel(size, &self.config);
-        self.msaa_texture = self.device.create_texture(&desc);
+        self.msaa_texture = None;
     }
 
-    fn msaa_texel(size: PhysicalSize<u32>, config: &SurfaceConfiguration) -> TextureDescriptor<'_> {
+    fn screen_texel(
+        label: &'static str,
+        config: &SurfaceConfiguration,
+        sample_count: u32,
+        usage: TextureUsages,
+    ) -> TextureDescriptor<'static> {
         TextureDescriptor {
-            label: Some("render_msaa"),
+            label: Some(label),
             size: Extent3d {
-                width: size.width,
-                height: size.height,
+                width: config.width,
+                height: config.height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: MSAA_SAMPLE_COUNT,
+            sample_count,
             dimension: TextureDimension::D2,
             format: config.format,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT,
+            usage,
             view_formats: &[],
         }
+    }
+
+    fn msaa_texel(config: &SurfaceConfiguration) -> TextureDescriptor<'_> {
+        Self::screen_texel(
+            "render_msaa",
+            config,
+            MSAA_SAMPLE_COUNT,
+            TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT,
+        )
     }
 
     fn configuration(
@@ -313,13 +321,9 @@ impl Render {
 
         // setup render pass
 
-        let texture = render.surface.get_current_texture().unwrap();
-        let view = texture
-            .texture
-            .create_view(&TextureViewDescriptor::default());
-        let msaa_view = render
-            .msaa_texture
-            .create_view(&TextureViewDescriptor::default());
+        let surface = render.surface.get_current_texture().unwrap();
+        let surface_texture = &surface.texture;
+        let surface_view = surface_texture.create_view(&TextureViewDescriptor::default());
 
         let mut early_encoder = render
             .device
@@ -333,38 +337,11 @@ impl Render {
                 label: Some("main_encoder"),
             });
 
-        let attachment = if MSAA_SAMPLE_COUNT > 1 {
-            RenderPassColorAttachment {
-                view: &msaa_view,
-                resolve_target: Some(&view),
-                ops: Operations {
-                    load: LoadOp::Clear(render.clear_color),
-                    store: StoreOp::Discard,
-                },
-                depth_slice: None,
-            }
+        let mut rpass = if MSAA_SAMPLE_COUNT > 1 {
+            msaa_rpass(render, &surface_view, &mut encoder)
         } else {
-            RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Clear(render.clear_color),
-                    store: StoreOp::Discard,
-                },
-                depth_slice: None,
-            }
+            plain_rpass(render, &surface_view, &mut encoder)
         };
-
-        let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("main_rpass"),
-            color_attachments: &[Some(attachment)],
-            timestamp_writes: Some(RenderPassTimestampWrites {
-                query_set: &render.timestamp_query,
-                beginning_of_pass_write_index: Some(0),
-                end_of_pass_write_index: Some(1),
-            }),
-            ..Default::default()
-        });
 
         let mut diagnosis = RenderDiagnosis {
             query: &render.timestamp_query,
@@ -419,7 +396,7 @@ impl Render {
 
         let commands = [early_encoder.finish(), encoder.finish()];
         render.queue.submit(commands);
-        texture.present();
+        surface.present();
 
         // GPU profiling
 
@@ -466,6 +443,64 @@ impl Render {
 
         render.last_redraw = Some(now);
     }
+}
+
+fn msaa_rpass<'encoder>(
+    render: &mut Render,
+    surface_view: &wgpu::TextureView,
+    encoder: &'encoder mut CommandEncoder,
+) -> RenderPass<'encoder> {
+    // prepare msaa texture if not exist
+    let msaa_texture = render.msaa_texture.get_or_insert_with(|| {
+        let desc = Render::msaa_texel(&render.config);
+        render.device.create_texture(&desc)
+    });
+
+    let msaa_view = msaa_texture.create_view(&TextureViewDescriptor::default());
+
+    encoder.begin_render_pass(&RenderPassDescriptor {
+        label: Some("main_rpass"),
+        color_attachments: &[Some(RenderPassColorAttachment {
+            view: &msaa_view,
+            resolve_target: Some(surface_view),
+            ops: Operations {
+                load: LoadOp::Clear(render.clear_color),
+                store: StoreOp::Discard,
+            },
+            depth_slice: None,
+        })],
+        timestamp_writes: Some(RenderPassTimestampWrites {
+            query_set: &render.timestamp_query,
+            beginning_of_pass_write_index: Some(0),
+            end_of_pass_write_index: Some(1),
+        }),
+        ..Default::default()
+    })
+}
+
+fn plain_rpass<'encoder>(
+    render: &mut Render,
+    surface_view: &wgpu::TextureView,
+    encoder: &'encoder mut CommandEncoder,
+) -> RenderPass<'encoder> {
+    encoder.begin_render_pass(&RenderPassDescriptor {
+        label: Some("main_rpass"),
+        color_attachments: &[Some(RenderPassColorAttachment {
+            view: surface_view,
+            resolve_target: None,
+            ops: Operations {
+                load: LoadOp::Clear(render.clear_color),
+                store: StoreOp::Discard,
+            },
+            depth_slice: None,
+        })],
+        timestamp_writes: Some(RenderPassTimestampWrites {
+            query_set: &render.timestamp_query,
+            beginning_of_pass_write_index: Some(0),
+            end_of_pass_write_index: Some(1),
+        }),
+        ..Default::default()
+    })
 }
 
 impl RenderControl {
