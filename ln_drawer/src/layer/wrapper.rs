@@ -349,12 +349,12 @@ impl Element for LayerWrapper {
                     keep_redrawing: false,
                 })
             })),
-            draw: Some(Box::new(move |world, rpass, diagnosis| {
+            draw: Some(Box::new(move |world, rpass, mut extra| {
                 let this = world.single_fetch::<LayerWrapper>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
 
-                let (start, end) = diagnosis.assign("layer_wrapper");
-                diagnosis.write(rpass, start);
+                let (start, end) = extra.profile_assign("layer_wrapper");
+                extra.profile_write(rpass, start);
 
                 this.layer
                     .render(rpass, &camera, this.render_debugging, false);
@@ -363,7 +363,7 @@ impl Element for LayerWrapper {
                     .scratch
                     .render(rpass, &camera, this.render_debugging, this.erase);
 
-                diagnosis.write(rpass, end);
+                extra.profile_write(rpass, end);
             })),
         });
 

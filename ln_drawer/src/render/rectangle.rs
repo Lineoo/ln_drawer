@@ -183,19 +183,19 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
         let control = world.insert(RenderControl {
             prepare: None,
-            draw: Some(Box::new(move |world, rpass, diagnosis| {
+            draw: Some(Box::new(move |world, rpass, mut extra| {
                 let pipeline = world.single_fetch::<RectangleMeshPipeline<M>>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
 
-                let (start, end) = diagnosis.assign("rectangle");
-                diagnosis.write(rpass, start);
+                let (start, end) = extra.profile_assign("rectangle");
+                extra.profile_write(rpass, start);
 
                 rpass.set_pipeline(&pipeline.pipeline);
                 rpass.set_bind_group(0, &camera.bind, &[]);
                 rpass.set_bind_group(1, &bind, &[]);
                 rpass.draw(0..4, 0..1);
 
-                diagnosis.write(rpass, end);
+                extra.profile_write(rpass, end);
             })),
         });
 

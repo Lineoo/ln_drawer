@@ -9,11 +9,11 @@ use std::time::{Duration, Instant};
 
 use ln_world::{Element, Handle, World};
 use wgpu::{
-    Adapter, Buffer, BufferDescriptor, BufferUsages, Color, CommandEncoderDescriptor,
-    CompositeAlphaMode, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features,
-    Instance, Limits, LoadOp, MapMode, MemoryHints, MultisampleState, Operations, PollType,
-    PowerPreference, PresentMode, QuerySet, QuerySetDescriptor, QueryType, Queue, RenderPass,
-    RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites,
+    Adapter, Buffer, BufferDescriptor, BufferUsages, Color, CommandEncoder,
+    CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor, ExperimentalFeatures,
+    Extent3d, Features, Instance, Limits, LoadOp, MapMode, MemoryHints, MultisampleState,
+    Operations, PollType, PowerPreference, PresentMode, QuerySet, QuerySetDescriptor, QueryType,
+    Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites,
     RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration, Texture, TextureDescriptor,
     TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor, Trace,
 };
@@ -65,7 +65,7 @@ pub struct Render {
 }
 
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;
-type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, &mut RenderDiagnosis<'_>)>;
+type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, RenderExtra<'_, '_>)>;
 
 /// Need to call `RenderControl::reorder` before it can render normally.
 pub struct RenderControl {
@@ -78,6 +78,12 @@ pub struct RenderControl {
 
 pub struct RenderInformation {
     pub keep_redrawing: bool,
+}
+
+#[non_exhaustive]
+pub struct RenderExtra<'a, 'b> {
+    pub early_encoder: &'a mut CommandEncoder,
+    pub diagnosis: &'a mut RenderDiagnosis<'b>,
 }
 
 pub struct RenderDiagnosis<'a> {
@@ -315,6 +321,12 @@ impl Render {
             .msaa_texture
             .create_view(&TextureViewDescriptor::default());
 
+        let mut early_encoder = render
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("early_encoder"),
+            });
+
         let mut encoder = render
             .device
             .create_command_encoder(&CommandEncoderDescriptor {
@@ -344,6 +356,7 @@ impl Render {
         };
 
         let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("main_rpass"),
             color_attachments: &[Some(attachment)],
             timestamp_writes: Some(RenderPassTimestampWrites {
                 query_set: &render.timestamp_query,
@@ -365,7 +378,14 @@ impl Render {
             world.enter(view, || {
                 let mut control = world.fetch_mut(control).unwrap();
                 if let Some(draw) = &mut control.draw {
-                    draw(world, &mut rpass, &mut diagnosis);
+                    draw(
+                        world,
+                        &mut rpass,
+                        RenderExtra {
+                            early_encoder: &mut early_encoder,
+                            diagnosis: &mut diagnosis,
+                        },
+                    );
                 }
             });
         }
@@ -388,17 +408,18 @@ impl Render {
             TIMESTAMP_BUFFER_SIZE,
         );
 
-        // tasks submission
-
-        render.queue.submit([encoder.finish()]);
-        texture.present();
-
         // active refreshing
 
         if refreshing {
             let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
             lnwindow.window.request_redraw();
         }
+
+        // tasks submission
+
+        let commands = [early_encoder.finish(), encoder.finish()];
+        render.queue.submit(commands);
+        texture.present();
 
         // GPU profiling
 
@@ -467,6 +488,16 @@ impl RenderControl {
         } else {
             render.seq_remove.push(handle);
         }
+    }
+}
+
+impl RenderExtra<'_, '_> {
+    pub fn profile_assign(&mut self, name: &'static str) -> (u32, u32) {
+        self.diagnosis.assign(name)
+    }
+
+    pub fn profile_write(&mut self, rpass: &mut RenderPass, index: u32) {
+        self.diagnosis.write(rpass, index);
     }
 }
 
