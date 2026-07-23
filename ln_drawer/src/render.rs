@@ -15,8 +15,8 @@ use wgpu::{
     MultisampleState, Operations, PollType, PowerPreference, PresentMode, QuerySet,
     QuerySetDescriptor, QueryType, Queue, RenderPass, RenderPassColorAttachment,
     RenderPassDescriptor, RenderPassTimestampWrites, RequestAdapterOptions, StoreOp, Surface,
-    SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureUsages, TextureView, TextureViewDescriptor, Trace,
+    SurfaceColorSpace, SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension,
+    TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -107,6 +107,7 @@ impl Render {
                 power_preference: PowerPreference::LowPower,
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface),
+                apply_limit_buckets: false,
             })
             .await
             .unwrap();
@@ -227,7 +228,7 @@ impl Render {
             sample_count: MSAA_SAMPLE_COUNT,
             dimension: TextureDimension::D2,
             format: config.format,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT,
             view_formats: &[],
         }
     }
@@ -277,6 +278,7 @@ impl Render {
                     *caps.first().unwrap()
                 }
             },
+            color_space: SurfaceColorSpace::Auto,
             view_formats: vec![],
         };
 
@@ -427,7 +429,7 @@ impl Render {
 
         let commands = [early_encoder.finish(), encoder.finish()];
         render.queue.submit(commands);
-        surface.present();
+        render.queue.present(surface);
 
         // GPU profiling
 
@@ -435,7 +437,7 @@ impl Render {
             render.timestamp_mapper.map_async(MapMode::Read, .., |_| {});
             render.device.poll(PollType::wait_indefinitely()).unwrap();
             let period = render.queue.get_timestamp_period() as u64;
-            let view = render.timestamp_mapper.get_mapped_range(..);
+            let view = render.timestamp_mapper.get_mapped_range(..).unwrap();
             let (chunks, _) = view.as_chunks::<8>();
             let mut timestamps = [0u64; TIMESTAMP_COUNT as usize];
             for (i, &chunk) in chunks.iter().enumerate() {

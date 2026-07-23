@@ -487,7 +487,7 @@ fn chunk_readback(
     encoder.map_buffer_on_submit(&readback_buffer, MapMode::Read, .., move |ret| {
         ret.unwrap();
 
-        let view = inner.get_mapped_range(..);
+        let view = inner.get_mapped_range(..).unwrap();
         tx.send(view.to_vec()).unwrap();
     });
 
