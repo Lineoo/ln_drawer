@@ -90,6 +90,7 @@ impl BrushPipeline {
         let scratch = Layer {
             chunks: HashMap::new(),
             controlled: false,
+            mipmap_levels: 1,
         };
 
         BrushPipeline {
@@ -198,7 +199,7 @@ impl BrushPipeline {
             return;
         };
 
-        for level in 0..self.layer.mipmap_levels {
+        for level in 0..self.scratch.mipmap_levels {
             let (src, dst) = super::rect_to_chunks(stroke.dirty, level, self.layer.chunk_size);
             for x in src.0..dst.0 {
                 for y in src.1..dst.1 {
@@ -242,7 +243,7 @@ impl BrushPipeline {
             self.layer.pool.push(chunk);
         }
 
-        for level in 0..self.layer.mipmap_levels {
+        for level in 0..main.mipmap_levels {
             let (src, dst) = super::rect_to_chunks(stroke.dirty, level, self.layer.chunk_size);
             for x in src.0..dst.0 {
                 for y in src.1..dst.1 {
@@ -364,9 +365,8 @@ fn brush_pipelines(
         label: Some("layer_brush"),
         source: ShaderSource::Wgsl(
             format!(
-                "{}{}{}",
+                "{}{}",
                 include_str!("lib_colorspace.wgsl"),
-                include_str!("lib_dispatch.wgsl"),
                 include_str!("round.wgsl"),
             )
             .into(),

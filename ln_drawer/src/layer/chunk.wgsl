@@ -3,26 +3,24 @@ struct VertexOutput {
     @location(0) uv: vec2f,
 }
 
+struct Rectangle {
+    coords: vec2i,
+    size: vec2u,
+}
+
 @group(1) @binding(0) var texture_sampler: sampler;
 
-@group(2) @binding(0) var<uniform> chunk_key: vec3i;
-@group(2) @binding(1) var texture: texture_2d<f32>;
-
-const texture_base_size: i32 = 512;
+@group(2) @binding(0) var texture: texture_2d<f32>;
+@group(2) @binding(1) var<uniform> chunk: Rectangle;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
-    let texel_size = texture_base_size * i32(exp2(f32(chunk_key.z)));
-    let world_origin = chunk_key.xy * texel_size;
-
-    let world_space = vec2i(
-        world_origin.x + texel_size * (i32(index) / 2),
-        world_origin.y + texel_size * (i32(index) % 2)
-    );
+    let texture_uv = vec2u(index / 2, index % 2);
+    let world_space = chunk.coords + vec2i(chunk.size * texture_uv);
 
     var ret: VertexOutput;
     ret.pos = vec4f(world_to_clip(world_space), 0.0, 1.0);
-    ret.uv = vec2f(vec2i(i32(index) / 2, i32(index) % 2));
+    ret.uv = vec2f(texture_uv);
     return ret;
 }
 

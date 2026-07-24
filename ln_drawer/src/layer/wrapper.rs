@@ -71,7 +71,6 @@ impl LayerWrapper {
             render.device.clone(),
             render.queue.clone(),
             render.config.format,
-            8,
             512,
             &camera_bind.layout,
         ));
@@ -88,7 +87,7 @@ impl LayerWrapper {
             chunk_render_layout: brush.layer.chunk_render_layout.clone(),
             chunk_draw_layout: brush.layer.chunk_draw_layout.clone(),
             chunk_size: brush.layer.chunk_size,
-            mipmap_levels: brush.layer.mipmap_levels,
+            mipmap_levels: 8,
         };
 
         let camera = world.single_fetch::<Camera>().unwrap();
@@ -129,6 +128,7 @@ impl LayerWrapper {
         LayerWrapper {
             main: Layer {
                 chunks: HashMap::new(),
+                mipmap_levels: 8,
                 controlled: true,
             },
             brush,

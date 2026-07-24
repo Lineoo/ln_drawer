@@ -1,33 +1,45 @@
-// include! dispatch colorspace
+// include! colorspace
 
-@group(1) @binding(0) var destination: texture_storage_2d<rgba8unorm, read_write>;
-@group(2) @binding(0) var source: texture_storage_2d<rgba8unorm, read_write>;
-@group(2) @binding(1) var<uniform> source_key: vec3i;
+struct Rectangle {
+    coords: vec2i,
+    size: vec2u,
+}
+
+@group(0) @binding(0) var<uniform> dispatch: Rectangle;
+
+@group(1) @binding(0) var destination_texture: texture_storage_2d<rgba8unorm, read_write>;
+@group(1) @binding(1) var<uniform> destination: Rectangle;
+
+@group(2) @binding(0) var source_texture: texture_storage_2d<rgba8unorm, read_write>;
+@group(2) @binding(1) var<uniform> source: Rectangle;
 
 @compute @workgroup_size(16, 16)
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
-    if !(area_satisfied(id) && coords_satisfied(id)) { return; }
+    let scale = destination.size / textureDimensions(destination_texture);
+    let position = dispatch.coords + vec2i(id.xy * scale);
 
-    let src_texl_size = i32(exp2(f32(source_key.z)));
-    let src_real_size = texture_base_size * src_texl_size;
-    let src_chunk_min = (source_key.xy) * src_real_size;
-    let src_chunk_max = (source_key.xy + vec2i(1)) * src_real_size;
-    let area = area(id);
-    if area.x < src_chunk_min.x || area.y < src_chunk_min.y || area.x >= src_chunk_max.x || area.y >= src_chunk_max.y { return; }
+    if (any(position >= dispatch.coords + vec2i(dispatch.size))) { return; }
 
-    let smol = coords(id) % 256 * 2;
+    if (any(position < destination.coords)) { return; }
+    if (any(position >= destination.coords + vec2i(destination.size))) { return; }
 
-    let c0 = srgb_to_linear(textureLoad(source, smol));
-    let c1 = srgb_to_linear(textureLoad(source, smol + vec2i(0, 1)));
-    let c2 = srgb_to_linear(textureLoad(source, smol + vec2i(1, 1)));
-    let c3 = srgb_to_linear(textureLoad(source, smol + vec2i(1, 0)));
+    if (any(position < source.coords)) { return; }
+    if (any(position >= source.coords + vec2i(source.size))) { return; }
 
-    let a = c0.a + c1.a + c2.a + c3.a;
+    // Assumption: source texture is always aligned sub-mipmap texture
+    let dst_coords = (position - destination.coords) / vec2i(scale);
+    let src_coords = dst_coords % 256 * 2;
 
-    if a < 1e-6 { 
-        textureStore(destination, coords(id), vec4f(0));
-    } else {
-        let rgb = (c0.rgb * c0.a + c1.rgb * c1.a + c2.rgb * c2.a + c3.rgb * c3.a) / a;
-        textureStore(destination, coords(id), linear_to_srgb(vec4f(rgb, a / 4)));
-    }
+    let c0_ump = srgb_to_linear(textureLoad(source_texture, src_coords));
+    let c1_ump = srgb_to_linear(textureLoad(source_texture, src_coords + vec2i(0, 1)));
+    let c2_ump = srgb_to_linear(textureLoad(source_texture, src_coords + vec2i(1, 1)));
+    let c3_ump = srgb_to_linear(textureLoad(source_texture, src_coords + vec2i(1, 0)));
+
+    let c0 = vec4f(c0_ump.rgb, 1) * c0_ump.a;
+    let c1 = vec4f(c1_ump.rgb, 1) * c1_ump.a;
+    let c2 = vec4f(c2_ump.rgb, 1) * c2_ump.a;
+    let c3 = vec4f(c3_ump.rgb, 1) * c3_ump.a;
+
+    let fnl = (c0 + c1 + c2 + c3) / 4;
+    textureStore(destination_texture, dst_coords, select(linear_to_srgb(vec4f(fnl.rgb / fnl.a, fnl.a)), vec4f(0), fnl.a < 1e-6));
 }

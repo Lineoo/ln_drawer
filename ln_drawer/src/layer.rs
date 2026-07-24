@@ -9,7 +9,7 @@ pub mod wrapper;
 use std::mem::size_of;
 
 use bytemuck::bytes_of;
-use glam::UVec2;
+use glam::{IVec2, UVec2};
 use hashbrown::HashMap;
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
@@ -44,7 +44,6 @@ pub struct LayerPipeline {
     queue: Queue,
 
     chunk_size: u32,
-    mipmap_levels: u8,
     render_debugging: bool,
 
     pool: Vec<Chunk>,
@@ -66,6 +65,7 @@ pub struct LayerPipeline {
 
 pub struct Layer {
     pub chunks: HashMap<ChunkKey, Chunk>,
+    pub mipmap_levels: u8,
     pub controlled: bool,
 }
 
@@ -90,15 +90,15 @@ struct MergePipelines {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct DispatchUniform {
-    dispatch_coords: [i32; 2],
-    dispatch_size: [u32; 2],
+    coords: [i32; 2],
+    size: [u32; 2],
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct ChunkUniform {
-    chunk: [i32; 3],
-    _pad: u32,
+    coords: [i32; 2],
+    size: [u32; 2],
 }
 
 impl LayerPipeline {
@@ -106,12 +106,9 @@ impl LayerPipeline {
         device: Device,
         queue: Queue,
         surface_format: TextureFormat,
-        mipmap_levels: u8,
         chunk_size: u32,
         camera_bind_layout: &BindGroupLayout,
     ) -> Self {
-        assert!(mipmap_levels >= 1, "mipmap_levels must be >= 1");
-
         let chunk_render_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_RENDER);
         let chunk_draw_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_DRAW);
         let dispatch_layout = device.create_bind_group_layout(&LAYOUT_DISPATCH);
@@ -138,7 +135,6 @@ impl LayerPipeline {
             device,
             queue,
             chunk_size,
-            mipmap_levels,
             render_debugging: false,
             pool: Vec::new(),
             dispatch,
@@ -157,7 +153,7 @@ impl LayerPipeline {
     /// Assume `self.controlled` is false.
     pub fn prepare_chunks(&mut self, layer: &mut Layer, rect: Rectangle) {
         debug_assert!(!layer.controlled, "controlled layer cannot prepare chunks");
-        for mipmap in 0..self.mipmap_levels {
+        for mipmap in 0..layer.mipmap_levels {
             let (src, dst) = rect_to_chunks(rect, mipmap, self.chunk_size);
             for chunk_x in src.0..dst.0 {
                 for chunk_y in src.1..dst.1 {
@@ -172,7 +168,7 @@ impl LayerPipeline {
     }
 
     pub fn generate_mipmaps(&self, layer: &Layer, dirty: Rectangle) {
-        if self.mipmap_levels <= 1 {
+        if layer.mipmap_levels <= 1 {
             return;
         }
 
@@ -191,9 +187,9 @@ impl LayerPipeline {
         cpass.set_pipeline(&self.mipmap_pipeline);
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
 
-        for src_level in 0..self.mipmap_levels - 1 {
+        for src_level in 0..layer.mipmap_levels - 1 {
             let (src, dst) = rect_to_chunks(dirty, src_level, self.chunk_size);
-            let scale = 1u32 << src_level as u32;
+            let scale = 1u32 << src_level;
             for x in src.0..dst.0 {
                 for y in src.1..dst.1 {
                     let src_key = (x, y, src_level);
@@ -253,8 +249,8 @@ impl LayerPipeline {
                 continue;
             };
 
-            cpass.set_bind_group(1, Some(&scratch_chunk.draw), &[]);
-            cpass.set_bind_group(2, Some(&main_chunk.draw), &[]);
+            cpass.set_bind_group(1, Some(&main_chunk.draw), &[]);
+            cpass.set_bind_group(2, Some(&scratch_chunk.draw), &[]);
             dispatch_workgroups(&mut cpass, dirty.extend);
         }
 
@@ -263,15 +259,19 @@ impl LayerPipeline {
     }
 
     pub fn recycle_chunk(&mut self, chunk: &Chunk, key: ChunkKey) {
+        let rect = chunk_to_rect(key, self.chunk_size);
         self.queue.write_buffer(
             &chunk.key,
             0,
             bytes_of(&ChunkUniform {
-                chunk: [key.0, key.1, key.2 as i32],
-                _pad: 0,
+                coords: rect.origin.into(),
+                size: rect.extend.into(),
             }),
         );
+        self.clear_chunk(chunk);
+    }
 
+    pub fn clear_chunk(&mut self, chunk: &Chunk) {
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor {
@@ -294,7 +294,7 @@ impl LayerPipeline {
     pub fn render(&self, layer: &Layer, rpass: &mut RenderPass, camera: &Camera, erase: bool) {
         let view_rect = camera.world_view_rect();
         let mipmap = mipmap_floor(camera.zoom);
-        let actual_mipmap = mipmap.min(self.mipmap_levels.saturating_sub(1));
+        let actual_mipmap = mipmap.min(layer.mipmap_levels.saturating_sub(1));
         let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, self.chunk_size);
 
         match (self.render_debugging, erase) {
@@ -355,8 +355,8 @@ fn dispatch_workgroups(cpass: &mut ComputePass, size: UVec2) {
 
 fn write_dispatch_uniform(queue: &Queue, buffer: &Buffer, dirty: Rectangle) {
     let uniform = DispatchUniform {
-        dispatch_coords: dirty.origin.into(),
-        dispatch_size: dirty.extend.into(),
+        coords: dirty.origin.into(),
+        size: dirty.extend.into(),
     };
     queue.write_buffer(buffer, 0, bytes_of(&uniform));
 }
@@ -365,8 +365,16 @@ fn mipmap_floor(zoom: i64) -> u8 {
     (-(zoom.q32_floor() + 1)).max(0) as u8
 }
 
+fn chunk_to_rect((x, y, z): ChunkKey, chunk_size: u32) -> Rectangle {
+    let size = chunk_size << z;
+    Rectangle {
+        origin: IVec2::new(x, y) * size as i32,
+        extend: UVec2::splat(size),
+    }
+}
+
 fn rect_to_chunks(rect: Rectangle, mipmap: u8, chunk_size: u32) -> ((i32, i32), (i32, i32)) {
-    let size = chunk_size as i32 * (1i32 << mipmap as i32);
+    let size = (chunk_size << mipmap) as i32;
     let chunk_src = (rect.left().div_euclid(size), rect.down().div_euclid(size));
     let chunk_dst = (
         (rect.right() - 1).div_euclid(size) + 1,
@@ -403,17 +411,19 @@ fn create_chunk_texture(device: &Device, chunk_size: u32) -> Texture {
 
 fn create_chunk(
     device: &Device,
-    _chunk_size: u32,
+    chunk_size: u32,
     chunk_render_layout: &BindGroupLayout,
     chunk_draw_layout: &BindGroupLayout,
     texture: Texture,
     key: ChunkKey,
 ) -> Chunk {
-    let key_buffer = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("layer_chunk_key"),
+    let rect = chunk_to_rect(key, chunk_size);
+
+    let buffer = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("layer_chunk_buffer"),
         contents: bytes_of(&ChunkUniform {
-            chunk: [key.0, key.1, key.2 as i32],
-            _pad: 0,
+            coords: rect.origin.into(),
+            size: rect.extend.into(),
         }),
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
@@ -438,15 +448,15 @@ fn create_chunk(
         entries: &[
             BindGroupEntry {
                 binding: 0,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &key_buffer,
-                    offset: 0,
-                    size: None,
-                }),
+                resource: BindingResource::TextureView(&texture_fragment_view),
             },
             BindGroupEntry {
                 binding: 1,
-                resource: BindingResource::TextureView(&texture_fragment_view),
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &buffer,
+                    offset: 0,
+                    size: None,
+                }),
             },
         ],
     });
@@ -462,7 +472,7 @@ fn create_chunk(
             BindGroupEntry {
                 binding: 1,
                 resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &key_buffer,
+                    buffer: &buffer,
                     offset: 0,
                     size: None,
                 }),
@@ -471,7 +481,7 @@ fn create_chunk(
     });
 
     Chunk {
-        key: key_buffer,
+        key: buffer,
         texture,
         render: render_bind,
         draw: draw_bind,
@@ -537,21 +547,21 @@ const LAYOUT_CHUNK_RENDER: BindGroupLayoutDescriptor = BindGroupLayoutDescriptor
     entries: &[
         BindGroupLayoutEntry {
             binding: 0,
-            visibility: ShaderStages::VERTEX_FRAGMENT,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 1,
             visibility: ShaderStages::FRAGMENT,
             ty: BindingType::Texture {
                 sample_type: TextureSampleType::Float { filterable: true },
                 view_dimension: TextureViewDimension::D2,
                 multisampled: false,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::VERTEX_FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
             },
             count: None,
         },
@@ -723,8 +733,7 @@ fn mipmap_pipeline(
         label: Some("layer_mipmap"),
         source: ShaderSource::Wgsl(
             format!(
-                "{}{}{}",
-                include_str!("layer/lib_dispatch.wgsl"),
+                "{}{}",
                 include_str!("layer/lib_colorspace.wgsl"),
                 include_str!("layer/mipmap.wgsl"),
             )
@@ -761,9 +770,8 @@ fn merge_pipelines(
         label: Some("layer_merge"),
         source: ShaderSource::Wgsl(
             format!(
-                "{}{}{}",
+                "{}{}",
                 include_str!("layer/lib_colorspace.wgsl"),
-                include_str!("layer/lib_dispatch.wgsl"),
                 include_str!("layer/merge.wgsl"),
             )
             .into(),
