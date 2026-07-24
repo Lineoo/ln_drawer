@@ -109,6 +109,7 @@ pub struct Brush {
 
 struct Stroke {
     dirty: Rectangle,
+    chunks: Vec<super::ChunkKey>,
 }
 
 pub struct BrushConfig {
@@ -168,7 +169,10 @@ impl Brush {
         if let Some(stroke) = &mut self.stroke {
             stroke.dirty = stroke.dirty.grow(dirty);
         } else {
-            self.stroke = Some(Stroke { dirty });
+            self.stroke = Some(Stroke {
+                dirty,
+                chunks: vec![],
+            });
         }
 
         let mut draw_stg = Vec::with_capacity(draw_buf.len());
@@ -208,7 +212,13 @@ impl Brush {
         let (src, dst) = super::rect_to_chunks(dirty, 0, self.scratch.chunk_size);
         for x in src.0..dst.0 {
             for y in src.1..dst.1 {
-                if let Some(chunk) = self.scratch.chunks.get(&(x, y, 0)) {
+                let key = (x, y, 0);
+                if let Some(chunk) = self.scratch.chunks.get(&key) {
+                    if let Some(stroke) = &mut self.stroke {
+                        if !stroke.chunks.contains(&key) {
+                            stroke.chunks.push(key);
+                        }
+                    }
                     cpass.set_bind_group(1, Some(&chunk.draw), &[]);
                     dispatch_workgroups(dirty, (x, y, 0), &mut cpass);
                 }
@@ -244,7 +254,7 @@ impl Brush {
         // TODO may prepare more chunks than you need, we might need
         //      to record extra chunks information
         main.prepare_chunks(stroke.dirty);
-        main.merge_from(&self.scratch, stroke.dirty, erase);
+        main.merge_from(&self.scratch, stroke.dirty, erase, &stroke.chunks);
         main.generate_mipmaps(stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
@@ -259,7 +269,7 @@ impl Brush {
             return;
         };
 
-        main.merge_from(&self.scratch, stroke.dirty, erase);
+        main.merge_from(&self.scratch, stroke.dirty, erase, &stroke.chunks);
         main.generate_mipmaps(stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {

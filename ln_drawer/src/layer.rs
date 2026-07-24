@@ -244,7 +244,7 @@ impl Layer {
         self.queue.submit([encoder.finish()]);
     }
 
-    pub fn merge_from(&self, scratch: &Layer, dirty: Rectangle, erase: bool) {
+    pub fn merge_from(&self, scratch: &Layer, dirty: Rectangle, erase: bool, chunks: &[ChunkKey]) {
         write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
 
         let mut encoder = self
@@ -264,23 +264,16 @@ impl Layer {
 
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
 
-        let (src, dst) = rect_to_chunks(dirty, 0, self.chunk_size);
-        for x in src.0..dst.0 {
-            for y in src.1..dst.1 {
-                let key = (x, y, 0);
-
-                let Some(main_chunk) = self.chunks.get(&key) else {
-                    continue;
-                };
-
-                let Some(scratch_chunk) = scratch.chunks.get(&key) else {
-                    continue;
-                };
-
-                cpass.set_bind_group(1, Some(&scratch_chunk.draw), &[]);
-                cpass.set_bind_group(2, Some(&main_chunk.draw), &[]);
-                dispatch_workgroups(&mut cpass, dirty.extend);
-            }
+        for &key in chunks {
+            let Some(main_chunk) = self.chunks.get(&key) else {
+                continue;
+            };
+            let Some(scratch_chunk) = scratch.chunks.get(&key) else {
+                continue;
+            };
+            cpass.set_bind_group(1, Some(&scratch_chunk.draw), &[]);
+            cpass.set_bind_group(2, Some(&main_chunk.draw), &[]);
+            dispatch_workgroups(&mut cpass, dirty.extend);
         }
 
         drop(cpass);
