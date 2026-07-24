@@ -16,7 +16,10 @@ use winit::{
 };
 
 use crate::{
-    layer::wrapper::{LayerDebugMessage, LayerWrapper},
+    layer::{
+        modifier::Modifier,
+        wrapper::{LayerDebugMessage, LayerWrapper},
+    },
     layout::{
         luni::{LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
@@ -31,7 +34,6 @@ use crate::{
         text::{Text, TextChanged},
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
-    stroke::modifier::Modifier,
     theme::Theme,
     tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,

@@ -22,7 +22,9 @@ use crate::{
     layer::{
         Layer, LayerConfig,
         brush::{Brush, BrushConfig},
-        stream::{self, StreamConfig, ThreadInput, ThreadOutput},
+        interpolate::Draw,
+        modifier::Modifier,
+        stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
     },
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
@@ -32,7 +34,6 @@ use crate::{
         rounded::{RoundedRect, RoundedRectDescriptor},
     },
     save::{Autosave, SaveDatabase},
-    stroke::{interpolate::Draw, modifier::Modifier},
     tools::{
         collider::ToolCollider,
         pointer::{PointerHover, PointerHoverStatus},
@@ -116,7 +117,7 @@ impl LayerWrapper {
             .unwrap();
 
         let thread = std::thread::spawn(move || {
-            stream::loading_thread(stream_config, input_rx, output_tx).unwrap();
+            loading_thread(stream_config, input_rx, output_tx).unwrap();
         });
 
         let ui_camera = world.single_fetch::<UICamera>().unwrap();

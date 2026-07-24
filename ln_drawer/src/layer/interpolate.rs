@@ -2,7 +2,7 @@ use glam::I64Vec2;
 
 use crate::{
     measures::FI64Ext,
-    stroke::modifier::{DrawProcessed, Modifier},
+    layer::modifier::{DrawProcessed, Modifier},
 };
 
 pub struct Interpolation {
@@ -41,7 +41,7 @@ impl Interpolation {
             .q32_as_f64()
             .distance(next.position.q32_as_f64())
             >= (self.step)(curr_proc) as f64
-            && buf.len() < super::MAX_STROKE as usize
+            && buf.len() < super::brush::MAX_STROKE as usize
         {
             let step = (self.step)(curr_proc);
             curr_draw.position = I64Vec2::q32_from_f64(

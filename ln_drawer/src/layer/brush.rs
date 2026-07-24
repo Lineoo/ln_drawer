@@ -12,17 +12,18 @@ use wgpu::{
 };
 
 use crate::{
-    layer::{Layer, LayerConfig, stream::ThreadInput},
-    measures::{FI64Ext, Rectangle},
-    stroke::{
+    layer::{
+        Layer, LayerConfig,
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
         modifier::{DrawProcessedStorage, Modifier},
+        stream::ThreadInput,
     },
+    measures::{FI64Ext, Rectangle},
 };
 
 const WORKGROUP_SIZE: u32 = 16;
-const MAX_STROKE: u64 = 200;
+pub const MAX_STROKE: u64 = 200;
 
 const DEFAULT_INTERPOLATION: Interpolation = Interpolation {
     step: |draw| draw.size / 5.0,
@@ -352,9 +353,9 @@ fn brush_pipelines(
         source: ShaderSource::Wgsl(
             format!(
                 "{}{}{}",
-                include_str!("../stroke/lib_colorspace.wgsl"),
-                include_str!("../stroke/lib_dispatch.wgsl"),
-                include_str!("../stroke/round.wgsl"),
+                include_str!("lib_colorspace.wgsl"),
+                include_str!("lib_dispatch.wgsl"),
+                include_str!("round.wgsl"),
             )
             .into(),
         ),

@@ -1,4 +1,8 @@
 pub mod brush;
+pub mod dirty;
+pub mod interpolate;
+pub mod modifier;
+pub mod shape;
 pub mod stream;
 pub mod wrapper;
 
@@ -744,9 +748,9 @@ fn mipmap_pipeline(
         source: ShaderSource::Wgsl(
             format!(
                 "{}{}{}",
-                include_str!("stroke/lib_dispatch.wgsl"),
-                include_str!("stroke/lib_colorspace.wgsl"),
-                include_str!("stroke/mipmap.wgsl"),
+                include_str!("layer/lib_dispatch.wgsl"),
+                include_str!("layer/lib_colorspace.wgsl"),
+                include_str!("layer/mipmap.wgsl"),
             )
             .into(),
         ),
@@ -782,8 +786,8 @@ fn merge_pipelines(
         source: ShaderSource::Wgsl(
             format!(
                 "{}{}{}",
-                include_str!("stroke/lib_colorspace.wgsl"),
-                include_str!("stroke/lib_dispatch.wgsl"),
+                include_str!("layer/lib_colorspace.wgsl"),
+                include_str!("layer/lib_dispatch.wgsl"),
                 include_str!("layer/merge.wgsl"),
             )
             .into(),
