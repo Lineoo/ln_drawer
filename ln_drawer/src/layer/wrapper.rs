@@ -5,6 +5,7 @@ use std::{
 };
 
 use glam::{DVec2, IVec2, UVec2, Vec2};
+use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
 use wgpu::{
@@ -20,8 +21,8 @@ use winit::event::PointerKind;
 
 use crate::{
     layer::{
-        Layer, LayerConfig,
-        brush::{Brush, BrushConfig},
+        Layer, LayerPipeline,
+        brush::BrushPipeline,
         interpolate::Draw,
         modifier::Modifier,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
@@ -45,9 +46,8 @@ use crate::{
 pub struct LayerDebugMessage(pub String);
 
 pub struct LayerWrapper {
-    pub layer: Layer,
-    pub brush: Brush,
-    pub render_debugging: bool,
+    pub main: Layer,
+    pub brush: BrushPipeline,
     pub erase: bool,
 
     brush_preview: Handle<RoundedRect>,
@@ -67,30 +67,14 @@ impl LayerWrapper {
         let render = world.single_fetch::<Render>().unwrap();
         let camera_bind = world.single_fetch::<CameraBind>().unwrap();
 
-        let layer = Layer::new(LayerConfig {
-            device: render.device.clone(),
-            queue: render.queue.clone(),
-            surface_format: render.config.format,
-            mipmap_levels: 8,
-            chunk_size: 512,
-            controlled: true,
-            camera_bind_layout: camera_bind.layout.clone(),
-        });
-
-        let brush = Brush::new(BrushConfig {
-            device: render.device.clone(),
-            queue: render.queue.clone(),
-            chunk_draw_layout: layer.chunk_draw_layout.clone(),
-            scratch: LayerConfig {
-                device: render.device.clone(),
-                queue: render.queue.clone(),
-                surface_format: render.config.format,
-                mipmap_levels: 1,
-                chunk_size: 512,
-                controlled: false,
-                camera_bind_layout: camera_bind.layout.clone(),
-            },
-        });
+        let brush = BrushPipeline::new(LayerPipeline::new(
+            render.device.clone(),
+            render.queue.clone(),
+            render.config.format,
+            8,
+            512,
+            &camera_bind.layout,
+        ));
 
         let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
 
@@ -101,10 +85,10 @@ impl LayerWrapper {
             database,
             device: render.device.clone(),
             queue: render.queue.clone(),
-            chunk_render_layout: layer.chunk_render_layout.clone(),
-            chunk_draw_layout: layer.chunk_draw_layout.clone(),
-            chunk_size: layer.chunk_size,
-            mipmap_levels: layer.mipmap_levels,
+            chunk_render_layout: brush.layer.chunk_render_layout.clone(),
+            chunk_draw_layout: brush.layer.chunk_draw_layout.clone(),
+            chunk_size: brush.layer.chunk_size,
+            mipmap_levels: brush.layer.mipmap_levels,
         };
 
         let camera = world.single_fetch::<Camera>().unwrap();
@@ -143,9 +127,11 @@ impl LayerWrapper {
         let present_pipeline = present_pipeline(&render.device, &render.config);
 
         LayerWrapper {
-            layer,
+            main: Layer {
+                chunks: HashMap::new(),
+                controlled: true,
+            },
             brush,
-            render_debugging: false,
             erase: false,
             brush_preview,
             compositing_texture,
@@ -273,7 +259,7 @@ impl LayerWrapper {
                     } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
                             this.brush
-                                .submit_stream(&mut this.layer, &this.thread_tx, this.erase);
+                                .submit_stream(&mut this.main, &this.thread_tx, this.erase);
                             temp_erase_mode = Some(this.brush.modifier);
                             this.erase = true;
                             this.brush.modifier = TEMP_ERASE_MODIFIER;
@@ -289,7 +275,7 @@ impl LayerWrapper {
                     force: primary.data.force.unwrap_or(1.0),
                 });
 
-                this.brush.request_stream(&mut this.layer, &this.thread_tx);
+                this.brush.request_stream(&this.thread_tx);
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 lnwindow.window.request_redraw();
@@ -303,7 +289,7 @@ impl LayerWrapper {
                 }
 
                 this.brush
-                    .submit_stream(&mut this.layer, &this.thread_tx, this.erase);
+                    .submit_stream(&mut this.main, &this.thread_tx, this.erase);
             }
         });
     }
@@ -318,10 +304,10 @@ impl LayerWrapper {
                     );
                 }
                 ThreadOutput::Insert(key, chunk_bind) => {
-                    self.layer.chunks.insert(key, chunk_bind);
+                    self.main.chunks.insert(key, chunk_bind);
                 }
                 ThreadOutput::Remove(key) => {
-                    self.layer.chunks.remove(&key);
+                    self.main.chunks.remove(&key);
                 }
             }
         }
@@ -360,15 +346,16 @@ impl LayerWrapper {
 
         let (start, end) = extra.diagnosis.assign("layers > main");
         extra.diagnosis.write(&mut rpass, start);
-        self.layer
-            .render(&mut rpass, &camera, self.render_debugging, false);
+        self.brush
+            .layer
+            .render(&self.main, &mut rpass, &camera, false);
         extra.diagnosis.write(&mut rpass, end);
 
         let (start, end) = extra.diagnosis.assign("layers > scratch");
         extra.diagnosis.write(&mut rpass, start);
         self.brush
-            .scratch
-            .render(&mut rpass, &camera, self.render_debugging, self.erase);
+            .layer
+            .render(&self.brush.scratch, &mut rpass, &camera, self.erase);
         extra.diagnosis.write(&mut rpass, end);
     }
 

@@ -38,25 +38,15 @@ pub const DEFAULT_CHUNK_SIZE: u32 = 512;
 
 const WORKGROUP_SIZE: UVec2 = UVec2::new(16, 16);
 
-pub struct LayerConfig {
-    pub device: Device,
-    pub queue: Queue,
-    pub surface_format: TextureFormat,
-    pub mipmap_levels: u8,
-    pub chunk_size: u32,
-    pub controlled: bool,
-    pub camera_bind_layout: BindGroupLayout,
-}
-
-pub struct Layer {
+// function: render, merge, mipmap, clear & chunk recycle
+pub struct LayerPipeline {
     device: Device,
     queue: Queue,
 
     chunk_size: u32,
     mipmap_levels: u8,
-    controlled: bool,
+    render_debugging: bool,
 
-    chunks: HashMap<ChunkKey, Chunk>,
     pool: Vec<Chunk>,
 
     dispatch: Buffer,
@@ -72,6 +62,11 @@ pub struct Layer {
     merge_pipelines: MergePipelines,
     mipmap_pipeline: ComputePipeline,
     clear_pipeline: ComputePipeline,
+}
+
+pub struct Layer {
+    pub chunks: HashMap<ChunkKey, Chunk>,
+    pub controlled: bool,
 }
 
 pub struct Chunk {
@@ -106,36 +101,45 @@ struct ChunkUniform {
     _pad: u32,
 }
 
-impl Layer {
-    pub fn new(config: LayerConfig) -> Self {
-        assert!(config.mipmap_levels >= 1, "mipmap_levels must be >= 1");
-
-        let device = &config.device;
+impl LayerPipeline {
+    pub fn new(
+        device: Device,
+        queue: Queue,
+        surface_format: TextureFormat,
+        mipmap_levels: u8,
+        chunk_size: u32,
+        camera_bind_layout: &BindGroupLayout,
+    ) -> Self {
+        assert!(mipmap_levels >= 1, "mipmap_levels must be >= 1");
 
         let chunk_render_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_RENDER);
         let chunk_draw_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_DRAW);
         let dispatch_layout = device.create_bind_group_layout(&LAYOUT_DISPATCH);
         let sampler_layout = device.create_bind_group_layout(&LAYOUT_SAMPLER);
 
-        let (dispatch, dispatch_group) = dispatch_group(device, &dispatch_layout);
+        let (dispatch, dispatch_group) = dispatch_group(&device, &dispatch_layout);
 
         let (sampler_group_unfiltered, sampler_group_filtered) =
-            sampler_groups(device, &sampler_layout);
+            sampler_groups(&device, &sampler_layout);
 
-        let render_pipelines =
-            render_pipelines(&config, device, sampler_layout, &chunk_render_layout);
+        let render_pipelines = render_pipelines(
+            &device,
+            surface_format,
+            camera_bind_layout,
+            sampler_layout,
+            &chunk_render_layout,
+        );
 
-        let merge_pipelines = merge_pipelines(device, &chunk_draw_layout, &dispatch_layout);
-        let mipmap_pipeline = mipmap_pipeline(device, &chunk_draw_layout, &dispatch_layout);
-        let clear_pipeline = clear_pipeline(device, &chunk_draw_layout);
+        let merge_pipelines = merge_pipelines(&device, &chunk_draw_layout, &dispatch_layout);
+        let mipmap_pipeline = mipmap_pipeline(&device, &chunk_draw_layout, &dispatch_layout);
+        let clear_pipeline = clear_pipeline(&device, &chunk_draw_layout);
 
-        Layer {
-            device: config.device,
-            queue: config.queue,
-            chunk_size: config.chunk_size,
-            mipmap_levels: config.mipmap_levels,
-            controlled: config.controlled,
-            chunks: HashMap::new(),
+        LayerPipeline {
+            device,
+            queue,
+            chunk_size,
+            mipmap_levels,
+            render_debugging: false,
             pool: Vec::new(),
             dispatch,
             chunk_render_layout,
@@ -150,55 +154,24 @@ impl Layer {
         }
     }
 
-    pub fn validate_chunks(&mut self, dirty: Rectangle) -> bool {
-        for mipmap in 0..self.mipmap_levels {
-            let (src, dst) = rect_to_chunks(dirty, mipmap, self.chunk_size);
-            for x in src.0..dst.0 {
-                for y in src.1..dst.1 {
-                    let key = (x, y, mipmap);
-                    if !self.chunks.contains_key(&key) {
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
-    }
-
-    pub fn missing_chunks(&self, dirty: Rectangle) -> Vec<ChunkKey> {
-        let mut missing = Vec::new();
-        for mipmap in 0..self.mipmap_levels {
-            let (src, dst) = rect_to_chunks(dirty, mipmap, self.chunk_size);
-            for x in src.0..dst.0 {
-                for y in src.1..dst.1 {
-                    let key = (x, y, mipmap);
-                    if !self.chunks.contains_key(&key) {
-                        missing.push(key);
-                    }
-                }
-            }
-        }
-        missing
-    }
-
     /// Assume `self.controlled` is false.
-    pub fn prepare_chunks(&mut self, rect: Rectangle) {
-        debug_assert!(!self.controlled, "controlled layer cannot prepare chunks");
+    pub fn prepare_chunks(&mut self, layer: &mut Layer, rect: Rectangle) {
+        debug_assert!(!layer.controlled, "controlled layer cannot prepare chunks");
         for mipmap in 0..self.mipmap_levels {
             let (src, dst) = rect_to_chunks(rect, mipmap, self.chunk_size);
             for chunk_x in src.0..dst.0 {
                 for chunk_y in src.1..dst.1 {
                     let key = (chunk_x, chunk_y, mipmap);
-                    if !self.chunks.contains_key(&key) {
+                    if !layer.chunks.contains_key(&key) {
                         let chunk = self.create_empty_chunk(key);
-                        self.chunks.insert(key, chunk);
+                        layer.chunks.insert(key, chunk);
                     }
                 }
             }
         }
     }
 
-    pub fn generate_mipmaps(&mut self, dirty: Rectangle) {
+    pub fn generate_mipmaps(&self, layer: &Layer, dirty: Rectangle) {
         if self.mipmap_levels <= 1 {
             return;
         }
@@ -226,10 +199,10 @@ impl Layer {
                     let src_key = (x, y, src_level);
                     let dst_key = upper_chunk_of(src_key);
 
-                    let Some(src_chunk) = self.chunks.get(&src_key) else {
+                    let Some(src_chunk) = layer.chunks.get(&src_key) else {
                         continue;
                     };
-                    let Some(dst_chunk) = self.chunks.get(&dst_key) else {
+                    let Some(dst_chunk) = layer.chunks.get(&dst_key) else {
                         continue;
                     };
 
@@ -244,7 +217,14 @@ impl Layer {
         self.queue.submit([encoder.finish()]);
     }
 
-    pub fn merge_from(&self, scratch: &Layer, dirty: Rectangle, erase: bool, chunks: &[ChunkKey]) {
+    pub fn merge_from(
+        &self,
+        layer: &Layer,
+        scratch: &Layer,
+        dirty: Rectangle,
+        erase: bool,
+        chunks: &[ChunkKey],
+    ) {
         write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
 
         let mut encoder = self
@@ -265,12 +245,14 @@ impl Layer {
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
 
         for &key in chunks {
-            let Some(main_chunk) = self.chunks.get(&key) else {
+            let Some(main_chunk) = layer.chunks.get(&key) else {
                 continue;
             };
+
             let Some(scratch_chunk) = scratch.chunks.get(&key) else {
                 continue;
             };
+
             cpass.set_bind_group(1, Some(&scratch_chunk.draw), &[]);
             cpass.set_bind_group(2, Some(&main_chunk.draw), &[]);
             dispatch_workgroups(&mut cpass, dirty.extend);
@@ -309,13 +291,13 @@ impl Layer {
         self.queue.submit([encoder.finish()]);
     }
 
-    pub fn render(&self, rpass: &mut RenderPass, camera: &Camera, debug: bool, erase: bool) {
+    pub fn render(&self, layer: &Layer, rpass: &mut RenderPass, camera: &Camera, erase: bool) {
         let view_rect = camera.world_view_rect();
         let mipmap = mipmap_floor(camera.zoom);
         let actual_mipmap = mipmap.min(self.mipmap_levels.saturating_sub(1));
         let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, self.chunk_size);
 
-        match (debug, erase) {
+        match (self.render_debugging, erase) {
             (false, false) => rpass.set_pipeline(&self.render_pipelines.over),
             (true, false) => rpass.set_pipeline(&self.render_pipelines.over_debug),
             (_, true) => rpass.set_pipeline(&self.render_pipelines.erase),
@@ -331,7 +313,7 @@ impl Layer {
 
         for x in src.0..dst.0 {
             for y in src.1..dst.1 {
-                if let Some(chunk) = self.chunks.get(&(x, y, actual_mipmap)) {
+                if let Some(chunk) = layer.chunks.get(&(x, y, actual_mipmap)) {
                     rpass.set_bind_group(2, &chunk.render, &[]);
                     rpass.draw(0..4, 0..1);
                 }
@@ -647,8 +629,9 @@ fn sampler_groups(device: &Device, sampler_layout: &BindGroupLayout) -> (BindGro
 // --- Pipelines --- //
 
 fn render_pipelines(
-    config: &LayerConfig,
     device: &Device,
+    surface_format: TextureFormat,
+    camera_bind_layout: &BindGroupLayout,
     sampler_layout: BindGroupLayout,
     chunk_render_layout: &BindGroupLayout,
 ) -> RenderPipelines {
@@ -667,7 +650,7 @@ fn render_pipelines(
     let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_chunk"),
         bind_group_layouts: &[
-            Some(&config.camera_bind_layout),
+            Some(&camera_bind_layout),
             Some(&sampler_layout),
             Some(chunk_render_layout),
         ],
@@ -693,7 +676,7 @@ fn render_pipelines(
                 entry_point: Some(fs_entry),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
-                    format: config.surface_format,
+                    format: surface_format,
                     blend: Some(blend),
                     write_mask: ColorWrites::ALL,
                 })],

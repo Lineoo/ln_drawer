@@ -2,6 +2,7 @@ use std::{mem::size_of, sync::mpsc::Sender};
 
 use bytemuck::{bytes_of, cast_slice};
 use glam::UVec2;
+use hashbrown::HashMap;
 use palette::Srgba;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
@@ -13,7 +14,7 @@ use wgpu::{
 
 use crate::{
     layer::{
-        Layer, LayerConfig,
+        Layer, LayerPipeline,
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
         modifier::{DrawProcessedStorage, Modifier},
@@ -46,48 +47,9 @@ const DEFAULT_DIRTY: Dirty = Dirty {
         )
     },
 };
-
-const LAYOUT_DISPATCH_DRAW: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
-    label: Some("layer_brush_dispatch_draw"),
-    entries: &[
-        BindGroupLayoutEntry {
-            binding: 0,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 1,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 2,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-    ],
-};
-
-pub struct Brush {
-    device: Device,
-    queue: Queue,
-
+pub struct BrushPipeline {
     pub scratch: Layer,
+    pub layer: LayerPipeline,
 
     brush_round: ComputePipeline,
     erase_round: ComputePipeline,
@@ -112,31 +74,27 @@ struct Stroke {
     chunks: Vec<super::ChunkKey>,
 }
 
-pub struct BrushConfig {
-    pub device: Device,
-    pub queue: Queue,
-    pub chunk_draw_layout: BindGroupLayout,
-    pub scratch: LayerConfig,
-}
-
-impl Brush {
-    pub fn new(config: BrushConfig) -> Self {
-        let device = &config.device;
-
-        let dispatch_draw_layout = device.create_bind_group_layout(&LAYOUT_DISPATCH_DRAW);
+impl BrushPipeline {
+    pub fn new(layer: LayerPipeline) -> Self {
+        let dispatch_draw_layout = layer.device.create_bind_group_layout(&LAYOUT_DISPATCH_DRAW);
 
         let (dispatch, draws_length, draws_array, dispatch_group_draw) =
-            dispatch_group(device, &dispatch_draw_layout);
+            dispatch_group(&layer.device, &dispatch_draw_layout);
 
-        let (brush_round, erase_round) =
-            brush_pipelines(device, &dispatch_draw_layout, &config.chunk_draw_layout);
+        let (brush_round, erase_round) = brush_pipelines(
+            &layer.device,
+            &dispatch_draw_layout,
+            &layer.chunk_draw_layout,
+        );
 
-        let scratch = Layer::new(config.scratch);
+        let scratch = Layer {
+            chunks: HashMap::new(),
+            controlled: false,
+        };
 
-        Brush {
-            device: config.device,
-            queue: config.queue,
+        BrushPipeline {
             scratch,
+            layer,
             brush_round,
             erase_round,
             dispatch,
@@ -186,12 +144,18 @@ impl Brush {
     /// dispatch to GPU for the rest
     fn paint_dispatch(&mut self, dirty: Rectangle, draws: &[DrawProcessedStorage]) {
         // Brush always use independent layer as scratch
-        self.scratch.prepare_chunks(dirty);
+        self.layer.prepare_chunks(&mut self.scratch, dirty);
 
-        super::write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
-        upload_draws(&self.draws_length, &self.draws_array, draws, &self.queue);
+        super::write_dispatch_uniform(&self.layer.queue, &self.dispatch, dirty);
+        upload_draws(
+            &self.draws_length,
+            &self.draws_array,
+            draws,
+            &self.layer.queue,
+        );
 
         let mut encoder = self
+            .layer
             .device
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("layer_brush"),
@@ -209,7 +173,7 @@ impl Brush {
 
         cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
 
-        let (src, dst) = super::rect_to_chunks(dirty, 0, self.scratch.chunk_size);
+        let (src, dst) = super::rect_to_chunks(dirty, 0, self.layer.chunk_size);
         for x in src.0..dst.0 {
             for y in src.1..dst.1 {
                 let key = (x, y, 0);
@@ -226,16 +190,16 @@ impl Brush {
         }
 
         drop(cpass);
-        self.queue.submit([encoder.finish()]);
+        self.layer.queue.submit([encoder.finish()]);
     }
 
-    pub fn request_stream(&mut self, main: &mut Layer, tx: &Sender<ThreadInput>) {
+    pub fn request_stream(&mut self, tx: &Sender<ThreadInput>) {
         let Some(stroke) = &self.stroke else {
             return;
         };
 
-        for level in 0..main.mipmap_levels {
-            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, main.chunk_size);
+        for level in 0..self.layer.mipmap_levels {
+            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, self.layer.chunk_size);
             for x in src.0..dst.0 {
                 for y in src.1..dst.1 {
                     tx.send(ThreadInput::RequestReal((x, y, level))).unwrap();
@@ -253,12 +217,13 @@ impl Brush {
 
         // TODO may prepare more chunks than you need, we might need
         //      to record extra chunks information
-        main.prepare_chunks(stroke.dirty);
-        main.merge_from(&self.scratch, stroke.dirty, erase, &stroke.chunks);
-        main.generate_mipmaps(stroke.dirty);
+        self.layer.prepare_chunks(main, stroke.dirty);
+        self.layer
+            .merge_from(main, &self.scratch, stroke.dirty, erase, &stroke.chunks);
+        self.layer.generate_mipmaps(main, stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
-            self.scratch.pool.push(chunk);
+            self.layer.pool.push(chunk);
         }
     }
 
@@ -269,15 +234,16 @@ impl Brush {
             return;
         };
 
-        main.merge_from(&self.scratch, stroke.dirty, erase, &stroke.chunks);
-        main.generate_mipmaps(stroke.dirty);
+        self.layer
+            .merge_from(main, &self.scratch, stroke.dirty, erase, &stroke.chunks);
+        self.layer.generate_mipmaps(main, stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
-            self.scratch.pool.push(chunk);
+            self.layer.pool.push(chunk);
         }
 
-        for level in 0..main.mipmap_levels {
-            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, main.chunk_size);
+        for level in 0..self.layer.mipmap_levels {
+            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, self.layer.chunk_size);
             for x in src.0..dst.0 {
                 for y in src.1..dst.1 {
                     tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();
@@ -288,6 +254,42 @@ impl Brush {
 }
 
 // --- Resources --- //
+
+const LAYOUT_DISPATCH_DRAW: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("layer_brush_dispatch_draw"),
+    entries: &[
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 2,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+    ],
+};
 
 fn dispatch_group(
     device: &Device,
