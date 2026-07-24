@@ -319,19 +319,7 @@ fn unload(
             let rx = chunk_readback(texture, &config.device, &config.queue, config.chunk_size);
             config.device.poll(PollType::wait_indefinitely()).unwrap();
             let bytes = rx.recv().unwrap();
-            let compressed = zstd::encode_all(&bytes[..], 0)?;
-            table_chunk.insert((0, key), &compressed[..])?;
-
-            let meta0 = ChunkMeta0 {
-                format: CHUNK_META0_FORMAT,
-                _mipmapped: true,
-            };
-            let mut meta_bytes = [0u8; 16];
-            postcard::to_slice(&meta0, &mut meta_bytes).unwrap();
-            table_meta.insert(((0, key), 0), &meta_bytes[..])?;
-
-            texel.unsaved.remove(&key);
-            debug.encode += 1;
+            write_chunk_data(texel, debug, &mut table_chunk, &mut table_meta, key, bytes).unwrap();
         }
 
         if texture.is_some() {
@@ -377,19 +365,7 @@ fn autosave(
 
     for (key, rx) in tasks {
         let bytes = rx.recv().unwrap();
-        let compressed = zstd::encode_all(&bytes[..], 0)?;
-        table_chunk.insert((0, key), &compressed[..])?;
-
-        let meta0 = ChunkMeta0 {
-            format: CHUNK_META0_FORMAT,
-            _mipmapped: true,
-        };
-        let mut meta_bytes = [0u8; 16];
-        postcard::to_slice(&meta0, &mut meta_bytes).unwrap();
-        table_meta.insert(((0, key), 0), &meta_bytes[..])?;
-
-        texel.unsaved.remove(&key);
-        debug.encode += 1;
+        write_chunk_data(texel, debug, &mut table_chunk, &mut table_meta, key, bytes)?;
     }
     drop(table_chunk);
     drop(table_meta);
@@ -400,6 +376,45 @@ fn autosave(
         "Layer stream autosave finished in {:?}",
         Instant::now().duration_since(now)
     );
+
+    Ok(())
+}
+
+fn write_chunk_data(
+    texel: &mut TexelBase,
+    debug: &mut DebugInfo,
+    table_chunk: &mut redb::Table<(u64, ChunkKey), &[u8]>,
+    table_meta: &mut redb::Table<((u64, ChunkKey), u32), &[u8]>,
+    key: ChunkKey,
+    bytes: Vec<u8>,
+) -> Result<(), Box<dyn Error + 'static>> {
+    let mut transparent = true;
+    for &byte in &bytes {
+        if byte != 0x00 {
+            transparent = false;
+            break;
+        }
+    }
+
+    if transparent {
+        table_chunk.remove((0, key))?;
+        table_meta.remove(((0, key), 0))?;
+    } else {
+        let compressed = zstd::encode_all(&bytes[..], 0)?;
+        table_chunk.insert((0, key), &compressed[..])?;
+
+        let meta0 = ChunkMeta0 {
+            format: CHUNK_META0_FORMAT,
+            _mipmapped: true,
+        };
+
+        let mut meta_bytes = [0u8; 16];
+        postcard::to_slice(&meta0, &mut meta_bytes).unwrap();
+        table_meta.insert(((0, key), 0), &meta_bytes[..])?;
+    }
+
+    texel.unsaved.remove(&key);
+    debug.encode += 1;
 
     Ok(())
 }
