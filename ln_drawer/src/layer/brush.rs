@@ -119,7 +119,7 @@ impl BrushPipeline {
     }
 
     /// CPU-end draw process
-    pub fn paint(&mut self, next: Draw) {
+    pub fn paint(&mut self, main: &Layer, next: Draw) {
         let mut draw_buf = Vec::new();
         let curr = self
             .interpolation
@@ -146,14 +146,19 @@ impl BrushPipeline {
             draw_stg.push(draw.into_storage());
         }
 
-        self.paint_dispatch(dirty, &draw_stg);
+        self.paint_dispatch(main, dirty, &draw_stg);
     }
 
     /// dispatch to GPU for the rest
-    fn paint_dispatch(&mut self, dirty: Rectangle, draws: &[DrawProcessedStorage]) {
-        // Brush always use independent layer as scratch
-        self.layer
-            .prepare_chunks(&mut self.scratch, &mut self.scratch_pool, dirty);
+    fn paint_dispatch(&mut self, main: &Layer, dirty: Rectangle, draws: &[DrawProcessedStorage]) {
+        // Brush always use uncontrolled layer as scratch
+        if self.swap_mode() {
+            self.layer
+                .prepare_chunks(&mut self.scratch, Some(main), &mut self.scratch_pool, dirty);
+        } else {
+            self.layer
+                .prepare_chunks(&mut self.scratch, None, &mut self.scratch_pool, dirty);
+        }
 
         super::write_dispatch_uniform(&self.layer.queue, &self.dispatch, dirty);
         upload_draws(
@@ -217,49 +222,78 @@ impl BrushPipeline {
         }
     }
 
-    /// All finished, merge to main layer
-    pub fn submit(&mut self, main: &mut Layer, erase: bool) {
+    /// All finished, merge to dst layer
+    pub fn submit(&mut self, dst: &mut Layer) {
         self.prev = None;
         let Some(stroke) = self.stroke.take() else {
             return;
         };
 
-        // TODO may prepare more chunks than you need, we might need
-        //      to record extra chunks information
-        self.layer
-            .prepare_chunks(main, &mut self.scratch_pool, stroke.dirty);
-        self.layer
-            .merge_from(main, &self.scratch, stroke.dirty, erase, &stroke.chunks);
-        self.layer.generate_mipmaps(main, stroke.dirty);
+        if self.swap_mode() {
+            for &key in &stroke.chunks {
+                if let Some(chunk) = self.scratch.chunks.remove(&key) {
+                    let old = dst.chunks.insert(key, chunk);
+                    if let Some(old_chunk) = old {
+                        self.scratch_pool.list.push(old_chunk);
+                    }
+                }
+            }
+        } else {
+            self.layer
+                .prepare_chunks(dst, None, &mut self.scratch_pool, stroke.dirty);
+            self.layer
+                .merge_from(dst, &self.scratch, stroke.dirty, &stroke.chunks);
+        }
+
+        self.layer.generate_mipmaps(dst, stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
             self.scratch_pool.list.push(chunk);
         }
     }
 
-    /// All finished, merge to main layer and notify stream thread unsaved chunks
-    pub fn submit_stream(&mut self, main: &mut Layer, tx: &Sender<ThreadInput>, erase: bool) {
+    /// All finished, merge to dst layer and notify stream thread unsaved chunks
+    pub fn submit_stream(&mut self, dst: &mut Layer, tx: &Sender<ThreadInput>) {
         self.prev = None;
         let Some(stroke) = self.stroke.take() else {
             return;
         };
 
-        self.layer
-            .merge_from(main, &self.scratch, stroke.dirty, erase, &stroke.chunks);
-        self.layer.generate_mipmaps(main, stroke.dirty);
+        if self.swap_mode() {
+            for &key in &stroke.chunks {
+                if let Some(chunk) = self.scratch.chunks.remove(&key) {
+                    tx.send(ThreadInput::SwapChunk(key, chunk.clone())).unwrap();
+                    let old = dst.chunks.insert(key, chunk);
+                    if let Some(old_chunk) = old {
+                        self.scratch_pool.list.push(old_chunk);
+                    }
+                }
+            }
+        } else {
+            self.layer
+                .merge_from(dst, &self.scratch, stroke.dirty, &stroke.chunks);
+        }
+
+        self.layer.generate_mipmaps(dst, stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
             self.scratch_pool.list.push(chunk);
         }
 
-        for level in 0..main.mipmap_levels {
-            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, main.chunk_size);
+        for level in 0..dst.mipmap_levels {
+            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, dst.chunk_size);
             for x in src.0..dst.0 {
                 for y in src.1..dst.1 {
                     tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();
                 }
             }
         }
+    }
+
+    /// - Mode 1: Create transparent scratch chunks, merge to dst layer with over blend mode.
+    /// - Mode 2: Clone data from dst layer, change in-place and eventually swap chunks into dst layer.
+    fn swap_mode(&self) -> bool {
+        self.erase
     }
 }
 

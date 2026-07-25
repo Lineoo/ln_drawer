@@ -48,7 +48,8 @@ pub struct LayerDebugMessage(pub String);
 pub struct LayerWrapper {
     pub main: Layer,
     pub brush: BrushPipeline,
-    pub erase: bool,
+
+    pub debug: bool,
 
     brush_preview: Handle<RoundedRect>,
     compositing_texture: Texture,
@@ -132,8 +133,8 @@ impl LayerWrapper {
                 controlled: true,
             },
             brush,
-            erase: false,
             brush_preview,
+            debug: false,
             compositing_texture,
             compositing_config: render.config.clone(),
             compositing_render_bind,
@@ -232,7 +233,7 @@ impl LayerWrapper {
                 let this = &mut *world.fetch_mut(this).unwrap();
 
                 if let MultiTouchStatus::Press = primary.status
-                    && !this.erase
+                    && !this.brush.erase
                 {
                     drag_start = Some((primary.screen, Instant::now()));
                 }
@@ -259,9 +260,9 @@ impl LayerWrapper {
                     } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
                             this.brush
-                                .submit_stream(&mut this.main, &this.thread_tx, this.erase);
+                                .submit_stream(&mut this.main, &this.thread_tx);
                             temp_erase_mode = Some(this.brush.modifier);
-                            this.erase = true;
+                            this.brush.erase = true;
                             this.brush.modifier = TEMP_ERASE_MODIFIER;
                             drag_start = None;
                         } else {
@@ -270,7 +271,7 @@ impl LayerWrapper {
                     }
                 }
 
-                this.brush.paint(Draw {
+                this.brush.paint(&this.main, Draw {
                     position: primary.position,
                     force: primary.data.force.unwrap_or(1.0),
                 });
@@ -284,12 +285,12 @@ impl LayerWrapper {
 
                 if let Some(ori) = temp_erase_mode {
                     temp_erase_mode = None;
-                    this.erase = false;
+                    this.brush.erase = false;
                     this.brush.modifier = ori;
                 }
 
                 this.brush
-                    .submit_stream(&mut this.main, &this.thread_tx, this.erase);
+                    .submit_stream(&mut this.main, &this.thread_tx);
             }
         });
     }
@@ -348,14 +349,14 @@ impl LayerWrapper {
         extra.diagnosis.write(&mut rpass, start);
         self.brush
             .layer
-            .render(&self.main, &mut rpass, &camera, true, false);
+            .render(&self.main, &mut rpass, &camera, self.debug, false);
         extra.diagnosis.write(&mut rpass, end);
 
         let (start, end) = extra.diagnosis.assign("layers > scratch");
         extra.diagnosis.write(&mut rpass, start);
         self.brush
             .layer
-            .render(&self.brush.scratch, &mut rpass, &camera, true, self.erase);
+            .render(&self.brush.scratch, &mut rpass, &camera, self.debug, self.brush.erase);
         extra.diagnosis.write(&mut rpass, end);
     }
 

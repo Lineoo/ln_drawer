@@ -329,7 +329,7 @@ fn side_panel(world: &mut World) {
             softness: 0.2,
             ..stroke.brush.modifier
         };
-        stroke.erase = false;
+        stroke.brush.erase = false;
 
         let slider = world.fetch(slider).unwrap();
         world.queue_trigger(
@@ -357,7 +357,7 @@ fn side_panel(world: &mut World) {
             softness: 0.5,
             ..stroke.brush.modifier
         };
-        stroke.erase = false;
+        stroke.brush.erase = false;
 
         let slider = world.fetch(slider).unwrap();
         world.queue_trigger(
@@ -385,7 +385,7 @@ fn side_panel(world: &mut World) {
             softness: 0.5,
             ..stroke.brush.modifier
         };
-        stroke.erase = true;
+        stroke.brush.erase = true;
 
         let slider = world.fetch(slider).unwrap();
         world.queue_trigger(
@@ -692,6 +692,9 @@ fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
                 },
             );
         }
+
+        let mut layer = world.single_fetch_mut::<LayerWrapper>().unwrap();
+        layer.debug = !submenu.visible;
     });
 
     world.observer(

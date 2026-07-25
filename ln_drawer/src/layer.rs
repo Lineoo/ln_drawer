@@ -17,11 +17,12 @@ use wgpu::{
     BlendFactor, BlendOperation, BlendState, Buffer, BufferBinding, BufferBindingType,
     BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
     ComputePass, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
-    Extent3d, FilterMode, FragmentState, PipelineCompilationOptions, PipelineLayoutDescriptor,
-    PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
-    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, Texture, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
+    Extent3d, FilterMode, FragmentState, Origin3d, PipelineCompilationOptions,
+    PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline,
+    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
+    TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -70,6 +71,7 @@ pub struct ChunkPool {
     pub chunk_size: u32,
 }
 
+#[derive(Clone)]
 pub struct Chunk {
     pub key: Buffer,
     pub texture: Texture,
@@ -80,11 +82,15 @@ pub struct Chunk {
 struct RenderPipelines {
     over: RenderPipeline,
     over_debug: RenderPipeline,
+    replace: RenderPipeline,
+    replace_debug: RenderPipeline,
+    #[expect(unused)]
     erase: RenderPipeline,
 }
 
 struct MergePipelines {
     over: ComputePipeline,
+    #[expect(unused)]
     erase: ComputePipeline,
 }
 
@@ -147,24 +153,69 @@ impl LayerPipeline {
         }
     }
 
-    /// Assume `self.controlled` is false.
-    pub fn prepare_chunks(&mut self, layer: &mut Layer, pool: &mut ChunkPool, rect: Rectangle) {
-        debug_assert!(!layer.controlled, "controlled layer cannot prepare chunks");
+    /// Assume `self.controlled` is false. if `origin` is `None`, create transparent chunk, otherwise
+    /// clone data from the `origin` layer
+    pub fn prepare_chunks(
+        &mut self,
+        dst: &mut Layer,
+        src: Option<&Layer>,
+        pool: &mut ChunkPool,
+        rect: Rectangle,
+    ) {
+        debug_assert!(!dst.controlled, "controlled layer cannot prepare chunks");
         debug_assert_eq!(
-            layer.chunk_size, pool.chunk_size,
+            dst.chunk_size, pool.chunk_size,
             "pool chunk_size does not matched"
         );
-        for mipmap in 0..layer.mipmap_levels {
-            let (src, dst) = rect_to_chunks(rect, mipmap, layer.chunk_size);
-            for chunk_x in src.0..dst.0 {
-                for chunk_y in src.1..dst.1 {
+
+        let mut chunks = Vec::new();
+
+        for mipmap in 0..dst.mipmap_levels {
+            let (start, end) = rect_to_chunks(rect, mipmap, dst.chunk_size);
+            for chunk_x in start.0..end.0 {
+                for chunk_y in start.1..end.1 {
                     let key = (chunk_x, chunk_y, mipmap);
-                    if !layer.chunks.contains_key(&key) {
-                        let chunk = self.recycle_empty_chunk(key, layer.chunk_size, pool);
-                        layer.chunks.insert(key, chunk);
+                    if !dst.chunks.contains_key(&key) {
+                        chunks.push(key);
                     }
                 }
             }
+        }
+
+        for key in chunks {
+            let dst_chunk = self.recycle_empty_chunk(key, dst.chunk_size, pool);
+
+            if let Some(src) = src
+                && let Some(src_chunk) = src.chunks.get(&key)
+            {
+                let mut encoder = self
+                    .device
+                    .create_command_encoder(&CommandEncoderDescriptor {
+                        label: Some("layer_prepare_copy"),
+                    });
+                encoder.copy_texture_to_texture(
+                    TexelCopyTextureInfo {
+                        texture: &src_chunk.texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    TexelCopyTextureInfo {
+                        texture: &dst_chunk.texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    Extent3d {
+                        width: dst.chunk_size,
+                        height: dst.chunk_size,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                self.queue.submit([encoder.finish()]);
+            }
+
+            dst.chunks.insert(key, dst_chunk);
         }
     }
 
@@ -219,7 +270,6 @@ impl LayerPipeline {
         layer: &Layer,
         scratch: &Layer,
         dirty: Rectangle,
-        erase: bool,
         chunks: &[ChunkKey],
     ) {
         write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
@@ -234,14 +284,10 @@ impl LayerPipeline {
             timestamp_writes: None,
         });
 
-        match erase {
-            false => cpass.set_pipeline(&self.merge_pipelines.over),
-            true => cpass.set_pipeline(&self.merge_pipelines.erase),
-        }
-
+        cpass.set_pipeline(&self.merge_pipelines.over);
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
 
-        // XXX won't work if two layers' chunk_size unmatched 
+        // XXX won't work if two layers' chunk_size unmatched
         for &key in chunks {
             let Some(main_chunk) = layer.chunks.get(&key) else {
                 continue;
@@ -295,17 +341,18 @@ impl LayerPipeline {
         rpass: &mut RenderPass,
         camera: &Camera,
         debug: bool,
-        erase: bool,
+        replace: bool,
     ) {
         let view_rect = camera.world_view_rect();
         let mipmap = mipmap_floor(camera.zoom);
         let actual_mipmap = mipmap.min(layer.mipmap_levels.saturating_sub(1));
         let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, layer.chunk_size);
 
-        match (debug, erase) {
+        match (debug, replace) {
             (false, false) => rpass.set_pipeline(&self.render_pipelines.over),
             (true, false) => rpass.set_pipeline(&self.render_pipelines.over_debug),
-            (_, true) => rpass.set_pipeline(&self.render_pipelines.erase),
+            (false, true) => rpass.set_pipeline(&self.render_pipelines.replace),
+            (true, true) => rpass.set_pipeline(&self.render_pipelines.replace_debug),
         }
 
         rpass.set_bind_group(0, &camera.bind, &[]);
@@ -711,7 +758,23 @@ fn render_pipelines(
         over_debug: new_pipeline(
             BlendState::PREMULTIPLIED_ALPHA_BLENDING,
             "layer_chunk_over_debug",
-            "fs_main_debug",
+            "fs_main_debug0",
+        ),
+        replace: new_pipeline(
+            BlendState {
+                color: BlendComponent::REPLACE,
+                alpha: BlendComponent::REPLACE,
+            },
+            "layer_chunk_replace",
+            "fs_main",
+        ),
+        replace_debug: new_pipeline(
+            BlendState {
+                color: BlendComponent::REPLACE,
+                alpha: BlendComponent::REPLACE,
+            },
+            "layer_chunk_replace",
+            "fs_main_debug1",
         ),
         erase: new_pipeline(
             BlendState {
