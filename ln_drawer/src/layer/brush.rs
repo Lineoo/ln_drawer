@@ -213,10 +213,22 @@ impl BrushPipeline {
         };
 
         for level in 0..dst.mipmap_levels {
-            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, dst.chunk_size);
-            for x in src.0..dst.0 {
-                for y in src.1..dst.1 {
-                    tx.send(ThreadInput::RequestReal((x, y, level))).unwrap();
+            let (start, end) = super::rect_to_chunks(stroke.dirty, level, dst.chunk_size);
+
+            for x in start.0..end.0 {
+                for y in start.1..end.1 {
+                    let key = (x, y, level);
+
+                    // When any lower chunks are loaded, we then request upper chunks
+                    if level > 0
+                        && super::lower_chunk_of(key)
+                            .iter()
+                            .all(|x| !dst.chunks.contains_key(x))
+                    {
+                        continue;
+                    }
+
+                    tx.send(ThreadInput::RequestReal(key)).unwrap();
                 }
             }
         }
@@ -246,20 +258,23 @@ impl BrushPipeline {
             return;
         };
 
-        self.layer.merge(dst, &self.scratch, self.swap_mode());
-        self.layer.generate_mipmaps(dst, stroke.dirty);
+        // if failed to merge, we simply drop it.
+        if self.layer.validate_chunks(dst, stroke.dirty) {
+            self.layer.merge(dst, &self.scratch, self.swap_mode());
+            self.layer.generate_mipmaps(dst, stroke.dirty);
+
+            for level in 0..dst.mipmap_levels {
+                let (start, end) = super::rect_to_chunks(stroke.dirty, level, dst.chunk_size);
+                for x in start.0..end.0 {
+                    for y in start.1..end.1 {
+                        tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();
+                    }
+                }
+            }
+        }
 
         for (_key, chunk) in self.scratch.chunks.drain() {
             self.scratch_pool.list.push(chunk);
-        }
-
-        for level in 0..dst.mipmap_levels {
-            let (start, end) = super::rect_to_chunks(stroke.dirty, level, dst.chunk_size);
-            for x in start.0..end.0 {
-                for y in start.1..end.1 {
-                    tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();
-                }
-            }
         }
     }
 

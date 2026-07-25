@@ -153,6 +153,22 @@ impl LayerPipeline {
         }
     }
 
+    pub fn validate_chunks(&mut self, dst: &mut Layer, rect: Rectangle) -> bool {
+        for mipmap in 0..dst.mipmap_levels {
+            let (start, end) = rect_to_chunks(rect, mipmap, dst.chunk_size);
+            for chunk_x in start.0..end.0 {
+                for chunk_y in start.1..end.1 {
+                    let key = (chunk_x, chunk_y, mipmap);
+                    if !dst.chunks.contains_key(&key) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
     /// Assume `self.controlled` is false. if `origin` is `None`, create transparent chunk, otherwise
     /// clone data from the `origin` layer
     pub fn prepare_chunks(
@@ -182,21 +198,21 @@ impl LayerPipeline {
             }
         }
 
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("layer_prepare_copy"),
+            });
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_copy"),
+            timestamp_writes: None,
+        });
+
         for dst_key in dst_chunks {
             let dst_chunk = self.recycle_empty_chunk(dst_key, dst.chunk_size, pool);
 
             // Copy texture if src layer is provided
             if let Some(src) = src {
-                let mut encoder = self
-                    .device
-                    .create_command_encoder(&CommandEncoderDescriptor {
-                        label: Some("layer_prepare_copy"),
-                    });
-                let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                    label: Some("layer_copy"),
-                    timestamp_writes: None,
-                });
-
                 cpass.set_pipeline(&self.merge_pipelines.replace);
                 cpass.set_bind_group(0, Some(&dst_chunk.draw), &[]);
 
@@ -214,13 +230,13 @@ impl LayerPipeline {
                         dispatch_workgroups(&mut cpass, UVec2::splat(src.chunk_size));
                     }
                 }
-
-                drop(cpass);
-                self.queue.submit([encoder.finish()]);
             }
 
             dst.chunks.insert(dst_key, dst_chunk);
         }
+
+        drop(cpass);
+        self.queue.submit([encoder.finish()]);
     }
 
     pub fn generate_mipmaps(&self, layer: &Layer, dirty: Rectangle) {
@@ -446,6 +462,15 @@ fn rect_to_chunks(rect: Rectangle, mipmap: u8, chunk_size: u32) -> ((i32, i32), 
 
 fn upper_chunk_of(chunk: ChunkKey) -> ChunkKey {
     (chunk.0.div_euclid(2), chunk.1.div_euclid(2), chunk.2 + 1)
+}
+
+fn lower_chunk_of(chunk: ChunkKey) -> [ChunkKey; 4] {
+    [
+        (chunk.0 * 2, chunk.1 * 2, chunk.2 - 1),
+        (chunk.0 * 2 + 1, chunk.1 * 2, chunk.2 - 1),
+        (chunk.0 * 2, chunk.1 * 2 + 1, chunk.2 - 1),
+        (chunk.0 * 2 + 1, chunk.1 * 2 + 1, chunk.2 - 1),
+    ]
 }
 
 // --- Chunks --- //
