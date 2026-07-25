@@ -259,8 +259,7 @@ impl LayerWrapper {
                         drag_start = None;
                     } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
-                            this.brush
-                                .submit_stream(&mut this.main, &this.thread_tx);
+                            this.brush.submit_stream(&mut this.main, &this.thread_tx);
                             temp_erase_mode = Some(this.brush.modifier);
                             this.brush.erase = true;
                             this.brush.modifier = TEMP_ERASE_MODIFIER;
@@ -271,10 +270,13 @@ impl LayerWrapper {
                     }
                 }
 
-                this.brush.paint(&this.main, Draw {
-                    position: primary.position,
-                    force: primary.data.force.unwrap_or(1.0),
-                });
+                this.brush.paint(
+                    &this.main,
+                    Draw {
+                        position: primary.position,
+                        force: primary.data.force.unwrap_or(1.0),
+                    },
+                );
 
                 this.brush.request_stream(&this.main, &this.thread_tx);
 
@@ -283,14 +285,13 @@ impl LayerWrapper {
             } else {
                 let this = &mut *world.fetch_mut(this).unwrap();
 
+                this.brush.submit_stream(&mut this.main, &this.thread_tx);
+
                 if let Some(ori) = temp_erase_mode {
                     temp_erase_mode = None;
                     this.brush.erase = false;
                     this.brush.modifier = ori;
                 }
-
-                this.brush
-                    .submit_stream(&mut this.main, &this.thread_tx);
             }
         });
     }
@@ -354,9 +355,13 @@ impl LayerWrapper {
 
         let (start, end) = extra.diagnosis.assign("layers > scratch");
         extra.diagnosis.write(&mut rpass, start);
-        self.brush
-            .layer
-            .render(&self.brush.scratch, &mut rpass, &camera, self.debug, self.brush.erase);
+        self.brush.layer.render(
+            &self.brush.scratch,
+            &mut rpass,
+            &camera,
+            self.debug,
+            self.brush.erase,
+        );
         extra.diagnosis.write(&mut rpass, end);
     }
 

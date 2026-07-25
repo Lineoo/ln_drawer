@@ -207,13 +207,13 @@ impl BrushPipeline {
         self.layer.queue.submit([encoder.finish()]);
     }
 
-    pub fn request_stream(&mut self, main: &Layer, tx: &Sender<ThreadInput>) {
+    pub fn request_stream(&mut self, dst: &Layer, tx: &Sender<ThreadInput>) {
         let Some(stroke) = &self.stroke else {
             return;
         };
 
-        for level in 0..main.mipmap_levels {
-            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, main.chunk_size);
+        for level in 0..dst.mipmap_levels {
+            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, dst.chunk_size);
             for x in src.0..dst.0 {
                 for y in src.1..dst.1 {
                     tx.send(ThreadInput::RequestReal((x, y, level))).unwrap();
