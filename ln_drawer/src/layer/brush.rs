@@ -91,7 +91,7 @@ impl BrushPipeline {
 
         let scratch = Layer {
             chunks: HashMap::new(),
-            chunk_size: 512,
+            chunk_size: 256,
             controlled: false,
             mipmap_levels: 1,
         };
@@ -100,7 +100,7 @@ impl BrushPipeline {
             scratch,
             scratch_pool: ChunkPool {
                 list: Vec::new(),
-                chunk_size: 512,
+                chunk_size: 256,
             },
             layer,
             brush_round,
@@ -119,7 +119,7 @@ impl BrushPipeline {
     }
 
     /// CPU-end draw process
-    pub fn paint(&mut self, main: &Layer, next: Draw) {
+    pub fn paint(&mut self, dst: &Layer, next: Draw) {
         let mut draw_buf = Vec::new();
         let curr = self
             .interpolation
@@ -146,19 +146,19 @@ impl BrushPipeline {
             draw_stg.push(draw.into_storage());
         }
 
-        self.paint_dispatch(main, dirty, &draw_stg);
+        self.paint_dispatch(dst, dirty, &draw_stg);
     }
 
     /// dispatch to GPU for the rest
-    fn paint_dispatch(&mut self, main: &Layer, dirty: Rectangle, draws: &[DrawProcessedStorage]) {
+    fn paint_dispatch(&mut self, dst: &Layer, dirty: Rectangle, draws: &[DrawProcessedStorage]) {
+        let swap = match self.swap_mode() {
+            true => Some(dst),
+            false => None,
+        };
+
         // Brush always use uncontrolled layer as scratch
-        if self.swap_mode() {
-            self.layer
-                .prepare_chunks(&mut self.scratch, Some(main), &mut self.scratch_pool, dirty);
-        } else {
-            self.layer
-                .prepare_chunks(&mut self.scratch, None, &mut self.scratch_pool, dirty);
-        }
+        self.layer
+            .prepare_chunks(&mut self.scratch, swap, &mut self.scratch_pool, dirty);
 
         super::write_dispatch_uniform(&self.layer.queue, &self.dispatch, dirty);
         upload_draws(
@@ -229,22 +229,9 @@ impl BrushPipeline {
             return;
         };
 
-        if self.swap_mode() {
-            for &key in &stroke.chunks {
-                if let Some(chunk) = self.scratch.chunks.remove(&key) {
-                    let old = dst.chunks.insert(key, chunk);
-                    if let Some(old_chunk) = old {
-                        self.scratch_pool.list.push(old_chunk);
-                    }
-                }
-            }
-        } else {
-            self.layer
-                .prepare_chunks(dst, None, &mut self.scratch_pool, stroke.dirty);
-            self.layer
-                .merge_from(dst, &self.scratch, stroke.dirty, &stroke.chunks);
-        }
-
+        self.layer
+            .prepare_chunks(dst, None, &mut self.scratch_pool, stroke.dirty);
+        self.layer.merge(dst, &self.scratch, self.swap_mode());
         self.layer.generate_mipmaps(dst, stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
@@ -259,21 +246,7 @@ impl BrushPipeline {
             return;
         };
 
-        if self.swap_mode() {
-            for &key in &stroke.chunks {
-                if let Some(chunk) = self.scratch.chunks.remove(&key) {
-                    tx.send(ThreadInput::SwapChunk(key, chunk.clone())).unwrap();
-                    let old = dst.chunks.insert(key, chunk);
-                    if let Some(old_chunk) = old {
-                        self.scratch_pool.list.push(old_chunk);
-                    }
-                }
-            }
-        } else {
-            self.layer
-                .merge_from(dst, &self.scratch, stroke.dirty, &stroke.chunks);
-        }
-
+        self.layer.merge(dst, &self.scratch, self.swap_mode());
         self.layer.generate_mipmaps(dst, stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
@@ -281,9 +254,9 @@ impl BrushPipeline {
         }
 
         for level in 0..dst.mipmap_levels {
-            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, dst.chunk_size);
-            for x in src.0..dst.0 {
-                for y in src.1..dst.1 {
+            let (start, end) = super::rect_to_chunks(stroke.dirty, level, dst.chunk_size);
+            for x in start.0..end.0 {
+                for y in start.1..end.1 {
                     tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();
                 }
             }

@@ -17,12 +17,11 @@ use wgpu::{
     BlendFactor, BlendOperation, BlendState, Buffer, BufferBinding, BufferBindingType,
     BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
     ComputePass, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
-    Extent3d, FilterMode, FragmentState, Origin3d, PipelineCompilationOptions,
-    PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline,
-    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureViewDescriptor, TextureViewDimension, VertexState,
+    Extent3d, FilterMode, FragmentState, PipelineCompilationOptions, PipelineLayoutDescriptor,
+    PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
+    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, Texture, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -90,6 +89,7 @@ struct RenderPipelines {
 
 struct MergePipelines {
     over: ComputePipeline,
+    replace: ComputePipeline,
     #[expect(unused)]
     erase: ComputePipeline,
 }
@@ -133,7 +133,7 @@ impl LayerPipeline {
             &chunk_render_layout,
         );
 
-        let merge_pipelines = merge_pipelines(&device, &chunk_draw_layout, &dispatch_layout);
+        let merge_pipelines = merge_pipelines(&device, &chunk_draw_layout);
         let mipmap_pipeline = mipmap_pipeline(&device, &chunk_draw_layout, &dispatch_layout);
         let clear_pipeline = clear_pipeline(&device, &chunk_draw_layout);
 
@@ -168,7 +168,7 @@ impl LayerPipeline {
             "pool chunk_size does not matched"
         );
 
-        let mut chunks = Vec::new();
+        let mut dst_chunks = Vec::new();
 
         for mipmap in 0..dst.mipmap_levels {
             let (start, end) = rect_to_chunks(rect, mipmap, dst.chunk_size);
@@ -176,46 +176,50 @@ impl LayerPipeline {
                 for chunk_y in start.1..end.1 {
                     let key = (chunk_x, chunk_y, mipmap);
                     if !dst.chunks.contains_key(&key) {
-                        chunks.push(key);
+                        dst_chunks.push(key);
                     }
                 }
             }
         }
 
-        for key in chunks {
-            let dst_chunk = self.recycle_empty_chunk(key, dst.chunk_size, pool);
+        for dst_key in dst_chunks {
+            let dst_chunk = self.recycle_empty_chunk(dst_key, dst.chunk_size, pool);
 
-            if let Some(src) = src
-                && let Some(src_chunk) = src.chunks.get(&key)
-            {
+            // Copy texture if src layer is provided
+            if let Some(src) = src {
                 let mut encoder = self
                     .device
                     .create_command_encoder(&CommandEncoderDescriptor {
                         label: Some("layer_prepare_copy"),
                     });
-                encoder.copy_texture_to_texture(
-                    TexelCopyTextureInfo {
-                        texture: &src_chunk.texture,
-                        mip_level: 0,
-                        origin: Origin3d::ZERO,
-                        aspect: TextureAspect::All,
-                    },
-                    TexelCopyTextureInfo {
-                        texture: &dst_chunk.texture,
-                        mip_level: 0,
-                        origin: Origin3d::ZERO,
-                        aspect: TextureAspect::All,
-                    },
-                    Extent3d {
-                        width: dst.chunk_size,
-                        height: dst.chunk_size,
-                        depth_or_array_layers: 1,
-                    },
-                );
+                let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("layer_copy"),
+                    timestamp_writes: None,
+                });
+
+                cpass.set_pipeline(&self.merge_pipelines.replace);
+                cpass.set_bind_group(0, Some(&dst_chunk.draw), &[]);
+
+                let (start, end) =
+                    rect_to_chunks(chunk_to_rect(dst_key, dst.chunk_size), 0, src.chunk_size);
+                for x in start.0..end.0 {
+                    for y in start.1..end.1 {
+                        let src_key = (x, y, 0);
+
+                        let Some(src_chunk) = src.chunks.get(&src_key) else {
+                            continue;
+                        };
+
+                        cpass.set_bind_group(1, Some(&src_chunk.draw), &[]);
+                        dispatch_workgroups(&mut cpass, UVec2::splat(src.chunk_size));
+                    }
+                }
+
+                drop(cpass);
                 self.queue.submit([encoder.finish()]);
             }
 
-            dst.chunks.insert(key, dst_chunk);
+            dst.chunks.insert(dst_key, dst_chunk);
         }
     }
 
@@ -265,15 +269,7 @@ impl LayerPipeline {
         self.queue.submit([encoder.finish()]);
     }
 
-    pub fn merge_from(
-        &self,
-        layer: &Layer,
-        scratch: &Layer,
-        dirty: Rectangle,
-        chunks: &[ChunkKey],
-    ) {
-        write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
-
+    pub fn merge(&self, dst: &Layer, src: &Layer, replace: bool) {
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor {
@@ -284,22 +280,32 @@ impl LayerPipeline {
             timestamp_writes: None,
         });
 
-        cpass.set_pipeline(&self.merge_pipelines.over);
-        cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
+        match replace {
+            false => cpass.set_pipeline(&self.merge_pipelines.over),
+            true => cpass.set_pipeline(&self.merge_pipelines.replace),
+        }
 
-        // XXX won't work if two layers' chunk_size unmatched
-        for &key in chunks {
-            let Some(main_chunk) = layer.chunks.get(&key) else {
+        for &src_key in src.chunks.keys() {
+            let Some(src_chunk) = src.chunks.get(&src_key) else {
                 continue;
             };
 
-            let Some(scratch_chunk) = scratch.chunks.get(&key) else {
-                continue;
-            };
+            cpass.set_bind_group(1, Some(&src_chunk.draw), &[]);
 
-            cpass.set_bind_group(1, Some(&main_chunk.draw), &[]);
-            cpass.set_bind_group(2, Some(&scratch_chunk.draw), &[]);
-            dispatch_workgroups(&mut cpass, dirty.extend);
+            let (start, end) =
+                rect_to_chunks(chunk_to_rect(src_key, src.chunk_size), 0, dst.chunk_size);
+            for x in start.0..end.0 {
+                for y in start.1..end.1 {
+                    let dst_key = (x, y, 0);
+
+                    let Some(dst_chunk) = dst.chunks.get(&dst_key) else {
+                        continue;
+                    };
+
+                    cpass.set_bind_group(0, Some(&dst_chunk.draw), &[]);
+                    dispatch_workgroups(&mut cpass, UVec2::splat(src.chunk_size));
+                }
+            }
         }
 
         drop(cpass);
@@ -832,11 +838,7 @@ fn mipmap_pipeline(
     })
 }
 
-fn merge_pipelines(
-    device: &Device,
-    chunk_draw_layout: &BindGroupLayout,
-    dispatch_layout: &BindGroupLayout,
-) -> MergePipelines {
+fn merge_pipelines(device: &Device, chunk_draw_layout: &BindGroupLayout) -> MergePipelines {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_merge"),
         source: ShaderSource::Wgsl(
@@ -851,11 +853,7 @@ fn merge_pipelines(
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_merge"),
-        bind_group_layouts: &[
-            Some(dispatch_layout),
-            Some(chunk_draw_layout),
-            Some(chunk_draw_layout),
-        ],
+        bind_group_layouts: &[Some(chunk_draw_layout), Some(chunk_draw_layout)],
         immediate_size: 0,
     });
 
@@ -872,6 +870,7 @@ fn merge_pipelines(
 
     MergePipelines {
         over: new_pipeline("layer_merge", "cs_main"),
+        replace: new_pipeline("layer_merge_replace", "cs_replace"),
         erase: new_pipeline("layer_merge_erase", "cs_erase"),
     }
 }
