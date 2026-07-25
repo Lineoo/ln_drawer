@@ -34,6 +34,7 @@ pub enum ThreadInput {
     SetStreamCamera(i64, UVec2, I64Vec2),
     MarkUnsaved(ChunkKey),
     RequestReal(ChunkKey),
+    SwapChunk(ChunkKey, Chunk),
     Autosave,
     Abort,
 }
@@ -163,6 +164,13 @@ pub fn loading_thread(
                     texel.active.insert(chunk_id, Some(texture));
                     output_tx.send(ThreadOutput::Insert(chunk_id, chunk))?;
                 }
+                continue;
+            }
+            Some(ThreadInput::SwapChunk(key, chunk)) => {
+                texel.active.insert(key, Some(chunk.texture.clone()));
+                texel.unsaved.insert(key);
+                output_tx.send(ThreadOutput::Insert(key, chunk))?;
+
                 continue;
             }
             Some(ThreadInput::Autosave) => {

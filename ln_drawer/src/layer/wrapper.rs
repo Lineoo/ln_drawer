@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     sync::mpsc::channel,
     thread::JoinHandle,
     time::{Duration, Instant},
@@ -11,20 +12,26 @@ use palette::Srgba;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Color, ColorTargetState,
-    ColorWrites, Device, FragmentState, LoadOp, Operations, PipelineLayoutDescriptor,
-    PrimitiveState, PrimitiveTopology, RenderPass, RenderPassColorAttachment, RenderPassDescriptor,
-    RenderPassTimestampWrites, RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, StoreOp, SurfaceConfiguration, Texture, TextureSampleType,
+    ColorWrites, CommandEncoderDescriptor, Device, Extent3d, FragmentState, LoadOp, Operations,
+    Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPass,
+    RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites, RenderPipeline,
+    RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp,
+    SurfaceConfiguration, TexelCopyTextureInfoBase, Texture, TextureAspect, TextureSampleType,
     TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
 };
-use winit::event::PointerKind;
+use winit::{
+    event::{ElementState, PointerKind, WindowEvent},
+    keyboard::KeyCode,
+};
 
 use crate::{
     layer::{
         Layer, LayerPipeline,
         brush::BrushPipeline,
+        chunk_to_rect, create_chunk, create_chunk_texture,
         interpolate::Draw,
         modifier::Modifier,
+        rect_to_chunks,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
     },
     lnwin::Lnwindow,
@@ -37,17 +44,25 @@ use crate::{
     save::{Autosave, SaveDatabase},
     tools::{
         collider::ToolCollider,
+        modifiers::ModifiersTool,
         pointer::{PointerHover, PointerHoverStatus},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
     widgets::{WidgetEnabled, WidgetRectangle},
 };
 
+const UNDO_LIMIT: usize = 32;
+const MAIN_CHUNK_SIZE: u32 = 512;
+const MAIN_CHUNK_MIPMAP: u8 = 8;
+
 pub struct LayerDebugMessage(pub String);
 
 pub struct LayerWrapper {
     pub main: Layer,
     pub brush: BrushPipeline,
+
+    pub undos: VecDeque<Layer>,
+    pub redos: Vec<Layer>,
 
     pub debug: bool,
 
@@ -86,8 +101,8 @@ impl LayerWrapper {
             queue: render.queue.clone(),
             chunk_render_layout: brush.layer.chunk_render_layout.clone(),
             chunk_draw_layout: brush.layer.chunk_draw_layout.clone(),
-            chunk_size: 512,
-            mipmap_levels: 8,
+            chunk_size: MAIN_CHUNK_SIZE,
+            mipmap_levels: MAIN_CHUNK_MIPMAP,
         };
 
         let camera = world.single_fetch::<Camera>().unwrap();
@@ -128,10 +143,12 @@ impl LayerWrapper {
         LayerWrapper {
             main: Layer {
                 chunks: HashMap::new(),
-                mipmap_levels: 8,
-                chunk_size: 512,
+                mipmap_levels: MAIN_CHUNK_MIPMAP,
+                chunk_size: MAIN_CHUNK_SIZE,
                 controlled: true,
             },
+            undos: VecDeque::new(),
+            redos: Vec::new(),
             brush,
             brush_preview,
             debug: false,
@@ -180,6 +197,33 @@ impl LayerWrapper {
                     }
                 }
             });
+        });
+
+        let lnwindow = world.single::<Lnwindow>().unwrap();
+        world.observer(lnwindow, move |event: &WindowEvent, world| {
+            let WindowEvent::KeyboardInput { event, .. } = event else {
+                return;
+            };
+
+            if event.physical_key == KeyCode::KeyZ
+                && !event.repeat
+                && event.state == ElementState::Pressed
+            {
+                let mut this = world.fetch_mut(this).unwrap();
+                let modifier = world.single_fetch::<ModifiersTool>().unwrap();
+                let ctrl = modifier.modifiers.state().control_key();
+                let shift = modifier.modifiers.state().shift_key();
+                if ctrl {
+                    if !shift {
+                        this.undo();
+                    } else {
+                        this.redo();
+                    }
+
+                    let lnwindow = world.fetch(lnwindow).unwrap();
+                    lnwindow.window.request_redraw();
+                }
+            }
         });
 
         let mut pinch_distance = None;
@@ -259,6 +303,7 @@ impl LayerWrapper {
                         drag_start = None;
                     } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
+                            this.undo_stock();
                             this.brush.submit_stream(&mut this.main, &this.thread_tx);
                             temp_erase_mode = Some(this.brush.modifier);
                             this.brush.erase = true;
@@ -285,6 +330,7 @@ impl LayerWrapper {
             } else {
                 let this = &mut *world.fetch_mut(this).unwrap();
 
+                this.undo_stock();
                 this.brush.submit_stream(&mut this.main, &this.thread_tx);
 
                 if let Some(ori) = temp_erase_mode {
@@ -385,6 +431,130 @@ impl LayerWrapper {
         rpass.draw(0..3, 0..1);
 
         extra.diagnosis.write(rpass, end);
+    }
+
+    fn undo_stock(&mut self) {
+        self.redos.clear();
+
+        let mut to_backup = Vec::new();
+        for &src_key in self.brush.scratch.chunks.keys() {
+            let (start, end) = rect_to_chunks(
+                chunk_to_rect(src_key, self.brush.scratch.chunk_size),
+                0,
+                self.main.chunk_size,
+            );
+
+            for x in start.0..end.0 {
+                for y in start.1..end.1 {
+                    let dst_key = (x, y, 0);
+
+                    if !to_backup.contains(&dst_key) {
+                        to_backup.push(dst_key);
+                    }
+                }
+            }
+        }
+
+        let mut encoder =
+            self.brush
+                .layer
+                .device
+                .create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("layer_backup"),
+                });
+
+        let mut backup_layer = Layer {
+            chunks: HashMap::new(),
+            chunk_size: MAIN_CHUNK_SIZE,
+            mipmap_levels: 1,
+            controlled: false,
+        };
+        for dst_key in to_backup {
+            let Some(src_chunk) = self.main.chunks.get(&dst_key) else {
+                continue;
+            };
+            let dst_texture =
+                create_chunk_texture(&self.brush.layer.device, backup_layer.chunk_size);
+            let dst_chunk = create_chunk(
+                &self.brush.layer.device,
+                backup_layer.chunk_size,
+                &self.brush.layer.chunk_render_layout,
+                &self.brush.layer.chunk_draw_layout,
+                dst_texture,
+                dst_key,
+            );
+            encoder.copy_texture_to_texture(
+                TexelCopyTextureInfoBase {
+                    texture: &src_chunk.texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyTextureInfoBase {
+                    texture: &dst_chunk.texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: backup_layer.chunk_size,
+                    height: backup_layer.chunk_size,
+                    depth_or_array_layers: 1,
+                },
+            );
+            backup_layer.chunks.insert(dst_key, dst_chunk);
+        }
+
+        self.brush.layer.queue.submit([encoder.finish()]);
+        self.undos.push_back(backup_layer);
+
+        while self.undos.len() > UNDO_LIMIT {
+            self.undos.pop_front();
+        }
+    }
+
+    fn undo(&mut self) {
+        let Some(mut backup) = self.undos.pop_back() else {
+            return;
+        };
+
+        let mut redo_chunks = Vec::new();
+        for (key, chunk) in backup.chunks.drain() {
+            self.thread_tx
+                .send(ThreadInput::SwapChunk(key, chunk))
+                .unwrap();
+            if let Some(old) = self.main.chunks.get(&key).cloned() {
+                redo_chunks.push((key, old));
+            }
+        }
+
+        for (key, chunk) in redo_chunks {
+            backup.chunks.insert(key, chunk);
+        }
+
+        self.redos.push(backup);
+    }
+
+    fn redo(&mut self) {
+        let Some(mut backup) = self.redos.pop() else {
+            return;
+        };
+
+        let mut undo_chunks = Vec::new();
+        for (key, chunk) in backup.chunks.drain() {
+            self.thread_tx
+                .send(ThreadInput::SwapChunk(key, chunk))
+                .unwrap();
+            if let Some(old) = self.main.chunks.get(&key).cloned() {
+                undo_chunks.push((key, old));
+            }
+        }
+
+        for (key, chunk) in undo_chunks {
+            backup.chunks.insert(key, chunk);
+        }
+
+        self.undos.push_back(backup);
     }
 }
 
