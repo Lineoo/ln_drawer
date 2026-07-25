@@ -71,7 +71,6 @@ impl LayerWrapper {
             render.device.clone(),
             render.queue.clone(),
             render.config.format,
-            512,
             &camera_bind.layout,
         ));
 
@@ -86,7 +85,7 @@ impl LayerWrapper {
             queue: render.queue.clone(),
             chunk_render_layout: brush.layer.chunk_render_layout.clone(),
             chunk_draw_layout: brush.layer.chunk_draw_layout.clone(),
-            chunk_size: brush.layer.chunk_size,
+            chunk_size: 512,
             mipmap_levels: 8,
         };
 
@@ -129,6 +128,7 @@ impl LayerWrapper {
             main: Layer {
                 chunks: HashMap::new(),
                 mipmap_levels: 8,
+                chunk_size: 512,
                 controlled: true,
             },
             brush,
@@ -275,7 +275,7 @@ impl LayerWrapper {
                     force: primary.data.force.unwrap_or(1.0),
                 });
 
-                this.brush.request_stream(&this.thread_tx);
+                this.brush.request_stream(&this.main, &this.thread_tx);
 
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 lnwindow.window.request_redraw();
@@ -348,14 +348,14 @@ impl LayerWrapper {
         extra.diagnosis.write(&mut rpass, start);
         self.brush
             .layer
-            .render(&self.main, &mut rpass, &camera, false);
+            .render(&self.main, &mut rpass, &camera, true, false);
         extra.diagnosis.write(&mut rpass, end);
 
         let (start, end) = extra.diagnosis.assign("layers > scratch");
         extra.diagnosis.write(&mut rpass, start);
         self.brush
             .layer
-            .render(&self.brush.scratch, &mut rpass, &camera, self.erase);
+            .render(&self.brush.scratch, &mut rpass, &camera, true, self.erase);
         extra.diagnosis.write(&mut rpass, end);
     }
 

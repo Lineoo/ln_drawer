@@ -14,7 +14,7 @@ use wgpu::{
 
 use crate::{
     layer::{
-        Layer, LayerPipeline,
+        ChunkPool, Layer, LayerPipeline,
         dirty::Dirty,
         interpolate::{Draw, Interpolation},
         modifier::{DrawProcessedStorage, Modifier},
@@ -47,8 +47,10 @@ const DEFAULT_DIRTY: Dirty = Dirty {
         )
     },
 };
+
 pub struct BrushPipeline {
     pub scratch: Layer,
+    pub scratch_pool: ChunkPool,
     pub layer: LayerPipeline,
 
     brush_round: ComputePipeline,
@@ -89,12 +91,17 @@ impl BrushPipeline {
 
         let scratch = Layer {
             chunks: HashMap::new(),
+            chunk_size: 512,
             controlled: false,
             mipmap_levels: 1,
         };
 
         BrushPipeline {
             scratch,
+            scratch_pool: ChunkPool {
+                list: Vec::new(),
+                chunk_size: 512,
+            },
             layer,
             brush_round,
             erase_round,
@@ -145,7 +152,8 @@ impl BrushPipeline {
     /// dispatch to GPU for the rest
     fn paint_dispatch(&mut self, dirty: Rectangle, draws: &[DrawProcessedStorage]) {
         // Brush always use independent layer as scratch
-        self.layer.prepare_chunks(&mut self.scratch, dirty);
+        self.layer
+            .prepare_chunks(&mut self.scratch, &mut self.scratch_pool, dirty);
 
         super::write_dispatch_uniform(&self.layer.queue, &self.dispatch, dirty);
         upload_draws(
@@ -174,7 +182,7 @@ impl BrushPipeline {
 
         cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
 
-        let (src, dst) = super::rect_to_chunks(dirty, 0, self.layer.chunk_size);
+        let (src, dst) = super::rect_to_chunks(dirty, 0, self.scratch.chunk_size);
         for x in src.0..dst.0 {
             for y in src.1..dst.1 {
                 let key = (x, y, 0);
@@ -194,13 +202,13 @@ impl BrushPipeline {
         self.layer.queue.submit([encoder.finish()]);
     }
 
-    pub fn request_stream(&mut self, tx: &Sender<ThreadInput>) {
+    pub fn request_stream(&mut self, main: &Layer, tx: &Sender<ThreadInput>) {
         let Some(stroke) = &self.stroke else {
             return;
         };
 
-        for level in 0..self.scratch.mipmap_levels {
-            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, self.layer.chunk_size);
+        for level in 0..main.mipmap_levels {
+            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, main.chunk_size);
             for x in src.0..dst.0 {
                 for y in src.1..dst.1 {
                     tx.send(ThreadInput::RequestReal((x, y, level))).unwrap();
@@ -218,13 +226,14 @@ impl BrushPipeline {
 
         // TODO may prepare more chunks than you need, we might need
         //      to record extra chunks information
-        self.layer.prepare_chunks(main, stroke.dirty);
+        self.layer
+            .prepare_chunks(main, &mut self.scratch_pool, stroke.dirty);
         self.layer
             .merge_from(main, &self.scratch, stroke.dirty, erase, &stroke.chunks);
         self.layer.generate_mipmaps(main, stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
-            self.layer.pool.push(chunk);
+            self.scratch_pool.list.push(chunk);
         }
     }
 
@@ -240,11 +249,11 @@ impl BrushPipeline {
         self.layer.generate_mipmaps(main, stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
-            self.layer.pool.push(chunk);
+            self.scratch_pool.list.push(chunk);
         }
 
         for level in 0..main.mipmap_levels {
-            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, self.layer.chunk_size);
+            let (src, dst) = super::rect_to_chunks(stroke.dirty, level, main.chunk_size);
             for x in src.0..dst.0 {
                 for y in src.1..dst.1 {
                     tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();

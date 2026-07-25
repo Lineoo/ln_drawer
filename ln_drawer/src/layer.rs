@@ -43,11 +43,6 @@ pub struct LayerPipeline {
     device: Device,
     queue: Queue,
 
-    chunk_size: u32,
-    render_debugging: bool,
-
-    pool: Vec<Chunk>,
-
     dispatch: Buffer,
 
     chunk_render_layout: BindGroupLayout,
@@ -65,8 +60,14 @@ pub struct LayerPipeline {
 
 pub struct Layer {
     pub chunks: HashMap<ChunkKey, Chunk>,
+    pub chunk_size: u32,
     pub mipmap_levels: u8,
     pub controlled: bool,
+}
+
+pub struct ChunkPool {
+    pub list: Vec<Chunk>,
+    pub chunk_size: u32,
 }
 
 pub struct Chunk {
@@ -106,7 +107,6 @@ impl LayerPipeline {
         device: Device,
         queue: Queue,
         surface_format: TextureFormat,
-        chunk_size: u32,
         camera_bind_layout: &BindGroupLayout,
     ) -> Self {
         let chunk_render_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_RENDER);
@@ -134,9 +134,6 @@ impl LayerPipeline {
         LayerPipeline {
             device,
             queue,
-            chunk_size,
-            render_debugging: false,
-            pool: Vec::new(),
             dispatch,
             chunk_render_layout,
             chunk_draw_layout,
@@ -151,15 +148,19 @@ impl LayerPipeline {
     }
 
     /// Assume `self.controlled` is false.
-    pub fn prepare_chunks(&mut self, layer: &mut Layer, rect: Rectangle) {
+    pub fn prepare_chunks(&mut self, layer: &mut Layer, pool: &mut ChunkPool, rect: Rectangle) {
         debug_assert!(!layer.controlled, "controlled layer cannot prepare chunks");
+        debug_assert_eq!(
+            layer.chunk_size, pool.chunk_size,
+            "pool chunk_size does not matched"
+        );
         for mipmap in 0..layer.mipmap_levels {
-            let (src, dst) = rect_to_chunks(rect, mipmap, self.chunk_size);
+            let (src, dst) = rect_to_chunks(rect, mipmap, layer.chunk_size);
             for chunk_x in src.0..dst.0 {
                 for chunk_y in src.1..dst.1 {
                     let key = (chunk_x, chunk_y, mipmap);
                     if !layer.chunks.contains_key(&key) {
-                        let chunk = self.create_empty_chunk(key);
+                        let chunk = self.recycle_empty_chunk(key, layer.chunk_size, pool);
                         layer.chunks.insert(key, chunk);
                     }
                 }
@@ -188,7 +189,7 @@ impl LayerPipeline {
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
 
         for src_level in 0..layer.mipmap_levels - 1 {
-            let (src, dst) = rect_to_chunks(dirty, src_level, self.chunk_size);
+            let (src, dst) = rect_to_chunks(dirty, src_level, layer.chunk_size);
             let scale = 1u32 << src_level;
             for x in src.0..dst.0 {
                 for y in src.1..dst.1 {
@@ -240,6 +241,7 @@ impl LayerPipeline {
 
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
 
+        // XXX won't work if two layers' chunk_size unmatched 
         for &key in chunks {
             let Some(main_chunk) = layer.chunks.get(&key) else {
                 continue;
@@ -258,20 +260,16 @@ impl LayerPipeline {
         self.queue.submit([encoder.finish()]);
     }
 
-    pub fn recycle_chunk(&mut self, chunk: &Chunk, key: ChunkKey) {
-        let rect = chunk_to_rect(key, self.chunk_size);
-        self.queue.write_buffer(
-            &chunk.key,
-            0,
-            bytes_of(&ChunkUniform {
-                coords: rect.origin.into(),
-                size: rect.extend.into(),
-            }),
-        );
-        self.clear_chunk(chunk);
+    pub fn write_chunk_key(&mut self, chunk: &Chunk, key: ChunkKey, chunk_size: u32) {
+        let rect = chunk_to_rect(key, chunk_size);
+        let uniform = ChunkUniform {
+            coords: rect.origin.into(),
+            size: rect.extend.into(),
+        };
+        self.queue.write_buffer(&chunk.key, 0, bytes_of(&uniform));
     }
 
-    pub fn clear_chunk(&mut self, chunk: &Chunk) {
+    pub fn clear_chunk(&mut self, chunk: &Chunk, chunk_size: u32) {
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor {
@@ -285,19 +283,26 @@ impl LayerPipeline {
 
         cpass.set_pipeline(&self.clear_pipeline);
         cpass.set_bind_group(0, Some(&chunk.draw), &[]);
-        dispatch_workgroups(&mut cpass, UVec2::splat(self.chunk_size));
+        dispatch_workgroups(&mut cpass, UVec2::splat(chunk_size));
 
         drop(cpass);
         self.queue.submit([encoder.finish()]);
     }
 
-    pub fn render(&self, layer: &Layer, rpass: &mut RenderPass, camera: &Camera, erase: bool) {
+    pub fn render(
+        &self,
+        layer: &Layer,
+        rpass: &mut RenderPass,
+        camera: &Camera,
+        debug: bool,
+        erase: bool,
+    ) {
         let view_rect = camera.world_view_rect();
         let mipmap = mipmap_floor(camera.zoom);
         let actual_mipmap = mipmap.min(layer.mipmap_levels.saturating_sub(1));
-        let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, self.chunk_size);
+        let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, layer.chunk_size);
 
-        match (self.render_debugging, erase) {
+        match (debug, erase) {
             (false, false) => rpass.set_pipeline(&self.render_pipelines.over),
             (true, false) => rpass.set_pipeline(&self.render_pipelines.over_debug),
             (_, true) => rpass.set_pipeline(&self.render_pipelines.erase),
@@ -321,25 +326,28 @@ impl LayerPipeline {
         }
     }
 
-    fn create_empty_chunk(&mut self, key: ChunkKey) -> Chunk {
-        if let Some(chunk) = self.pool.pop() {
-            self.recycle_chunk(&chunk, key);
+    fn recycle_empty_chunk(
+        &mut self,
+        key: ChunkKey,
+        chunk_size: u32,
+        pool: &mut ChunkPool,
+    ) -> Chunk {
+        if let Some(chunk) = pool.list.pop() {
+            self.write_chunk_key(&chunk, key, chunk_size);
+            self.clear_chunk(&chunk, chunk_size);
             chunk
         } else {
-            let texture = create_chunk_texture(&self.device, self.chunk_size);
-            self.create_chunk(texture, key)
-        }
-    }
+            let texture = create_chunk_texture(&self.device, chunk_size);
 
-    fn create_chunk(&self, texture: Texture, key: ChunkKey) -> Chunk {
-        create_chunk(
-            &self.device,
-            self.chunk_size,
-            &self.chunk_render_layout,
-            &self.chunk_draw_layout,
-            texture,
-            key,
-        )
+            create_chunk(
+                &self.device,
+                chunk_size,
+                &self.chunk_render_layout,
+                &self.chunk_draw_layout,
+                texture,
+                key,
+            )
+        }
     }
 }
 
