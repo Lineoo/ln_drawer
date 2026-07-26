@@ -1,6 +1,6 @@
 use glam::{IVec2, UVec2};
 
-use crate::{measures::Rectangle, stroke::modifier::DrawProcessed};
+use crate::{measures::Rectangle, layer::modifier::DrawProcessed};
 
 pub struct Dirty {
     pub bounding: fn(DrawProcessed) -> Rectangle,

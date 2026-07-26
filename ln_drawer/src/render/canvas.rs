@@ -107,7 +107,7 @@ impl Canvas {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("canvas_pipeline_layout"),
-                bind_group_layouts: &[&camera.layout, &bind_layout],
+                bind_group_layouts: &[Some(&camera.layout), Some(&bind_layout)],
                 immediate_size: 0,
             });
 
@@ -308,14 +308,19 @@ impl Descriptor for CanvasDescriptor {
 
         let control = world.insert(RenderControl {
             prepare: None,
-            draw: Some(Box::new(move |world, rpass| {
+            draw: Some(Box::new(move |world, rpass, extra| {
                 let manager = world.single_fetch::<CanvasManager>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
+
+                let (start, end) = extra.diagnosis.assign("main > canvas");
+                extra.diagnosis.write(rpass, start);
 
                 rpass.set_pipeline(&manager.pipeline);
                 rpass.set_bind_group(0, &camera.bind, &[]);
                 rpass.set_bind_group(1, &bind, &[]);
                 rpass.draw(0..4, 0..1);
+
+                extra.diagnosis.write(rpass, end);
             })),
         });
 

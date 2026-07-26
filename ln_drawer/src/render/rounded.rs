@@ -96,7 +96,7 @@ impl RoundedRect {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("rounded"),
-            bind_group_layouts: &[&camera.layout, &bind],
+            bind_group_layouts: &[Some(&camera.layout), Some(&bind)],
             immediate_size: 0,
         });
 
@@ -158,14 +158,19 @@ impl RoundedRect {
 
         let control = world.insert(RenderControl {
             prepare: None,
-            draw: Some(Box::new(move |world, rpass| {
+            draw: Some(Box::new(move |world, rpass, extra| {
                 let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
+
+                let (start, end) = extra.diagnosis.assign("main > rounded");
+                extra.diagnosis.write(rpass, start);
 
                 rpass.set_pipeline(&manager.pipeline);
                 rpass.set_bind_group(0, &camera.bind, &[]);
                 rpass.set_bind_group(1, &bind, &[]);
                 rpass.draw(0..4, 0..1);
+
+                extra.diagnosis.write(rpass, end);
             })),
         });
 

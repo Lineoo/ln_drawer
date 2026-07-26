@@ -4,7 +4,7 @@ use palette::{Hsla, IntoColor, RgbHue};
 use crate::{
     layout::transform::{Transform, TransformValue},
     measures::{FI64Ext, Rectangle},
-    stroke::StrokeLayer,
+    layer::wrapper::LayerWrapper,
     widgets::{
         WidgetAnimatedRectangle, WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
         button::{Button, ButtonDrag, ButtonDragStatus},
@@ -41,8 +41,8 @@ impl ColorPicker {
         });
 
         world.observer(palette, move |&WidgetHsla(color), world| {
-            let mut layer = world.single_fetch_mut::<StrokeLayer>().unwrap();
-            layer.modifier.color = color.into_color();
+            let mut layer = world.single_fetch_mut::<LayerWrapper>().unwrap();
+            layer.brush.modifier.color = color.into_color();
         });
 
         let mut drag_start = None;

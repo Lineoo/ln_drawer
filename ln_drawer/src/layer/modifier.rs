@@ -1,7 +1,7 @@
 use glam::{I64Vec2, Vec4};
 use palette::{LinSrgba, Srgba};
 
-use crate::{measures::FI64Ext, stroke::interpolate::Draw};
+use crate::{measures::FI64Ext, layer::interpolate::Draw};
 
 #[derive(Clone, Copy)]
 pub struct Modifier {

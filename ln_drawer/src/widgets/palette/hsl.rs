@@ -147,7 +147,7 @@ impl RectangleMeshMaterial for PaletteHslMaterial {
         wgpu::ShaderSource::Wgsl(
             format!(
                 "{}{}",
-                include_str!("../../stroke/lib_colorspace.wgsl"),
+                include_str!("../../layer/lib_colorspace.wgsl"),
                 include_str!("hsl.wgsl")
             )
             .into(),
