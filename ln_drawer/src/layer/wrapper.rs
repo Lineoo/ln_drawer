@@ -513,7 +513,7 @@ impl LayerWrapper {
         }
     }
 
-    fn undo(&mut self) {
+    pub fn undo(&mut self) {
         let Some(mut backup) = self.undos.pop_back() else {
             return;
         };
@@ -542,7 +542,7 @@ impl LayerWrapper {
         self.redos.push(backup);
     }
 
-    fn redo(&mut self) {
+    pub fn redo(&mut self) {
         let Some(mut backup) = self.redos.pop() else {
             return;
         };

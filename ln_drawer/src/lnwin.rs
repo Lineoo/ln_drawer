@@ -244,56 +244,30 @@ fn side_panel(world: &mut World) {
         ..Default::default()
     });
 
-    let pen = world.insert(Button {
-        order: 10,
-        color: theme.primary_color,
-        active_color: theme.secondary_color,
-        press_color: theme.highlight_color,
-        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-        roundness: theme.roundness,
-        image: Some(ButtonImage {
-            transform: TransformValue::anchor(
-                (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
-            ),
-            bytes: include_bytes!("../res/interface/pen.png"),
-        }),
-        ..Default::default()
-    });
+    let docker_button = |image| {
+        world.insert(Button {
+            order: 10,
+            color: theme.primary_color,
+            active_color: theme.secondary_color,
+            press_color: theme.highlight_color,
+            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+            roundness: theme.roundness,
+            image: Some(ButtonImage {
+                transform: TransformValue::anchor(
+                    (0.5, 0.5),
+                    Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
+                ),
+                bytes: image,
+            }),
+            ..Default::default()
+        })
+    };
 
-    let brush = world.insert(Button {
-        order: 10,
-        color: theme.primary_color,
-        active_color: theme.secondary_color,
-        press_color: theme.highlight_color,
-        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-        roundness: theme.roundness,
-        image: Some(ButtonImage {
-            transform: TransformValue::anchor(
-                (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
-            ),
-            bytes: include_bytes!("../res/interface/brush.png"),
-        }),
-        ..Default::default()
-    });
-
-    let eraser = world.insert(Button {
-        order: 10,
-        color: theme.primary_color,
-        active_color: theme.secondary_color,
-        press_color: theme.highlight_color,
-        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-        roundness: theme.roundness,
-        image: Some(ButtonImage {
-            transform: TransformValue::anchor(
-                (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
-            ),
-            bytes: include_bytes!("../res/interface/eraser.png"),
-        }),
-        ..Default::default()
-    });
+    let pen = docker_button(include_bytes!("../res/interface/pen.png"));
+    let brush = docker_button(include_bytes!("../res/interface/brush.png"));
+    let eraser = docker_button(include_bytes!("../res/interface/eraser.png"));
+    let undo = docker_button(include_bytes!("../res/interface/undo-2.png"));
+    let redo = docker_button(include_bytes!("../res/interface/redo-2.png"));
 
     let color_picker = color_palette(world, &theme);
 
@@ -398,6 +372,17 @@ fn side_panel(world: &mut World) {
         );
     });
 
+    world.observer(undo, move |&WidgetClick, world| {
+        let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
+        stroke.undo();
+    });
+
+    world.observer(redo, move |&WidgetClick, world| {
+        let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
+        stroke.undo();
+    });
+
+
     world.observer(slider, move |&SetSlider { min, max, value }, world| {
         let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
         let percent = (value - min) / (max - min);
@@ -407,22 +392,7 @@ fn side_panel(world: &mut World) {
         };
     });
 
-    let compass = world.insert(Button {
-        order: 10,
-        color: theme.primary_color,
-        active_color: theme.secondary_color,
-        press_color: theme.highlight_color,
-        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-        roundness: theme.roundness,
-        image: Some(ButtonImage {
-            transform: TransformValue::anchor(
-                (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
-            ),
-            bytes: include_bytes!("../res/interface/compass.png"),
-        }),
-        ..Default::default()
-    });
+    let compass = docker_button(include_bytes!("../res/interface/compass.png"));
 
     world.observer(compass, move |&WidgetClick, world| {
         let main_camera = world.single_fetch::<MainCamera>().unwrap();
@@ -432,7 +402,8 @@ fn side_panel(world: &mut World) {
         camera.center = I64Vec2::ZERO;
     });
 
-    let debug = debug_panel(world, &theme);
+    let debug = docker_button(include_bytes!("../res/interface/bug.png"));
+    debug_panel(world, debug);
 
     world.insert(Transform {
         value: TransformValue {
@@ -442,7 +413,7 @@ fn side_panel(world: &mut World) {
             },
             down: TransformEdge {
                 anchor: 0.5,
-                offset: -240,
+                offset: -280,
             },
             right: TransformEdge {
                 anchor: 0.0,
@@ -450,7 +421,7 @@ fn side_panel(world: &mut World) {
             },
             up: TransformEdge {
                 anchor: 0.5,
-                offset: 240,
+                offset: 280,
             },
         },
         source: lnwindow.untyped(),
@@ -483,6 +454,8 @@ fn side_panel(world: &mut World) {
             (brush.untyped(), LuniChild::default()),
             (eraser.untyped(), LuniChild::default()),
             (color_picker.untyped(), LuniChild::default()),
+            (undo.untyped(), LuniChild::default()),
+            (redo.untyped(), LuniChild::default()),
             (
                 elastic_blank.untyped(),
                 LuniChild {
@@ -608,18 +581,7 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
     color_picker
 }
 
-fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
-    let button = world.insert(Button {
-        order: 10,
-        color: theme.primary_color,
-        active_color: theme.secondary_color,
-        press_color: theme.highlight_color,
-        shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-        roundness: theme.roundness,
-        image: None,
-        ..Default::default()
-    });
-
+fn debug_panel(world: &World, button: Handle<Button>){
     let submenu = world.insert(Panel {
         rect: Rectangle::default(),
         visible: false,
@@ -723,8 +685,6 @@ fn debug_panel(world: &World, theme: &Theme) -> Handle<Button> {
             }
         },
     );
-
-    button
 }
 
 impl Lnwindow {
