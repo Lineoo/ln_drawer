@@ -379,7 +379,7 @@ fn side_panel(world: &mut World) {
 
     world.observer(redo, move |&WidgetClick, world| {
         let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-        stroke.undo();
+        stroke.redo();
     });
 
 
