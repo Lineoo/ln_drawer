@@ -518,6 +518,13 @@ impl LayerWrapper {
             return;
         };
 
+        for key in backup.chunks.keys() {
+            if !self.main.chunks.contains_key(key) {
+                log::debug!("failed to undo");
+                return;
+            }
+        }
+
         let mut redo_chunks = Vec::new();
         for (key, chunk) in backup.chunks.drain() {
             self.thread_tx
@@ -539,6 +546,13 @@ impl LayerWrapper {
         let Some(mut backup) = self.redos.pop() else {
             return;
         };
+
+        for key in backup.chunks.keys() {
+            if !self.main.chunks.contains_key(key) {
+                log::debug!("failed to redo");
+                return;
+            }
+        }
 
         let mut undo_chunks = Vec::new();
         for (key, chunk) in backup.chunks.drain() {
