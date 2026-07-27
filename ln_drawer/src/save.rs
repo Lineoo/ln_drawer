@@ -38,9 +38,9 @@ pub struct SaveDatabase(pub Arc<Database>);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, bytemuck::AnyBitPattern, bytemuck::NoUninit)]
-struct SaveMetadata0 {
+pub struct SaveMetadata0 {
     /// See [`FORMAT_VERSION`]
-    version: u32,
+    pub version: u32,
 }
 
 impl SaveDatabase {
@@ -50,15 +50,15 @@ impl SaveDatabase {
             return;
         };
 
-        let target = get_file_path(world, "world.lndb");
-        std::fs::create_dir_all(&target.parent().unwrap()).unwrap();
-        SaveDatabase::create_backup(&target);
-        if let Ok(db) = Database::open(&target) {
-            SaveDatabase::touch(&db).unwrap();
+        let file = get_file_path(world, "world.lndb");
+        std::fs::create_dir_all(&file.parent().unwrap()).unwrap();
+        SaveDatabase::create_backup(&file, "old", true);
+        if let Ok(db) = Database::open(&file) {
+            SaveDatabase::touch(&db, &file).unwrap();
             world.insert(SaveDatabase(Arc::new(db)));
             log::debug!("database loaded");
         } else {
-            let db = Database::create(&target).unwrap();
+            let db = Database::create(&file).unwrap();
             SaveDatabase::fresh(&db).unwrap();
             world.insert(SaveDatabase(Arc::new(db)));
             log::debug!("database created");
@@ -80,10 +80,10 @@ impl SaveDatabase {
 
     /// Touch a existed database, including updating necessary timestamps,
     /// validation, and most of all migration data from older versions.
-    fn touch(db: &Database) -> Result<(), redb::Error> {
+    fn touch(db: &Database, file: &Path) -> Result<(), redb::Error> {
         let write = db.begin_write()?;
 
-        Self::migrate_format(&write)?;
+        Self::migrate_format(&write, file)?;
         Self::update_metadata(&write)?;
 
         write.commit()?;
@@ -96,7 +96,7 @@ impl SaveDatabase {
         Ok(())
     }
 
-    fn migrate_format(write: &WriteTransaction) -> Result<(), redb::Error> {
+    fn migrate_format(write: &WriteTransaction, file: &Path) -> Result<(), redb::Error> {
         let metadata = write.open_table(TABLE_METADATA)?;
         let access0 = metadata.get(0)?.unwrap();
         let meta0 = *bytemuck::from_bytes::<SaveMetadata0>(access0.value());
@@ -108,6 +108,7 @@ impl SaveDatabase {
             return Ok(());
         }
 
+        SaveDatabase::create_backup(file, "migration", false);
         log::info!("start migration from {from_format} to {FORMAT_VERSION}");
 
         for migrate_format in from_format..FORMAT_VERSION {
@@ -124,7 +125,7 @@ impl SaveDatabase {
         Ok(())
     }
 
-    fn create_backup(target: &Path) {
+    fn create_backup(target: &Path, key: &'static str, skippable: bool) {
         let Ok(true) = std::fs::exists(target) else {
             return;
         };
@@ -139,7 +140,7 @@ impl SaveDatabase {
             temp.clear();
             temp.push(target);
             temp.add_extension(&i.to_string());
-            temp.add_extension("old");
+            temp.add_extension(key);
 
             let Ok(metadata) = std::fs::metadata(&temp) else {
                 log::debug!("backup slot {temp:?} is empty");
@@ -172,7 +173,7 @@ impl SaveDatabase {
         log::debug!("newest {newest_backup:?} {newest:?}");
         log::debug!("oldest {oldest_backup:?} {oldest:?}");
 
-        if newest.is_some_and(|it| it < BACKUP_MINIMUM_DURATION) {
+        if skippable && newest.is_some_and(|it| it < BACKUP_MINIMUM_DURATION) {
             log::debug!("backup skipped: very recent backup file");
             return;
         }
