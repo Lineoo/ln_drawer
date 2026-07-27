@@ -129,10 +129,12 @@ impl SaveDatabase {
             return;
         };
 
-        let mut backup = PathBuf::new();
         let mut temp = PathBuf::new();
-        let mut oldest = Duration::ZERO;
-        let mut newest = Duration::ZERO;
+        let mut backup = PathBuf::new();
+        let mut oldest_backup = PathBuf::new();
+        let mut newest_backup = PathBuf::new();
+        let mut oldest = None;
+        let mut newest = None;
         for i in 0..BACKUP_SLOT {
             temp.clear();
             temp.push(target);
@@ -140,11 +142,13 @@ impl SaveDatabase {
             temp.add_extension("old");
 
             let Ok(metadata) = std::fs::metadata(&temp) else {
+                log::debug!("backup slot {temp:?} is empty");
                 backup.clone_from(&temp);
                 break;
             };
 
             let Ok(modified) = metadata.modified() else {
+                log::debug!("cannot reach metadata of {temp:?}");
                 backup.clone_from(&temp);
                 break;
             };
@@ -153,17 +157,23 @@ impl SaveDatabase {
                 .duration_since(modified)
                 .unwrap_or_default();
 
-            if duration > oldest {
+            if oldest.is_none_or(|it| duration > it) {
                 backup.clone_from(&temp);
-                oldest = duration;
+                oldest_backup.clone_from(&temp);
+                oldest = Some(duration);
             }
 
-            if duration < newest {
-                newest = duration;
+            if newest.is_none_or(|it| duration < it) {
+                newest_backup.clone_from(&temp);
+                newest = Some(duration);
             }
         }
 
-        if newest < BACKUP_MINIMUM_DURATION {
+        log::debug!("newest {newest_backup:?} {newest:?}");
+        log::debug!("oldest {oldest_backup:?} {oldest:?}");
+
+        if newest.is_some_and(|it| it < BACKUP_MINIMUM_DURATION) {
+            log::debug!("backup skipped: very recent backup file");
             return;
         }
 
