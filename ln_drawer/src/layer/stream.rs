@@ -48,6 +48,7 @@ pub enum ThreadOutput {
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 struct ChunkMeta0 {
     format: u32,
+    /// deprecated
     _mipmapped: bool,
 }
 
@@ -307,13 +308,19 @@ fn load(
                         "Cannot read layer chunk from newer version {:?}",
                         meta0.format
                     );
-                    base.active.insert(chunk_id, None);
                     continue;
                 } else if meta0.format < CHUNK_META0_FORMAT {
                     chunk_migration(&meta0)?;
                     touch_chunk_meta(config, chunk_id, meta0)?;
                 }
             } else {
+                let meta0 = ChunkMeta0 {
+                    format: CHUNK_META0_FORMAT,
+                    _mipmapped: false,
+                };
+
+                log::warn!("failed to get metadata from chunk {chunk_id:?}",);
+                touch_chunk_meta(config, chunk_id, meta0)?;
             }
 
             base.active.insert(chunk_id, Some(texture));
@@ -554,14 +561,7 @@ fn chunk_migration(meta0: &ChunkMeta0) -> Result<(), Box<dyn Error + 'static>> {
     for migrate_format in meta0.format..CHUNK_META0_FORMAT {
         match migrate_format {
             0 => {
-                // log::trace!("gamma fixed {chunk_id:?}");
-                // gamma_fix.execute(
-                //     &config.device,
-                //     &config.queue,
-                //     &texture,
-                //     chunk_id,
-                //     config.chunk_size,
-                // );
+                // gamma encoding fix - skipped after v0.2.0
             }
             _ => unimplemented!("unsupported migration {migrate_format}"),
         }

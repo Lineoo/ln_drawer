@@ -382,7 +382,6 @@ fn side_panel(world: &mut World) {
         stroke.redo();
     });
 
-
     world.observer(slider, move |&SetSlider { min, max, value }, world| {
         let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
         let percent = (value - min) / (max - min);
@@ -404,6 +403,13 @@ fn side_panel(world: &mut World) {
 
     let debug = docker_button(include_bytes!("../res/interface/bug.png"));
     debug_panel(world, debug);
+
+    let compact = docker_button(include_bytes!("../res/interface/folder-down.png"));
+    world.observer(compact, move |&WidgetClick, world| {
+        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        log::debug!("on next startup database will be compacted");
+        SaveDatabase::write_compact(&db.0).unwrap();
+    });
 
     world.insert(Transform {
         value: TransformValue {
@@ -480,6 +486,7 @@ fn side_panel(world: &mut World) {
             ),
             (compass.untyped(), LuniChild::default()),
             (debug.untyped(), LuniChild::default()),
+            (compact.untyped(), LuniChild::default()),
         ],
     });
 
@@ -581,7 +588,7 @@ fn color_palette(world: &World, theme: &Theme) -> Handle<Button> {
     color_picker
 }
 
-fn debug_panel(world: &World, button: Handle<Button>){
+fn debug_panel(world: &World, button: Handle<Button>) {
     let submenu = world.insert(Panel {
         rect: Rectangle::default(),
         visible: false,
