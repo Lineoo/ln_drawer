@@ -75,24 +75,35 @@ pub struct StreamConfig {
     pub mipmap_levels: u8,
 }
 
-pub struct TexelBase {
+/// Static database of real textures that are loaded.
+pub struct StreamBase {
     active: IndexMap<ChunkKey, Option<Texture>>,
-    staging: IndexSet<ChunkKey>,
     unsaved: HashSet<ChunkKey>,
 }
 
-pub struct StreamInfo {
+/// Single batch of streaming chunks selected out of [`StreamQueue`] and waited to
+/// be actually loaded. It serves as a cache buffer and should stay clean whenever
+/// the thread loop starts.
+pub struct StreamStaging {
+    active: Vec<ChunkKey>,
+}
+
+/// ALL chunks waited to stage _(no matter loaded or not)_, will IMMEDIATELY
+/// refresh after camera movement.
+pub struct StreamQueue {
+    inner: IndexSet<ChunkKey>,
+    front: usize,
+}
+
+/// Camera information from main thread, used to determine which chunks to load.
+pub struct CameraInfo {
     center: ChunkKey,
     rect: Rectangle,
     range: ((i32, i32), (i32, i32)),
     outdated: bool,
 }
 
-pub struct StreamQueue {
-    front: usize,
-    inner: IndexSet<ChunkKey>,
-}
-
+/// Debug information for diagnosis.
 #[derive(Default)]
 pub struct DebugInfo {
     load: usize,
@@ -107,28 +118,29 @@ pub fn loading_thread(
     input_rx: Receiver<ThreadInput>,
     output_tx: Sender<ThreadOutput>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut texel = TexelBase {
+    let mut base = StreamBase {
         active: IndexMap::<ChunkKey, Option<Texture>>::new(),
-        staging: IndexSet::<ChunkKey>::new(),
         unsaved: HashSet::new(),
     };
 
-    let mut stream = StreamInfo {
-        center: (0, 0, 0),
-        rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(50)),
-        range: super::rect_to_chunks(Rectangle::default(), 0, config.chunk_size),
-        outdated: false,
-    };
+    let mut staging = StreamStaging { active: Vec::new() };
 
     let mut queue = StreamQueue {
         front: 0,
         inner: IndexSet::with_capacity(400),
     };
 
+    let mut camera = CameraInfo {
+        center: (0, 0, 0),
+        rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(50)),
+        range: super::rect_to_chunks(Rectangle::default(), 0, config.chunk_size),
+        outdated: false,
+    };
+
     let mut debug = DebugInfo::default();
 
     loop {
-        let input = if queue.front < queue.inner.len() || stream.outdated {
+        let input = if queue.front < queue.inner.len() || camera.outdated {
             match input_rx.try_recv() {
                 Ok(input) => Some(input),
                 Err(TryRecvError::Empty) => None,
@@ -143,38 +155,39 @@ pub fn loading_thread(
 
         match input {
             Some(ThreadInput::SetStreamCamera(zoom, size, center)) => {
-                stream.rect = Camera::manual_view_rect(zoom, size, center);
+                camera.rect = Camera::manual_view_rect(zoom, size, center);
                 let stream_center_new = chunk_of(center.q32_round(), zoom, config.chunk_size);
                 let stream_range_new =
-                    super::rect_to_chunks(stream.rect, stream_center_new.2, config.chunk_size);
-                if stream_range_new != stream.range || stream_center_new != stream.center {
-                    stream.range = stream_range_new;
-                    stream.center = stream_center_new;
-                    stream.outdated = true;
+                    super::rect_to_chunks(camera.rect, stream_center_new.2, config.chunk_size);
+                if stream_range_new != camera.range || stream_center_new != camera.center {
+                    camera.range = stream_range_new;
+                    camera.center = stream_center_new;
+                    camera.outdated = true;
                 }
                 continue;
             }
             Some(ThreadInput::MarkUnsaved(chunk)) => {
-                texel.unsaved.insert(chunk);
+                base.unsaved.insert(chunk);
                 continue;
             }
-            Some(ThreadInput::RequestReal(chunk_id)) => {
-                if texel.active.get(&chunk_id).is_some_and(|x| x.is_none()) {
-                    let (texture, chunk) = chunk_prepare(&config, chunk_id)?;
-                    texel.active.insert(chunk_id, Some(texture));
-                    output_tx.send(ThreadOutput::Insert(chunk_id, chunk))?;
+            Some(ThreadInput::RequestReal(key)) => {
+                if base.active.get(&key).is_some_and(|x| x.is_none()) {
+                    let (texture, chunk) = chunk_prepare(&config, key)?;
+                    base.active.insert(key, Some(texture));
+                    base.unsaved.insert(key);
+                    output_tx.send(ThreadOutput::Insert(key, chunk))?;
                 }
                 continue;
             }
             Some(ThreadInput::SwapChunk(key, chunk)) => {
-                texel.active.insert(key, Some(chunk.texture.clone()));
-                texel.unsaved.insert(key);
+                base.active.insert(key, Some(chunk.texture.clone()));
+                base.unsaved.insert(key);
                 output_tx.send(ThreadOutput::Insert(key, chunk))?;
 
                 continue;
             }
             Some(ThreadInput::Autosave) => {
-                autosave(&config, &mut texel, &mut debug)?;
+                autosave(&config, &mut base, &mut debug)?;
                 continue;
             }
             Some(ThreadInput::Abort) => {
@@ -194,42 +207,52 @@ pub fn loading_thread(
             ",
             queue.inner.len(),
             queue.inner.len() - queue.front,
-            texel.active.values().flatten().count(),
-            texel.active.len(),
+            base.active.values().flatten().count(),
+            base.active.len(),
             debug.load,
             debug.load_real,
             debug.unload,
             debug.unload_real,
             debug.encode,
-            stream.center
+            camera.center
         )))?;
 
-        if stream.outdated {
-            restock_queue(&config, &mut stream, &mut queue);
+        if camera.outdated {
+            restock_queue(&config, &mut camera, &mut queue);
         }
 
-        staging_queue(&mut texel, &mut queue);
+        debug_assert!(staging.active.is_empty(), "staging buffer is not cleared");
 
-        if texel.staging.is_empty() {
+        queue_staging(&mut base, &mut staging, &mut queue);
+
+        if staging.active.is_empty() {
             continue;
         }
 
-        texel
-            .active
-            .sort_by_key(|&key, _| chunk_distance(key, stream.center, config.mipmap_levels));
+        base.active
+            .sort_by_key(|&key, _| chunk_distance(key, camera.center, config.mipmap_levels));
 
-        unload(&config, &output_tx, &mut texel, &queue, &mut debug)?;
-        load(&config, &output_tx, &mut texel, &mut debug)?;
+        unload(
+            &config,
+            &output_tx,
+            &mut base,
+            &mut staging,
+            &queue,
+            &mut debug,
+        )?;
+
+        load(&config, &output_tx, &mut base, &mut staging, &mut debug)?;
     }
 }
 
-fn restock_queue(config: &StreamConfig, stream: &mut StreamInfo, queue: &mut StreamQueue) {
-    stream.outdated = false;
+/// camera is moved so we restock the stream queue
+fn restock_queue(config: &StreamConfig, camera: &mut CameraInfo, queue: &mut StreamQueue) {
+    camera.outdated = false;
     queue.front = 0;
     queue.inner.clear();
 
-    for z in stream.center.2.saturating_sub(1)..config.mipmap_levels {
-        let (range_src, range_dst) = super::rect_to_chunks(stream.rect, z, config.chunk_size);
+    for z in camera.center.2.saturating_sub(1)..config.mipmap_levels {
+        let (range_src, range_dst) = super::rect_to_chunks(camera.rect, z, config.chunk_size);
         for x in range_src.0..range_dst.0 {
             for y in range_src.1..range_dst.1 {
                 queue.inner.insert((x, y, z));
@@ -241,21 +264,21 @@ fn restock_queue(config: &StreamConfig, stream: &mut StreamInfo, queue: &mut Str
 
     queue
         .inner
-        .sort_by_key(|&key| chunk_distance(key, stream.center, config.mipmap_levels));
+        .sort_by_key(|&key| chunk_distance(key, camera.center, config.mipmap_levels));
 }
 
-fn staging_queue(texel: &mut TexelBase, queue: &mut StreamQueue) {
+/// select certain amount of chunks defined in [`CHUNK_BATCH`] from queue to load in single batch,
+fn queue_staging(base: &mut StreamBase, staging: &mut StreamStaging, queue: &mut StreamQueue) {
     let mut batch_cnt = 0;
     while let Some(&key) = queue.inner.get_index(queue.front)
         && batch_cnt < CHUNK_BATCH
     {
         queue.front += 1;
-        if texel.active.contains_key(&key) {
+        if base.active.contains_key(&key) {
             continue;
         }
 
-        texel.active.insert(key, None);
-        texel.staging.insert(key);
+        staging.active.push(key);
         batch_cnt += 1;
     }
 }
@@ -263,71 +286,78 @@ fn staging_queue(texel: &mut TexelBase, queue: &mut StreamQueue) {
 fn load(
     config: &StreamConfig,
     output_tx: &Sender<ThreadOutput>,
-    texel: &mut TexelBase,
+    base: &mut StreamBase,
+    staging: &mut StreamStaging,
     debug: &mut DebugInfo,
 ) -> Result<(), Box<dyn Error + 'static>> {
     let read = config.database.0.begin_read()?;
     let table_chunk = read.open_table(TABLE_LAYER_CHUNK)?;
     let table_meta = read.open_table(TABLE_LAYER_CHUNK_META)?;
-    Ok(for chunk_id in texel.staging.drain(..) {
-        if let Some(data) = table_chunk.get((0, chunk_id))?
-            && let Some(meta) = table_meta.get(((0, chunk_id), 0))?
-            && let Ok(meta0) = postcard::from_bytes::<ChunkMeta0>(meta.value())
-        {
+    for chunk_id in staging.active.drain(..) {
+        if let Some(data) = table_chunk.get((0, chunk_id))? {
             let bytes = zstd::decode_all(data.value())?;
             let (texture, chunk) = chunk_prepare(config, chunk_id)?;
             chunk_write(config, &bytes, &texture);
 
-            texel.active.insert(chunk_id, Some(texture));
-            output_tx.send(ThreadOutput::Insert(chunk_id, chunk))?;
-
-            if meta0.format > CHUNK_META0_FORMAT {
-                log::error!(
-                    "Cannot read layer chunk from newer version {:?}",
-                    meta0.format
-                );
-                texel.active.insert(chunk_id, None);
-                continue;
-            } else if meta0.format < CHUNK_META0_FORMAT {
-                chunk_migration(config, chunk_id, meta0)?;
+            if let Some(meta) = table_meta.get(((0, chunk_id), 0))?
+                && let Ok(meta0) = postcard::from_bytes::<ChunkMeta0>(meta.value())
+            {
+                if meta0.format > CHUNK_META0_FORMAT {
+                    log::error!(
+                        "Cannot read layer chunk from newer version {:?}",
+                        meta0.format
+                    );
+                    base.active.insert(chunk_id, None);
+                    continue;
+                } else if meta0.format < CHUNK_META0_FORMAT {
+                    chunk_migration(&meta0)?;
+                    touch_chunk_meta(config, chunk_id, meta0)?;
+                }
+            } else {
             }
+
+            base.active.insert(chunk_id, Some(texture));
+            output_tx.send(ThreadOutput::Insert(chunk_id, chunk))?;
 
             debug.load_real += 1;
         } else {
-            texel.active.insert(chunk_id, None);
+            base.active.insert(chunk_id, None);
         }
 
         debug.load += 1;
-    })
+    }
+
+    Ok(())
 }
 
 fn unload(
     config: &StreamConfig,
     output_tx: &Sender<ThreadOutput>,
-    texel: &mut TexelBase,
+    base: &mut StreamBase,
+    staging: &mut StreamStaging,
     queue: &StreamQueue,
     debug: &mut DebugInfo,
 ) -> Result<(), Box<dyn Error + 'static>> {
     let write = config.database.0.begin_write()?;
     let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
-    let mut frnt = texel.active.len();
-    while texel.active.len() + texel.staging.len() >= CHUNK_CAPS {
+    let mut frnt = base.active.len();
+    while base.active.len() + staging.active.len() >= CHUNK_CAPS {
         frnt -= 1;
-        if (queue.inner).contains(texel.active.get_index(frnt).unwrap().0) {
+        if (queue.inner).contains(base.active.get_index(frnt).unwrap().0) {
             continue;
         }
 
-        let (key, texture) = texel.active.swap_remove_index(frnt).unwrap();
+        let (key, texture) = base.active.swap_remove_index(frnt).unwrap();
         output_tx.send(ThreadOutput::Remove(key))?;
 
         if let Some(texture) = &texture
-            && texel.unsaved.contains(&key)
+            && base.unsaved.contains(&key)
         {
             let rx = chunk_readback(texture, &config.device, &config.queue, config.chunk_size);
             config.device.poll(PollType::wait_indefinitely()).unwrap();
             let bytes = rx.recv().unwrap();
-            write_chunk_data(texel, debug, &mut table_chunk, &mut table_meta, key, bytes).unwrap();
+            write_chunk_data(base, debug, &mut table_chunk, &mut table_meta, key, bytes).unwrap();
         }
 
         if texture.is_some() {
@@ -347,7 +377,7 @@ fn unload(
 
 fn autosave(
     config: &StreamConfig,
-    texel: &mut TexelBase,
+    base: &mut StreamBase,
     debug: &mut DebugInfo,
 ) -> Result<(), Box<dyn Error + 'static>> {
     let now = Instant::now();
@@ -358,8 +388,8 @@ fn autosave(
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
     let mut tasks = Vec::new();
 
-    for &key in &texel.unsaved {
-        let Some(Some(texture)) = texel.active.get(&key) else {
+    for &key in &base.unsaved {
+        let Some(Some(texture)) = base.active.get(&key) else {
             continue;
         };
 
@@ -373,7 +403,7 @@ fn autosave(
 
     for (key, rx) in tasks {
         let bytes = rx.recv().unwrap();
-        write_chunk_data(texel, debug, &mut table_chunk, &mut table_meta, key, bytes)?;
+        write_chunk_data(base, debug, &mut table_chunk, &mut table_meta, key, bytes)?;
     }
     drop(table_chunk);
     drop(table_meta);
@@ -389,7 +419,7 @@ fn autosave(
 }
 
 fn write_chunk_data(
-    texel: &mut TexelBase,
+    texel: &mut StreamBase,
     debug: &mut DebugInfo,
     table_chunk: &mut redb::Table<(u64, ChunkKey), &[u8]>,
     table_meta: &mut redb::Table<((u64, ChunkKey), u32), &[u8]>,
@@ -440,6 +470,7 @@ fn chunk_prepare(
         (&texture).clone(),
         chunk_id,
     );
+
     Ok((texture, chunk))
 }
 
@@ -519,11 +550,7 @@ fn chunk_readback(
     rx
 }
 
-fn chunk_migration(
-    config: &StreamConfig,
-    chunk_id: (i32, i32, u8),
-    mut meta0: ChunkMeta0,
-) -> Result<(), Box<dyn Error + 'static>> {
+fn chunk_migration(meta0: &ChunkMeta0) -> Result<(), Box<dyn Error + 'static>> {
     for migrate_format in meta0.format..CHUNK_META0_FORMAT {
         match migrate_format {
             0 => {
@@ -539,6 +566,15 @@ fn chunk_migration(
             _ => unimplemented!("unsupported migration {migrate_format}"),
         }
     }
+
+    Ok(())
+}
+
+fn touch_chunk_meta(
+    config: &StreamConfig,
+    chunk_id: (i32, i32, u8),
+    mut meta0: ChunkMeta0,
+) -> Result<(), Box<dyn Error + 'static>> {
     meta0.format = CHUNK_META0_FORMAT;
     let write = config.database.0.begin_write()?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
@@ -546,6 +582,7 @@ fn chunk_migration(
     table_meta.insert(((0, chunk_id), 0), &bytes[..])?;
     drop(table_meta);
     write.commit()?;
+
     Ok(())
 }
 
