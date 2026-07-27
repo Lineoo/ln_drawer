@@ -528,11 +528,15 @@ impl LayerWrapper {
         let mut redo_chunks = Vec::new();
         for (key, chunk) in backup.chunks.drain() {
             self.thread_tx
-                .send(ThreadInput::SwapChunk(key, chunk))
+                .send(ThreadInput::SwapChunk(key, chunk.clone()))
                 .unwrap();
             if let Some(old) = self.main.chunks.get(&key).cloned() {
                 redo_chunks.push((key, old));
             }
+            self.main.chunks.insert(key, chunk);
+            self.brush
+                .layer
+                .generate_mipmaps(&self.main, chunk_to_rect(key, self.main.chunk_size));
         }
 
         for (key, chunk) in redo_chunks {
@@ -557,11 +561,15 @@ impl LayerWrapper {
         let mut undo_chunks = Vec::new();
         for (key, chunk) in backup.chunks.drain() {
             self.thread_tx
-                .send(ThreadInput::SwapChunk(key, chunk))
+                .send(ThreadInput::SwapChunk(key, chunk.clone()))
                 .unwrap();
             if let Some(old) = self.main.chunks.get(&key).cloned() {
                 undo_chunks.push((key, old));
             }
+            self.main.chunks.insert(key, chunk);
+            self.brush
+                .layer
+                .generate_mipmaps(&self.main, chunk_to_rect(key, self.main.chunk_size));
         }
 
         for (key, chunk) in undo_chunks {
