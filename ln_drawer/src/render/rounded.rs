@@ -5,7 +5,7 @@ use wgpu::*;
 use crate::{
     measures::Rectangle,
     render::{
-        MSAA_STATE, Render, RenderControl,
+        MSAA_STATE, Render, RenderControl, RenderExtra,
         camera::{Camera, CameraBind},
     },
     widgets::{WidgetEnabled, WidgetRectangle},
@@ -158,19 +158,11 @@ impl RoundedRect {
 
         let control = world.insert(RenderControl {
             prepare: None,
-            draw: Some(Box::new(move |world, rpass, extra| {
-                let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
+            draw: Some(Box::new(move |world, rpass, mut extra| {
+                let pipeline = world.single_fetch::<RoundedRectPipeline>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
 
-                let (start, end) = extra.diagnosis.assign("main > rounded");
-                extra.diagnosis.write(rpass, start);
-
-                rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &camera.bind, &[]);
-                rpass.set_bind_group(1, &bind, &[]);
-                rpass.draw(0..4, 0..1);
-
-                extra.diagnosis.write(rpass, end);
+                Self::render(&bind, rpass, &mut extra, &pipeline, &camera);
             })),
         });
 
@@ -182,6 +174,24 @@ impl RoundedRect {
             uniform,
             queue: render.queue.clone(),
         }
+    }
+
+    fn render(
+        bind: &BindGroup,
+        rpass: &mut RenderPass,
+        extra: &mut RenderExtra,
+        pipeline: &RoundedRectPipeline,
+        camera: &Camera,
+    ) {
+        let (start, end) = extra.diagnosis.assign("main > rounded");
+        extra.diagnosis.write(rpass, start);
+
+        rpass.set_pipeline(&pipeline.pipeline);
+        rpass.set_bind_group(0, &camera.bind, &[]);
+        rpass.set_bind_group(1, bind, &[]);
+        rpass.draw(0..4, 0..1);
+
+        extra.diagnosis.write(rpass, end);
     }
 
     fn reorder(&mut self, world: &World) {
