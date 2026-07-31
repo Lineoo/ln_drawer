@@ -2,6 +2,8 @@ use std::{fmt, ops};
 
 use glam::{IVec2, UVec2};
 
+use crate::measures::Axis;
+
 #[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rectangle {
     pub origin: IVec2,
@@ -178,12 +180,12 @@ impl Rectangle {
 
     #[inline]
     pub const fn horizontal_center(self) -> i32 {
-        self.origin.x + self.extend.x as i32 / 2
+        self.origin.x.wrapping_add(self.extend.x as i32 / 2)
     }
 
     #[inline]
     pub const fn vertical_center(self) -> i32 {
-        self.origin.y + self.extend.y as i32 / 2
+        self.origin.y.wrapping_add(self.extend.y as i32 / 2)
     }
 
     pub fn expand(self, val: i32) -> Rectangle {
@@ -211,5 +213,32 @@ impl Rectangle {
     pub fn contains(self, p: IVec2) -> bool {
         let delta = p.wrapping_sub(self.origin).as_uvec2();
         delta.x < self.extend.x && delta.y < self.extend.y
+    }
+
+    pub fn axis_start(self, axis: Axis) -> i32 {
+        match axis {
+            Axis::Left => self.left(),
+            Axis::Down => self.down(),
+            Axis::Right => self.right(),
+            Axis::Up => self.up(),
+        }
+    }
+
+    pub fn axis_end(self, axis: Axis) -> i32 {
+        self.axis_start(axis.flip())
+    }
+
+    pub fn axis_length(self, axis: Axis) -> u32 {
+        match axis.is_horizontal() {
+            true => self.width(),
+            false => self.height(),
+        }
+    }
+
+    pub fn axis_center(self, axis: Axis) -> i32 {
+        match axis.is_horizontal() {
+            true => self.horizontal_center(),
+            false => self.vertical_center(),
+        }
     }
 }
