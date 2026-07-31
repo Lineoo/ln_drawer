@@ -19,33 +19,21 @@ use crate::{
     layer::{
         modifier::Modifier,
         wrapper::{LayerDebugMessage, LayerWrapper},
-    },
-    layout::{
+    }, layout::{
         luni::{LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
-    },
-    measures::{FI64Ext, Rectangle},
-    render::{
+    }, measures::{FI64Ext, Rectangle}, render::{
         Render,
         camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, UICamera},
         canvas::Canvas,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
         text::{Text, TextChanged},
-    },
-    save::{Autosave, AutosaveScheduler, SaveDatabase},
-    theme::Theme,
-    tools::{
+    }, save::{Autosave, AutosaveScheduler, SaveDatabase}, theme::Theme, tools::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
-    },
-    widgets::{
-        WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle,
-        button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage},
-        palette::hsl::{PaletteHsl, PaletteHslMaterial},
-        panel::{Panel, PanelAnimation},
-        renderer::grid::{Grid, GridMaterial},
-        slider::{SetSlider, VSlider},
+    }, widgets::{
+        WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle, button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage}, palette::hsl::{PaletteHsl, PaletteHslMaterial}, panel::{Panel, PanelAnimation}, renderer::grid::{Grid, GridMaterial}, slider::{SliderOutput, SliderValue, VSlider},
     },
 };
 
@@ -273,19 +261,9 @@ fn side_panel(world: &mut World) {
 
     let elastic_blank = world.insert(());
 
-    let slider = world.insert(VSlider {
-        x: 0,
-        y_min: -100,
-        y_max: 100,
-        min: 0.0,
-        max: 100.0,
-        value: 67.0,
-    });
-
-    world.queue(move |world| {
-        VSlider::receive_event(slider, world);
-        VSlider::create_renderer(slider, world);
-        VSlider::create_interact(slider, world);
+    let slider = world.build(VSlider {
+        rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
+        value: 0.67,
     });
 
     world.observer(pen, move |&WidgetClick, world| {
@@ -306,14 +284,7 @@ fn side_panel(world: &mut World) {
         stroke.brush.erase = false;
 
         let slider = world.fetch(slider).unwrap();
-        world.queue_trigger(
-            slider.handle(),
-            SetSlider {
-                max: slider.max,
-                min: slider.min,
-                value: (6.0f32 / 40.0 + 1.0).log2() * (slider.max - slider.min) + slider.min,
-            },
-        );
+        world.queue_trigger(slider.handle(), SliderValue((6.0f32 / 40.0 + 1.0).log2()));
     });
 
     world.observer(brush, move |&WidgetClick, world| {
@@ -334,14 +305,7 @@ fn side_panel(world: &mut World) {
         stroke.brush.erase = false;
 
         let slider = world.fetch(slider).unwrap();
-        world.queue_trigger(
-            slider.handle(),
-            SetSlider {
-                max: slider.max,
-                min: slider.min,
-                value: (24.0f32 / 40.0 + 1.0).log2() * (slider.max - slider.min) + slider.min,
-            },
-        );
+        world.queue_trigger(slider.handle(), SliderValue((24.0f32 / 40.0 + 1.0).log2()));
     });
 
     world.observer(eraser, move |&WidgetClick, world| {
@@ -362,14 +326,7 @@ fn side_panel(world: &mut World) {
         stroke.brush.erase = true;
 
         let slider = world.fetch(slider).unwrap();
-        world.queue_trigger(
-            slider.handle(),
-            SetSlider {
-                max: slider.max,
-                min: slider.min,
-                value: (40.0f32 / 40.0 + 1.0).log2() * (slider.max - slider.min) + slider.min,
-            },
-        );
+        world.queue_trigger(slider.handle(), SliderValue((40.0f32 / 40.0 + 1.0).log2()));
     });
 
     world.observer(undo, move |&WidgetClick, world| {
@@ -382,13 +339,14 @@ fn side_panel(world: &mut World) {
         stroke.redo();
     });
 
-    world.observer(slider, move |&SetSlider { min, max, value }, world| {
+    world.observer(slider, move |&SliderOutput(value), world| {
         let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-        let percent = (value - min) / (max - min);
         stroke.brush.modifier = Modifier {
-            max_size: stroke.brush.modifier.min_size + (percent.exp2() - 1.0) * 40.0,
+            max_size: stroke.brush.modifier.min_size + (value.exp2() - 1.0) * 40.0,
             ..stroke.brush.modifier
         };
+        // XXX Temporary solution
+        world.trigger(slider, &SliderValue(value));
     });
 
     let compass = docker_button(include_bytes!("../res/interface/compass.png"));

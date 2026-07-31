@@ -1,67 +1,33 @@
 use glam::{IVec2, UVec2, Vec2};
-use ln_world::{Element, Handle, World};
+use ln_world::{Descriptor, Element, Handle, World};
 use palette::Srgba;
 
 use crate::{
-    animation::{AnimationType, DirectAnimation, SetAnimationDst},
+    animation::{Animation, AnimationType, DirectAnimation, SetAnimationDst},
     measures::{FI64Ext, Rectangle},
-    render::rounded::RoundedRectDescriptor,
+    render::rounded::{RoundedRect, RoundedRectDescriptor},
     theme::Theme,
     tools::{
         collider::ToolCollider,
-        pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
+        pointer::{PointerHit, PointerHitStatus},
     },
     widgets::WidgetRectangle,
 };
 
-/// Related events: [`SetSlider`]
+pub struct SliderValue(pub f32);
+pub struct SliderOutput(pub f32);
+
 pub struct VSlider {
-    pub x: i32,
-    pub y_min: i32,
-    pub y_max: i32,
-    pub min: f32,
-    pub max: f32,
     pub value: f32,
+    pub rect: Rectangle,
 }
-
-pub struct SetSlider {
-    pub min: f32,
-    pub max: f32,
-    pub value: f32,
-}
-
-const BAR_HW: i32 = 6;
-const BAR_EX: i32 = 5;
-const KNOB_EDGE_OFF: i32 = 17;
-const KNOB_SIZE: UVec2 = UVec2::new(9, 20);
-const KNOB_SPLIT_SIZE: UVec2 = UVec2::new(6, 2);
 
 impl VSlider {
-    pub fn receive_event(slider: Handle<VSlider>, world: &World) {
-        world.observer(slider, move |&SetSlider { min, max, value }, world| {
-            let mut this = world.fetch_mut(slider).unwrap();
-            this.min = min;
-            this.max = max;
-            this.value = value;
-        });
-
-        world.observer(slider, move |&WidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(slider).unwrap();
-            this.y_max = rect.up();
-            this.y_min = rect.down();
-            this.x = rect.horizontal_center();
-        });
-    }
-
-    pub fn create_renderer(slider: Handle<VSlider>, world: &World) {
-        let this = world.fetch(slider).unwrap();
+    pub fn build(self, world: &World) -> Handle<Self> {
         let theme = world.single_fetch::<Theme>().unwrap();
 
-        let y_knob_max = this.y_max - KNOB_EDGE_OFF;
-        let y_knob_min = this.y_min + KNOB_EDGE_OFF;
-
         let back = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, this.y_max),
+            rect: back_rect(self.rect),
             color: theme.secondary_color,
             shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
             shadow_offset: Vec2::ZERO,
@@ -73,10 +39,10 @@ impl VSlider {
             order: 0,
         });
 
-        let value = div_height(this.value, this.max, this.min, y_knob_max, y_knob_min);
+        let value_height = into_value_height(self.rect, self.value);
 
         let front = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, value),
+            rect: front_rect(self.rect, value_height),
             color: theme.theme_color,
             shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
             shadow_offset: Vec2::ZERO,
@@ -89,7 +55,7 @@ impl VSlider {
         });
 
         let knob = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new_half(IVec2::new(this.x, value), KNOB_SIZE),
+            rect: knob_rect(self.rect, value_height),
             color: theme.primary_color,
             shadow_color: theme.shadow_color,
             shadow_offset: Vec2::new(0.0, -4.0),
@@ -102,7 +68,7 @@ impl VSlider {
         });
 
         let knob_split = world.build(RoundedRectDescriptor {
-            rect: Rectangle::new_half(IVec2::new(this.x, value), KNOB_SPLIT_SIZE),
+            rect: knob_split_rect(self.rect, value_height),
             color: theme.secondary_color,
             shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
             shadow_offset: Vec2::ZERO,
@@ -115,7 +81,7 @@ impl VSlider {
         });
 
         let back_rect_anim = world.build(DirectAnimation {
-            init: Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, this.y_max),
+            init: back_rect(self.rect),
             factor: theme.anim_factor,
             widget: back,
             access: |back| &mut back.desc.rect,
@@ -135,156 +101,160 @@ impl VSlider {
             access: |split| &mut split.desc.color,
         });
 
-        world.observer(slider, move |&SetSlider { min, max, value }, world| {
-            let this = world.fetch(slider).unwrap();
-            let mut front = world.fetch_mut(front).unwrap();
-            let mut knob = world.fetch_mut(knob).unwrap();
-            let mut knob_split = world.fetch_mut(knob_split).unwrap();
-
-            let y_knob_max = this.y_max - KNOB_EDGE_OFF;
-            let y_knob_min = this.y_min + KNOB_EDGE_OFF;
-
-            let value = div_height(value, max, min, y_knob_max, y_knob_min);
-
-            front.desc.rect = Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, value);
-            knob.desc.rect = Rectangle::new_half(IVec2::new(this.x, value), KNOB_SIZE);
-            knob_split.desc.rect = Rectangle::new_half(IVec2::new(this.x, value), KNOB_SPLIT_SIZE);
-        });
-
-        world.observer(slider, move |&WidgetRectangle(rect), world| {
-            let this = world.fetch(slider).unwrap();
-            let mut back_rect_anim = world.fetch_mut(back_rect_anim).unwrap();
-            let mut front = world.fetch_mut(front).unwrap();
-            let mut knob = world.fetch_mut(knob).unwrap();
-            let mut knob_split = world.fetch_mut(knob_split).unwrap();
-
-            let y_max = rect.up();
-            let y_min = rect.down();
-            let x = rect.horizontal_center();
-
-            let y_knob_max = y_max - KNOB_EDGE_OFF;
-            let y_knob_min = y_min + KNOB_EDGE_OFF;
-
-            let value = div_height(this.value, this.max, this.min, y_knob_max, y_knob_min);
-
-            let back_rect =
-                Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, this.y_max);
-            back_rect_anim.dst = back_rect.into_storage();
-            back_rect_anim.src = back_rect.into_storage();
-
-            front.desc.rect = Rectangle::new(x - BAR_HW, y_min, x + BAR_HW, value);
-            knob.desc.rect = Rectangle::new_half(IVec2::new(x, value), KNOB_SIZE);
-            knob_split.desc.rect = Rectangle::new_half(IVec2::new(x, value), KNOB_SPLIT_SIZE);
-        });
-
-        world.observer(slider, move |event: &PointerHover, world| {
-            let this = world.fetch(slider).unwrap();
-
-            match event.status {
-                PointerHoverStatus::Enter => {
-                    world.trigger(
-                        back_rect_anim,
-                        &SetAnimationDst(Rectangle::new(
-                            this.x - BAR_HW - BAR_EX,
-                            this.y_min - BAR_EX,
-                            this.x + BAR_HW + BAR_EX,
-                            this.y_max + BAR_EX,
-                        )),
-                    );
-                }
-                PointerHoverStatus::Leave => {
-                    world.trigger(
-                        back_rect_anim,
-                        &SetAnimationDst(Rectangle::new(
-                            this.x - BAR_HW,
-                            this.y_min,
-                            this.x + BAR_HW,
-                            this.y_max,
-                        )),
-                    );
-                }
-                _ => {}
-            }
-        });
-
-        world.observer(slider, move |event: &PointerHit, world| {
-            let theme = world.single_fetch::<Theme>().unwrap();
-
-            match event.status {
-                PointerHitStatus::Press => {
-                    world.trigger(knob_color_anim, &SetAnimationDst(theme.highlight_color));
-                    world.trigger(
-                        knob_split_color_anim,
-                        &SetAnimationDst(theme.significant_color),
-                    );
-                }
-                PointerHitStatus::Release => {
-                    world.trigger(knob_color_anim, &SetAnimationDst(theme.primary_color));
-                    world.trigger(
-                        knob_split_color_anim,
-                        &SetAnimationDst(theme.secondary_color),
-                    );
-                }
-                _ => {}
-            }
-        });
-    }
-
-    pub fn create_interact(slider: Handle<VSlider>, world: &World) {
-        let this = world.fetch(slider).unwrap();
-
         let collider = world.insert(ToolCollider {
-            rect: Rectangle::new(this.x - BAR_HW, this.y_min, this.x + BAR_HW, this.y_max),
+            rect: back_rect(self.rect),
             order: 10,
             enabled: true,
         });
 
-        world.observer(collider, move |event: &PointerHit, world| {
-            let this = world.fetch(slider).unwrap();
-            let y_knob_max = this.y_max - KNOB_EDGE_OFF;
-            let y_knob_min = this.y_min + KNOB_EDGE_OFF;
-            world.queue_trigger(
-                slider,
-                SetSlider {
-                    max: this.max,
-                    min: this.min,
-                    value: div_height_rev(
-                        event.position.q32_round().y,
-                        this.max,
-                        this.min,
-                        y_knob_max,
-                        y_knob_min,
-                    ),
-                },
+        let handle = world.insert(self);
+
+        // XXX Not `handle` but the underlying model handle
+        world.observer(handle, move |&SliderValue(value), world| {
+            let mut this = world.fetch_mut(handle).unwrap();
+            let mut front = world.fetch_mut(front).unwrap();
+            let mut knob = world.fetch_mut(knob).unwrap();
+            let mut knob_split = world.fetch_mut(knob_split).unwrap();
+            this.set_value(value, &mut front, &mut knob, &mut knob_split);
+        });
+
+        world.observer(handle, move |&WidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(handle).unwrap();
+            let mut back_rect_anim = world.fetch_mut(back_rect_anim).unwrap();
+            let mut front = world.fetch_mut(front).unwrap();
+            let mut knob = world.fetch_mut(knob).unwrap();
+            let mut knob_split = world.fetch_mut(knob_split).unwrap();
+            let mut collider = world.fetch_mut(collider).unwrap();
+            this.set_rect(
+                rect,
+                &mut back_rect_anim,
+                &mut front,
+                &mut knob,
+                &mut knob_split,
+                &mut collider,
             );
         });
 
-        world.observer(collider, move |event: &PointerHover, world| {
-            world.trigger(slider, event);
-        });
-
         world.observer(collider, move |event: &PointerHit, world| {
-            world.trigger(slider, event);
+            let this = world.fetch(handle).unwrap();
+            let theme = world.single_fetch::<Theme>().unwrap();
+
+            let value = from_value_height(this.rect, event.position.q32_round().y);
+            world.queue_trigger(handle, SliderOutput(value));
+
+            if let PointerHitStatus::Press = event.status {
+                let back_rect_expanded = back_rect_expanded(this.rect);
+                world.trigger(back_rect_anim, &SetAnimationDst(back_rect_expanded));
+                world.trigger(knob_color_anim, &SetAnimationDst(theme.highlight_color));
+                world.trigger(
+                    knob_split_color_anim,
+                    &SetAnimationDst(theme.significant_color),
+                );
+            } else if let PointerHitStatus::Release = event.status {
+                world.trigger(back_rect_anim, &SetAnimationDst(back_rect(this.rect)));
+                world.trigger(knob_color_anim, &SetAnimationDst(theme.primary_color));
+                world.trigger(
+                    knob_split_color_anim,
+                    &SetAnimationDst(theme.secondary_color),
+                );
+            }
         });
 
-        world.observer(slider, move |&WidgetRectangle(rect), world| {
-            let mut collider = world.fetch_mut(collider).unwrap();
+        handle
+    }
 
-            let y_max = rect.up();
-            let y_min = rect.down();
-            let x = rect.horizontal_center();
+    fn set_value(
+        &mut self,
+        value: f32,
+        front: &mut RoundedRect,
+        knob: &mut RoundedRect,
+        knob_split: &mut RoundedRect,
+    ) {
+        self.value = value;
 
-            collider.rect = Rectangle::new(x - BAR_HW, y_min, x + BAR_HW, y_max);
-        });
+        let value_height = into_value_height(self.rect, self.value);
+        front.desc.rect = front_rect(self.rect, value_height);
+        knob.desc.rect = knob_rect(self.rect, value_height);
+        knob_split.desc.rect = knob_split_rect(self.rect, value_height);
+    }
+
+    fn set_rect(
+        &mut self,
+        rect: Rectangle,
+        back_rect_anim: &mut Animation<Rectangle>,
+        front: &mut RoundedRect,
+        knob: &mut RoundedRect,
+        knob_split: &mut RoundedRect,
+        collider: &mut ToolCollider,
+    ) {
+        self.rect = rect;
+
+        let back_rect = back_rect(rect);
+        back_rect_anim.dst = back_rect.into_storage();
+        back_rect_anim.src = back_rect.into_storage();
+        collider.rect = back_rect;
+
+        let value_height = into_value_height(self.rect, self.value);
+        front.desc.rect = front_rect(self.rect, value_height);
+        knob.desc.rect = knob_rect(self.rect, value_height);
+        knob_split.desc.rect = knob_split_rect(self.rect, value_height);
     }
 }
 
-fn div_height(value: f32, max: f32, min: f32, y_knob_max: i32, y_knob_min: i32) -> i32 {
-    ((value - min) / (max - min) * (y_knob_max - y_knob_min) as f32).round() as i32 + y_knob_min
+fn back_rect(rect: Rectangle) -> Rectangle {
+    front_rect(rect, rect.up())
 }
 
-fn div_height_rev(y: i32, max: f32, min: f32, y_knob_max: i32, y_knob_min: i32) -> f32 {
-    ((y - y_knob_min) as f32 / (y_knob_max - y_knob_min) as f32).clamp(0.0, 1.0) * (max - min) + min
+fn back_rect_expanded(rect: Rectangle) -> Rectangle {
+    const BAR_EX: i32 = 5;
+    back_rect(rect).expand(BAR_EX)
+}
+
+fn front_rect(rect: Rectangle, value_height: i32) -> Rectangle {
+    const BAR_HW: i32 = 6;
+    Rectangle::new(
+        rect.horizontal_center() - BAR_HW,
+        rect.down(),
+        rect.horizontal_center() + BAR_HW,
+        value_height,
+    )
+}
+
+fn knob_rect(rect: Rectangle, value_height: i32) -> Rectangle {
+    const KNOB_SIZE: UVec2 = UVec2::new(9, 20);
+    Rectangle::new_half(
+        IVec2::new(rect.horizontal_center(), value_height),
+        KNOB_SIZE,
+    )
+}
+
+fn knob_split_rect(rect: Rectangle, value_height: i32) -> Rectangle {
+    const KNOB_SPLIT_SIZE: UVec2 = UVec2::new(6, 2);
+    Rectangle::new_half(
+        IVec2::new(rect.horizontal_center(), value_height),
+        KNOB_SPLIT_SIZE,
+    )
+}
+
+fn into_value_height(rect: Rectangle, value: f32) -> i32 {
+    let (knob_max, knob_min) = knob_limit(rect);
+    (value * (knob_max - knob_min) as f32).round() as i32 + knob_min
+}
+
+fn from_value_height(rect: Rectangle, value_height: i32) -> f32 {
+    let (knob_max, knob_min) = knob_limit(rect);
+    ((value_height - knob_min) as f32 / (knob_max - knob_min) as f32).clamp(0.0, 1.0)
+}
+
+fn knob_limit(rect: Rectangle) -> (i32, i32) {
+    const KNOB_EDGE_OFF: i32 = 17;
+    (rect.up() - KNOB_EDGE_OFF, rect.down() + KNOB_EDGE_OFF)
 }
 
 impl Element for VSlider {}
+impl Descriptor for VSlider {
+    type Target = Handle<Self>;
+    fn when_build(self, world: &World) -> Self::Target {
+        self.build(world)
+    }
+}
