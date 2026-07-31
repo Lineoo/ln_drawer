@@ -215,17 +215,26 @@ impl Rectangle {
         delta.x < self.extend.x && delta.y < self.extend.y
     }
 
+    pub fn axis_new(start: i32, right: i32, end: i32, left: i32, axis: Axis) -> Rectangle {
+        match axis {
+            Axis::Right => Rectangle::new(start, right, end, left),
+            Axis::Down => Rectangle::new(right, end, left, start),
+            Axis::Left => Rectangle::new(end, left, start, right),
+            Axis::Up => Rectangle::new(left, start, right, end),
+        }
+    }
+
     pub fn axis_start(self, axis: Axis) -> i32 {
+        self.axis_end(axis.flip())
+    }
+
+    pub fn axis_end(self, axis: Axis) -> i32 {
         match axis {
             Axis::Left => self.left(),
             Axis::Down => self.down(),
             Axis::Right => self.right(),
             Axis::Up => self.up(),
         }
-    }
-
-    pub fn axis_end(self, axis: Axis) -> i32 {
-        self.axis_start(axis.flip())
     }
 
     pub fn axis_length(self, axis: Axis) -> u32 {

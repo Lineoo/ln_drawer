@@ -22,7 +22,7 @@ use crate::{
     }, layout::{
         luni::{LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
-    }, measures::{FI64Ext, Rectangle}, render::{
+    }, measures::{Axis, FI64Ext, Rectangle}, render::{
         Render,
         camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, UICamera},
         canvas::Canvas,
@@ -33,7 +33,7 @@ use crate::{
         collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
         pointer::PointerTool, touch::MultiTouchTool,
     }, widgets::{
-        WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle, button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage}, palette::hsl::{PaletteHsl, PaletteHslMaterial}, panel::{Panel, PanelAnimation}, renderer::grid::{Grid, GridMaterial}, slider::{SliderOutput, SliderValue, VSlider},
+        WidgetClick, WidgetEnabled, WidgetHsla, WidgetRectangle, button::{Button, ButtonAnim, ButtonChecked, ButtonColor, ButtonImage}, palette::hsl::{PaletteHsl, PaletteHslMaterial}, panel::{Panel, PanelAnimation}, renderer::grid::{Grid, GridMaterial}, slider::{Slider, SliderOutput, SliderValue},
     },
 };
 
@@ -261,8 +261,9 @@ fn side_panel(world: &mut World) {
 
     let elastic_blank = world.insert(());
 
-    let slider = world.build(VSlider {
+    let slider = world.build(Slider {
         rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
+        axis: Axis::Up,
         value: 0.67,
     });
 
