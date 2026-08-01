@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use glam::{DVec2, Vec2};
+use image::DynamicImage;
 use ln_world::{Descriptor, Element, Handle, World};
 use palette::Srgba;
 
@@ -31,10 +34,10 @@ pub struct ToggleButtonTheme {
     pub selected_color: Srgba,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ButtonImage {
     pub transform: TransformValue,
-    pub bytes: &'static [u8],
+    pub bytes: Arc<DynamicImage>,
 }
 
 pub struct ButtonDrag {
@@ -83,10 +86,8 @@ impl ToggleButton {
             enabled: self.visible,
         });
 
-        let canvas = if let Some(image) = self.image
-            && let Ok(data) = image::load_from_memory(image.bytes)
-        {
-            let data = data.into_rgba8();
+        let canvas = if let Some(image) = &self.image {
+            let data = image.bytes.to_rgba8();
             let canvas = world.build(CanvasDescriptor {
                 data_width: data.width(),
                 data_height: data.height(),

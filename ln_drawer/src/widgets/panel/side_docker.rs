@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use glam::{I64Vec2, IVec2, UVec2};
 use ln_world::{Descriptor, World};
 
@@ -16,6 +18,7 @@ use crate::{
         ButtonClick, SetWidgetRectangle,
         button::{ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         panel::{Panel, color_picker::ColorPicker, debug_panel::DebugPanel},
+        renderer::svg::svg_render,
         slider::{SetSliderValue, Slider, SliderValue},
     },
 };
@@ -24,7 +27,7 @@ pub struct SideDocker;
 impl Descriptor for SideDocker {
     type Target = ();
     fn when_build(self, world: &World) -> Self::Target {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         let theme = world.single_fetch::<Theme>().unwrap();
 
         let side_panel = world.build(Panel {
@@ -33,7 +36,7 @@ impl Descriptor for SideDocker {
             shadow: true,
         });
 
-        let docker_button = |image| {
+        let docker_button = |image_bytes| {
             world.build(ToggleButton {
                 rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
                 theme: ToggleButtonTheme {
@@ -47,7 +50,7 @@ impl Descriptor for SideDocker {
                         (0.5, 0.5),
                         Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
                     ),
-                    bytes: image,
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(image_bytes, 1.0))),
                 }),
                 selected: false,
                 visible: true,
@@ -55,11 +58,11 @@ impl Descriptor for SideDocker {
             })
         };
 
-        let pen = docker_button(include_bytes!("../../../res/interface/pen.png"));
-        let brush = docker_button(include_bytes!("../../../res/interface/brush.png"));
-        let eraser = docker_button(include_bytes!("../../../res/interface/eraser.png"));
-        let undo = docker_button(include_bytes!("../../../res/interface/undo-2.png"));
-        let redo = docker_button(include_bytes!("../../../res/interface/redo-2.png"));
+        let pen = docker_button(include_bytes!("../../../res/interface/pen.svg"));
+        let brush = docker_button(include_bytes!("../../../res/interface/brush.svg"));
+        let eraser = docker_button(include_bytes!("../../../res/interface/eraser.svg"));
+        let undo = docker_button(include_bytes!("../../../res/interface/undo-2.svg"));
+        let redo = docker_button(include_bytes!("../../../res/interface/redo-2.svg"));
 
         let color_picker = world.build(ToggleButton {
             rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
@@ -176,7 +179,7 @@ impl Descriptor for SideDocker {
             world.trigger(slider, &SetSliderValue(value));
         });
 
-        let compass = docker_button(include_bytes!("../../../res/interface/compass.png"));
+        let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
 
         world.observer(compass, move |&ButtonClick, world| {
             let main_camera = world.single_fetch::<MainCamera>().unwrap();
@@ -186,10 +189,10 @@ impl Descriptor for SideDocker {
             camera.center = I64Vec2::ZERO;
         });
 
-        let debug = docker_button(include_bytes!("../../../res/interface/bug.png"));
+        let debug = docker_button(include_bytes!("../../../res/interface/bug.svg"));
         world.build(DebugPanel(debug));
 
-        let compact = docker_button(include_bytes!("../../../res/interface/folder-down.png"));
+        let compact = docker_button(include_bytes!("../../../res/interface/database-zap.svg"));
         world.observer(compact, move |&ButtonClick, world| {
             let db = world.single_fetch::<SaveDatabase>().unwrap();
             log::debug!("on next startup database will be compacted");
@@ -215,7 +218,7 @@ impl Descriptor for SideDocker {
                     offset: 280,
                 },
             },
-            source: lnwindow.untyped(),
+            source: lnwindow.handle().untyped(),
             target: side_panel.untyped(),
         });
 

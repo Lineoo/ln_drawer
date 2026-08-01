@@ -43,7 +43,7 @@ impl Tabs {
 
         let mut children = Vec::new();
         let mut luni_children = Vec::new();
-        for &(entry, _) in &self.tabs {
+        for (entry, _) in &self.tabs {
             let button = world.build(ToggleButton {
                 rect: self.rect,
                 theme: ToggleButtonTheme {
@@ -52,7 +52,7 @@ impl Tabs {
                     press_color: theme.blank_color,
                     selected_color: theme.blank_color,
                 },
-                image: Some(entry),
+                image: Some(entry.clone()),
                 selected: false,
                 visible: true,
                 hovering: false,

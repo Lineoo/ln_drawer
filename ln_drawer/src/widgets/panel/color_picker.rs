@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use glam::{IVec2, UVec2, Vec2};
 use ln_world::{Descriptor, Handle, World};
 use palette::{Hsla, IntoColor, RgbHue, Srgba};
@@ -12,6 +14,7 @@ use crate::{
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         palette::hsl::{PaletteHsl, PaletteHsla},
         panel::Panel,
+        renderer::svg::svg_render,
         tabs::Tabs,
     },
 };
@@ -92,7 +95,10 @@ impl Descriptor for ColorPicker {
                             (0.5, 0.5),
                             Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
                         ),
-                        bytes: include_bytes!("../../../res/interface/folder-down.png"),
+                        bytes: Arc::new(image::DynamicImage::from(svg_render(
+                            include_bytes!("../../../res/interface/palette.svg"),
+                            1.0,
+                        ))),
                     },
                     tab01.untyped(),
                 ),
@@ -102,7 +108,10 @@ impl Descriptor for ColorPicker {
                             (0.5, 0.5),
                             Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
                         ),
-                        bytes: include_bytes!("../../../res/interface/folder-down.png"),
+                        bytes: Arc::new(image::DynamicImage::from(svg_render(
+                            include_bytes!("../../../res/interface/settings.svg"),
+                            1.0,
+                        ))),
                     },
                     tab02.untyped(),
                 ),
