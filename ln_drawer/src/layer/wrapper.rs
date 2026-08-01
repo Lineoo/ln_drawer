@@ -48,7 +48,7 @@ use crate::{
         pointer::{PointerHover, PointerHoverStatus},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
-    widgets::{WidgetEnabled, WidgetRectangle},
+    widgets::{SetWidgetVisible, SetWidgetRectangle},
 };
 
 const UNDO_LIMIT: usize = 32;
@@ -179,7 +179,7 @@ impl LayerWrapper {
                 brush_preview.desc.shadow_offset = event.pointer.tilt * 48.0;
                 world.queue_trigger(
                     this.brush_preview,
-                    WidgetRectangle(Rectangle::new_half(
+                    SetWidgetRectangle(Rectangle::new_half(
                         camera
                             .screen_to_world_absolute(event.pointer.screen)
                             .q32_round(),
@@ -189,11 +189,11 @@ impl LayerWrapper {
 
                 match event.status {
                     PointerHoverStatus::Enter => {
-                        world.queue_trigger(this.brush_preview, WidgetEnabled(true));
+                        world.queue_trigger(this.brush_preview, SetWidgetVisible(true));
                     }
                     PointerHoverStatus::Moving => {}
                     PointerHoverStatus::Leave => {
-                        world.queue_trigger(this.brush_preview, WidgetEnabled(false));
+                        world.queue_trigger(this.brush_preview, SetWidgetVisible(false));
                     }
                 }
             });

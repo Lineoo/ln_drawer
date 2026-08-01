@@ -1,8 +1,9 @@
 use ln_world::{Element, Handle, World};
 
 use crate::{
+    layout::visibility::VisibilityInherit,
     measures::Rectangle,
-    widgets::{WidgetAnimatedRectangle, WidgetRectangle},
+    widgets::{SetWidgetRectangle, WidgetRectangle},
 };
 
 pub struct LuniFlex {
@@ -318,24 +319,19 @@ impl Element for LuniFlex {
             let targets = this.compute(rect);
 
             for (child, target) in targets {
-                world.queue_trigger(child, WidgetRectangle(target));
+                world.queue_trigger(child, SetWidgetRectangle(target));
             }
         });
 
-        let oba = world.observer(
-            self.parent.0,
-            move |&WidgetAnimatedRectangle(rect), world| {
-                let this = world.fetch(this).unwrap();
-                let targets = this.compute(rect);
-
-                for (child, target) in targets {
-                    world.queue_trigger(child, WidgetAnimatedRectangle(target));
-                }
-            },
-        );
+        for &(child, _) in &self.children {
+            let visibility = world.insert(VisibilityInherit {
+                source: self.parent.0,
+                target: child,
+            });
+            world.dependency(visibility, this);
+        }
 
         world.dependency(ob, this);
-        world.dependency(oba, this);
         world.dependency(this, self.parent.0);
         for (child, _) in &self.children {
             world.dependency(this, *child);

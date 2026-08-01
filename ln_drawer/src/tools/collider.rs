@@ -4,7 +4,7 @@ use ln_world::{Element, Handle, World};
 use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    widgets::WidgetRectangle,
+    widgets::SetWidgetRectangle,
 };
 
 #[derive(Clone, Copy)]
@@ -50,7 +50,7 @@ impl ToolCollider {
     }
 
     fn attach_layout(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, move |&WidgetRectangle(rect), world| {
+        world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.rect = rect;
         });

@@ -9,7 +9,7 @@ use crate::{
         RenderControl,
         canvas::{Canvas, CanvasDescriptor},
     },
-    widgets::{WidgetEnabled, WidgetRectangle},
+    widgets::{SetWidgetVisible, SetWidgetRectangle},
 };
 
 pub struct Text {
@@ -123,14 +123,14 @@ impl Text {
             this.outdated = true;
         });
 
-        world.observer(this, move |&WidgetEnabled(enabled), world| {
+        world.observer(this, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(this).unwrap();
             let mut canvas = world.fetch_mut(canvas).unwrap();
             this.visible = enabled;
             canvas.visible = enabled;
         });
 
-        world.observer(this, move |&WidgetRectangle(rect), world| {
+        world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut canvas = world.fetch_mut(canvas).unwrap();
             canvas.rect = rect;
         });

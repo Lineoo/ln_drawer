@@ -1,13 +1,22 @@
 use glam::{I64Vec2, IVec2, UVec2};
 use ln_world::{Descriptor, World};
-use palette::Srgba;
 
 use crate::{
-    layer::{modifier::Modifier, wrapper::LayerWrapper}, layout::{
+    layer::{modifier::Modifier, wrapper::LayerWrapper},
+    layout::{
         luni::{LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
-    }, lnwin::Lnwindow, measures::{Axis, Rectangle}, render::camera::{Camera, MainCamera}, save::SaveDatabase, theme::Theme, widgets::{
-        WidgetClick, WidgetRectangle, button::{Button, ButtonChecked, ButtonImage}, panel::{color_picker::ColorPicker, debug_panel::DebugPanel}, slider::{SetSliderValue, Slider, SliderOutput},
+    },
+    lnwin::Lnwindow,
+    measures::{Axis, Rectangle},
+    render::camera::{Camera, MainCamera},
+    save::SaveDatabase,
+    theme::Theme,
+    widgets::{
+        ButtonClick, SetWidgetRectangle,
+        button::{Button, ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+        panel::{color_picker::ColorPicker, debug_panel::DebugPanel},
+        slider::{SetSliderValue, Slider, SliderValue},
     },
 };
 
@@ -28,13 +37,16 @@ impl Descriptor for SideDocker {
         });
 
         let docker_button = |image| {
-            world.insert(Button {
-                order: 10,
-                color: theme.primary_color,
-                active_color: theme.secondary_color,
-                press_color: theme.highlight_color,
-                shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-                roundness: theme.roundness,
+            world.build(ToggleButton {
+                rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+                theme: ToggleButtonTheme {
+                    idle_color: theme.primary_color,
+                    hover_color: theme.secondary_color,
+                    press_color: theme.highlight_color,
+                    selected_color: theme.highlight_color,
+                },
+                selected: false,
+                visible: true,
                 image: Some(ButtonImage {
                     transform: TransformValue::anchor(
                         (0.5, 0.5),
@@ -42,7 +54,6 @@ impl Descriptor for SideDocker {
                     ),
                     bytes: image,
                 }),
-                ..Default::default()
             })
         };
 
@@ -52,15 +63,17 @@ impl Descriptor for SideDocker {
         let undo = docker_button(include_bytes!("../../../res/interface/undo-2.png"));
         let redo = docker_button(include_bytes!("../../../res/interface/redo-2.png"));
 
-        let color_picker = world.insert(Button {
-            order: 10,
-            color: theme.primary_color,
-            active_color: theme.secondary_color,
-            press_color: theme.highlight_color,
-            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-            roundness: theme.roundness,
+        let color_picker = world.build(ToggleButton {
+            rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+            theme: ToggleButtonTheme {
+                idle_color: theme.primary_color,
+                hover_color: theme.secondary_color,
+                press_color: theme.highlight_color,
+                selected_color: theme.highlight_color,
+            },
+            selected: false,
+            visible: true,
             image: None,
-            ..Default::default()
         });
 
         world.build(ColorPicker(color_picker));
@@ -73,10 +86,10 @@ impl Descriptor for SideDocker {
             value: 0.67,
         });
 
-        world.observer(pen, move |&WidgetClick, world| {
-            world.trigger(pen, &ButtonChecked(true));
-            world.trigger(brush, &ButtonChecked(false));
-            world.trigger(eraser, &ButtonChecked(false));
+        world.observer(pen, move |&ButtonClick, world| {
+            world.trigger(pen, &SetButtonSelected(true));
+            world.trigger(brush, &SetButtonSelected(false));
+            world.trigger(eraser, &SetButtonSelected(false));
             let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
             stroke.brush.modifier = Modifier {
                 min_size: 0.0,
@@ -97,10 +110,10 @@ impl Descriptor for SideDocker {
             );
         });
 
-        world.observer(brush, move |&WidgetClick, world| {
-            world.trigger(pen, &ButtonChecked(false));
-            world.trigger(brush, &ButtonChecked(true));
-            world.trigger(eraser, &ButtonChecked(false));
+        world.observer(brush, move |&ButtonClick, world| {
+            world.trigger(pen, &SetButtonSelected(false));
+            world.trigger(brush, &SetButtonSelected(true));
+            world.trigger(eraser, &SetButtonSelected(false));
             let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
             stroke.brush.modifier = Modifier {
                 min_size: 1.0,
@@ -121,10 +134,10 @@ impl Descriptor for SideDocker {
             );
         });
 
-        world.observer(eraser, move |&WidgetClick, world| {
-            world.trigger(pen, &ButtonChecked(false));
-            world.trigger(brush, &ButtonChecked(false));
-            world.trigger(eraser, &ButtonChecked(true));
+        world.observer(eraser, move |&ButtonClick, world| {
+            world.trigger(pen, &SetButtonSelected(false));
+            world.trigger(brush, &SetButtonSelected(false));
+            world.trigger(eraser, &SetButtonSelected(true));
             let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
             stroke.brush.modifier = Modifier {
                 min_size: 10.0,
@@ -145,17 +158,17 @@ impl Descriptor for SideDocker {
             );
         });
 
-        world.observer(undo, move |&WidgetClick, world| {
+        world.observer(undo, move |&ButtonClick, world| {
             let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
             stroke.undo();
         });
 
-        world.observer(redo, move |&WidgetClick, world| {
+        world.observer(redo, move |&ButtonClick, world| {
             let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
             stroke.redo();
         });
 
-        world.observer(slider, move |&SliderOutput(value), world| {
+        world.observer(slider, move |&SliderValue(value), world| {
             let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
             stroke.brush.modifier = Modifier {
                 max_size: stroke.brush.modifier.min_size + (value.exp2() - 1.0) * 40.0,
@@ -166,7 +179,7 @@ impl Descriptor for SideDocker {
 
         let compass = docker_button(include_bytes!("../../../res/interface/compass.png"));
 
-        world.observer(compass, move |&WidgetClick, world| {
+        world.observer(compass, move |&ButtonClick, world| {
             let main_camera = world.single_fetch::<MainCamera>().unwrap();
             let mut camera = world
                 .enter_single_fetch_mut::<Camera>(main_camera.0)
@@ -178,7 +191,7 @@ impl Descriptor for SideDocker {
         world.build(DebugPanel(debug));
 
         let compact = docker_button(include_bytes!("../../../res/interface/folder-down.png"));
-        world.observer(compact, move |&WidgetClick, world| {
+        world.observer(compact, move |&ButtonClick, world| {
             let db = world.single_fetch::<SaveDatabase>().unwrap();
             log::debug!("on next startup database will be compacted");
             SaveDatabase::write_compact(&db.0).unwrap();
@@ -263,6 +276,9 @@ impl Descriptor for SideDocker {
             ],
         });
 
-        world.queue_trigger(side_panel, WidgetRectangle(Rectangle::new(0, 0, 500, 100)));
+        world.queue_trigger(
+            side_panel,
+            SetWidgetRectangle(Rectangle::new(0, 0, 500, 100)),
+        );
     }
 }

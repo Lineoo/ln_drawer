@@ -13,21 +13,22 @@ use crate::{
         text::{Text, TextChanged},
     },
     widgets::{
-        WidgetClick, WidgetEnabled,
-        button::Button,
-        panel::{Panel, PanelAnimation},
+        SetWidgetVisible, ButtonClick,
+        button::ToggleButton,
+        panel::{Panel, SetPanelAnimation},
     },
 };
 
-pub struct DebugPanel(pub Handle<Button>);
+pub struct DebugPanel(pub Handle<ToggleButton>);
 impl Descriptor for DebugPanel {
     type Target = ();
     fn when_build(self, world: &World) -> Self::Target {
         let button = self.0;
 
-        let submenu = world.insert(Panel {
+        let submenu = world.build(Panel {
             rect: Rectangle::default(),
             visible: false,
+            shadow: true,
         });
 
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
@@ -47,9 +48,6 @@ impl Descriptor for DebugPanel {
         });
 
         world.queue(move |world| {
-            Panel::receive_event(submenu, world);
-            Panel::create_renderer(submenu, world);
-            Panel::create_interact(submenu, world);
             world
                 .fetch_mut(debug_text)
                 .unwrap()
@@ -81,16 +79,16 @@ impl Descriptor for DebugPanel {
             target: debug_text.untyped(),
         });
 
-        world.observer(button, move |&WidgetClick, world| {
+        world.observer(button, move |&ButtonClick, world| {
             let submenu = world.fetch(submenu).unwrap();
             let child2 = world.fetch(button).unwrap();
-            world.queue_trigger(submenu.handle(), WidgetEnabled(!submenu.visible));
-            world.queue_trigger(debug_text, WidgetEnabled(!submenu.visible));
+            world.queue_trigger(submenu.handle(), SetWidgetVisible(!submenu.visible));
+            world.queue_trigger(debug_text, SetWidgetVisible(!submenu.visible));
 
             if !submenu.visible {
                 world.queue_trigger(
                     submenu.handle(),
-                    PanelAnimation {
+                    SetPanelAnimation {
                         src: submenu_transform_start.compute(child2.rect),
                         dst: submenu_transform.compute(child2.rect),
                         hidden_after_finished: false,

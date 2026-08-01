@@ -8,7 +8,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl, RenderExtra,
         camera::{Camera, CameraBind},
     },
-    widgets::{WidgetEnabled, WidgetRectangle},
+    widgets::{SetWidgetRectangle, SetWidgetVisible},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -20,6 +20,7 @@ pub struct RoundedRectDescriptor {
     pub shadow_blur: f32,
     pub shrink: f32,
     pub value: f32,
+    // TODO vertex_extend = theme.shadow_blur.ceil() as i32 + theme.shadow_offset.abs().max_element().ceil() as i32
     pub vertex_extend: i32,
     pub visible: bool,
     pub order: isize,
@@ -236,12 +237,12 @@ impl Element for RoundedRect {
         self.reorder(world);
         world.dependency(self.control, this);
 
-        world.observer(this, move |&WidgetRectangle(rect), world| {
+        world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.desc.rect = rect;
         });
 
-        world.observer(this, move |&WidgetEnabled(enabled), world| {
+        world.observer(this, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.desc.visible = enabled;
         });

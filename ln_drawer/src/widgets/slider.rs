@@ -11,11 +11,11 @@ use crate::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus},
     },
-    widgets::WidgetRectangle,
+    widgets::SetWidgetRectangle,
 };
 
 pub struct SetSliderValue(pub f32);
-pub struct SliderOutput(pub f32);
+pub struct SliderValue(pub f32);
 
 pub struct Slider {
     pub value: f32,
@@ -118,7 +118,7 @@ impl Slider {
             this.set_value(value, &mut front, &mut knob, &mut knob_split);
         });
 
-        world.observer(handle, move |&WidgetRectangle(rect), world| {
+        world.observer(handle, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(handle).unwrap();
             let mut back_rect_anim = world.fetch_mut(back_rect_anim).unwrap();
             let mut front = world.fetch_mut(front).unwrap();
@@ -145,7 +145,7 @@ impl Slider {
             };
 
             let value = from_position(this.rect, this.axis, position);
-            world.queue_trigger(handle, SliderOutput(value));
+            world.queue_trigger(handle, SliderValue(value));
 
             if let PointerHitStatus::Press = event.status {
                 let back_rect_expanded = back_rect_expanded(this.rect, this.axis);

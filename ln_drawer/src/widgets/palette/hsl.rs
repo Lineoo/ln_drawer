@@ -1,16 +1,15 @@
 use glam::I64Vec2;
-use ln_world::{Element, Handle, World};
+use ln_world::{Descriptor, Element, Handle, World};
 use palette::{Hsla, RgbHue};
 
 use crate::{
-    layout::transform::{Transform, TransformValue},
     measures::{FI64Ext, Rectangle},
     render::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus},
     },
-    widgets::{WidgetDestroyed, WidgetEnabled, WidgetHsla, WidgetRectangle},
+    widgets::{SetWidgetRectangle, SetWidgetVisible},
 };
 
 const BAND_WIDTH: f32 = 0.1;
@@ -38,15 +37,10 @@ pub struct PaletteHslMaterial {
     lightness: f32,
 }
 
-impl PaletteHsl {
-    fn respond_layout(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, move |&WidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
-        });
-    }
+pub struct PaletteHsla(pub Hsla);
 
-    fn attach_luni(&mut self, world: &World, this: Handle<Self>) {
+impl PaletteHsl {
+    fn build(self, world: &World) -> Handle<Self> {
         let rectangle = world.build(RectangleMeshDescriptor {
             rect: self.rect,
             visible: self.enabled,
@@ -61,42 +55,13 @@ impl PaletteHsl {
             },
         });
 
-        world.observer(this, move |&WidgetRectangle(rect), world| {
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
-            rectangle.desc.rect = rect;
-        });
-
-        world.observer(this, move |&WidgetEnabled(enabled), world| {
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
-            rectangle.desc.visible = enabled;
-        });
-
-        world.observer(this, move |&WidgetHsla(hsla), world| {
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
-            rectangle.desc.material.hue = hsla.hue.into_positive_degrees() / 360.0;
-            rectangle.desc.material.saturation = hsla.saturation;
-            rectangle.desc.material.lightness = hsla.lightness;
-        });
-
-        world.observer(this, move |&WidgetDestroyed, world| {
-            world.remove(rectangle).unwrap();
-        });
-
-        world.dependency(rectangle, this);
-    }
-
-    fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
         let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: 100,
             enabled: self.enabled,
         });
 
-        world.insert(Transform {
-            value: TransformValue::copy(),
-            source: this.untyped(),
-            target: collider.untyped(),
-        });
+        let this = world.insert(self);
 
         world.dependency(collider, this);
 
@@ -117,11 +82,11 @@ impl PaletteHsl {
                 lock = 1;
                 this.color.saturation = (suv.x).clamp(0.0, 1.0);
                 this.color.lightness = (suv.y).clamp(0.0, 1.0);
-                world.queue_trigger(this.handle(), WidgetHsla(this.color));
+                world.queue_trigger(this.handle(), PaletteHsla(this.color));
             } else if lock == 2 || (lock == 0 && radius > 0.5 - BAND_WIDTH && radius < 0.5) {
                 lock = 2;
                 this.color.hue = RgbHue::from_radians(angle);
-                world.queue_trigger(this.handle(), WidgetHsla(this.color));
+                world.queue_trigger(this.handle(), PaletteHsla(this.color));
             } else {
                 lock = 3;
             }
@@ -131,10 +96,32 @@ impl PaletteHsl {
             }
         });
 
-        world.observer(this, move |&WidgetEnabled(enabled), world| {
+        world.observer(this, move |&SetWidgetVisible(enabled), world| {
+            let mut rectangle = world.fetch_mut(rectangle).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
+            rectangle.desc.visible = enabled;
             collider.enabled = enabled;
         });
+
+        world.observer(this, move |&SetWidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            let mut rectangle = world.fetch_mut(rectangle).unwrap();
+            let mut collider = world.fetch_mut(collider).unwrap();
+            this.rect = rect;
+            rectangle.desc.rect = rect;
+            collider.rect = rect;
+        });
+
+        world.observer(this, move |&PaletteHsla(hsla), world| {
+            let mut rectangle = world.fetch_mut(rectangle).unwrap();
+            rectangle.desc.material.hue = hsla.hue.into_positive_degrees() / 360.0;
+            rectangle.desc.material.saturation = hsla.saturation;
+            rectangle.desc.material.lightness = hsla.lightness;
+        });
+
+        world.dependency(rectangle, this);
+
+        this
     }
 }
 
@@ -159,10 +146,10 @@ impl RectangleMeshMaterial for PaletteHslMaterial {
     }
 }
 
-impl Element for PaletteHsl {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        self.attach_luni(world, this);
-        self.attach_pointer(world, this);
-        self.respond_layout(world, this);
+impl Element for PaletteHsl {}
+impl Descriptor for PaletteHsl {
+    type Target = Handle<PaletteHsl>;
+    fn when_build(self, world: &World) -> Self::Target {
+        self.build(world)
     }
 }

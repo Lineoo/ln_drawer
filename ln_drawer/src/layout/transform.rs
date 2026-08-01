@@ -1,6 +1,10 @@
 use ln_world::{Element, Handle, World};
 
-use crate::{measures::Rectangle, widgets::WidgetRectangle};
+use crate::{
+    layout::visibility::VisibilityInherit,
+    measures::Rectangle,
+    widgets::{SetWidgetRectangle, WidgetRectangle},
+};
 
 pub struct Transform {
     pub value: TransformValue,
@@ -130,11 +134,17 @@ impl Element for Transform {
             let this = world.fetch(this).unwrap();
             let target = this.value.compute(rect);
 
-            world.queue_trigger(this.target, WidgetRectangle(target));
+            world.queue_trigger(this.target, SetWidgetRectangle(target));
+        });
+
+        let visibility = world.insert(VisibilityInherit {
+            source: self.source,
+            target: self.target,
         });
 
         world.dependency(ob, this);
         world.dependency(this, self.source);
         world.dependency(this, self.target);
+        world.dependency(visibility, this);
     }
 }
