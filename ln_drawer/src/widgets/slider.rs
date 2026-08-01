@@ -14,7 +14,7 @@ use crate::{
     widgets::WidgetRectangle,
 };
 
-pub struct SliderValue(pub f32);
+pub struct SetSliderValue(pub f32);
 pub struct SliderOutput(pub f32);
 
 pub struct Slider {
@@ -110,8 +110,7 @@ impl Slider {
 
         let handle = world.insert(self);
 
-        // XXX Not `handle` but the underlying model handle
-        world.observer(handle, move |&SliderValue(value), world| {
+        world.observer(handle, move |&SetSliderValue(value), world| {
             let mut this = world.fetch_mut(handle).unwrap();
             let mut front = world.fetch_mut(front).unwrap();
             let mut knob = world.fetch_mut(knob).unwrap();

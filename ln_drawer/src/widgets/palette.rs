@@ -14,13 +14,13 @@ use crate::{
 
 pub mod hsl;
 
-pub struct ColorPicker {
+pub struct ColorPalette {
     rect: Rectangle,
     transform: TransformValue,
     expanded: bool,
 }
 
-impl ColorPicker {
+impl ColorPalette {
     fn insert(&mut self, world: &World, this: Handle<Self>) {
         let palette = world.insert(PaletteHsl {
             rect: Rectangle::new(100, 100, 300, 300),
@@ -81,7 +81,7 @@ impl ColorPicker {
     }
 }
 
-impl Default for ColorPicker {
+impl Default for ColorPalette {
     fn default() -> Self {
         Self {
             rect: Rectangle::new(-100, -100, -50, -50),
@@ -91,7 +91,7 @@ impl Default for ColorPicker {
     }
 }
 
-impl Element for ColorPicker {
+impl Element for ColorPalette {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.insert(world, this);
     }

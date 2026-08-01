@@ -20,13 +20,8 @@ pub enum WidgetButton {
     ButtonRelease,
 }
 
-pub struct WidgetUpdate;
-
 /// Send when widget is clicked.
 pub struct WidgetClick;
-
-/// Send when widget's selection is changed.
-pub struct WidgetSelect(pub Option<i32>);
 
 /// Send when widget's rectangle data is changed.
 pub struct WidgetRectangle(pub Rectangle);
@@ -39,9 +34,6 @@ pub struct WidgetChecked(pub bool);
 
 /// Send when widget's color data formatted in hsl is changed.
 pub struct WidgetHsla(pub Hsla);
-
-/// Send when widget is folded or expanded.
-pub struct WidgetExpanded(pub bool);
 
 /// Send when widget is enabled or disabled.
 pub struct WidgetEnabled(pub bool);
