@@ -9,7 +9,7 @@ use crate::{
     render::rounded::RoundedRectDescriptor,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
-        button::{ButtonImage, ButtonSelected, SetButtonColor, SetButtonSelected, ToggleButton},
+        button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         palette::hsl::{PaletteHsl, PaletteHsla},
         panel::Panel,
         tabs::Tabs,
@@ -76,14 +76,15 @@ impl Descriptor for ColorPicker {
 
         world.observer(palette_hsl, move |&PaletteHsla(color), world| {
             let mut layer = world.single_fetch_mut::<LayerWrapper>().unwrap();
+            let mut color_picker_color = world.fetch_mut(color_picker_color).unwrap();
             layer.brush.modifier.color = color.into_color();
-            world.queue_trigger(color_picker_color, SetButtonColor(color.into_color()));
+            color_picker_color.desc.color = color.into_color();
         });
 
         let tabs = world.build(Tabs {
             active: 0,
             rect: Rectangle::default(),
-            visible: true,
+            visible: false,
             tabs: vec![
                 (
                     ButtonImage {

@@ -43,7 +43,7 @@ impl Panel {
                 vertex_extend: theme.shadow_blur.ceil() as i32
                     + theme.shadow_offset.abs().max_element().ceil() as i32,
                 visible: self.visible,
-                order: 10,
+                order: 0,
             }),
             false => world.build(RoundedRectDescriptor {
                 rect: self.rect,
@@ -55,7 +55,7 @@ impl Panel {
                 value: theme.roundness,
                 vertex_extend: 0,
                 visible: self.visible,
-                order: 10,
+                order: 0,
             }),
         };
 
@@ -68,7 +68,7 @@ impl Panel {
 
         let collider = world.insert(ToolCollider {
             rect: self.rect,
-            order: 10,
+            order: 0,
             enabled: self.visible,
         });
 
@@ -101,6 +101,7 @@ impl Panel {
             this.rect = anim.dst;
             back_rect_anim.dst = anim.dst.into_storage();
             back_rect_anim.src = anim.src.into_storage();
+            world.queue_trigger(panel, WidgetRectangle(anim.dst));
         });
 
         panel

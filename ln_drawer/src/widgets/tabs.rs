@@ -4,8 +4,13 @@ use crate::{
     layout::luni::{
         LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
         LuniRect,
-    }, measures::Rectangle, render::rounded::RoundedRectDescriptor, theme::Theme, widgets::{
-        ButtonAction, SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible, button::{ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+    },
+    measures::Rectangle,
+    render::rounded::RoundedRectDescriptor,
+    theme::Theme,
+    widgets::{
+        ButtonAction, SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
+        button::{ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
     },
 };
 
@@ -33,7 +38,7 @@ impl Tabs {
             value: theme.roundness,
             vertex_extend: 20,
             visible: true,
-            order: 0,
+            order: -10,
         });
 
         let mut children = Vec::new();
@@ -47,9 +52,10 @@ impl Tabs {
                     press_color: theme.blank_color,
                     selected_color: theme.blank_color,
                 },
-                selected: false,
                 image: Some(entry),
+                selected: false,
                 visible: true,
+                hovering: false,
             });
 
             children.push(button);
@@ -140,7 +146,7 @@ impl Tabs {
             }
 
             for (i, &(_, entry)) in this.tabs.iter().enumerate() {
-                world.queue_trigger(entry, SetWidgetVisible(this.visible &&i == active));
+                world.queue_trigger(entry, SetWidgetVisible(this.visible && i == active));
             }
         });
 
@@ -148,6 +154,7 @@ impl Tabs {
         world.queue(move |world| {
             let this = world.fetch(handle).unwrap();
             world.queue_trigger(handle, SetWidgetRectangle(this.rect));
+            world.queue_trigger(handle, SetWidgetVisible(this.visible));
             world.queue_trigger(handle, SetTabsActive(this.active));
         });
 

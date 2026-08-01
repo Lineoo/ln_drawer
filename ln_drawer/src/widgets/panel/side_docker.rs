@@ -14,8 +14,8 @@ use crate::{
     theme::Theme,
     widgets::{
         ButtonClick, SetWidgetRectangle,
-        button::{Button, ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
-        panel::{color_picker::ColorPicker, debug_panel::DebugPanel},
+        button::{ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+        panel::{Panel, color_picker::ColorPicker, debug_panel::DebugPanel},
         slider::{SetSliderValue, Slider, SliderValue},
     },
 };
@@ -27,13 +27,10 @@ impl Descriptor for SideDocker {
         let lnwindow = world.single::<Lnwindow>().unwrap();
         let theme = world.single_fetch::<Theme>().unwrap();
 
-        let side_panel = world.insert(Button {
-            order: 0,
-            color: theme.primary_color,
-            active_color: theme.primary_color,
-            press_color: theme.primary_color,
-            roundness: theme.roundness,
-            ..Default::default()
+        let side_panel = world.build(Panel {
+            rect: Rectangle::default(),
+            visible: true,
+            shadow: true,
         });
 
         let docker_button = |image| {
@@ -45,8 +42,6 @@ impl Descriptor for SideDocker {
                     press_color: theme.highlight_color,
                     selected_color: theme.highlight_color,
                 },
-                selected: false,
-                visible: true,
                 image: Some(ButtonImage {
                     transform: TransformValue::anchor(
                         (0.5, 0.5),
@@ -54,6 +49,9 @@ impl Descriptor for SideDocker {
                     ),
                     bytes: image,
                 }),
+                selected: false,
+                visible: true,
+                hovering: false,
             })
         };
 
@@ -71,9 +69,10 @@ impl Descriptor for SideDocker {
                 press_color: theme.highlight_color,
                 selected_color: theme.highlight_color,
             },
+            image: None,
             selected: false,
             visible: true,
-            image: None,
+            hovering: false,
         });
 
         world.build(ColorPicker(color_picker));

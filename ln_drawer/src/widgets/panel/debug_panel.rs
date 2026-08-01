@@ -42,7 +42,7 @@ impl Descriptor for DebugPanel {
             metrics: Metrics::new(12.0, 18.0),
             color: Srgba::new(0, 0, 0, 1),
             upscale: lnwindow.window.scale_factor() as f32,
-            order: 1,
+            order: 50,
             visible: false,
             outdated: true,
         });
