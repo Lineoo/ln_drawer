@@ -793,7 +793,11 @@ fn render_pipelines(
         ),
         replace: new_pipeline(
             BlendState {
-                color: BlendComponent::REPLACE,
+                color: BlendComponent {
+                    src_factor: BlendFactor::SrcAlpha,
+                    dst_factor: BlendFactor::Zero,
+                    operation: BlendOperation::Add,
+                },
                 alpha: BlendComponent::REPLACE,
             },
             "layer_chunk_replace",
@@ -801,7 +805,11 @@ fn render_pipelines(
         ),
         replace_debug: new_pipeline(
             BlendState {
-                color: BlendComponent::REPLACE,
+                color: BlendComponent {
+                    src_factor: BlendFactor::SrcAlpha,
+                    dst_factor: BlendFactor::Zero,
+                    operation: BlendOperation::Add,
+                },
                 alpha: BlendComponent::REPLACE,
             },
             "layer_chunk_replace",
