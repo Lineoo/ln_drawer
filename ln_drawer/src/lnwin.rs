@@ -22,7 +22,6 @@ use crate::{
         canvas::Canvas,
         rectangle::RectangleMesh,
         rounded::RoundedRect,
-        text::Text,
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     theme::Theme,
@@ -34,7 +33,10 @@ use crate::{
         WidgetRectangle,
         palette::hsl::PaletteHslMaterial,
         panel::side_docker::SideDocker,
-        renderer::grid::{Grid, GridMaterial},
+        renderer::{
+            grid::{Grid, GridMaterial},
+            text::TextPipeline,
+        },
     },
 };
 
@@ -133,7 +135,7 @@ impl Element for Lnwindow {
             world.flush();
 
             Canvas::init(world);
-            Text::init(world);
+            world.insert(TextPipeline::new());
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
             RectangleMesh::<GridMaterial>::init(world);

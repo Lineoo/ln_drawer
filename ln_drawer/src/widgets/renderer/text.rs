@@ -9,7 +9,7 @@ use crate::{
         RenderControl,
         canvas::{Canvas, CanvasDescriptor},
     },
-    widgets::{SetWidgetVisible, SetWidgetRectangle},
+    widgets::{SetWidgetRectangle, SetWidgetVisible},
 };
 
 pub struct Text {
@@ -24,12 +24,12 @@ pub struct Text {
     pub outdated: bool,
 }
 
-pub struct TextChanged;
-
-struct TextPipeline {
+pub struct TextPipeline {
     font_system: FontSystem,
     swash_cache: SwashCache,
 }
+
+pub struct TextChanged;
 
 impl Default for Text {
     fn default() -> Self {
@@ -47,25 +47,7 @@ impl Default for Text {
 }
 
 impl Text {
-    pub fn init(world: &mut World) {
-        let mut font_system = FontSystem::new();
-        let database = font_system.db_mut();
-
-        let sans = include_bytes!("../../fonts/SourceHanSansCN-Regular.otf").to_vec();
-        let serif = include_bytes!("../../fonts/SourceHanSerifCN-Regular.otf").to_vec();
-
-        database.load_font_data(sans);
-        database.load_font_data(serif);
-
-        let swash_cache = SwashCache::new();
-
-        world.insert(TextPipeline {
-            font_system,
-            swash_cache,
-        });
-    }
-
-    pub fn bind_render(&mut self, world: &World, this: Handle<Text>) {
+    pub fn init(&mut self, world: &World, this: Handle<Text>) {
         let upscale_width = self.rect.width() as f32 * self.upscale;
         let upscale_height = self.rect.height() as f32 * self.upscale;
         let upscale_width_int = upscale_width.ceil() as u32;
@@ -139,6 +121,26 @@ impl Text {
     }
 }
 
+impl TextPipeline {
+    pub fn new() -> Self {
+        let mut font_system = FontSystem::new();
+        let database = font_system.db_mut();
+
+        let sans = include_bytes!("../../../fonts/SourceHanSansCN-Regular.otf").to_vec();
+        let serif = include_bytes!("../../../fonts/SourceHanSerifCN-Regular.otf").to_vec();
+
+        database.load_font_data(sans);
+        database.load_font_data(serif);
+
+        let swash_cache = SwashCache::new();
+
+        TextPipeline {
+            font_system,
+            swash_cache,
+        }
+    }
+}
+
 fn draw_buffer(buffer: &Buffer, this: &Text, canvas: &mut Canvas, manager: &mut TextPipeline) {
     for run in buffer.layout_runs() {
         for glyph in run.glyphs.iter() {
@@ -195,5 +197,9 @@ fn draw_buffer(buffer: &Buffer, this: &Text, canvas: &mut Canvas, manager: &mut 
     }
 }
 
-impl Element for Text {}
+impl Element for Text {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        self.init(world, this);
+    }
+}
 impl Element for TextPipeline {}

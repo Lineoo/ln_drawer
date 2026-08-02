@@ -2,7 +2,6 @@ pub mod camera;
 pub mod canvas;
 pub mod rectangle;
 pub mod rounded;
-pub mod text;
 pub mod vertex;
 
 use std::time::{Duration, Instant};

@@ -8,14 +8,12 @@ use crate::{
     layout::transform::{Transform, TransformValue},
     lnwin::Lnwindow,
     measures::Rectangle,
-    render::{
-        Render,
-        text::{Text, TextChanged},
-    },
+    render::Render,
     widgets::{
         SetWidgetVisible,
         button::{ButtonClick, ToggleButton},
         panel::{Panel, SetPanelAnimation},
+        renderer::text::{Text, TextChanged},
     },
 };
 
@@ -45,13 +43,6 @@ impl Descriptor for DebugPanel {
             order: 50,
             visible: false,
             outdated: true,
-        });
-
-        world.queue(move |world| {
-            world
-                .fetch_mut(debug_text)
-                .unwrap()
-                .bind_render(world, debug_text);
         });
 
         let submenu_transform = TransformValue::anchor(
