@@ -49,9 +49,9 @@ pub struct RectangleMesh<M: RectangleMeshMaterial> {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct RectangleUniform {
-    origin: [i32; 2],
-    extend: [u32; 2],
+pub struct RectangleUniform {
+    pub origin: [i32; 2],
+    pub extend: [u32; 2],
 }
 
 impl<M: RectangleMeshMaterial> RectangleMesh<M> {

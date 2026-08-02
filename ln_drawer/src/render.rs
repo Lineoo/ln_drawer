@@ -1,5 +1,4 @@
 pub mod camera;
-pub mod canvas;
 pub mod rectangle;
 pub mod rounded;
 pub mod vertex;

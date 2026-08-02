@@ -19,7 +19,7 @@ use crate::{
     render::{
         MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
-        vertex::VertexUniform,
+        rectangle::RectangleUniform,
     },
 };
 
@@ -49,105 +49,12 @@ pub struct CanvasDescriptor {
     pub data_height: u32,
 }
 
-struct CanvasManager {
+pub struct CanvasManager {
     pipeline: RenderPipeline,
     bind_layout: BindGroupLayout,
 }
 
 impl Canvas {
-    pub fn init(world: &mut World) {
-        let render = world.single_fetch::<Render>().unwrap();
-        let camera = world.single_fetch::<CameraBind>().unwrap();
-
-        let shader_vs = render.device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("vertex_shader"),
-            source: ShaderSource::Wgsl(include_str!("vertex.wgsl").into()),
-        });
-
-        let shader_fs = render.device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("canvas_shader"),
-            source: ShaderSource::Wgsl(include_str!("canvas.wgsl").into()),
-        });
-
-        let bind_layout = render
-            .device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("canvas_bind_layout"),
-                entries: &[
-                    BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: ShaderStages::VERTEX_FRAGMENT,
-                        ty: BindingType::Buffer {
-                            ty: BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: ShaderStages::VERTEX_FRAGMENT,
-                        ty: BindingType::Texture {
-                            sample_type: TextureSampleType::Float { filterable: true },
-                            view_dimension: TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: ShaderStages::VERTEX_FRAGMENT,
-                        ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
-
-        let pipeline_layout = render
-            .device
-            .create_pipeline_layout(&PipelineLayoutDescriptor {
-                label: Some("canvas_pipeline_layout"),
-                bind_group_layouts: &[Some(&camera.layout), Some(&bind_layout)],
-                immediate_size: 0,
-            });
-
-        let pipeline = render
-            .device
-            .create_render_pipeline(&RenderPipelineDescriptor {
-                label: Some("canvas_pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: VertexState {
-                    module: &shader_vs,
-                    entry_point: Some("vs_main"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                primitive: PrimitiveState {
-                    topology: PrimitiveTopology::TriangleStrip,
-                    ..Default::default()
-                },
-                fragment: Some(FragmentState {
-                    module: &shader_fs,
-                    entry_point: Some("fs_main"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(ColorTargetState {
-                        format: render.config.format,
-                        blend: Some(BlendState::ALPHA_BLENDING),
-                        write_mask: ColorWrites::ALL,
-                    })],
-                }),
-                depth_stencil: None,
-                multisample: MSAA_STATE,
-                multiview_mask: None,
-                cache: None,
-            });
-
-        world.insert(CanvasManager {
-            pipeline,
-            bind_layout,
-        });
-    }
-
     pub fn read(&self, x: i32, y: i32) -> Srgba {
         let x = x.rem_euclid(self.data_width as i32);
         let y = y.rem_euclid(self.data_height as i32);
@@ -232,7 +139,7 @@ impl Descriptor for CanvasDescriptor {
 
         let buffer = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("canvas_uniform"),
-            contents: bytemuck::bytes_of(&VertexUniform {
+            contents: bytemuck::bytes_of(&RectangleUniform {
                 origin: self.rect.origin.into(),
                 extend: self.rect.extend.into(),
             }),
@@ -342,6 +249,104 @@ impl Descriptor for CanvasDescriptor {
     }
 }
 
+impl CanvasManager {
+    pub fn from_world(world: &World) -> Self {
+        let render = world.single_fetch::<Render>().unwrap();
+        let camera = world.single_fetch::<CameraBind>().unwrap();
+
+        let shader = render.device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("canvas_shader"),
+            source: ShaderSource::Wgsl(
+                format!(
+                    "{}{}{}",
+                    include_str!("lib_camera.wgsl"),
+                    include_str!("lib_rectangle.wgsl"),
+                    include_str!("canvas.wgsl"),
+                )
+                .into(),
+            ),
+        });
+
+        let bind_layout = render
+            .device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("canvas_bind_layout"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::VERTEX_FRAGMENT,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::VERTEX_FRAGMENT,
+                        ty: BindingType::Texture {
+                            sample_type: TextureSampleType::Float { filterable: true },
+                            view_dimension: TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::VERTEX_FRAGMENT,
+                        ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let pipeline_layout = render
+            .device
+            .create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("canvas_pipeline_layout"),
+                bind_group_layouts: &[Some(&camera.layout), Some(&bind_layout)],
+                immediate_size: 0,
+            });
+
+        let pipeline = render
+            .device
+            .create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some("canvas_pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                primitive: PrimitiveState {
+                    topology: PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                fragment: Some(FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(ColorTargetState {
+                        format: render.config.format,
+                        blend: Some(BlendState::ALPHA_BLENDING),
+                        write_mask: ColorWrites::ALL,
+                    })],
+                }),
+                depth_stencil: None,
+                multisample: MSAA_STATE,
+                multiview_mask: None,
+                cache: None,
+            });
+
+        CanvasManager {
+            pipeline,
+            bind_layout,
+        }
+    }
+}
+
 impl Element for Canvas {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         RenderControl::reorder(self.visible.then_some(self.order), world, self.control);
@@ -351,7 +356,7 @@ impl Element for Canvas {
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         RenderControl::reorder(self.visible.then_some(self.order), world, self.control);
 
-        let uniform = VertexUniform {
+        let uniform = RectangleUniform {
             origin: self.rect.origin.into(),
             extend: self.rect.extend.into(),
         };

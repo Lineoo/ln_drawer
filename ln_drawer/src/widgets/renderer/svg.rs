@@ -4,11 +4,10 @@ pub fn svg_render(svg1: &[u8], upscale: f32) -> image::GrayAlphaImage {
     let tree = usvg::Tree::from_data(svg1, &usvg::Options::default()).unwrap();
     let upscale = upscale * GLOBAL_UPSCALE;
     let svg_size = tree.size();
-    let mut mask_image = image::GrayImage::new(
-        (svg_size.width() * upscale) as u32,
-        (svg_size.height() * upscale) as u32,
-    );
-    let mut final_image = image::GrayAlphaImage::new(mask_image.width(), mask_image.height());
+    let real_width = (svg_size.width() * upscale).ceil() as usize;
+    let real_height = (svg_size.height() * upscale).ceil() as usize;
+    let mut mask_image = vec![0u8; real_width * real_height];
+    let mut final_image = image::GrayAlphaImage::new(real_width as u32, real_height as u32);
     for node in tree.root().children() {
         if let usvg::Node::Path(path) = node {
             let points = path
@@ -56,10 +55,10 @@ pub fn svg_render(svg1: &[u8], upscale: f32) -> image::GrayAlphaImage {
                 x: 0.0,
                 y: 0.0,
             }));
-            mask.size(mask_image.width(), mask_image.height());
+            mask.size(real_width as u32, real_height as u32);
             mask.render_into(&mut mask_image, None);
 
-            for (i, &luma) in mask_image.as_raw().iter().enumerate() {
+            for (i, &luma) in mask_image.iter().enumerate() {
                 let slice = &mut *final_image;
                 let src = luma as f32 / 255.;
                 let dst = slice[i * 2 + 1] as f32 / 255.;

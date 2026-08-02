@@ -30,7 +30,7 @@ impl Descriptor for SideDocker {
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         let theme = world.single_fetch::<Theme>().unwrap();
 
-        let side_panel = world.build(Panel {
+        let side_panel = world.insert(Panel {
             rect: Rectangle::default(),
             visible: true,
             shadow: true,

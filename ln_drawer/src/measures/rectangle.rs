@@ -72,6 +72,13 @@ impl Rectangle {
         }
     }
 
+    pub fn new_extend(left: i32, down: i32, width: u32, height: u32) -> Rectangle {
+        Rectangle {
+            origin: IVec2::new(left, down),
+            extend: UVec2::new(width, height),
+        }
+    }
+
     pub fn new_half(center: IVec2, half: UVec2) -> Rectangle {
         Rectangle {
             origin: center - half.as_ivec2(),

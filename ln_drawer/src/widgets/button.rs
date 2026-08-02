@@ -9,13 +9,15 @@ use crate::{
     animation::{DirectAnimation, SetAnimationDst},
     layout::transform::TransformValue,
     measures::Rectangle,
-    render::{canvas::CanvasDescriptor, rounded::RoundedRectDescriptor},
+    render::rounded::RoundedRectDescriptor,
     theme::Theme,
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible, WidgetHover},
+    widgets::{
+        SetWidgetRectangle, SetWidgetVisible, WidgetHover, renderer::canvas::CanvasDescriptor,
+    },
 };
 
 pub struct ToggleButton {

@@ -1,5 +1,5 @@
 use glam::I64Vec2;
-use ln_world::{Descriptor, Element, Handle, World};
+use ln_world::{Element, Handle, World};
 use palette::{Hsla, RgbHue};
 
 use crate::{
@@ -38,7 +38,7 @@ pub struct PaletteHslMaterial {
 pub struct PaletteHsla(pub Hsla);
 
 impl PaletteHsl {
-    fn build(self, world: &World) -> Handle<Self> {
+    fn init(&mut self, world: &World, this: Handle<Self>) {
         let rectangle = world.build(RectangleMeshDescriptor {
             rect: self.rect,
             visible: self.enabled,
@@ -58,8 +58,6 @@ impl PaletteHsl {
             order: 100,
             enabled: self.enabled,
         });
-
-        let this = world.insert(self);
 
         world.dependency(collider, this);
 
@@ -118,8 +116,6 @@ impl PaletteHsl {
         });
 
         world.dependency(rectangle, this);
-
-        this
     }
 }
 
@@ -144,10 +140,8 @@ impl RectangleMeshMaterial for PaletteHslMaterial {
     }
 }
 
-impl Element for PaletteHsl {}
-impl Descriptor for PaletteHsl {
-    type Target = Handle<PaletteHsl>;
-    fn when_build(self, world: &World) -> Self::Target {
-        self.build(world)
+impl Element for PaletteHsl {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        self.init(world, this);
     }
 }

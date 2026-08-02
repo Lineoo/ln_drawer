@@ -1,4 +1,4 @@
-use cosmic_text::Metrics;
+use cosmic_text::{Family, Metrics};
 use glam::{IVec2, UVec2};
 use ln_world::{Descriptor, Handle, World};
 use palette::Srgba;
@@ -13,7 +13,7 @@ use crate::{
         SetWidgetVisible,
         button::{ButtonClick, ToggleButton},
         panel::{Panel, SetPanelAnimation},
-        renderer::text::{Text, TextChanged},
+        renderer::text::Text,
     },
 };
 
@@ -23,7 +23,7 @@ impl Descriptor for DebugPanel {
     fn when_build(self, world: &World) -> Self::Target {
         let button = self.0;
 
-        let submenu = world.build(Panel {
+        let submenu = world.insert(Panel {
             rect: Rectangle::default(),
             visible: false,
             shadow: true,
@@ -38,6 +38,7 @@ impl Descriptor for DebugPanel {
             text: "Hi there".into(),
             rect: Rectangle::new_half(IVec2::ZERO, HALF_INNER),
             metrics: Metrics::new(12.0, 18.0),
+            family: Family::Monospace,
             color: Srgba::new(0, 0, 0, 1),
             upscale: lnwindow.window.scale_factor() as f32,
             order: 50,
@@ -97,7 +98,7 @@ impl Descriptor for DebugPanel {
                 let mut text = world.fetch_mut(debug_text).unwrap();
                 if text.text != *msg {
                     text.text.clone_from(msg);
-                    world.queue_trigger(debug_text, TextChanged);
+                    text.outdated = true;
                 }
             },
         );
@@ -113,7 +114,7 @@ impl Descriptor for DebugPanel {
                 let mut text = world.fetch_mut(debug_text).unwrap();
                 if text.text != *msg {
                     text.text.clone_from(msg);
-                    world.queue_trigger(debug_text, TextChanged);
+                    text.outdated = true;
                 }
             },
         );
