@@ -9,8 +9,8 @@ use crate::{
     render::rounded::RoundedRectDescriptor,
     theme::Theme,
     widgets::{
-        ButtonAction, SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
-        button::{ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+        SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
+        button::{ButtonAction, ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
     },
 };
 

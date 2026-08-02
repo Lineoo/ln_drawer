@@ -18,8 +18,6 @@ const BAND_WIDTH: f32 = 0.1;
 /// whose x axis stands for saturation and y axis stands for lightness.
 ///
 /// Corresponding material is [`PaletteHslMaterial`].
-///
-/// Possible events are [`WidgetRectangle`], [`WidgetHsla`] and [`WidgetDestroyed`].
 pub struct PaletteHsl {
     pub rect: Rectangle,
     pub color: Hsla,

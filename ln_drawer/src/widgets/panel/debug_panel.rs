@@ -13,8 +13,8 @@ use crate::{
         text::{Text, TextChanged},
     },
     widgets::{
-        SetWidgetVisible, ButtonClick,
-        button::ToggleButton,
+        SetWidgetVisible,
+        button::{ButtonClick, ToggleButton},
         panel::{Panel, SetPanelAnimation},
     },
 };

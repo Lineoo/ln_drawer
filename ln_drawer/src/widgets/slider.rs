@@ -14,8 +14,8 @@ use crate::{
     widgets::SetWidgetRectangle,
 };
 
-pub struct SetSliderValue(pub f32);
 pub struct SliderValue(pub f32);
+pub struct SetSliderValue(pub f32);
 
 pub struct Slider {
     pub value: f32,

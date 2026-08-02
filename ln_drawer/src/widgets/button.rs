@@ -15,7 +15,7 @@ use crate::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{ButtonAction, ButtonClick, SetWidgetRectangle, SetWidgetVisible, WidgetHover},
+    widgets::{SetWidgetRectangle, SetWidgetVisible, WidgetHover},
 };
 
 pub struct ToggleButton {
@@ -44,6 +44,13 @@ pub struct ButtonDrag {
     pub from: PointerHit,
     pub here: PointerHit,
     pub status: ButtonDragStatus,
+}
+
+pub struct ButtonClick;
+
+pub enum ButtonAction {
+    Press,
+    Release,
 }
 
 pub struct ButtonSelected(pub bool);

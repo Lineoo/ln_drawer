@@ -15,8 +15,8 @@ use crate::{
     save::SaveDatabase,
     theme::Theme,
     widgets::{
-        ButtonClick, SetWidgetRectangle,
-        button::{ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+        SetWidgetRectangle,
+        button::{ButtonClick, ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         panel::{Panel, color_picker::ColorPicker, debug_panel::DebugPanel},
         renderer::svg::svg_render,
         slider::{SetSliderValue, Slider, SliderValue},

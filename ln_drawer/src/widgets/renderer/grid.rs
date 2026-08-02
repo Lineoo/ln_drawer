@@ -4,7 +4,6 @@ use wgpu::ShaderSource;
 use crate::{
     measures::Rectangle,
     render::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
-    widgets::WidgetDestroyed,
 };
 
 pub struct Grid;
@@ -20,10 +19,6 @@ impl Grid {
             visible: true,
             order: -1000,
             material: GridMaterial(1024),
-        });
-
-        world.observer(this, move |&WidgetDestroyed, world| {
-            world.remove(rectangle).unwrap();
         });
 
         world.dependency(rectangle, this);
