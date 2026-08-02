@@ -44,6 +44,7 @@ impl Descriptor for DebugPanel {
             order: 50,
             visible: false,
             outdated: true,
+            canvas_outdated: false,
         });
 
         let submenu_transform = TransformValue::anchor(

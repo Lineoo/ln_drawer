@@ -1,14 +1,15 @@
 use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache};
+use glam::prelude::UVec2;
 use ln_world::{Element, Handle, World};
 use palette::{Srgba, WithAlpha};
 use swash::scale::image::Content;
 
 use crate::{
     measures::Rectangle,
-    render::{RenderControl, RenderInformation},
+    render::RenderControl,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
-        renderer::canvas::{Canvas, CanvasDescriptor},
+        renderer::canvas::{Canvas, RemakeCanvasTexture, UploadCanvasData},
     },
 };
 
@@ -23,6 +24,7 @@ pub struct Text {
     pub visible: bool,
     /// will delay text draw to next render prepare phase
     pub outdated: bool,
+    pub canvas_outdated: bool,
 }
 
 pub struct TextPipeline {
@@ -42,23 +44,14 @@ impl Default for Text {
             order: 100,
             visible: true,
             outdated: true,
+            canvas_outdated: false,
         }
     }
 }
 
 impl Text {
     pub fn init(&mut self, world: &World, this: Handle<Text>) {
-        let upscale_width = (self.rect.width() as f32 * self.upscale).ceil();
-        let upscale_height = (self.rect.height() as f32 * self.upscale).ceil();
-
-        let canvas = world.build(CanvasDescriptor {
-            data: None,
-            data_width: upscale_width as u32,
-            data_height: upscale_height as u32,
-            rect: self.rect,
-            order: self.order,
-            visible: self.visible,
-        });
+        let canvas = world.insert(self.fresh_canvas());
 
         let upscale_metrics = self.metrics.scale(self.upscale);
         let pipeline = &mut *world.single_fetch_mut::<TextPipeline>().unwrap();
@@ -67,52 +60,76 @@ impl Text {
         let control = world.insert(RenderControl {
             prepare: Some(Box::new(move |world| {
                 let mut this = world.fetch_mut(this).unwrap();
-                let mut canvas = world.fetch_mut(canvas).unwrap();
-                let mut pipeline = world.single_fetch_mut::<TextPipeline>().unwrap();
-                this.draw(
-                    upscale_width,
-                    upscale_height,
-                    &mut buffer,
-                    &mut canvas,
-                    &mut pipeline,
-                )
+
+                this.prepare(&mut buffer, world, canvas);
+
+                None
             })),
             draw: None,
         });
 
         RenderControl::reorder(Some(0), world, control);
 
-        world.observer(this, move |&SetWidgetVisible(enabled), world| {
+        world.observer(this, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(this).unwrap();
-            let mut canvas = world.fetch_mut(canvas).unwrap();
-            this.visible = enabled;
-            canvas.visible = enabled;
+            this.visible = visible;
+            world.queue_trigger(canvas, SetWidgetVisible(visible));
         });
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
-            let mut canvas = world.fetch_mut(canvas).unwrap();
             this.rect = rect;
-            canvas.rect = rect;
-            // Update canvas
+            this.canvas_outdated = true;
+            world.queue_trigger(canvas, SetWidgetRectangle(rect));
         });
 
         self.outdated = true;
     }
 
+    fn prepare(&mut self, buffer: &mut Buffer, world: &World, canvas: Handle<Canvas>) {
+        let mut canvas = world.fetch_mut(canvas).unwrap();
+        let mut pipeline = world.single_fetch_mut::<TextPipeline>().unwrap();
+
+        if self.visible {
+            if self.canvas_outdated {
+                self.canvas_outdated = false;
+                self.outdated = false;
+
+                *canvas = self.fresh_canvas();
+
+                self.draw(
+                    canvas.data_width,
+                    canvas.data_height,
+                    buffer,
+                    &mut canvas,
+                    &mut pipeline,
+                );
+
+                world.queue_trigger(canvas.handle(), RemakeCanvasTexture);
+            } else if self.outdated {
+                self.outdated = false;
+
+                self.draw(
+                    canvas.data_width,
+                    canvas.data_height,
+                    buffer,
+                    &mut canvas,
+                    &mut pipeline,
+                );
+
+                world.queue_trigger(canvas.handle(), UploadCanvasData);
+            }
+        }
+    }
+
     fn draw(
         &mut self,
-        upscale_width: f32,
-        upscale_height: f32,
+        width: u32,
+        height: u32,
         buffer: &mut Buffer,
         canvas: &mut Canvas,
         pipeline: &mut TextPipeline,
-    ) -> Option<RenderInformation> {
-        if !self.outdated || !self.visible {
-            return None;
-        }
-        self.outdated = false;
-
+    ) {
         canvas.clear_transparent();
 
         let upscale_metrics = self.metrics.scale(self.upscale);
@@ -120,15 +137,11 @@ impl Text {
 
         let attrs = Attrs::new().family(self.family);
         buffer_font.set_metrics(upscale_metrics);
-        buffer_font.set_size(Some(upscale_width), Some(upscale_height));
+        buffer_font.set_size(Some(width as f32), Some(height as f32));
         buffer_font.set_text(&self.text, &attrs, Shaping::Advanced, None);
         buffer_font.shape_until_scroll(true);
 
         self.draw_buffer(&buffer, canvas, pipeline);
-
-        canvas.upload_full();
-
-        None
     }
 
     fn draw_buffer(&self, buffer: &Buffer, canvas: &mut Canvas, manager: &mut TextPipeline) {
@@ -185,6 +198,16 @@ impl Text {
                 }
             }
         }
+    }
+
+    fn fresh_canvas(&self) -> Canvas {
+        Canvas::transparent(self.rect, self.order, self.visible, self.scaled_rect())
+    }
+
+    fn scaled_rect(&self) -> UVec2 {
+        (self.rect.extend.as_vec2() * self.upscale)
+            .ceil()
+            .as_uvec2()
     }
 }
 

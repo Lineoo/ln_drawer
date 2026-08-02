@@ -33,7 +33,7 @@ use crate::{
         palette::hsl::PaletteHslMaterial,
         panel::side_docker::SideDocker,
         renderer::{
-            canvas::CanvasManager,
+            canvas::CanvasPipeline,
             grid::{Grid, GridMaterial},
             text::TextPipeline,
         },
@@ -134,7 +134,7 @@ impl Element for Lnwindow {
             Camera::init(world);
             world.flush();
 
-            world.insert(CanvasManager::from_world(world));
+            world.insert(CanvasPipeline::from_world(world));
             world.insert(TextPipeline::new());
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);

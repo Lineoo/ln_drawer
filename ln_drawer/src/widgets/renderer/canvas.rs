@@ -1,7 +1,8 @@
-use ln_world::{Descriptor, Element, Handle, World};
+use glam::{IVec2, UVec2};
+use ln_world::{Element, Handle, World};
 use palette::{Srgba, blend::Compose};
 use wgpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
     BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, Extent3d, FilterMode,
     FragmentState, Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
@@ -21,6 +22,7 @@ use crate::{
         camera::{Camera, CameraBind},
         rectangle::RectangleUniform,
     },
+    widgets::{SetWidgetRectangle, SetWidgetVisible},
 };
 
 pub struct Canvas {
@@ -31,30 +33,104 @@ pub struct Canvas {
     pub data: Vec<u8>,
     pub data_width: u32,
     pub data_height: u32,
+}
 
-    control: Handle<RenderControl>,
-    buffer: Buffer,
+pub struct CanvasInstance {
+    uniform: Buffer,
+    bind: BindGroup,
     texture: Texture,
-    queue: Queue,
 }
 
-#[derive(Debug, Default)]
-pub struct CanvasDescriptor {
-    pub rect: Rectangle,
-    pub order: isize,
-    pub visible: bool,
-
-    pub data: Option<Vec<u8>>,
-    pub data_width: u32,
-    pub data_height: u32,
-}
-
-pub struct CanvasManager {
+pub struct CanvasPipeline {
     pipeline: RenderPipeline,
-    bind_layout: BindGroupLayout,
+    instance: BindGroupLayout,
 }
+
+pub struct UploadCanvasData;
+pub struct RemakeCanvasTexture;
 
 impl Canvas {
+    pub fn init(&mut self, world: &World, this: Handle<Self>) {
+        assert_eq!(
+            self.data.len(),
+            (self.data_width * self.data_height) as usize * 4,
+            "data is not matched with its size"
+        );
+
+        let render = world.single_fetch::<Render>().unwrap();
+        let pipeline = world.single_fetch::<CanvasPipeline>().unwrap();
+        let instance = world.insert(self.instantiate(&render, &pipeline));
+        drop(render);
+
+        let control = world.insert(RenderControl {
+            prepare: None,
+            draw: Some(Box::new(move |world, rpass, extra| {
+                let instance = world.fetch(instance).unwrap();
+                let pipeline = world.single_fetch::<CanvasPipeline>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
+
+                let (start, end) = extra.diagnosis.assign("main > canvas");
+                extra.diagnosis.write(rpass, start);
+
+                rpass.set_pipeline(&pipeline.pipeline);
+                rpass.set_bind_group(0, &camera.bind, &[]);
+                rpass.set_bind_group(1, &instance.bind, &[]);
+                rpass.draw(0..4, 0..1);
+
+                extra.diagnosis.write(rpass, end);
+            })),
+        });
+
+        RenderControl::reorder(self.visible.then_some(self.order), world, control);
+
+        world.observer(this, move |&SetWidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            let instance = world.fetch(instance).unwrap();
+            this.rect = rect;
+
+            let uniform = RectangleUniform {
+                origin: rect.origin.into(),
+                extend: rect.extend.into(),
+            };
+
+            let bytes = bytemuck::bytes_of(&uniform);
+            let render = world.single_fetch::<Render>().unwrap();
+            render.queue.write_buffer(&instance.uniform, 0, bytes);
+        });
+
+        world.observer(this, move |&SetWidgetVisible(visible), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.visible = visible;
+            RenderControl::reorder(this.visible.then_some(this.order), world, control);
+        });
+
+        world.observer(this, move |&UploadCanvasData, world| {
+            let this = world.fetch(this).unwrap();
+            let instance = world.fetch(instance).unwrap();
+            let render = world.single_fetch::<Render>().unwrap();
+            this.upload_full(&instance, &render.queue);
+        });
+
+        world.observer(this, move |&RemakeCanvasTexture, world| {
+            let this = world.fetch(this).unwrap();
+            let mut instance = world.fetch_mut(instance).unwrap();
+            let pipeline = world.single_fetch::<CanvasPipeline>().unwrap();
+            let render = world.single_fetch::<Render>().unwrap();
+            *instance = this.instantiate(&render, &pipeline)
+        });
+    }
+
+    pub fn transparent(rect: Rectangle, order: isize, visible: bool, size: UVec2) -> Self {
+        Self {
+            rect,
+            order,
+            visible,
+            data: vec![0u8; (size.x * size.y * 4) as usize],
+            data_width: size.x,
+            data_height: size.y,
+        }
+    }
+
     pub fn read(&self, x: i32, y: i32) -> Srgba {
         let x = x.rem_euclid(self.data_width as i32);
         let y = y.rem_euclid(self.data_height as i32);
@@ -99,45 +175,51 @@ impl Canvas {
         self.data.fill(0);
     }
 
-    pub fn upload(&self, x: i32, y: i32, w: u32, h: u32, data: &[u8]) {
-        self.queue.write_texture(
+    pub fn upload(
+        &self,
+        p: IVec2,
+        s: UVec2,
+        data: &[u8],
+        instance: &CanvasInstance,
+        queue: &Queue,
+    ) {
+        queue.write_texture(
             TexelCopyTextureInfo {
-                texture: &self.texture,
+                texture: &instance.texture,
                 mip_level: 0,
                 origin: Origin3d::ZERO,
                 aspect: TextureAspect::All,
             },
             &data,
             TexelCopyBufferLayout {
-                offset: self.offset(x, y) as u64,
-                bytes_per_row: Some(w * 4),
-                rows_per_image: Some(h),
+                offset: self.offset(p.x, p.y) as u64,
+                bytes_per_row: Some(s.x * 4),
+                rows_per_image: Some(s.y),
             },
             Extent3d {
-                width: w,
-                height: h,
+                width: s.x,
+                height: s.y,
                 depth_or_array_layers: 1,
             },
         );
     }
 
-    pub fn upload_full(&self) {
-        self.upload(0, 0, self.data_width, self.data_height, &self.data);
+    pub fn upload_full(&self, instance: &CanvasInstance, queue: &Queue) {
+        self.upload(
+            IVec2::ZERO,
+            UVec2::new(self.data_width, self.data_height),
+            &self.data,
+            instance,
+            queue,
+        );
     }
 
     fn offset(&self, x: i32, y: i32) -> usize {
         ((x + y * self.data_width as i32) * 4) as usize
     }
-}
 
-impl Descriptor for CanvasDescriptor {
-    type Target = Handle<Canvas>;
-
-    fn when_build(self, world: &World) -> Self::Target {
-        let render = world.single_fetch::<Render>().unwrap();
-        let manager = &mut *world.single_fetch_mut::<CanvasManager>().unwrap();
-
-        let buffer = render.device.create_buffer_init(&BufferInitDescriptor {
+    fn instantiate(&self, render: &Render, pipeline: &CanvasPipeline) -> CanvasInstance {
+        let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("canvas_uniform"),
             contents: bytemuck::bytes_of(&RectangleUniform {
                 origin: self.rect.origin.into(),
@@ -161,22 +243,12 @@ impl Descriptor for CanvasDescriptor {
             view_formats: &[],
         };
 
-        let texture = match &self.data {
-            Some(data) => {
-                assert_eq!(
-                    data.len(),
-                    (self.data_width * self.data_height) as usize * 4,
-                    "data is not matched with its size"
-                );
-                render.device.create_texture_with_data(
-                    &render.queue,
-                    &desc,
-                    TextureDataOrder::LayerMajor,
-                    data,
-                )
-            }
-            None => render.device.create_texture(&desc),
-        };
+        let texture = render.device.create_texture_with_data(
+            &render.queue,
+            &desc,
+            TextureDataOrder::LayerMajor,
+            &self.data,
+        );
 
         let sampler = render.device.create_sampler(&SamplerDescriptor {
             label: Some("canvas"),
@@ -192,12 +264,12 @@ impl Descriptor for CanvasDescriptor {
 
         let bind = render.device.create_bind_group(&BindGroupDescriptor {
             label: Some("canvas"),
-            layout: &manager.bind_layout,
+            layout: &pipeline.instance,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
                     resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &buffer,
+                        buffer: &uniform,
                         offset: 0,
                         size: None,
                     }),
@@ -213,43 +285,15 @@ impl Descriptor for CanvasDescriptor {
             ],
         });
 
-        let control = world.insert(RenderControl {
-            prepare: None,
-            draw: Some(Box::new(move |world, rpass, extra| {
-                let manager = world.single_fetch::<CanvasManager>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
-
-                let (start, end) = extra.diagnosis.assign("main > canvas");
-                extra.diagnosis.write(rpass, start);
-
-                rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &camera.bind, &[]);
-                rpass.set_bind_group(1, &bind, &[]);
-                rpass.draw(0..4, 0..1);
-
-                extra.diagnosis.write(rpass, end);
-            })),
-        });
-
-        world.insert(Canvas {
-            data: match self.data {
-                Some(bytes) => bytes.to_vec(),
-                None => vec![0; (self.data_width * self.data_height) as usize * 4],
-            },
-            data_width: self.data_width,
-            data_height: self.data_height,
-            rect: self.rect,
-            order: self.order,
-            visible: self.visible,
-            control,
-            buffer,
+        CanvasInstance {
+            uniform,
+            bind,
             texture,
-            queue: render.queue.clone(),
-        })
+        }
     }
 }
 
-impl CanvasManager {
+impl CanvasPipeline {
     pub fn from_world(world: &World) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let camera = world.single_fetch::<CameraBind>().unwrap();
@@ -267,7 +311,7 @@ impl CanvasManager {
             ),
         });
 
-        let bind_layout = render
+        let instance = render
             .device
             .create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("canvas_bind_layout"),
@@ -305,7 +349,7 @@ impl CanvasManager {
             .device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("canvas_pipeline_layout"),
-                bind_group_layouts: &[Some(&camera.layout), Some(&bind_layout)],
+                bind_group_layouts: &[Some(&camera.layout), Some(&instance)],
                 immediate_size: 0,
             });
 
@@ -340,30 +384,15 @@ impl CanvasManager {
                 cache: None,
             });
 
-        CanvasManager {
-            pipeline,
-            bind_layout,
-        }
+        CanvasPipeline { pipeline, instance }
     }
 }
 
 impl Element for Canvas {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        RenderControl::reorder(self.visible.then_some(self.order), world, self.control);
-        world.dependency(self.control, this);
-    }
-
-    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        RenderControl::reorder(self.visible.then_some(self.order), world, self.control);
-
-        let uniform = RectangleUniform {
-            origin: self.rect.origin.into(),
-            extend: self.rect.extend.into(),
-        };
-
-        let bytes = bytemuck::bytes_of(&uniform);
-        self.queue.write_buffer(&self.buffer, 0, bytes);
+        self.init(world, this);
     }
 }
 
-impl Element for CanvasManager {}
+impl Element for CanvasInstance {}
+impl Element for CanvasPipeline {}

@@ -15,9 +15,7 @@ use crate::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{
-        SetWidgetRectangle, SetWidgetVisible, WidgetHover, renderer::canvas::CanvasDescriptor,
-    },
+    widgets::{SetWidgetRectangle, SetWidgetVisible, WidgetHover, renderer::canvas::Canvas},
 };
 
 pub struct ToggleButton {
@@ -97,13 +95,13 @@ impl ToggleButton {
 
         let canvas = if let Some(image) = &self.image {
             let data = image.bytes.to_rgba8();
-            let canvas = world.build(CanvasDescriptor {
+            let canvas = world.insert(Canvas {
                 data_width: data.width(),
                 data_height: data.height(),
                 rect: image.transform.compute(self.rect),
                 order: 11,
                 visible: self.visible,
-                data: Some(data.into_raw()),
+                data: data.into_raw(),
             });
             Some(canvas)
         } else {
@@ -138,8 +136,7 @@ impl ToggleButton {
             if let Some(canvas) = canvas
                 && let Some(image) = &this.image
             {
-                let mut canvas = world.fetch_mut(canvas).unwrap();
-                canvas.rect = image.transform.compute(rect);
+                world.queue_trigger(canvas, SetWidgetRectangle(image.transform.compute(rect)));
             }
         });
 
@@ -152,8 +149,7 @@ impl ToggleButton {
             collider.enabled = visible;
 
             if let Some(canvas) = canvas {
-                let mut canvas = world.fetch_mut(canvas).unwrap();
-                canvas.visible = visible;
+                world.queue_trigger(canvas, SetWidgetVisible(visible));
             }
         });
 
