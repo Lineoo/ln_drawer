@@ -13,15 +13,15 @@ use glam::{IVec2, UVec2};
 use hashbrown::HashMap;
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent,
-    BlendFactor, BlendOperation, BlendState, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
-    ComputePass, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
-    Extent3d, FilterMode, FragmentState, PipelineCompilationOptions, PipelineLayoutDescriptor,
-    PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
-    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, Texture, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
+    Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
+    ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
+    ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState,
+    PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
+    RenderPass, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
+    TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -83,8 +83,6 @@ struct RenderPipelines {
     over_debug: RenderPipeline,
     replace: RenderPipeline,
     replace_debug: RenderPipeline,
-    #[expect(unused)]
-    erase: RenderPipeline,
 }
 
 struct MergePipelines {
@@ -781,51 +779,21 @@ fn render_pipelines(
     };
 
     RenderPipelines {
-        over: new_pipeline(BlendState::ALPHA_BLENDING, "layer_chunk_over", "fs_main"),
+        over: new_pipeline(
+            BlendState::PREMULTIPLIED_ALPHA_BLENDING,
+            "layer_chunk_over",
+            "fs_main",
+        ),
         over_debug: new_pipeline(
             BlendState::PREMULTIPLIED_ALPHA_BLENDING,
             "layer_chunk_over_debug",
-            "fs_main_debug0",
+            "fs_debug0",
         ),
-        replace: new_pipeline(
-            BlendState {
-                color: BlendComponent {
-                    src_factor: BlendFactor::SrcAlpha,
-                    dst_factor: BlendFactor::Zero,
-                    operation: BlendOperation::Add,
-                },
-                alpha: BlendComponent::REPLACE,
-            },
-            "layer_chunk_replace",
-            "fs_main",
-        ),
+        replace: new_pipeline(BlendState::REPLACE, "layer_chunk_replace", "fs_main"),
         replace_debug: new_pipeline(
-            BlendState {
-                color: BlendComponent {
-                    src_factor: BlendFactor::SrcAlpha,
-                    dst_factor: BlendFactor::Zero,
-                    operation: BlendOperation::Add,
-                },
-                alpha: BlendComponent::REPLACE,
-            },
-            "layer_chunk_replace",
-            "fs_main_debug1",
-        ),
-        erase: new_pipeline(
-            BlendState {
-                color: BlendComponent {
-                    src_factor: BlendFactor::Zero,
-                    dst_factor: BlendFactor::OneMinusSrcAlpha,
-                    operation: BlendOperation::Add,
-                },
-                alpha: BlendComponent {
-                    src_factor: BlendFactor::Zero,
-                    dst_factor: BlendFactor::OneMinusSrcAlpha,
-                    operation: BlendOperation::Add,
-                },
-            },
-            "layer_chunk_erase",
-            "fs_main",
+            BlendState::REPLACE,
+            "layer_chunk_replace_debug",
+            "fs_debug1",
         ),
     }
 }
