@@ -91,10 +91,12 @@ struct RenderPipelines {
 struct MergePipelines {
     over: MergePipelinePair,
     replace: MergePipelinePair,
+    #[expect(unused)]
     erase: MergePipelinePair,
 }
 
 struct MergePipelinePair {
+    #[expect(unused)]
     dispatch: ComputePipeline,
     swap: ComputePipeline,
 }

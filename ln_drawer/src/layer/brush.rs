@@ -19,7 +19,7 @@ use crate::{
         brush::round::{RoundBrush, RoundDrawStorage},
         chunk_to_rect, create_chunk, create_chunk_texture, dispatch_workgroups,
         stream::ThreadInput,
-        write_chunk, write_dispatch,
+        write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
 };
@@ -33,10 +33,10 @@ pub struct BrushPipeline {
     pub scratch_pool: ChunkPool,
     pub layer: LayerPipeline,
 
+    #[expect(unused)]
     temp: Chunk,
 
     brush_round: ComputePipeline,
-    #[expect(unused)]
     erase_round: ComputePipeline,
 
     draws_dispatch: Buffer,
@@ -172,13 +172,6 @@ impl BrushPipeline {
             &self.layer.queue,
         );
 
-        // move temp chunk to its position
-        write_chunk(
-            &self.layer.queue,
-            &self.temp.rectangle,
-            Rectangle::new_extend(dirty.left(), dirty.down(), TEMP_CHUNK_SIZE, TEMP_CHUNK_SIZE),
-        );
-
         let mut encoder = self
             .layer
             .device
@@ -190,9 +183,6 @@ impl BrushPipeline {
             label: Some("layer_brush"),
             timestamp_writes: None,
         });
-
-        self.layer
-            .clear_chunk(&self.temp, TEMP_CHUNK_SIZE, &mut cpass);
 
         let (start, end) = super::rect_to_chunks(dirty, 0, self.scratch_dst.chunk_size);
         for x in start.0..end.0 {
@@ -207,20 +197,14 @@ impl BrushPipeline {
                         }
                     }
 
-                    cpass.set_pipeline(&self.brush_round);
-                    cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
-                    cpass.set_bind_group(1, Some(&self.temp.write), &[]);
-                    dispatch_workgroups(&mut cpass, dirty.extend);
-
                     match brush.erase {
-                        true => cpass.set_pipeline(&self.layer.merge_pipelines.erase.dispatch),
-                        false => cpass.set_pipeline(&self.layer.merge_pipelines.over.dispatch),
+                        true => cpass.set_pipeline(&self.erase_round),
+                        false => cpass.set_pipeline(&self.brush_round),
                     }
 
-                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
-                    cpass.set_bind_group(2, Some(&self.temp.read), &[]);
-                    cpass.set_bind_group(3, Some(&swp_chunk.write), &[]);
+                    cpass.set_bind_group(2, Some(&swp_chunk.write), &[]);
                     dispatch_workgroups(&mut cpass, dirty.extend);
 
                     cpass.set_pipeline(&self.layer.copy_pipeline);
@@ -262,10 +246,6 @@ impl BrushPipeline {
             }
         }
     }
-
-    // TODO Two main optimization:
-    //      - [ ] Simplify round brush pipeline, use triple bind instead of write+merge
-    //      - [x] Swap chain should be more efficient with limited draw rectangle
 
     /// All finished, merge to dst layer and optionally notify stream thread unsaved chunks
     pub fn submit(&mut self, dst: &mut Layer, tx: Option<&Sender<ThreadInput>>) {
@@ -457,7 +437,11 @@ fn brush_pipelines(
 ) -> (ComputePipeline, ComputePipeline) {
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_brush"),
-        bind_group_layouts: &[Some(dispatch_draw_layout), Some(&chunk_layout.write)],
+        bind_group_layouts: &[
+            Some(dispatch_draw_layout),
+            Some(&chunk_layout.read),
+            Some(&chunk_layout.write),
+        ],
         immediate_size: 0,
     });
 
