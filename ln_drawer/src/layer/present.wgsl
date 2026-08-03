@@ -7,5 +7,6 @@ fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
 
 @fragment
 fn fs_main(@builtin(position) coord: vec4f) -> @location(0) vec4f {
-    return textureLoad(texture, vec2u(floor(coord.xy)), 0);
+    let color = textureLoad(texture, vec2u(floor(coord.xy)), 0);
+    return srgb_to_linear(color + vec4f(1 - color.a));
 }

@@ -392,37 +392,33 @@ fn brush_pipelines(
         immediate_size: 0,
     });
 
-    let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("layer_brush"),
-        source: ShaderSource::Wgsl(
-            format!(
-                "{}{}",
-                include_str!("lib_colorspace.wgsl"),
-                include_str!("round.wgsl"),
-            )
-            .into(),
-        ),
-    });
+    let new_pipeline = |label, formula| {
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: ShaderSource::Wgsl(
+                format!(
+                    "{}{}fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
+                    include_str!("lib_colorspace.wgsl"),
+                    include_str!("round.wgsl"),
+                    formula
+                )
+                .into(),
+            ),
+        });
+        device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    };
 
-    let brush_round = device.create_compute_pipeline(&ComputePipelineDescriptor {
-        label: Some("layer_brush_round"),
-        layout: Some(&layout),
-        module: &shader,
-        entry_point: Some("cs_main"),
-        compilation_options: PipelineCompilationOptions::default(),
-        cache: None,
-    });
+    let over = new_pipeline("over", "src + dst * (1 - src.a)");
+    let erase = new_pipeline("erase", "dst * (1 - src.a)");
 
-    let erase_round = device.create_compute_pipeline(&ComputePipelineDescriptor {
-        label: Some("layer_erase_round"),
-        layout: Some(&layout),
-        module: &shader,
-        entry_point: Some("cs_erase"),
-        compilation_options: PipelineCompilationOptions::default(),
-        cache: None,
-    });
-
-    (brush_round, erase_round)
+    (over, erase)
 }
 
 // --- Utils --- //

@@ -189,27 +189,6 @@ impl Render {
         self.msaa_texture = None;
     }
 
-    pub fn screen_texture(
-        label: &'static str,
-        config: &SurfaceConfiguration,
-        usage: TextureUsages,
-    ) -> TextureDescriptor<'static> {
-        TextureDescriptor {
-            label: Some(label),
-            size: Extent3d {
-                width: config.width,
-                height: config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: config.format,
-            usage,
-            view_formats: &[],
-        }
-    }
-
     fn msaa_texture(config: &SurfaceConfiguration) -> TextureDescriptor<'_> {
         assert!(
             MSAA_SAMPLE_COUNT > 1,

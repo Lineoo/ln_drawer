@@ -16,8 +16,9 @@ use wgpu::{
     Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPass,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites, RenderPipeline,
     RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp,
-    SurfaceConfiguration, TexelCopyTextureInfoBase, Texture, TextureAspect, TextureSampleType,
-    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
+    SurfaceConfiguration, TexelCopyTextureInfoBase, Texture, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
+    TextureViewDimension, VertexState,
 };
 use winit::{
     event::{ElementState, PointerKind, WindowEvent},
@@ -48,7 +49,7 @@ use crate::{
         pointer::{PointerHover, PointerHoverStatus},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
-    widgets::{SetWidgetVisible, SetWidgetRectangle},
+    widgets::{SetWidgetRectangle, SetWidgetVisible},
 };
 
 const UNDO_LIMIT: usize = 32;
@@ -86,7 +87,7 @@ impl LayerWrapper {
         let brush = BrushPipeline::new(LayerPipeline::new(
             render.device.clone(),
             render.queue.clone(),
-            render.config.format,
+            TextureFormat::Rgba8Unorm,
             &camera_bind.layout,
         ));
 
@@ -595,11 +596,20 @@ const LAYOUT_COMPOSITING_PRESENT: BindGroupLayoutDescriptor<'_> = BindGroupLayou
 };
 
 fn compositing_resources(device: &Device, config: &SurfaceConfiguration) -> (Texture, BindGroup) {
-    let texture = device.create_texture(&Render::screen_texture(
-        "compositing",
-        &config,
-        TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
-    ));
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("compositing"),
+        size: Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
 
     let layout = device.create_bind_group_layout(&LAYOUT_COMPOSITING_PRESENT);
 
@@ -608,9 +618,7 @@ fn compositing_resources(device: &Device, config: &SurfaceConfiguration) -> (Tex
         layout: &layout,
         entries: &[BindGroupEntry {
             binding: 0,
-            resource: BindingResource::TextureView(
-                &texture.create_view(&TextureViewDescriptor::default()),
-            ),
+            resource: BindingResource::TextureView(&texture.create_view(&Default::default())),
         }],
     });
 
@@ -620,7 +628,14 @@ fn compositing_resources(device: &Device, config: &SurfaceConfiguration) -> (Tex
 fn present_pipeline(device: &Device, config: &SurfaceConfiguration) -> RenderPipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("wrapper_present_shader"),
-        source: ShaderSource::Wgsl(include_str!("present.wgsl").into()),
+        source: ShaderSource::Wgsl(
+            format!(
+                "{}{}",
+                include_str!("lib_colorspace.wgsl"),
+                include_str!("present.wgsl")
+            )
+            .into(),
+        ),
     });
 
     let compositing_render_layout = device.create_bind_group_layout(&LAYOUT_COMPOSITING_PRESENT);

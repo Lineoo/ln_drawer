@@ -491,7 +491,7 @@ fn create_chunk_texture(device: &Device, chunk_size: u32) -> Texture {
             | TextureUsages::COPY_DST
             | TextureUsages::TEXTURE_BINDING
             | TextureUsages::STORAGE_BINDING,
-        view_formats: &[TextureFormat::Rgba8UnormSrgb],
+        view_formats: &[],
     })
 }
 
@@ -516,7 +516,7 @@ fn create_chunk(
 
     let texture_fragment_view = texture.create_view(&TextureViewDescriptor {
         label: Some("layer_chunk_texture_view"),
-        format: Some(TextureFormat::Rgba8UnormSrgb),
+        format: Some(TextureFormat::Rgba8Unorm),
         usage: Some(TextureUsages::TEXTURE_BINDING),
         ..Default::default()
     });
@@ -627,7 +627,7 @@ const LAYOUT_CHUNK_DRAW: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescript
     ],
 };
 
-/// Contains drawing rectangle and texture of chunk in format `Rgba8UnormSrgb`
+/// Contains drawing rectangle and texture of chunk in format `Rgba8Unorm`
 const LAYOUT_CHUNK_RENDER: BindGroupLayoutDescriptor = BindGroupLayoutDescriptor {
     label: Some("layer_chunk_render"),
     entries: &[
@@ -872,39 +872,39 @@ fn mipmap_pipeline(
 }
 
 fn merge_pipelines(device: &Device, chunk_draw_layout: &BindGroupLayout) -> MergePipelines {
-    let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("layer_merge"),
-        source: ShaderSource::Wgsl(
-            format!(
-                "{}{}",
-                include_str!("layer/lib_colorspace.wgsl"),
-                include_str!("layer/merge.wgsl"),
-            )
-            .into(),
-        ),
-    });
-
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_merge"),
         bind_group_layouts: &[Some(chunk_draw_layout), Some(chunk_draw_layout)],
         immediate_size: 0,
     });
 
-    let new_pipeline = |label, cs_entry| {
+    let new_pipeline = |label, formula| {
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: ShaderSource::Wgsl(
+                format!(
+                    "{}{}fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
+                    include_str!("layer/lib_colorspace.wgsl"),
+                    include_str!("layer/merge.wgsl"),
+                    formula
+                )
+                .into(),
+            ),
+        });
         device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: Some(label),
             layout: Some(&layout),
             module: &shader,
-            entry_point: Some(cs_entry),
+            entry_point: Some("cs_main"),
             compilation_options: PipelineCompilationOptions::default(),
             cache: None,
         })
     };
 
     MergePipelines {
-        over: new_pipeline("layer_merge", "cs_main"),
-        replace: new_pipeline("layer_merge_replace", "cs_replace"),
-        erase: new_pipeline("layer_merge_erase", "cs_erase"),
+        over: new_pipeline("over", "src + dst * (1 - dst.a)"),
+        replace: new_pipeline("replace", "src"),
+        erase: new_pipeline("erase", "dst * (1 - dst.a)"),
     }
 }
 
