@@ -55,5 +55,5 @@ min_sdk_version = 26
 target_sdk_version = 34
 
 [package.metadata.android.application]
-icon = "@mipmap/icon_dev"
+icon = "@mipmap/icon"
 label = "LnDrawer Dev"
