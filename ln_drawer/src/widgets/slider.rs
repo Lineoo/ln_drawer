@@ -1,5 +1,5 @@
 use glam::{IVec2, UVec2, Vec2};
-use ln_world::{Descriptor, Element, Handle, World};
+use ln_world::{Element, Handle, World};
 use palette::Srgba;
 
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus},
     },
-    widgets::SetWidgetRectangle,
+    widgets::{SetWidgetRectangle, SetWidgetVisible},
 };
 
 pub struct SliderValue(pub f32);
@@ -21,10 +21,11 @@ pub struct Slider {
     pub value: f32,
     pub axis: Axis,
     pub rect: Rectangle,
+    pub pressed: bool,
 }
 
 impl Slider {
-    pub fn build(self, world: &World) -> Handle<Self> {
+    pub fn init(&self, world: &World, handle: Handle<Self>) {
         let theme = world.single_fetch::<Theme>().unwrap();
 
         let back = world.build(RoundedRectDescriptor {
@@ -37,7 +38,7 @@ impl Slider {
             value: theme.roundness,
             vertex_extend: 0,
             visible: true,
-            order: 0,
+            order: 20,
         });
 
         let position = into_position(self.rect, self.axis, self.value);
@@ -52,25 +53,25 @@ impl Slider {
             value: theme.roundness,
             vertex_extend: 0,
             visible: true,
-            order: 1,
+            order: 21,
         });
 
         let knob = world.build(RoundedRectDescriptor {
             rect: knob_rect(self.rect, self.axis, position),
-            color: theme.primary_color,
-            shadow_color: theme.shadow_color,
-            shadow_offset: Vec2::new(0.0, -4.0),
+            color: theme.blank_color,
+            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+            shadow_offset: Vec2::ZERO,
             shadow_blur: theme.shadow_blur,
             shrink: theme.roundness,
             value: theme.roundness,
-            vertex_extend: 20,
+            vertex_extend: 0,
             visible: true,
-            order: 2,
+            order: 22,
         });
 
         let knob_split = world.build(RoundedRectDescriptor {
             rect: knob_split_rect(self.rect, self.axis, position),
-            color: theme.secondary_color,
+            color: theme.primary_color,
             shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
             shadow_offset: Vec2::ZERO,
             shadow_blur: 0.0,
@@ -78,7 +79,7 @@ impl Slider {
             value: 2.0,
             vertex_extend: 0,
             visible: true,
-            order: 3,
+            order: 23,
         });
 
         let back_rect_anim = world.build(DirectAnimation {
@@ -103,12 +104,10 @@ impl Slider {
         });
 
         let collider = world.insert(ToolCollider {
-            rect: back_rect(self.rect, self.axis),
+            rect: self.rect,
             order: 10,
             enabled: true,
         });
-
-        let handle = world.insert(self);
 
         world.observer(handle, move |&SetSliderValue(value), world| {
             let mut this = world.fetch_mut(handle).unwrap();
@@ -135,8 +134,21 @@ impl Slider {
             );
         });
 
+        world.observer(handle, move |&SetWidgetVisible(visible), world| {
+            let mut back = world.fetch_mut(back).unwrap();
+            let mut front = world.fetch_mut(front).unwrap();
+            let mut knob = world.fetch_mut(knob).unwrap();
+            let mut knob_split = world.fetch_mut(knob_split).unwrap();
+            let mut collider = world.fetch_mut(collider).unwrap();
+            back.desc.visible = visible;
+            front.desc.visible = visible;
+            knob.desc.visible = visible;
+            knob_split.desc.visible = visible;
+            collider.enabled = visible;
+        });
+
         world.observer(collider, move |event: &PointerHit, world| {
-            let this = world.fetch(handle).unwrap();
+            let mut this = world.fetch_mut(handle).unwrap();
             let theme = world.single_fetch::<Theme>().unwrap();
 
             let position = match this.axis.is_vertical() {
@@ -144,31 +156,23 @@ impl Slider {
                 false => event.position.q32_round().x,
             };
 
-            let value = from_position(this.rect, this.axis, position);
+            let value = from_position_pressed(this.rect, this.axis, position);
             world.queue_trigger(handle, SliderValue(value));
 
             if let PointerHitStatus::Press = event.status {
-                let back_rect_expanded = back_rect_expanded(this.rect, this.axis);
+                this.pressed = true;
+                let back_rect_expanded = back_rect_pressed(this.rect, this.axis);
                 world.trigger(back_rect_anim, &SetAnimationDst(back_rect_expanded));
-                world.trigger(knob_color_anim, &SetAnimationDst(theme.highlight_color));
-                world.trigger(
-                    knob_split_color_anim,
-                    &SetAnimationDst(theme.significant_color),
-                );
-            } else if let PointerHitStatus::Release = event.status {
-                world.trigger(
-                    back_rect_anim,
-                    &SetAnimationDst(back_rect(this.rect, this.axis)),
-                );
                 world.trigger(knob_color_anim, &SetAnimationDst(theme.primary_color));
-                world.trigger(
-                    knob_split_color_anim,
-                    &SetAnimationDst(theme.secondary_color),
-                );
+                world.trigger(knob_split_color_anim, &SetAnimationDst(theme.theme_color));
+            } else if let PointerHitStatus::Release = event.status {
+                this.pressed = false;
+                let back_rect = back_rect(this.rect, this.axis);
+                world.trigger(back_rect_anim, &SetAnimationDst(back_rect));
+                world.trigger(knob_color_anim, &SetAnimationDst(theme.blank_color));
+                world.trigger(knob_split_color_anim, &SetAnimationDst(theme.primary_color));
             }
         });
-
-        handle
     }
 
     fn set_value(
@@ -180,10 +184,19 @@ impl Slider {
     ) {
         self.value = value;
 
-        let position = into_position(self.rect, self.axis, self.value);
+        let position = match self.pressed {
+            true => into_position_pressed(self.rect, self.axis, self.value),
+            false => into_position(self.rect, self.axis, self.value),
+        };
+
         front.desc.rect = front_rect(self.rect, self.axis, position);
         knob.desc.rect = knob_rect(self.rect, self.axis, position);
         knob_split.desc.rect = knob_split_rect(self.rect, self.axis, position);
+
+        match self.pressed {
+            true => knob.desc.rect = knob_rect_pressed(self.rect, self.axis, position),
+            false => knob.desc.rect = knob_rect(self.rect, self.axis, position),
+        }
     }
 
     fn set_rect(
@@ -196,30 +209,38 @@ impl Slider {
         collider: &mut ToolCollider,
     ) {
         self.rect = rect;
+        collider.rect = rect;
 
         let back_rect = back_rect(rect, self.axis);
         back_rect_anim.dst = back_rect.into_storage();
         back_rect_anim.src = back_rect.into_storage();
-        collider.rect = back_rect;
 
         let position = into_position(self.rect, self.axis, self.value);
         front.desc.rect = front_rect(self.rect, self.axis, position);
-        knob.desc.rect = knob_rect(self.rect, self.axis, position);
         knob_split.desc.rect = knob_split_rect(self.rect, self.axis, position);
+
+        match self.pressed {
+            true => knob.desc.rect = knob_rect_pressed(self.rect, self.axis, position),
+            false => knob.desc.rect = knob_rect(self.rect, self.axis, position),
+        }
     }
 }
+
+const BAR_EX: i32 = 5;
+const BAR_HW: i32 = 6;
+const KNOB_SIZE: UVec2 = UVec2::new(8, 16);
+const KNOB_SIZE_PRESSED: UVec2 = UVec2::new(8, 14);
+const KNOB_SPLIT_SIZE: UVec2 = UVec2::new(5, 2);
 
 fn back_rect(rect: Rectangle, axis: Axis) -> Rectangle {
     front_rect(rect, axis, rect.axis_end(axis))
 }
 
-fn back_rect_expanded(rect: Rectangle, axis: Axis) -> Rectangle {
-    const BAR_EX: i32 = 5;
+fn back_rect_pressed(rect: Rectangle, axis: Axis) -> Rectangle {
     back_rect(rect, axis).expand(BAR_EX)
 }
 
 fn front_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
-    const BAR_HW: i32 = 6;
     Rectangle::axis_new(
         rect.axis_start(axis),
         rect.axis_center(axis.rotate()) - BAR_HW * axis.sign(),
@@ -230,15 +251,20 @@ fn front_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
 }
 
 fn knob_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
-    const KNOB_SIZE: UVec2 = UVec2::new(9, 20);
     Rectangle::new_half(
         axis.vertical_position(IVec2::new(rect.axis_center(axis.rotate()), position)),
         axis.vertical_extend(KNOB_SIZE),
     )
 }
 
+fn knob_rect_pressed(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
+    Rectangle::new_half(
+        axis.vertical_position(IVec2::new(rect.axis_center(axis.rotate()), position)),
+        axis.vertical_extend(KNOB_SIZE_PRESSED),
+    )
+}
+
 fn knob_split_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
-    const KNOB_SPLIT_SIZE: UVec2 = UVec2::new(6, 2);
     Rectangle::new_half(
         axis.vertical_position(IVec2::new(rect.axis_center(axis.rotate()), position)),
         axis.vertical_extend(KNOB_SPLIT_SIZE),
@@ -250,23 +276,32 @@ fn into_position(rect: Rectangle, axis: Axis, value: f32) -> i32 {
     (value * (knob_max - knob_min) as f32).round() as i32 + knob_min
 }
 
-fn from_position(rect: Rectangle, axis: Axis, position: i32) -> f32 {
-    let (knob_max, knob_min) = knob_limit(rect, axis);
+fn into_position_pressed(rect: Rectangle, axis: Axis, value: f32) -> i32 {
+    let (knob_max, knob_min) = knob_limit_pressed(rect, axis);
+    (value * (knob_max - knob_min) as f32).round() as i32 + knob_min
+}
+
+fn from_position_pressed(rect: Rectangle, axis: Axis, position: i32) -> f32 {
+    let (knob_max, knob_min) = knob_limit_pressed(rect, axis);
     ((position - knob_min) as f32 / (knob_max - knob_min) as f32).clamp(0.0, 1.0)
 }
 
 fn knob_limit(rect: Rectangle, axis: Axis) -> (i32, i32) {
-    const KNOB_EDGE_OFF: i32 = 17;
     (
-        rect.axis_end(axis) - KNOB_EDGE_OFF * axis.sign(),
-        rect.axis_start(axis) + KNOB_EDGE_OFF * axis.sign(),
+        rect.axis_end(axis) - KNOB_SIZE.y as i32 * axis.sign(),
+        rect.axis_start(axis) + KNOB_SIZE.y as i32 * axis.sign(),
     )
 }
 
-impl Element for Slider {}
-impl Descriptor for Slider {
-    type Target = Handle<Self>;
-    fn when_build(self, world: &World) -> Self::Target {
-        self.build(world)
+fn knob_limit_pressed(rect: Rectangle, axis: Axis) -> (i32, i32) {
+    (
+        rect.axis_end(axis) - KNOB_SIZE_PRESSED.y as i32 * axis.sign(),
+        rect.axis_start(axis) + KNOB_SIZE_PRESSED.y as i32 * axis.sign(),
+    )
+}
+
+impl Element for Slider {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        self.init(world, this);
     }
 }

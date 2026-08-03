@@ -1,29 +1,25 @@
 use std::sync::Arc;
 
-use cosmic_text::{Attrs, Weight};
+use cosmic_text::{Attrs, Metrics, Weight};
 use glam::{IVec2, UVec2, Vec2};
 use ln_world::{Descriptor, Handle, World};
 use palette::{Hsla, IntoColor, RgbHue, Srgba};
 
 use crate::{
-    layer::wrapper::LayerWrapper,
-    layout::{
+    layer::{modifier::Modifier, wrapper::LayerWrapper}, layout::{
         luni::{
             LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
             LuniRect,
         },
         transform::{Transform, TransformEdge, TransformValue},
-    },
-    measures::Rectangle,
-    render::rounded::{RoundedRect, RoundedRectDescriptor},
-    theme::Theme,
-    widgets::{
+    }, measures::{Axis, Rectangle}, render::rounded::{RoundedRect, RoundedRectDescriptor}, theme::Theme, widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         echo::EchoWidget,
         palette::hsl::{PaletteHsl, PaletteHsla},
         panel::Panel,
         renderer::{svg::svg_render, text::Text},
+        slider::{SetSliderValue, Slider, SliderValue},
         tabs::Tabs,
     },
 };
@@ -75,7 +71,7 @@ impl Descriptor for ColorPicker {
 
         settings(world, tab_settings);
 
-        let tabs = world.build(Tabs {
+        let tabs = world.insert(Tabs {
             active: 0,
             rect: Rectangle::default(),
             visible: false,
@@ -112,7 +108,7 @@ impl Descriptor for ColorPicker {
         world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
             let transform = TransformValue::anchor(
                 (1.0, 0.5),
-                Rectangle::new_half(IVec2::new(144 + 20, 0), UVec2::splat(144)),
+                Rectangle::new_half(IVec2::new(192 + 20, 0), UVec2::new(192, 144)),
             );
             let rect = transform.compute(rect);
             world.queue_trigger(tabs, SetWidgetRectangle(rect));
@@ -155,8 +151,7 @@ fn settings(world: &World, panel: Handle<Panel>) {
     let label1_frame = world.insert(EchoWidget);
     let label1 = world.insert(Text {
         text: String::from("选项标签"),
-        rect: Rectangle::new(0, 0, 56, 18),
-        metrics: cosmic_text::Metrics {
+        metrics: Metrics {
             font_size: 14.0,
             line_height: 18.0,
         },
@@ -171,36 +166,21 @@ fn settings(world: &World, panel: Handle<Panel>) {
     });
 
     let option1_frame = world.insert(EchoWidget);
-    let option1 = world.insert(Text {
-        text: String::from("选项设置文本"),
-        rect: Rectangle::new(0, 0, 144, 36),
-        metrics: cosmic_text::Metrics {
-            font_size: 14.0,
-            line_height: 18.0,
-        },
-        ..Default::default()
-    });
-    world.insert(Transform {
-        value: TransformValue {
-            left: TransformEdge {
-                anchor: 0.0,
-                offset: 56,
-            },
-            down: TransformEdge {
-                anchor: 1.0,
-                offset: -36,
-            },
-            right: TransformEdge {
-                anchor: 1.0,
-                offset: -72,
-            },
-            up: TransformEdge {
-                anchor: 1.0,
-                offset: 0,
-            },
-        },
-        source: option1_frame.untyped(),
-        target: option1.untyped(),
+    option_label(world, String::from("选项设置文本"), option1_frame.untyped());
+    option_desc(
+        world,
+        String::from("设置文本的具体描述"),
+        option1_frame.untyped(),
+    );
+    let option1_slider = option_slider(world, option1_frame.untyped());
+    world.observer(option1_slider, move |&SliderValue(value), world| {
+        let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
+        stroke.brush.modifier = Modifier {
+            max_flow: value + 0.1,
+            min_flow: value,
+            ..stroke.brush.modifier
+        };
+        world.queue_trigger(option1_slider, SetSliderValue(value));
     });
 
     world.insert(LuniFlex {
@@ -230,10 +210,122 @@ fn settings(world: &World, panel: Handle<Panel>) {
             (
                 option1_frame.untyped(),
                 LuniChild {
-                    basis: Some(72),
+                    basis: Some(108),
                     ..Default::default()
                 },
             ),
         ],
     });
+}
+
+fn option_label(world: &World, text: String, option1_frame: Handle) -> Handle<Text> {
+    let theme = world.single_fetch::<Theme>().unwrap();
+
+    let label = world.insert(Text {
+        text,
+        metrics: Metrics {
+            font_size: 16.0,
+            line_height: 20.0,
+        },
+        color: theme.symbolic_color,
+        ..Default::default()
+    });
+
+    world.insert(Transform {
+        value: TransformValue {
+            left: TransformEdge {
+                anchor: 0.0,
+                offset: 56,
+            },
+            down: TransformEdge {
+                anchor: 1.0,
+                offset: -36,
+            },
+            right: TransformEdge {
+                anchor: 1.0,
+                offset: -72,
+            },
+            up: TransformEdge {
+                anchor: 1.0,
+                offset: -16,
+            },
+        },
+        source: option1_frame,
+        target: label.untyped(),
+    });
+
+    label
+}
+
+fn option_desc(world: &World, text: String, option1_frame: Handle) -> Handle<Text> {
+    let theme = world.single_fetch::<Theme>().unwrap();
+
+    let label = world.insert(Text {
+        text,
+        metrics: Metrics {
+            font_size: 12.0,
+            line_height: 14.0,
+        },
+        color: theme.significant_color,
+        ..Default::default()
+    });
+
+    world.insert(Transform {
+        value: TransformValue {
+            left: TransformEdge {
+                anchor: 0.0,
+                offset: 56,
+            },
+            down: TransformEdge {
+                anchor: 1.0,
+                offset: -72,
+            },
+            right: TransformEdge {
+                anchor: 1.0,
+                offset: -72,
+            },
+            up: TransformEdge {
+                anchor: 1.0,
+                offset: -36,
+            },
+        },
+        source: option1_frame,
+        target: label.untyped(),
+    });
+
+    label
+}
+
+fn option_slider(world: &World, option1_frame: Handle) -> Handle<Slider> {
+    let slider = world.insert(Slider {
+        value: 0.5,
+        axis: Axis::Right,
+        rect: Rectangle::default(),
+        pressed: false,
+    });
+
+    world.insert(Transform {
+        value: TransformValue {
+            left: TransformEdge {
+                anchor: 0.0,
+                offset: 56,
+            },
+            down: TransformEdge {
+                anchor: 1.0,
+                offset: -108,
+            },
+            right: TransformEdge {
+                anchor: 1.0,
+                offset: -72,
+            },
+            up: TransformEdge {
+                anchor: 1.0,
+                offset: -72,
+            },
+        },
+        source: option1_frame,
+        target: slider.untyped(),
+    });
+
+    slider
 }

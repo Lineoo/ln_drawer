@@ -82,10 +82,11 @@ impl Descriptor for SideDocker {
 
         let elastic_blank = world.insert(());
 
-        let slider = world.build(Slider {
+        let slider = world.insert(Slider {
             rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
             axis: Axis::Up,
             value: 0.67,
+            pressed: false,
         });
 
         world.observer(pen, move |&ButtonClick, world| {

@@ -150,9 +150,6 @@ impl Canvas {
     }
 
     pub fn read(&self, x: i32, y: i32) -> Srgba {
-        let x = x.rem_euclid(self.data_width as i32);
-        let y = y.rem_euclid(self.data_height as i32);
-
         let start = self.offset(x, y);
         if start + 3 >= self.data.len() {
             return Srgba::new(0.0, 0.0, 0.0, 0.0);
@@ -168,9 +165,6 @@ impl Canvas {
     }
 
     pub fn write(&mut self, x: i32, y: i32, color: Srgba) {
-        let x = x.rem_euclid(self.data_width as i32);
-        let y = y.rem_euclid(self.data_height as i32);
-
         let start = self.offset(x, y);
         if start + 3 >= self.data.len() {
             return;

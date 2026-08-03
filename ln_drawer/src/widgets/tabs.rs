@@ -1,14 +1,10 @@
-use ln_world::{Descriptor, Element, Handle, World};
+use ln_world::{Element, Handle, World};
 
 use crate::{
     layout::luni::{
         LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
         LuniRect,
-    },
-    measures::Rectangle,
-    render::rounded::RoundedRectDescriptor,
-    theme::Theme,
-    widgets::{
+    }, measures::Rectangle, render::rounded::RoundedRectDescriptor, theme::Theme, tools::collider::ToolCollider, widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
         button::{
             ButtonAction, ButtonImage, SetButtonIconColor, SetButtonSelected, ToggleButton,
@@ -28,7 +24,7 @@ pub struct Tabs {
 }
 
 impl Tabs {
-    pub fn build(self, world: &World) -> Handle<Tabs> {
+    pub fn init(&self, world: &World, handle: Handle<Self>) -> Handle<Tabs> {
         let theme = world.single_fetch::<Theme>().unwrap();
 
         let back = world.build(RoundedRectDescriptor {
@@ -65,6 +61,12 @@ impl Tabs {
             luni_children.push((button.untyped(), LuniChild::default()));
         }
 
+        let collider = world.insert(ToolCollider {
+            rect: self.rect,
+            order: -10,
+            enabled: self.visible,
+        });
+
         let side = world.insert(());
 
         world.insert(LuniFlex {
@@ -100,8 +102,6 @@ impl Tabs {
             children: luni_children,
         });
 
-        let handle = world.insert(self);
-
         for (i, &child) in children.iter().enumerate() {
             world.observer(child, move |action: &ButtonAction, world| {
                 if let ButtonAction::Press = action {
@@ -113,9 +113,11 @@ impl Tabs {
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(handle).unwrap();
             let mut back = world.fetch_mut(back).unwrap();
+            let mut collider = world.fetch_mut(collider).unwrap();
 
             this.rect = rect;
             back.desc.rect = rect;
+            collider.rect = rect;
 
             world.queue_trigger(handle, WidgetRectangle(main_rect(rect)));
             world.queue_trigger(side, WidgetRectangle(side_rect(rect)));
@@ -128,9 +130,11 @@ impl Tabs {
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(handle).unwrap();
             let mut back = world.fetch_mut(back).unwrap();
+            let mut collider = world.fetch_mut(collider).unwrap();
 
             this.visible = visible;
             back.desc.visible = visible;
+            collider.enabled = visible;
 
             world.queue_trigger(handle, WidgetVisible(visible));
             world.queue_trigger(side, WidgetVisible(visible));
@@ -181,10 +185,8 @@ fn main_rect(rect: Rectangle) -> Rectangle {
     rect.with_left(rect.left() + 48)
 }
 
-impl Element for Tabs {}
-impl Descriptor for Tabs {
-    type Target = Handle<Tabs>;
-    fn when_build(self, world: &World) -> Self::Target {
-        self.build(world)
+impl Element for Tabs {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        self.init(world, this);
     }
 }
