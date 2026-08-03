@@ -898,9 +898,9 @@ fn merge_pipelines(device: &Device, chunk_draw_layout: &BindGroupLayout) -> Merg
     };
 
     MergePipelines {
-        over: new_pipeline("over", "src + dst * (1 - dst.a)"),
+        over: new_pipeline("over", "src + dst * (1 - src.a)"),
         replace: new_pipeline("replace", "src"),
-        erase: new_pipeline("erase", "dst * (1 - dst.a)"),
+        erase: new_pipeline("erase", "dst * (1 - src.a)"),
     }
 }
 
