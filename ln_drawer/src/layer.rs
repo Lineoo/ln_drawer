@@ -12,12 +12,12 @@ use wgpu::{
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
     Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
     ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState,
+    ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState, Origin3d,
     PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
     RenderPass, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureViewDescriptor, TextureViewDimension, VertexState,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyTextureInfo,
+    Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
+    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -39,11 +39,9 @@ pub struct LayerPipeline {
     device: Device,
     queue: Queue,
 
+    chunk_layout: ChunkLayout,
+
     dispatch: Buffer,
-
-    chunk_render_layout: BindGroupLayout,
-    chunk_draw_layout: BindGroupLayout,
-
     dispatch_group: BindGroup,
     sampler_group_unfiltered: BindGroup,
     sampler_group_filtered: BindGroup,
@@ -71,7 +69,15 @@ pub struct Chunk {
     pub rectangle: Buffer,
     pub texture: Texture,
     pub render: BindGroup,
-    pub draw: BindGroup,
+    pub read: BindGroup,
+    pub write: BindGroup,
+}
+
+#[derive(Clone)]
+pub struct ChunkLayout {
+    render: BindGroupLayout,
+    read: BindGroupLayout,
+    write: BindGroupLayout,
 }
 
 struct RenderPipelines {
@@ -84,7 +90,6 @@ struct RenderPipelines {
 struct MergePipelines {
     over: ComputePipeline,
     replace: ComputePipeline,
-    #[expect(unused)]
     erase: ComputePipeline,
 }
 
@@ -110,7 +115,14 @@ impl LayerPipeline {
         camera_bind_layout: &BindGroupLayout,
     ) -> Self {
         let chunk_render_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_RENDER);
-        let chunk_draw_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_DRAW);
+        let chunk_read_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_READ);
+        let chunk_write_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_WRITE);
+        let chunk_layout = ChunkLayout {
+            render: chunk_render_layout,
+            read: chunk_read_layout,
+            write: chunk_write_layout,
+        };
+
         let dispatch_layout = device.create_bind_group_layout(&LAYOUT_DISPATCH);
         let sampler_layout = device.create_bind_group_layout(&LAYOUT_SAMPLER);
 
@@ -124,19 +136,18 @@ impl LayerPipeline {
             surface_format,
             camera_bind_layout,
             sampler_layout,
-            &chunk_render_layout,
+            &chunk_layout.render,
         );
 
-        let merge_pipelines = merge_pipelines(&device, &chunk_draw_layout);
-        let mipmap_pipeline = mipmap_pipeline(&device, &chunk_draw_layout, &dispatch_layout);
-        let clear_pipeline = clear_pipeline(&device, &chunk_draw_layout);
+        let merge_pipelines = merge_pipelines(&device, &chunk_layout);
+        let mipmap_pipeline = mipmap_pipeline(&device, &chunk_layout, &dispatch_layout);
+        let clear_pipeline = clear_pipeline(&device, &chunk_layout);
 
         LayerPipeline {
             device,
             queue,
             dispatch,
-            chunk_render_layout,
-            chunk_draw_layout,
+            chunk_layout,
             dispatch_group,
             sampler_group_unfiltered,
             sampler_group_filtered,
@@ -197,39 +208,66 @@ impl LayerPipeline {
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("layer_prepare_copy"),
             });
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_copy"),
-            timestamp_writes: None,
-        });
 
-        for dst_key in dst_chunks {
-            let dst_chunk = self.recycle_empty_chunk(dst_key, dst.chunk_size, pool);
+        // Copy texture if src layer is provided
+        if let Some(src) = src {
+            debug_assert_eq!(
+                src.chunk_size, dst.chunk_size,
+                "reference layer chunk_size does not matched"
+            );
 
-            // Copy texture if src layer is provided
-            if let Some(src) = src {
-                cpass.set_pipeline(&self.merge_pipelines.replace);
-                cpass.set_bind_group(0, Some(&dst_chunk.draw), &[]);
+            for dst_key in dst_chunks {
+                let src_chunk = src.chunks.get(&dst_key);
+                let (dst_chunk, cleared) = self.recycle_chunk(dst_key, dst.chunk_size, pool);
 
-                let (start, end) =
-                    rect_to_chunks(chunk_to_rect(dst_key, dst.chunk_size), 0, src.chunk_size);
-                for x in start.0..end.0 {
-                    for y in start.1..end.1 {
-                        let src_key = (x, y, 0);
+                if let Some(src_chunk) = src_chunk {
+                    encoder.copy_texture_to_texture(
+                        TexelCopyTextureInfo {
+                            texture: &src_chunk.texture,
+                            mip_level: 0,
+                            origin: Origin3d::ZERO,
+                            aspect: TextureAspect::All,
+                        },
+                        TexelCopyTextureInfo {
+                            texture: &dst_chunk.texture,
+                            mip_level: 0,
+                            origin: Origin3d::ZERO,
+                            aspect: TextureAspect::All,
+                        },
+                        Extent3d {
+                            width: src.chunk_size,
+                            height: src.chunk_size,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                } else if !cleared {
+                    let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("layer_clear"),
+                        timestamp_writes: None,
+                    });
 
-                        let Some(src_chunk) = src.chunks.get(&src_key) else {
-                            continue;
-                        };
-
-                        cpass.set_bind_group(1, Some(&src_chunk.draw), &[]);
-                        dispatch_workgroups(&mut cpass, UVec2::splat(src.chunk_size));
-                    }
+                    self.clear_chunk(&dst_chunk, dst.chunk_size, &mut cpass);
                 }
-            }
 
-            dst.chunks.insert(dst_key, dst_chunk);
+                dst.chunks.insert(dst_key, dst_chunk);
+            }
+        } else {
+            for dst_key in dst_chunks {
+                let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("layer_clear"),
+                    timestamp_writes: None,
+                });
+
+                let (dst_chunk, cleared) = self.recycle_chunk(dst_key, dst.chunk_size, pool);
+
+                if !cleared {
+                    self.clear_chunk(&dst_chunk, dst.chunk_size, &mut cpass);
+                }
+
+                dst.chunks.insert(dst_key, dst_chunk);
+            }
         }
 
-        drop(cpass);
         self.queue.submit([encoder.finish()]);
     }
 
@@ -238,7 +276,7 @@ impl LayerPipeline {
             return;
         }
 
-        write_dispatch_uniform(&self.queue, &self.dispatch, dirty);
+        write_dispatch(&self.queue, &self.dispatch, dirty);
 
         let mut encoder = self
             .device
@@ -268,84 +306,12 @@ impl LayerPipeline {
                         continue;
                     };
 
-                    cpass.set_bind_group(1, Some(&dst_chunk.draw), &[]);
-                    cpass.set_bind_group(2, Some(&src_chunk.draw), &[]);
+                    cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
+                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
                     dispatch_workgroups(&mut cpass, dirty.extend / scale);
                 }
             }
         }
-
-        drop(cpass);
-        self.queue.submit([encoder.finish()]);
-    }
-
-    pub fn merge(&self, dst: &Layer, src: &Layer, replace: bool) {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("layer_merge"),
-            });
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_merge"),
-            timestamp_writes: None,
-        });
-
-        match replace {
-            false => cpass.set_pipeline(&self.merge_pipelines.over),
-            true => cpass.set_pipeline(&self.merge_pipelines.replace),
-        }
-
-        for &src_key in src.chunks.keys() {
-            let Some(src_chunk) = src.chunks.get(&src_key) else {
-                continue;
-            };
-
-            cpass.set_bind_group(1, Some(&src_chunk.draw), &[]);
-
-            let (start, end) =
-                rect_to_chunks(chunk_to_rect(src_key, src.chunk_size), 0, dst.chunk_size);
-            for x in start.0..end.0 {
-                for y in start.1..end.1 {
-                    let dst_key = (x, y, 0);
-
-                    let Some(dst_chunk) = dst.chunks.get(&dst_key) else {
-                        continue;
-                    };
-
-                    cpass.set_bind_group(0, Some(&dst_chunk.draw), &[]);
-                    dispatch_workgroups(&mut cpass, UVec2::splat(src.chunk_size));
-                }
-            }
-        }
-
-        drop(cpass);
-        self.queue.submit([encoder.finish()]);
-    }
-
-    pub fn write_chunk_key(&mut self, chunk: &Chunk, key: ChunkKey, chunk_size: u32) {
-        let rect = chunk_to_rect(key, chunk_size);
-        let uniform = ChunkUniform {
-            coords: rect.origin.into(),
-            size: rect.extend.into(),
-        };
-        self.queue.write_buffer(&chunk.rectangle, 0, bytes_of(&uniform));
-    }
-
-    pub fn clear_chunk(&mut self, chunk: &Chunk, chunk_size: u32) {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("layer_clear"),
-            });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_clear"),
-            timestamp_writes: None,
-        });
-
-        cpass.set_pipeline(&self.clear_pipeline);
-        cpass.set_bind_group(0, Some(&chunk.draw), &[]);
-        dispatch_workgroups(&mut cpass, UVec2::splat(chunk_size));
 
         drop(cpass);
         self.queue.submit([encoder.finish()]);
@@ -389,30 +355,40 @@ impl LayerPipeline {
         }
     }
 
-    fn recycle_empty_chunk(
+    fn clear_chunk(&self, chunk: &Chunk, chunk_size: u32, cpass: &mut ComputePass) {
+        cpass.set_pipeline(&self.clear_pipeline);
+        cpass.set_bind_group(0, Some(&chunk.write), &[]);
+        dispatch_workgroups(cpass, UVec2::splat(chunk_size));
+    }
+
+    /// return `true` if the chunk is guaranteed to be empty
+    fn recycle_chunk(
         &mut self,
         key: ChunkKey,
         chunk_size: u32,
         pool: &mut ChunkPool,
-    ) -> Chunk {
+    ) -> (Chunk, bool) {
         if let Some(chunk) = pool.list.pop() {
-            self.write_chunk_key(&chunk, key, chunk_size);
-            self.clear_chunk(&chunk, chunk_size);
-            chunk
+            write_chunk(
+                &self.queue,
+                &chunk.rectangle,
+                chunk_to_rect(key, chunk_size),
+            );
+            (chunk, false)
         } else {
             let texture = create_chunk_texture(&self.device, chunk_size);
-
-            create_chunk(
+            let chunk = create_chunk(
                 &self.device,
-                chunk_size,
-                &self.chunk_render_layout,
-                &self.chunk_draw_layout,
+                &self.chunk_layout,
                 texture,
-                key,
-            )
+                chunk_to_rect(key, chunk_size),
+            );
+            (chunk, true)
         }
     }
 }
+
+// --- Utils --- //
 
 fn dispatch_workgroups(cpass: &mut ComputePass, size: UVec2) {
     cpass.dispatch_workgroups(
@@ -422,12 +398,18 @@ fn dispatch_workgroups(cpass: &mut ComputePass, size: UVec2) {
     );
 }
 
-// --- Utils --- //
-
-fn write_dispatch_uniform(queue: &Queue, buffer: &Buffer, dirty: Rectangle) {
+fn write_dispatch(queue: &Queue, buffer: &Buffer, dirty: Rectangle) {
     let uniform = DispatchUniform {
         coords: dirty.origin.into(),
         size: dirty.extend.into(),
+    };
+    queue.write_buffer(buffer, 0, bytes_of(&uniform));
+}
+
+fn write_chunk(queue: &Queue, buffer: &Buffer, rect: Rectangle) {
+    let uniform = ChunkUniform {
+        coords: rect.origin.into(),
+        size: rect.extend.into(),
     };
     queue.write_buffer(buffer, 0, bytes_of(&uniform));
 }
@@ -487,15 +469,11 @@ fn create_chunk_texture(device: &Device, chunk_size: u32) -> Texture {
 
 fn create_chunk(
     device: &Device,
-    chunk_size: u32,
-    chunk_render_layout: &BindGroupLayout,
-    chunk_draw_layout: &BindGroupLayout,
+    chunk_layout: &ChunkLayout,
     texture: Texture,
-    key: ChunkKey,
+    rect: Rectangle,
 ) -> Chunk {
-    let rect = chunk_to_rect(key, chunk_size);
-
-    let buffer = device.create_buffer_init(&BufferInitDescriptor {
+    let rectangle = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("layer_chunk_buffer"),
         contents: bytes_of(&ChunkUniform {
             coords: rect.origin.into(),
@@ -518,9 +496,9 @@ fn create_chunk(
         ..Default::default()
     });
 
-    let render_bind = device.create_bind_group(&BindGroupDescriptor {
+    let render = device.create_bind_group(&BindGroupDescriptor {
         label: Some("layer_chunk_render"),
-        layout: &chunk_render_layout,
+        layout: &chunk_layout.render,
         entries: &[
             BindGroupEntry {
                 binding: 0,
@@ -529,7 +507,7 @@ fn create_chunk(
             BindGroupEntry {
                 binding: 1,
                 resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &buffer,
+                    buffer: &rectangle,
                     offset: 0,
                     size: None,
                 }),
@@ -537,9 +515,9 @@ fn create_chunk(
         ],
     });
 
-    let draw_bind = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_chunk_draw"),
-        layout: &chunk_draw_layout,
+    let read = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_read"),
+        layout: &chunk_layout.read,
         entries: &[
             BindGroupEntry {
                 binding: 0,
@@ -548,7 +526,26 @@ fn create_chunk(
             BindGroupEntry {
                 binding: 1,
                 resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &buffer,
+                    buffer: &rectangle,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    let write = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_write"),
+        layout: &chunk_layout.write,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&texture_compute_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &rectangle,
                     offset: 0,
                     size: None,
                 }),
@@ -557,10 +554,11 @@ fn create_chunk(
     });
 
     Chunk {
-        rectangle: buffer,
+        rectangle,
         texture,
-        render: render_bind,
-        draw: draw_bind,
+        render,
+        read,
+        write,
     }
 }
 
@@ -590,15 +588,42 @@ const LAYOUT_SAMPLER: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor 
     }],
 };
 
-/// Contains read_write storage texture of chunk in format `Rgba8Unorm` and chunk key in vec3
-const LAYOUT_CHUNK_DRAW: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
-    label: Some("layer_chunk_draw"),
+/// Contains read storage texture of chunk in format `Rgba8Unorm` and chunk key in vec3
+const LAYOUT_CHUNK_READ: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("layer_chunk_read"),
     entries: &[
         BindGroupLayoutEntry {
             binding: 0,
             visibility: ShaderStages::COMPUTE,
             ty: BindingType::StorageTexture {
-                access: StorageTextureAccess::ReadWrite,
+                access: StorageTextureAccess::ReadOnly,
+                format: TextureFormat::Rgba8Unorm,
+                view_dimension: TextureViewDimension::D2,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+    ],
+};
+
+/// Contains write storage texture of chunk in format `Rgba8Unorm` and chunk key in vec3
+const LAYOUT_CHUNK_WRITE: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("layer_chunk_write"),
+    entries: &[
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::StorageTexture {
+                access: StorageTextureAccess::WriteOnly,
                 format: TextureFormat::Rgba8Unorm,
                 view_dimension: TextureViewDimension::D2,
             },
@@ -796,7 +821,7 @@ fn render_pipelines(
 
 fn mipmap_pipeline(
     device: &Device,
-    chunk_draw_layout: &BindGroupLayout,
+    chunk_layout: &ChunkLayout,
     dispatch_layout: &BindGroupLayout,
 ) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -815,8 +840,8 @@ fn mipmap_pipeline(
         label: Some("layer_mipmap"),
         bind_group_layouts: &[
             Some(dispatch_layout),
-            Some(chunk_draw_layout),
-            Some(chunk_draw_layout),
+            Some(&chunk_layout.write),
+            Some(&chunk_layout.read),
         ],
         immediate_size: 0,
     });
@@ -831,10 +856,14 @@ fn mipmap_pipeline(
     })
 }
 
-fn merge_pipelines(device: &Device, chunk_draw_layout: &BindGroupLayout) -> MergePipelines {
+fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipelines {
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_merge"),
-        bind_group_layouts: &[Some(chunk_draw_layout), Some(chunk_draw_layout)],
+        bind_group_layouts: &[
+            Some(&chunk_layout.read),
+            Some(&chunk_layout.read),
+            Some(&chunk_layout.write),
+        ],
         immediate_size: 0,
     });
 
@@ -843,8 +872,7 @@ fn merge_pipelines(device: &Device, chunk_draw_layout: &BindGroupLayout) -> Merg
             label: Some(label),
             source: ShaderSource::Wgsl(
                 format!(
-                    "{}{}fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
-                    include_str!("layer/lib_colorspace.wgsl"),
+                    "{}fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
                     include_str!("layer/merge.wgsl"),
                     formula
                 )
@@ -862,13 +890,13 @@ fn merge_pipelines(device: &Device, chunk_draw_layout: &BindGroupLayout) -> Merg
     };
 
     MergePipelines {
-        over: new_pipeline("over", "src + dst * (1 - src.a)"),
-        replace: new_pipeline("replace", "src"),
-        erase: new_pipeline("erase", "dst * (1 - src.a)"),
+        over: new_pipeline("merge_over", "src + dst * (1 - src.a)"),
+        replace: new_pipeline("merge_replace", "src"),
+        erase: new_pipeline("merge_erase", "dst * (1 - src.a)"),
     }
 }
 
-fn clear_pipeline(device: &Device, chunk_draw_layout: &BindGroupLayout) -> ComputePipeline {
+fn clear_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_clear"),
         source: ShaderSource::Wgsl(include_str!("layer/clear.wgsl").into()),
@@ -876,7 +904,7 @@ fn clear_pipeline(device: &Device, chunk_draw_layout: &BindGroupLayout) -> Compu
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_clear"),
-        bind_group_layouts: &[Some(chunk_draw_layout)],
+        bind_group_layouts: &[Some(&chunk_layout.write)],
         immediate_size: 0,
     });
 

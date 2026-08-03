@@ -87,9 +87,15 @@ impl RoundBrush {
         curr_draw
     }
 
-    /// - Mode 1: Create transparent scratch chunks, merge to dst layer with over blend mode.
-    /// - Mode 2: Clone data from dst layer, change in-place and eventually swap chunks into dst layer.
-    pub fn swap_mode(&self) -> bool {
+    /// - Normal Mode: 
+    ///     - Scratch chunks start with __transparent texture__.
+    ///     - Render in __over__ mode
+    ///     - Merge in __over__ mode
+    /// - Replace Mode:
+    ///     - Scratch chunks start with __data from destination layer__.
+    ///     - Render in __replace__ mode
+    ///     - Merge in __replace__ mode
+    pub fn replace_mode(&self) -> bool {
         self.erase
     }
 }

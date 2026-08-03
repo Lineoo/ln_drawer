@@ -8,36 +8,40 @@ use hashbrown::HashMap;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor,
     ComputePipeline, ComputePipelineDescriptor, Device, PipelineCompilationOptions,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
 };
 
 use crate::{
     layer::{
-        ChunkPool, Layer, LayerPipeline,
+        Chunk, ChunkLayout, ChunkPool, Layer, LayerPipeline,
         brush::round::{RoundBrush, RoundDrawStorage},
+        chunk_to_rect, create_chunk, create_chunk_texture, dispatch_workgroups,
         stream::ThreadInput,
+        write_chunk, write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
 };
 
-const WORKGROUP_SIZE: u32 = 16;
 pub const MAX_STROKE: u64 = 200;
+const TEMP_CHUNK_SIZE: u32 = 1024;
 
 pub struct BrushPipeline {
-    pub scratch: Layer,
+    pub scratch_dst: Layer,
+    pub scratch_swp: Layer,
     pub scratch_pool: ChunkPool,
     pub layer: LayerPipeline,
+
+    temp: Chunk,
 
     brush_round: ComputePipeline,
     erase_round: ComputePipeline,
 
     dispatch: Buffer,
+    dispatch_group: BindGroup,
     draws_length: Buffer,
     draws_array: Buffer,
-
-    dispatch_group_draw: BindGroup,
 
     prev: Option<Draw>,
     stroke: Option<Stroke>,
@@ -52,49 +56,63 @@ pub struct Draw {
 struct Stroke {
     dirty: Rectangle,
     chunks: Vec<super::ChunkKey>,
-    swap: bool,
+    replace: bool,
 }
 
 impl BrushPipeline {
     pub fn new(layer: LayerPipeline) -> Self {
         let dispatch_draw_layout = layer.device.create_bind_group_layout(&LAYOUT_DISPATCH_DRAW);
 
-        let (dispatch, draws_length, draws_array, dispatch_group_draw) =
+        let (dispatch, draws_length, draws_array, dispatch_group) =
             dispatch_group(&layer.device, &dispatch_draw_layout);
 
-        let (brush_round, erase_round) = brush_pipelines(
-            &layer.device,
-            &dispatch_draw_layout,
-            &layer.chunk_draw_layout,
-        );
+        let (brush_round, erase_round) =
+            brush_pipelines(&layer.device, &dispatch_draw_layout, &layer.chunk_layout);
 
-        let scratch = Layer {
+        let scratch_dst = Layer {
             chunks: HashMap::new(),
-            chunk_size: 256,
+            chunk_size: 512,
             controlled: false,
             mipmap_levels: 1,
         };
 
+        let scratch_swp = Layer {
+            chunks: HashMap::new(),
+            chunk_size: 512,
+            controlled: false,
+            mipmap_levels: 1,
+        };
+
+        let temp_texture = create_chunk_texture(&layer.device, TEMP_CHUNK_SIZE);
+        let temp = create_chunk(
+            &layer.device,
+            &layer.chunk_layout,
+            temp_texture,
+            chunk_to_rect((0, 0, 0), TEMP_CHUNK_SIZE),
+        );
+
         BrushPipeline {
-            scratch,
+            scratch_dst,
+            scratch_swp,
             scratch_pool: ChunkPool {
                 list: Vec::new(),
-                chunk_size: 256,
+                chunk_size: 512,
             },
             layer,
+            temp,
             brush_round,
             erase_round,
             dispatch,
+            dispatch_group,
             draws_length,
             draws_array,
-            dispatch_group_draw,
             prev: None,
             stroke: None,
         }
     }
 
     /// CPU-end draw process
-    pub fn paint(&mut self, dst: &Layer, brush: &RoundBrush, target: Draw) {
+    pub fn draw(&mut self, dst: &Layer, brush: &RoundBrush, target: Draw) {
         let mut draws = Vec::new();
         let next = brush.interpolate(self.prev, target, &mut draws);
 
@@ -114,7 +132,7 @@ impl BrushPipeline {
         } else {
             self.stroke = Some(Stroke {
                 dirty,
-                swap: brush.swap_mode(),
+                replace: brush.replace_mode(),
                 chunks: vec![],
             });
         }
@@ -124,21 +142,39 @@ impl BrushPipeline {
             draws_proc.push(draw.into_storage());
         }
 
-        let swap = match brush.swap_mode() {
+        let reference_layer = match brush.replace_mode() {
             true => Some(dst),
             false => None,
         };
 
         // Brush always use uncontrolled layer as scratch
-        self.layer
-            .prepare_chunks(&mut self.scratch, swap, &mut self.scratch_pool, dirty);
+        self.layer.prepare_chunks(
+            &mut self.scratch_dst,
+            reference_layer,
+            &mut self.scratch_pool,
+            dirty,
+        );
+        self.layer.prepare_chunks(
+            &mut self.scratch_swp,
+            reference_layer,
+            &mut self.scratch_pool,
+            dirty,
+        );
 
-        super::write_dispatch_uniform(&self.layer.queue, &self.dispatch, dirty);
+        write_dispatch(&self.layer.queue, &self.dispatch, dirty);
+
         upload_draws(
             &self.draws_length,
             &self.draws_array,
             &draws_proc,
             &self.layer.queue,
+        );
+
+        // move temp chunk to its position
+        write_chunk(
+            &self.layer.queue,
+            &self.temp.rectangle,
+            Rectangle::new_extend(dirty.left(), dirty.down(), TEMP_CHUNK_SIZE, TEMP_CHUNK_SIZE),
         );
 
         let mut encoder = self
@@ -153,25 +189,39 @@ impl BrushPipeline {
             timestamp_writes: None,
         });
 
-        match brush.erase {
-            true => cpass.set_pipeline(&self.erase_round),
-            false => cpass.set_pipeline(&self.brush_round),
-        }
+        self.layer
+            .clear_chunk(&self.temp, TEMP_CHUNK_SIZE, &mut cpass);
 
-        cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
-
-        let (start, end) = super::rect_to_chunks(dirty, 0, self.scratch.chunk_size);
+        let (start, end) = super::rect_to_chunks(dirty, 0, self.scratch_dst.chunk_size);
         for x in start.0..end.0 {
             for y in start.1..end.1 {
                 let key = (x, y, 0);
-                if let Some(chunk) = self.scratch.chunks.get(&key) {
+                if let Some(dst_chunk) = self.scratch_dst.chunks.get_mut(&key)
+                    && let Some(swp_chunk) = self.scratch_swp.chunks.get_mut(&key)
+                {
                     if let Some(stroke) = &mut self.stroke {
                         if !stroke.chunks.contains(&key) {
                             stroke.chunks.push(key);
                         }
                     }
-                    cpass.set_bind_group(1, Some(&chunk.draw), &[]);
-                    dispatch_workgroups(dirty, (x, y, 0), &mut cpass);
+
+                    cpass.set_pipeline(&self.brush_round);
+                    cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
+                    cpass.set_bind_group(1, Some(&self.temp.write), &[]);
+                    dispatch_workgroups(&mut cpass, dirty.extend);
+
+                    match brush.erase {
+                        true => cpass.set_pipeline(&self.layer.merge_pipelines.erase),
+                        false => cpass.set_pipeline(&self.layer.merge_pipelines.over),
+                    }
+
+                    cpass.set_bind_group(0, Some(&dst_chunk.read), &[]);
+                    cpass.set_bind_group(1, Some(&self.temp.read), &[]);
+                    cpass.set_bind_group(2, Some(&swp_chunk.write), &[]);
+                    dispatch_workgroups(&mut cpass, UVec2::splat(self.scratch_swp.chunk_size));
+
+                    // flip flop - useful data are always in scratch_dst
+                    std::mem::swap(dst_chunk, swp_chunk);
                 }
             }
         }
@@ -216,13 +266,21 @@ impl BrushPipeline {
 
         self.layer
             .prepare_chunks(dst, None, &mut self.scratch_pool, stroke.dirty);
-        self.layer.merge(dst, &self.scratch, stroke.swap);
+        self.submit_inner(dst, &stroke);
+
+        // flip out dst layer's chunks
+        for (key, chunk) in self.scratch_swp.chunks.drain() {
+            dst.chunks.insert(key, chunk);
+        }
+
         self.layer.generate_mipmaps(dst, stroke.dirty);
 
-        for (_key, chunk) in self.scratch.chunks.drain() {
-            self.scratch_pool.list.push(chunk);
-        }
+        self.recycle_scratch();
     }
+
+    // TODO Two main optimization:
+    //      - Simplify round brush pipeline, use triple bind instead of write+merge
+    //      - Swap chain should be more efficient with limited draw rectangle
 
     /// All finished, merge to dst layer and notify stream thread unsaved chunks
     pub fn submit_stream(&mut self, dst: &mut Layer, tx: &Sender<ThreadInput>) {
@@ -233,7 +291,14 @@ impl BrushPipeline {
 
         // if failed to merge, we simply drop it.
         if self.layer.validate_chunks(dst, stroke.dirty) {
-            self.layer.merge(dst, &self.scratch, stroke.swap);
+            self.submit_inner(dst, &stroke);
+
+            // flip out dst layer's chunks
+            for (key, chunk) in self.scratch_swp.chunks.drain() {
+                dst.chunks.insert(key, chunk.clone());
+                tx.send(ThreadInput::SwapChunk(key, chunk)).unwrap();
+            }
+
             self.layer.generate_mipmaps(dst, stroke.dirty);
 
             for level in 0..dst.mipmap_levels {
@@ -246,7 +311,49 @@ impl BrushPipeline {
             }
         }
 
-        for (_key, chunk) in self.scratch.chunks.drain() {
+        self.recycle_scratch();
+    }
+
+    fn submit_inner(&mut self, dst: &mut Layer, stroke: &Stroke) {
+        debug_assert_eq!(dst.chunk_size, self.scratch_dst.chunk_size);
+        debug_assert_eq!(self.scratch_swp.chunk_size, self.scratch_dst.chunk_size);
+
+        let mut encoder = self
+            .layer
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("layer_submit"),
+            });
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_submit"),
+            timestamp_writes: None,
+        });
+
+        match stroke.replace {
+            true => cpass.set_pipeline(&self.layer.merge_pipelines.replace),
+            false => cpass.set_pipeline(&self.layer.merge_pipelines.over),
+        };
+
+        for (src_key, src_chunk) in &self.scratch_dst.chunks {
+            if let Some(dst_chunk) = dst.chunks.get(src_key)
+                && let Some(swp_chunk) = self.scratch_swp.chunks.get(src_key)
+            {
+                cpass.set_bind_group(0, Some(&dst_chunk.read), &[]);
+                cpass.set_bind_group(1, Some(&src_chunk.read), &[]);
+                cpass.set_bind_group(2, Some(&swp_chunk.write), &[]);
+                dispatch_workgroups(&mut cpass, UVec2::splat(self.scratch_swp.chunk_size));
+            }
+        }
+
+        drop(cpass);
+        self.layer.queue.submit([encoder.finish()]);
+    }
+
+    fn recycle_scratch(&mut self) {
+        for (_key, chunk) in self.scratch_dst.chunks.drain() {
+            self.scratch_pool.list.push(chunk);
+        }
+        for (_key, chunk) in self.scratch_swp.chunks.drain() {
             self.scratch_pool.list.push(chunk);
         }
     }
@@ -351,11 +458,11 @@ fn dispatch_group(
 fn brush_pipelines(
     device: &Device,
     dispatch_draw_layout: &BindGroupLayout,
-    chunk_draw_layout: &BindGroupLayout,
+    chunk_layout: &ChunkLayout,
 ) -> (ComputePipeline, ComputePipeline) {
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_brush"),
-        bind_group_layouts: &[Some(dispatch_draw_layout), Some(chunk_draw_layout)],
+        bind_group_layouts: &[Some(dispatch_draw_layout), Some(&chunk_layout.write)],
         immediate_size: 0,
     });
 
@@ -364,8 +471,7 @@ fn brush_pipelines(
             label: Some(label),
             source: ShaderSource::Wgsl(
                 format!(
-                    "{}{}fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
-                    include_str!("lib_colorspace.wgsl"),
+                    "{}fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
                     include_str!("brush/round.wgsl"),
                     formula
                 )
@@ -398,13 +504,4 @@ fn upload_draws(
 ) {
     queue.write_buffer(draws_length, 0, bytes_of(&(draws.len() as u32)));
     queue.write_buffer(draws_array, 0, cast_slice(draws));
-}
-
-fn dispatch_workgroups(dirty: Rectangle, key: super::ChunkKey, cpass: &mut ComputePass) {
-    let scale = 2u32.pow(key.2 as u32);
-    cpass.dispatch_workgroups(
-        dirty.extend.x.saturating_sub(1) / scale / WORKGROUP_SIZE + 1,
-        dirty.extend.y.saturating_sub(1) / scale / WORKGROUP_SIZE + 1,
-        1,
-    );
 }

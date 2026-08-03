@@ -12,14 +12,14 @@ use hashbrown::HashSet;
 use indexmap::{IndexMap, IndexSet};
 use redb::{ReadableDatabase, TableDefinition};
 use wgpu::{
-    BindGroupLayout, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Device, Extent3d,
-    MapMode, Origin3d, PollType, Queue, TexelCopyBufferInfoBase, TexelCopyBufferLayout,
-    TexelCopyTextureInfoBase, Texture, TextureAspect,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Device, Extent3d, MapMode, Origin3d,
+    PollType, Queue, TexelCopyBufferInfoBase, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
+    Texture, TextureAspect,
 };
 use winit::window::Window;
 
 use crate::{
-    layer::{Chunk, ChunkKey},
+    layer::{Chunk, ChunkKey, ChunkLayout, chunk_to_rect},
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
     save::SaveDatabase,
@@ -74,8 +74,7 @@ pub struct StreamConfig {
     pub database: SaveDatabase,
     pub device: Device,
     pub queue: Queue,
-    pub chunk_render_layout: BindGroupLayout,
-    pub chunk_draw_layout: BindGroupLayout,
+    pub chunk_layout: ChunkLayout,
     pub chunk_size: u32,
     pub mipmap_levels: u8,
     pub window: Arc<dyn Window>,
@@ -475,16 +474,14 @@ fn write_chunk_data(
 
 fn chunk_prepare(
     config: &StreamConfig,
-    chunk_id: (i32, i32, u8),
+    key: (i32, i32, u8),
 ) -> Result<(Texture, Chunk), Box<dyn Error + 'static>> {
     let texture = super::create_chunk_texture(&config.device, config.chunk_size);
     let chunk = super::create_chunk(
         &config.device,
-        config.chunk_size,
-        &config.chunk_render_layout,
-        &config.chunk_draw_layout,
+        &config.chunk_layout,
         (&texture).clone(),
-        chunk_id,
+        chunk_to_rect(key, config.chunk_size),
     );
 
     Ok((texture, chunk))

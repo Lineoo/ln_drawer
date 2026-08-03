@@ -1,5 +1,3 @@
-// include! colorspace
-
 struct Draw {
     color: vec4f,
     position: vec2i,
@@ -18,24 +16,21 @@ struct Rectangle {
 @group(0) @binding(1) var<uniform> draws_length: u32;
 @group(0) @binding(2) var<storage, read> draws_array: array<Draw>;
 
-@group(1) @binding(0) var destination_texture: texture_storage_2d<rgba8unorm, read_write>;
+@group(1) @binding(0) var destination_texture: texture_storage_2d<rgba8unorm, write>;
 @group(1) @binding(1) var<uniform> destination: Rectangle;
 
 const texture_size: i32 = 512;
 
 @compute @workgroup_size(16, 16)
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
-    let scale = destination.size / textureDimensions(destination_texture);
-    let position = dispatch.coords + vec2i(id.xy * scale);
+    let position = dispatch.coords + vec2i(id.xy);
 
     if (any(position >= dispatch.coords + vec2i(dispatch.size))) { return; }
 
     if (any(position < destination.coords)) { return; }
     if (any(position >= destination.coords + vec2i(destination.size))) { return; }
 
-    let dst_coords = (position - destination.coords) / vec2i(scale);
-    let dst_ump = textureLoad(destination_texture, dst_coords);
-    var dst = vec4f(dst_ump.rgb, 1) * dst_ump.a;
+    var dst = vec4f();
     for (var i = 0u; i < draws_length; i++) {
         let src = vec4f(draws_array[i].color.rgb, 1) * draws_array[i].color.a * draws_array[i].flow * smoothstep(
             (1.0 + draws_array[i].softness) * draws_array[i].size + 0.5,
@@ -46,8 +41,9 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
             ),
         );
 
-        dst = composite(src, dst); // dst = src + dst * (1 - src.a);
+        dst = src + dst * (1 - src.a);
     }
 
-    textureStore(destination_texture, dst_coords, select(vec4f(dst.rgb / dst.a, dst.a), vec4f(0), dst.a < 1e-6));
+    let dst_coords = position - destination.coords;
+    textureStore(destination_texture, dst_coords, select(vec4f(dst.rgb / dst.a, dst.a), vec4f(), dst.a < 1e-6));
 }

@@ -99,8 +99,7 @@ impl LayerWrapper {
             database,
             device: render.device.clone(),
             queue: render.queue.clone(),
-            chunk_render_layout: brush.layer.chunk_render_layout.clone(),
-            chunk_draw_layout: brush.layer.chunk_draw_layout.clone(),
+            chunk_layout: brush.layer.chunk_layout.clone(),
             chunk_size: MAIN_CHUNK_SIZE,
             mipmap_levels: MAIN_CHUNK_MIPMAP,
             window,
@@ -307,7 +306,7 @@ impl LayerWrapper {
                         flow_force_exp: 1.0,
                         softness: 0.5,
                         color: Srgba::new(1.0, 1.0, 1.0, 1.0),
-                        erase: true
+                        erase: true,
                     };
 
                     if DVec2::from_array(primary.screen).distance(DVec2::from_array(start))
@@ -327,7 +326,7 @@ impl LayerWrapper {
                     }
                 }
 
-                this.brush.paint(
+                this.brush.draw(
                     &this.main,
                     &this.round_brush,
                     Draw {
@@ -414,7 +413,7 @@ impl LayerWrapper {
         let (start, end) = extra.diagnosis.assign("layers > scratch");
         extra.diagnosis.write(&mut rpass, start);
         self.brush.layer.render(
-            &self.brush.scratch,
+            &self.brush.scratch_dst,
             &mut rpass,
             &camera,
             self.debug,
@@ -449,9 +448,9 @@ impl LayerWrapper {
         self.redos.clear();
 
         let mut to_backup = Vec::new();
-        for &src_key in self.brush.scratch.chunks.keys() {
+        for &src_key in self.brush.scratch_dst.chunks.keys() {
             let (start, end) = rect_to_chunks(
-                chunk_to_rect(src_key, self.brush.scratch.chunk_size),
+                chunk_to_rect(src_key, self.brush.scratch_dst.chunk_size),
                 0,
                 self.main.chunk_size,
             );
@@ -489,11 +488,9 @@ impl LayerWrapper {
                 create_chunk_texture(&self.brush.layer.device, backup_layer.chunk_size);
             let dst_chunk = create_chunk(
                 &self.brush.layer.device,
-                backup_layer.chunk_size,
-                &self.brush.layer.chunk_render_layout,
-                &self.brush.layer.chunk_draw_layout,
+                &self.brush.layer.chunk_layout,
                 dst_texture,
-                dst_key,
+                chunk_to_rect(dst_key, backup_layer.chunk_size),
             );
             encoder.copy_texture_to_texture(
                 TexelCopyTextureInfoBase {

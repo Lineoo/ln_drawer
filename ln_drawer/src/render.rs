@@ -115,8 +115,7 @@ impl Render {
         let (device, queue) = adapter
             .request_device(&DeviceDescriptor {
                 label: None,
-                required_features: Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-                    | Features::TIMESTAMP_QUERY
+                required_features: Features::TIMESTAMP_QUERY
                     | Features::TIMESTAMP_QUERY_INSIDE_PASSES,
                 required_limits: Limits::defaults(),
                 experimental_features: ExperimentalFeatures::disabled(),
