@@ -1,12 +1,10 @@
-use cosmic_text::{Family, Metrics};
+use cosmic_text::{Attrs, Family, Metrics};
 use glam::{IVec2, UVec2};
 use ln_world::{Descriptor, Handle, World};
-use palette::Srgba;
 
 use crate::{
     layer::wrapper::{LayerDebugMessage, LayerWrapper},
     layout::transform::{Transform, TransformValue},
-    lnwin::Lnwindow,
     measures::Rectangle,
     render::Render,
     widgets::{
@@ -29,8 +27,6 @@ impl Descriptor for DebugPanel {
             shadow: true,
         });
 
-        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-
         const HALF_INNER: UVec2 = UVec2::new(180, 120);
         const HALF_OUTER: UVec2 = UVec2::new(204, 144);
 
@@ -38,13 +34,10 @@ impl Descriptor for DebugPanel {
             text: "Hi there".into(),
             rect: Rectangle::new_half(IVec2::ZERO, HALF_INNER),
             metrics: Metrics::new(12.0, 18.0),
-            family: Family::Monospace,
-            color: Srgba::new(0, 0, 0, 1),
-            upscale: lnwindow.window.scale_factor() as f32,
+            attrs: Attrs::new().family(Family::Monospace),
             order: 50,
             visible: false,
-            outdated: true,
-            canvas_outdated: false,
+            ..Default::default()
         });
 
         let submenu_transform = TransformValue::anchor(

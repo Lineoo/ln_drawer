@@ -1,10 +1,11 @@
-use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache};
+use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache};
 use glam::prelude::UVec2;
 use ln_world::{Element, Handle, World};
 use palette::{Srgba, WithAlpha};
 use swash::scale::image::Content;
 
 use crate::{
+    lnwin::Lnwindow,
     measures::Rectangle,
     render::RenderControl,
     widgets::{
@@ -17,9 +18,9 @@ pub struct Text {
     pub text: String,
     pub rect: Rectangle,
     pub metrics: Metrics,
-    pub family: Family<'static>,
-    pub color: Srgba<u8>,
-    pub upscale: f32,
+    pub attrs: Attrs<'static>,
+    pub color: Srgba,
+    pub extra_upscale: f32,
     pub order: isize,
     pub visible: bool,
     /// will delay text draw to next render prepare phase
@@ -38,9 +39,9 @@ impl Default for Text {
             text: Default::default(),
             rect: Rectangle::new(0, 0, 200, 24),
             metrics: Metrics::new(24.0, 20.0),
-            family: Family::SansSerif,
-            color: Srgba::new(0, 0, 0, 0),
-            upscale: 2.0,
+            attrs: Attrs::new(),
+            color: Srgba::new(0.0, 0.0, 0.0, 1.0),
+            extra_upscale: 1.0,
             order: 100,
             visible: true,
             outdated: true,
@@ -51,9 +52,10 @@ impl Default for Text {
 
 impl Text {
     pub fn init(&mut self, world: &World, this: Handle<Text>) {
-        let canvas = world.insert(self.fresh_canvas());
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        let canvas = world.insert(self.fresh_canvas(self.upscaled_rect(&lnwindow)));
 
-        let upscale_metrics = self.metrics.scale(self.upscale);
+        let upscale_metrics = self.metrics.scale(self.upscale(&lnwindow));
         let pipeline = &mut *world.single_fetch_mut::<TextPipeline>().unwrap();
         let mut buffer = Buffer::new(&mut pipeline.font_system, upscale_metrics);
 
@@ -78,8 +80,10 @@ impl Text {
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
+            if this.rect != rect {
+                this.canvas_outdated = true;
+            }
             this.rect = rect;
-            this.canvas_outdated = true;
             world.queue_trigger(canvas, SetWidgetRectangle(rect));
         });
 
@@ -89,13 +93,14 @@ impl Text {
     fn prepare(&mut self, buffer: &mut Buffer, world: &World, canvas: Handle<Canvas>) {
         let mut canvas = world.fetch_mut(canvas).unwrap();
         let mut pipeline = world.single_fetch_mut::<TextPipeline>().unwrap();
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
 
         if self.visible {
             if self.canvas_outdated {
                 self.canvas_outdated = false;
                 self.outdated = false;
 
-                *canvas = self.fresh_canvas();
+                *canvas = self.fresh_canvas(self.upscaled_rect(&lnwindow));
 
                 self.draw(
                     canvas.data_width,
@@ -103,6 +108,7 @@ impl Text {
                     buffer,
                     &mut canvas,
                     &mut pipeline,
+                    &lnwindow,
                 );
 
                 world.queue_trigger(canvas.handle(), RemakeCanvasTexture);
@@ -115,6 +121,7 @@ impl Text {
                     buffer,
                     &mut canvas,
                     &mut pipeline,
+                    &lnwindow,
                 );
 
                 world.queue_trigger(canvas.handle(), UploadCanvasData);
@@ -129,16 +136,16 @@ impl Text {
         buffer: &mut Buffer,
         canvas: &mut Canvas,
         pipeline: &mut TextPipeline,
+        lnwindow: &Lnwindow,
     ) {
         canvas.clear_transparent();
 
-        let upscale_metrics = self.metrics.scale(self.upscale);
+        let upscale_metrics = self.metrics.scale(self.upscale(lnwindow));
         let mut buffer_font = buffer.borrow_with(&mut pipeline.font_system);
 
-        let attrs = Attrs::new().family(self.family);
         buffer_font.set_metrics(upscale_metrics);
         buffer_font.set_size(Some(width as f32), Some(height as f32));
-        buffer_font.set_text(&self.text, &attrs, Shaping::Advanced, None);
+        buffer_font.set_text(&self.text, &self.attrs, Shaping::Advanced, None);
         buffer_font.shape_until_scroll(true);
 
         self.draw_buffer(&buffer, canvas, pipeline);
@@ -167,7 +174,7 @@ impl Text {
                                 canvas.draw_over(
                                     physical_glyph.x + x + off_x,
                                     run.line_y as i32 + physical_glyph.y + y + off_y,
-                                    self.color.with_alpha(image.data[i]).into_format(),
+                                    self.color.with_alpha(image.data[i] as f32 / 255.),
                                 );
                                 i += 1;
                             }
@@ -200,14 +207,18 @@ impl Text {
         }
     }
 
-    fn fresh_canvas(&self) -> Canvas {
-        Canvas::transparent(self.rect, self.order, self.visible, self.scaled_rect())
+    fn upscale(&self, lnwindow: &Lnwindow) -> f32 {
+        self.extra_upscale * lnwindow.window.scale_factor() as f32
     }
 
-    fn scaled_rect(&self) -> UVec2 {
-        (self.rect.extend.as_vec2() * self.upscale)
+    fn upscaled_rect(&self, lnwindow: &Lnwindow) -> UVec2 {
+        (self.rect.extend.as_vec2() * self.upscale(lnwindow))
             .ceil()
             .as_uvec2()
+    }
+
+    fn fresh_canvas(&self, size: UVec2) -> Canvas {
+        Canvas::transparent(self.rect, self.order, self.visible, size)
     }
 }
 

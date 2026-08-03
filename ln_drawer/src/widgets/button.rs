@@ -15,7 +15,10 @@ use crate::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible, WidgetHover, renderer::canvas::Canvas},
+    widgets::{
+        SetWidgetRectangle, SetWidgetVisible, WidgetHover,
+        renderer::canvas::{Canvas, SetCanvasColor},
+    },
 };
 
 pub struct ToggleButton {
@@ -55,6 +58,8 @@ pub enum ButtonAction {
 
 pub struct ButtonSelected(pub bool);
 pub struct SetButtonSelected(pub bool);
+
+pub struct SetButtonIconColor(pub Srgba);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ButtonDragStatus {
@@ -102,6 +107,7 @@ impl ToggleButton {
                 order: 11,
                 visible: self.visible,
                 data: data.into_raw(),
+                color: theme.symbolic_color,
             });
             Some(canvas)
         } else {
@@ -150,6 +156,12 @@ impl ToggleButton {
 
             if let Some(canvas) = canvas {
                 world.queue_trigger(canvas, SetWidgetVisible(visible));
+            }
+        });
+
+        world.observer(handle, move |&SetButtonIconColor(color), world| {
+            if let Some(canvas) = canvas {
+                world.queue_trigger(canvas, SetCanvasColor(color));
             }
         });
 

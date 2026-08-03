@@ -29,6 +29,7 @@ pub struct Canvas {
     pub rect: Rectangle,
     pub order: isize,
     pub visible: bool,
+    pub color: Srgba,
 
     pub data: Vec<u8>,
     pub data_width: u32,
@@ -36,7 +37,8 @@ pub struct Canvas {
 }
 
 pub struct CanvasInstance {
-    uniform: Buffer,
+    rectangle_uniform: Buffer,
+    color_uniform: Buffer,
     bind: BindGroup,
     texture: Texture,
 }
@@ -46,6 +48,7 @@ pub struct CanvasPipeline {
     instance: BindGroupLayout,
 }
 
+pub struct SetCanvasColor(pub Srgba);
 pub struct UploadCanvasData;
 pub struct RemakeCanvasTexture;
 
@@ -95,13 +98,27 @@ impl Canvas {
 
             let bytes = bytemuck::bytes_of(&uniform);
             let render = world.single_fetch::<Render>().unwrap();
-            render.queue.write_buffer(&instance.uniform, 0, bytes);
+            render
+                .queue
+                .write_buffer(&instance.rectangle_uniform, 0, bytes);
         });
 
         world.observer(this, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.visible = visible;
             RenderControl::reorder(this.visible.then_some(this.order), world, control);
+        });
+
+        world.observer(this, move |&SetCanvasColor(color), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            let instance = world.fetch(instance).unwrap();
+            this.color = color;
+
+            let uniform = <[f32; 4]>::from(color.into_linear());
+
+            let bytes = bytemuck::bytes_of(&uniform);
+            let render = world.single_fetch::<Render>().unwrap();
+            render.queue.write_buffer(&instance.color_uniform, 0, bytes);
         });
 
         world.observer(this, move |&UploadCanvasData, world| {
@@ -125,6 +142,7 @@ impl Canvas {
             rect,
             order,
             visible,
+            color: Srgba::new(1.0, 1.0, 1.0, 1.0),
             data: vec![0u8; (size.x * size.y * 4) as usize],
             data_width: size.x,
             data_height: size.y,
@@ -219,7 +237,7 @@ impl Canvas {
     }
 
     fn instantiate(&self, render: &Render, pipeline: &CanvasPipeline) -> CanvasInstance {
-        let uniform = render.device.create_buffer_init(&BufferInitDescriptor {
+        let rectangle_uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("canvas_uniform"),
             contents: bytemuck::bytes_of(&RectangleUniform {
                 origin: self.rect.origin.into(),
@@ -262,6 +280,12 @@ impl Canvas {
             ..Default::default()
         });
 
+        let color_uniform = render.device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("canvas_uniform"),
+            contents: bytemuck::bytes_of(&<[f32; 4]>::from(self.color)),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
         let bind = render.device.create_bind_group(&BindGroupDescriptor {
             label: Some("canvas"),
             layout: &pipeline.instance,
@@ -269,7 +293,7 @@ impl Canvas {
                 BindGroupEntry {
                     binding: 0,
                     resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &uniform,
+                        buffer: &rectangle_uniform,
                         offset: 0,
                         size: None,
                     }),
@@ -282,11 +306,20 @@ impl Canvas {
                     binding: 2,
                     resource: BindingResource::Sampler(&sampler),
                 },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &color_uniform,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
             ],
         });
 
         CanvasInstance {
-            uniform,
+            rectangle_uniform,
+            color_uniform,
             bind,
             texture,
         }
@@ -318,7 +351,7 @@ impl CanvasPipeline {
                 entries: &[
                     BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: ShaderStages::VERTEX_FRAGMENT,
+                        visibility: ShaderStages::VERTEX,
                         ty: BindingType::Buffer {
                             ty: BufferBindingType::Uniform,
                             has_dynamic_offset: false,
@@ -328,7 +361,7 @@ impl CanvasPipeline {
                     },
                     BindGroupLayoutEntry {
                         binding: 1,
-                        visibility: ShaderStages::VERTEX_FRAGMENT,
+                        visibility: ShaderStages::FRAGMENT,
                         ty: BindingType::Texture {
                             sample_type: TextureSampleType::Float { filterable: true },
                             view_dimension: TextureViewDimension::D2,
@@ -338,8 +371,18 @@ impl CanvasPipeline {
                     },
                     BindGroupLayoutEntry {
                         binding: 2,
-                        visibility: ShaderStages::VERTEX_FRAGMENT,
+                        visibility: ShaderStages::FRAGMENT,
                         ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
                         count: None,
                     },
                 ],

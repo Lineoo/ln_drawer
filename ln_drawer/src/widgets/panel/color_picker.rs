@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use cosmic_text::{Attrs, Weight};
 use glam::{IVec2, UVec2, Vec2};
 use ln_world::{Descriptor, Handle, World};
 use palette::{Hsla, IntoColor, RgbHue, Srgba};
@@ -15,6 +16,7 @@ use crate::{
     },
     measures::Rectangle,
     render::rounded::{RoundedRect, RoundedRectDescriptor},
+    theme::Theme,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
@@ -148,6 +150,8 @@ fn palette(world: &World, panel: Handle<Panel>, toggle_button_color_icon: Handle
 }
 
 fn settings(world: &World, panel: Handle<Panel>) {
+    let theme = world.single_fetch::<Theme>().unwrap();
+
     let label1_frame = world.insert(EchoWidget);
     let label1 = world.insert(Text {
         text: String::from("选项标签"),
@@ -156,6 +160,8 @@ fn settings(world: &World, panel: Handle<Panel>) {
             font_size: 14.0,
             line_height: 18.0,
         },
+        attrs: Attrs::new().weight(Weight::BOLD),
+        color: theme.significant_color,
         ..Default::default()
     });
     world.insert(Transform {

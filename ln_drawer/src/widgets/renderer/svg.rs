@@ -63,6 +63,7 @@ pub fn svg_render(svg1: &[u8], upscale: f32) -> image::GrayAlphaImage {
                 let src = luma as f32 / 255.;
                 let dst = slice[i * 2 + 1] as f32 / 255.;
                 let rst = src + dst * (1. - src);
+                slice[i * 2] = 255;
                 slice[i * 2 + 1] = (rst * 255.) as u8;
             }
         }

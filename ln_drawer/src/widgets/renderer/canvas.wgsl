@@ -2,8 +2,9 @@
 
 @group(1) @binding(1) var texture: texture_2d<f32>;
 @group(1) @binding(2) var texture_sampler: sampler;
+@group(1) @binding(3) var<uniform> color_modulate: vec4f;
 
 @fragment
 fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-    return textureSample(texture, texture_sampler, vec2f(uv.x, 1 - uv.y));
+    return textureSample(texture, texture_sampler, vec2f(uv.x, 1 - uv.y)) * color_modulate;
 }

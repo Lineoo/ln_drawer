@@ -10,7 +10,10 @@ use crate::{
     theme::Theme,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
-        button::{ButtonAction, ButtonImage, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+        button::{
+            ButtonAction, ButtonImage, SetButtonIconColor, SetButtonSelected, ToggleButton,
+            ToggleButtonTheme,
+        },
     },
 };
 
@@ -139,10 +142,18 @@ impl Tabs {
 
         world.observer(handle, move |&SetTabsActive(active), world| {
             let mut this = world.fetch_mut(handle).unwrap();
+            let theme = world.single_fetch::<Theme>().unwrap();
             this.active = active;
 
             for (i, &child) in children.iter().enumerate() {
                 world.queue_trigger(child, SetButtonSelected(i == active));
+                world.queue_trigger(
+                    child,
+                    SetButtonIconColor(match i == active {
+                        true => theme.symbolic_color,
+                        false => theme.significant_color,
+                    }),
+                );
             }
 
             for (i, &(_, entry)) in this.tabs.iter().enumerate() {
