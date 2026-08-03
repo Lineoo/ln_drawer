@@ -92,6 +92,7 @@ impl LayerWrapper {
         ));
 
         let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
+        let window = world.single_fetch::<Lnwindow>().unwrap().window.clone();
 
         let (input_tx, input_rx) = channel();
         let (output_tx, output_rx) = channel();
@@ -104,6 +105,7 @@ impl LayerWrapper {
             chunk_draw_layout: brush.layer.chunk_draw_layout.clone(),
             chunk_size: MAIN_CHUNK_SIZE,
             mipmap_levels: MAIN_CHUNK_MIPMAP,
+            window,
         };
 
         let camera = world.single_fetch::<Camera>().unwrap();

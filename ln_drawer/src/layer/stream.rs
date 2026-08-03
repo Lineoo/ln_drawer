@@ -1,6 +1,9 @@
 use std::{
     error::Error,
-    sync::mpsc::{Receiver, RecvError, Sender, TryRecvError},
+    sync::{
+        Arc,
+        mpsc::{Receiver, RecvError, Sender, TryRecvError},
+    },
     time::Instant,
 };
 
@@ -13,6 +16,7 @@ use wgpu::{
     MapMode, Origin3d, PollType, Queue, TexelCopyBufferInfoBase, TexelCopyBufferLayout,
     TexelCopyTextureInfoBase, Texture, TextureAspect,
 };
+use winit::window::Window;
 
 use crate::{
     layer::{Chunk, ChunkKey},
@@ -74,6 +78,7 @@ pub struct StreamConfig {
     pub chunk_draw_layout: BindGroupLayout,
     pub chunk_size: u32,
     pub mipmap_levels: u8,
+    pub window: Arc<dyn Window>,
 }
 
 /// Static database of real textures that are loaded.
@@ -243,6 +248,8 @@ pub fn loading_thread(
         )?;
 
         load(&config, &output_tx, &mut base, &mut staging, &mut debug)?;
+
+        config.window.request_redraw();
     }
 }
 
@@ -294,41 +301,43 @@ fn load(
     let read = config.database.0.begin_read()?;
     let table_chunk = read.open_table(TABLE_LAYER_CHUNK)?;
     let table_meta = read.open_table(TABLE_LAYER_CHUNK_META)?;
-    for chunk_id in staging.active.drain(..) {
-        if let Some(data) = table_chunk.get((0, chunk_id))? {
-            let bytes = zstd::decode_all(data.value())?;
-            let (texture, chunk) = chunk_prepare(config, chunk_id)?;
-            chunk_write(config, &bytes, &texture);
+    for key in staging.active.drain(..) {
+        if let Some(data) = table_chunk.get((0, key))? {
+            let mut bytes = zstd::decode_all(data.value())?;
+            let (texture, chunk) = chunk_prepare(config, key)?;
 
-            if let Some(meta) = table_meta.get(((0, chunk_id), 0))?
+            if let Some(meta) = table_meta.get(((0, key), 0))?
                 && let Ok(meta0) = postcard::from_bytes::<ChunkMeta0>(meta.value())
             {
                 if meta0.format > CHUNK_META0_FORMAT {
                     log::error!(
-                        "Cannot read layer chunk from newer version {:?}",
+                        "Cannot read layer chunk {key:?} from newer version {:?}",
                         meta0.format
                     );
                     continue;
                 } else if meta0.format < CHUNK_META0_FORMAT {
-                    chunk_migration(&meta0)?;
-                    touch_chunk_meta(config, chunk_id, meta0)?;
+                    chunk_migration(&mut bytes, key, &meta0)?;
+                    touch_chunk_meta(config, key, meta0)?;
                 }
             } else {
+                // Edge cases: format 0 for older version that did not add meta0
                 let meta0 = ChunkMeta0 {
-                    format: CHUNK_META0_FORMAT,
+                    format: 0,
                     _mipmapped: false,
                 };
 
-                log::warn!("failed to get metadata from chunk {chunk_id:?}",);
-                touch_chunk_meta(config, chunk_id, meta0)?;
+                log::warn!("failed to get metadata from chunk {key:?}",);
+                chunk_migration(&mut bytes, key, &meta0)?;
+                touch_chunk_meta(config, key, meta0)?;
             }
 
-            base.active.insert(chunk_id, Some(texture));
-            output_tx.send(ThreadOutput::Insert(chunk_id, chunk))?;
+            chunk_write(config, &bytes, &texture);
+            base.active.insert(key, Some(texture));
+            output_tx.send(ThreadOutput::Insert(key, chunk))?;
 
             debug.load_real += 1;
         } else {
-            base.active.insert(chunk_id, None);
+            base.active.insert(key, None);
         }
 
         debug.load += 1;
@@ -557,11 +566,29 @@ fn chunk_readback(
     rx
 }
 
-fn chunk_migration(meta0: &ChunkMeta0) -> Result<(), Box<dyn Error + 'static>> {
+fn chunk_migration(
+    bytes: &mut [u8],
+    key: ChunkKey,
+    meta0: &ChunkMeta0,
+) -> Result<(), Box<dyn Error + 'static>> {
     for migrate_format in meta0.format..CHUNK_META0_FORMAT {
         match migrate_format {
             0 => {
-                // gamma encoding fix - skipped after v0.2.0
+                fn linear_to_srgb(v: f32) -> f32 {
+                    return match v < 0.0031308 {
+                        true => 1.055 * v.powf(1.0 / 2.4) - 0.055,
+                        false => v * 12.92,
+                    };
+                }
+
+                let (chunks, _) = bytes.as_chunks_mut();
+                for [r, g, b, _] in chunks {
+                    *r = (linear_to_srgb(*r as f32 / 255.) * 255.) as u8;
+                    *g = (linear_to_srgb(*g as f32 / 255.) * 255.) as u8;
+                    *b = (linear_to_srgb(*b as f32 / 255.) * 255.) as u8;
+                }
+
+                log::debug!("gamma fix applied on {key:?}");
             }
             _ => unimplemented!("unsupported migration {migrate_format}"),
         }
@@ -601,7 +628,7 @@ fn chunk_distance((x, y, z): ChunkKey, (cx, cy, cz): ChunkKey, mipmap: u8) -> u3
 }
 
 fn chunk_of(center: IVec2, zoom: i64, chunk_size: u32) -> ChunkKey {
-    let mipmap = (-zoom.q32_round()).max(0) as u8;
+    let mipmap = (-zoom).q32_round().max(0) as u8;
     let size = chunk_size as i32 * (1i32 << mipmap as i32);
     (center.x.div_euclid(size), center.y.div_euclid(size), mipmap)
 }

@@ -366,7 +366,7 @@ impl LayerPipeline {
         replace: bool,
     ) {
         let view_rect = camera.world_view_rect();
-        let mipmap = mipmap_floor(camera.zoom);
+        let mipmap = (-camera.zoom).q32_floor().max(0) as u8;
         let actual_mipmap = mipmap.min(layer.mipmap_levels.saturating_sub(1));
         let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, layer.chunk_size);
 
@@ -436,10 +436,6 @@ fn write_dispatch_uniform(queue: &Queue, buffer: &Buffer, dirty: Rectangle) {
         size: dirty.extend.into(),
     };
     queue.write_buffer(buffer, 0, bytes_of(&uniform));
-}
-
-fn mipmap_floor(zoom: i64) -> u8 {
-    (-(zoom.q32_floor() + 1)).max(0) as u8
 }
 
 fn chunk_to_rect((x, y, z): ChunkKey, chunk_size: u32) -> Rectangle {
