@@ -32,11 +32,7 @@ use crate::{
         WidgetRectangle,
         palette::hsl::PaletteHslMaterial,
         panel::side_docker::SideDocker,
-        renderer::{
-            canvas::CanvasPipeline,
-            grid::{Grid, GridMaterial},
-            text::TextPipeline,
-        },
+        renderer::{canvas::CanvasPipeline, text::TextPipeline},
     },
 };
 
@@ -138,7 +134,6 @@ impl Element for Lnwindow {
             world.insert(TextPipeline::new());
             RoundedRect::init(world);
             RectangleMesh::<PaletteHslMaterial>::init(world);
-            RectangleMesh::<GridMaterial>::init(world);
             world.insert(Theme::default());
         });
 
@@ -180,7 +175,6 @@ impl Element for Lnwindow {
             world.enter(camera1, || {
                 world.queue(|world| {
                     world.insert(LayerWrapper::new(world));
-                    world.insert(Grid);
                     world.insert(CameraUtils::default());
                 });
             });
