@@ -1,7 +1,7 @@
 use glam::{I64Vec2, Vec4};
-use palette::{LinSrgba, Srgba};
+use palette::Srgba;
 
-use crate::{measures::FI64Ext, layer::interpolate::Draw};
+use crate::{layer::interpolate::Draw, measures::FI64Ext};
 
 #[derive(Clone, Copy)]
 pub struct Modifier {
@@ -17,7 +17,7 @@ pub struct Modifier {
 
 #[derive(Clone, Copy)]
 pub struct DrawProcessed {
-    pub color: LinSrgba,
+    pub color: Srgba,
     pub position: I64Vec2,
     pub softness: f32,
     pub size: f32,
@@ -41,7 +41,7 @@ impl Modifier {
         DrawProcessed {
             position: draw.position,
             softness: self.softness,
-            color: self.color.into_linear(),
+            color: self.color,
             size: self.size(draw),
             flow: self.flow(draw),
         }
