@@ -25,10 +25,11 @@ const texture_size: i32 = 512;
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     let position = dispatch.coords + vec2i(id.xy);
 
-    if (any(position >= dispatch.coords + vec2i(dispatch.size))) { return; }
+    if (any(position < dispatch.coords)) { return; }
+    if (any(position - dispatch.coords >= vec2i(dispatch.size))) { return; }
 
     if (any(position < destination.coords)) { return; }
-    if (any(position >= destination.coords + vec2i(destination.size))) { return; }
+    if (any(position - destination.coords >= vec2i(destination.size))) { return; }
 
     var dst = vec4f();
     for (var i = 0u; i < draws_length; i++) {

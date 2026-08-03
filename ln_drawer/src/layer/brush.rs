@@ -36,10 +36,11 @@ pub struct BrushPipeline {
     temp: Chunk,
 
     brush_round: ComputePipeline,
+    #[expect(unused)]
     erase_round: ComputePipeline,
 
-    dispatch: Buffer,
-    dispatch_group: BindGroup,
+    draws_dispatch: Buffer,
+    draws_dispatch_group: BindGroup,
     draws_length: Buffer,
     draws_array: Buffer,
 
@@ -63,8 +64,8 @@ impl BrushPipeline {
     pub fn new(layer: LayerPipeline) -> Self {
         let dispatch_draw_layout = layer.device.create_bind_group_layout(&LAYOUT_DISPATCH_DRAW);
 
-        let (dispatch, draws_length, draws_array, dispatch_group) =
-            dispatch_group(&layer.device, &dispatch_draw_layout);
+        let (draws_dispatch, draws_length, draws_array, draws_dispatch_group) =
+            draws_dispatch_group(&layer.device, &dispatch_draw_layout);
 
         let (brush_round, erase_round) =
             brush_pipelines(&layer.device, &dispatch_draw_layout, &layer.chunk_layout);
@@ -102,8 +103,8 @@ impl BrushPipeline {
             temp,
             brush_round,
             erase_round,
-            dispatch,
-            dispatch_group,
+            draws_dispatch,
+            draws_dispatch_group,
             draws_length,
             draws_array,
             prev: None,
@@ -161,7 +162,8 @@ impl BrushPipeline {
             dirty,
         );
 
-        write_dispatch(&self.layer.queue, &self.dispatch, dirty);
+        write_dispatch(&self.layer.queue, &self.draws_dispatch, dirty);
+        write_dispatch(&self.layer.queue, &self.layer.dispatch, dirty);
 
         upload_draws(
             &self.draws_length,
@@ -206,22 +208,26 @@ impl BrushPipeline {
                     }
 
                     cpass.set_pipeline(&self.brush_round);
-                    cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
+                    cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&self.temp.write), &[]);
                     dispatch_workgroups(&mut cpass, dirty.extend);
 
                     match brush.erase {
-                        true => cpass.set_pipeline(&self.layer.merge_pipelines.erase),
-                        false => cpass.set_pipeline(&self.layer.merge_pipelines.over),
+                        true => cpass.set_pipeline(&self.layer.merge_pipelines.erase.dispatch),
+                        false => cpass.set_pipeline(&self.layer.merge_pipelines.over.dispatch),
                     }
 
-                    cpass.set_bind_group(0, Some(&dst_chunk.read), &[]);
-                    cpass.set_bind_group(1, Some(&self.temp.read), &[]);
-                    cpass.set_bind_group(2, Some(&swp_chunk.write), &[]);
-                    dispatch_workgroups(&mut cpass, UVec2::splat(self.scratch_swp.chunk_size));
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
+                    cpass.set_bind_group(2, Some(&self.temp.read), &[]);
+                    cpass.set_bind_group(3, Some(&swp_chunk.write), &[]);
+                    dispatch_workgroups(&mut cpass, dirty.extend);
 
-                    // flip flop - useful data are always in scratch_dst
-                    std::mem::swap(dst_chunk, swp_chunk);
+                    cpass.set_pipeline(&self.layer.copy_pipeline);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
+                    cpass.set_bind_group(2, Some(&swp_chunk.read), &[]);
+                    dispatch_workgroups(&mut cpass, dirty.extend);
                 }
             }
         }
@@ -257,64 +263,23 @@ impl BrushPipeline {
         }
     }
 
-    /// All finished, merge to dst layer
-    pub fn submit(&mut self, dst: &mut Layer) {
-        self.prev = None;
-        let Some(stroke) = self.stroke.take() else {
-            return;
-        };
-
-        self.layer
-            .prepare_chunks(dst, None, &mut self.scratch_pool, stroke.dirty);
-        self.submit_inner(dst, &stroke);
-
-        // flip out dst layer's chunks
-        for (key, chunk) in self.scratch_swp.chunks.drain() {
-            dst.chunks.insert(key, chunk);
-        }
-
-        self.layer.generate_mipmaps(dst, stroke.dirty);
-
-        self.recycle_scratch();
-    }
-
     // TODO Two main optimization:
-    //      - Simplify round brush pipeline, use triple bind instead of write+merge
-    //      - Swap chain should be more efficient with limited draw rectangle
+    //      - [ ] Simplify round brush pipeline, use triple bind instead of write+merge
+    //      - [x] Swap chain should be more efficient with limited draw rectangle
 
-    /// All finished, merge to dst layer and notify stream thread unsaved chunks
-    pub fn submit_stream(&mut self, dst: &mut Layer, tx: &Sender<ThreadInput>) {
+    /// All finished, merge to dst layer and optionally notify stream thread unsaved chunks
+    pub fn submit(&mut self, dst: &mut Layer, tx: Option<&Sender<ThreadInput>>) {
         self.prev = None;
         let Some(stroke) = self.stroke.take() else {
             return;
         };
 
         // if failed to merge, we simply drop it.
-        if self.layer.validate_chunks(dst, stroke.dirty) {
-            self.submit_inner(dst, &stroke);
-
-            // flip out dst layer's chunks
-            for (key, chunk) in self.scratch_swp.chunks.drain() {
-                dst.chunks.insert(key, chunk.clone());
-                tx.send(ThreadInput::SwapChunk(key, chunk)).unwrap();
-            }
-
-            self.layer.generate_mipmaps(dst, stroke.dirty);
-
-            for level in 0..dst.mipmap_levels {
-                let (start, end) = super::rect_to_chunks(stroke.dirty, level, dst.chunk_size);
-                for x in start.0..end.0 {
-                    for y in start.1..end.1 {
-                        tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();
-                    }
-                }
-            }
+        if tx.is_some() && !self.layer.validate_chunks(dst, stroke.dirty) {
+            self.recycle_scratch();
+            return;
         }
 
-        self.recycle_scratch();
-    }
-
-    fn submit_inner(&mut self, dst: &mut Layer, stroke: &Stroke) {
         debug_assert_eq!(dst.chunk_size, self.scratch_dst.chunk_size);
         debug_assert_eq!(self.scratch_swp.chunk_size, self.scratch_dst.chunk_size);
 
@@ -329,24 +294,54 @@ impl BrushPipeline {
             timestamp_writes: None,
         });
 
+        write_dispatch(&self.layer.queue, &self.layer.dispatch, stroke.dirty);
+
         match stroke.replace {
-            true => cpass.set_pipeline(&self.layer.merge_pipelines.replace),
-            false => cpass.set_pipeline(&self.layer.merge_pipelines.over),
+            true => cpass.set_pipeline(&self.layer.merge_pipelines.replace.swap),
+            false => cpass.set_pipeline(&self.layer.merge_pipelines.over.swap),
         };
 
         for (src_key, src_chunk) in &self.scratch_dst.chunks {
             if let Some(dst_chunk) = dst.chunks.get(src_key)
                 && let Some(swp_chunk) = self.scratch_swp.chunks.get(src_key)
             {
-                cpass.set_bind_group(0, Some(&dst_chunk.read), &[]);
-                cpass.set_bind_group(1, Some(&src_chunk.read), &[]);
-                cpass.set_bind_group(2, Some(&swp_chunk.write), &[]);
+                cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
+                cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
+                cpass.set_bind_group(3, Some(&swp_chunk.write), &[]);
                 dispatch_workgroups(&mut cpass, UVec2::splat(self.scratch_swp.chunk_size));
             }
         }
 
         drop(cpass);
         self.layer.queue.submit([encoder.finish()]);
+
+        // flip out dst layer's chunks
+        // TODO instead of recycle these chunks, they should be consumed by undo/redo systems
+        for (key, chunk) in self.scratch_swp.chunks.drain() {
+            if let Some(tx) = tx {
+                tx.send(ThreadInput::SwapChunk(key, chunk.clone())).unwrap();
+            }
+            let old = dst.chunks.insert(key, chunk);
+            if let Some(old) = old {
+                self.scratch_pool.list.push(old);
+            }
+        }
+
+        self.layer.generate_mipmaps(dst, stroke.dirty);
+
+        if let Some(tx) = tx {
+            for level in 0..dst.mipmap_levels {
+                let (start, end) = super::rect_to_chunks(stroke.dirty, level, dst.chunk_size);
+                for x in start.0..end.0 {
+                    for y in start.1..end.1 {
+                        tx.send(ThreadInput::MarkUnsaved((x, y, level))).unwrap();
+                    }
+                }
+            }
+        }
+
+        self.recycle_scratch();
     }
 
     fn recycle_scratch(&mut self) {
@@ -397,7 +392,7 @@ const LAYOUT_DISPATCH_DRAW: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescr
     ],
 };
 
-fn dispatch_group(
+fn draws_dispatch_group(
     device: &Device,
     dispatch_draw_layout: &BindGroupLayout,
 ) -> (Buffer, Buffer, Buffer, BindGroup) {

@@ -316,7 +316,7 @@ impl LayerWrapper {
                     } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
                             this.undo_stock();
-                            this.brush.submit_stream(&mut this.main, &this.thread_tx);
+                            this.brush.submit(&mut this.main, Some(&this.thread_tx));
                             temp_erase_mode = Some(this.round_brush);
                             this.round_brush = TEMP_ERASE_MODIFIER;
                             drag_start = None;
@@ -343,7 +343,7 @@ impl LayerWrapper {
                 let this = &mut *world.fetch_mut(this).unwrap();
 
                 this.undo_stock();
-                this.brush.submit_stream(&mut this.main, &this.thread_tx);
+                this.brush.submit(&mut this.main, Some(&this.thread_tx));
 
                 if let Some(ori) = temp_erase_mode {
                     temp_erase_mode = None;

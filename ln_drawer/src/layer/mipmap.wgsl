@@ -19,13 +19,14 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     let scale = source.size / textureDimensions(source_texture) * 2;
     let position = dispatch.coords + vec2i(id.xy * scale);
 
-    if (any(position >= dispatch.coords + vec2i(dispatch.size))) { return; }
+    if (any(position < dispatch.coords)) { return; }
+    if (any(position - dispatch.coords >= vec2i(dispatch.size))) { return; }
 
     if (any(position < destination.coords)) { return; }
-    if (any(position >= destination.coords + vec2i(destination.size))) { return; }
+    if (any(position - destination.coords >= vec2i(destination.size))) { return; }
 
     if (any(position < source.coords)) { return; }
-    if (any(position >= source.coords + vec2i(source.size))) { return; }
+    if (any(position - source.coords >= vec2i(source.size))) { return; }
 
     let dst_coords = (position - destination.coords) / vec2i(scale);
     let src_coords = dst_coords % 256 * 2;

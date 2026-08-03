@@ -49,6 +49,7 @@ pub struct LayerPipeline {
     render_pipelines: RenderPipelines,
     merge_pipelines: MergePipelines,
     mipmap_pipeline: ComputePipeline,
+    copy_pipeline: ComputePipeline,
     clear_pipeline: ComputePipeline,
 }
 
@@ -88,9 +89,14 @@ struct RenderPipelines {
 }
 
 struct MergePipelines {
-    over: ComputePipeline,
-    replace: ComputePipeline,
-    erase: ComputePipeline,
+    over: MergePipelinePair,
+    replace: MergePipelinePair,
+    erase: MergePipelinePair,
+}
+
+struct MergePipelinePair {
+    dispatch: ComputePipeline,
+    swap: ComputePipeline,
 }
 
 #[repr(C)]
@@ -139,21 +145,23 @@ impl LayerPipeline {
             &chunk_layout.render,
         );
 
-        let merge_pipelines = merge_pipelines(&device, &chunk_layout);
+        let merge_pipelines = merge_pipelines(&device, &chunk_layout, &dispatch_layout);
         let mipmap_pipeline = mipmap_pipeline(&device, &chunk_layout, &dispatch_layout);
+        let copy_pipeline = copy_pipeline(&device, &chunk_layout, &dispatch_layout);
         let clear_pipeline = clear_pipeline(&device, &chunk_layout);
 
         LayerPipeline {
             device,
             queue,
-            dispatch,
             chunk_layout,
+            dispatch,
             dispatch_group,
             sampler_group_unfiltered,
             sampler_group_filtered,
             render_pipelines,
-            mipmap_pipeline,
             merge_pipelines,
+            mipmap_pipeline,
+            copy_pipeline,
             clear_pipeline,
         }
     }
@@ -856,10 +864,15 @@ fn mipmap_pipeline(
     })
 }
 
-fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipelines {
+fn merge_pipelines(
+    device: &Device,
+    chunk_layout: &ChunkLayout,
+    dispatch_layout: &BindGroupLayout,
+) -> MergePipelines {
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_merge"),
         bind_group_layouts: &[
+            Some(dispatch_layout),
             Some(&chunk_layout.read),
             Some(&chunk_layout.read),
             Some(&chunk_layout.write),
@@ -872,21 +885,31 @@ fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipeline
             label: Some(label),
             source: ShaderSource::Wgsl(
                 format!(
-                    "{}fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
+                    "{} fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
                     include_str!("layer/merge.wgsl"),
-                    formula
+                    formula,
                 )
                 .into(),
             ),
         });
-        device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some(label),
-            layout: Some(&layout),
-            module: &shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        })
+        MergePipelinePair {
+            dispatch: device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some(label),
+                layout: Some(&layout),
+                module: &shader,
+                entry_point: Some("cs_main"),
+                compilation_options: PipelineCompilationOptions::default(),
+                cache: None,
+            }),
+            swap: device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some(label),
+                layout: Some(&layout),
+                module: &shader,
+                entry_point: Some("cs_swap"),
+                compilation_options: PipelineCompilationOptions::default(),
+                cache: None,
+            }),
+        }
     };
 
     MergePipelines {
@@ -894,6 +917,36 @@ fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipeline
         replace: new_pipeline("merge_replace", "src"),
         erase: new_pipeline("merge_erase", "dst * (1 - src.a)"),
     }
+}
+
+fn copy_pipeline(
+    device: &Device,
+    chunk_layout: &ChunkLayout,
+    dispatch_layout: &BindGroupLayout,
+) -> ComputePipeline {
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("layer_copy"),
+        source: ShaderSource::Wgsl(include_str!("layer/copy.wgsl").into()),
+    });
+
+    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_copy"),
+        bind_group_layouts: &[
+            Some(dispatch_layout),
+            Some(&chunk_layout.write),
+            Some(&chunk_layout.read),
+        ],
+        immediate_size: 0,
+    });
+
+    device.create_compute_pipeline(&ComputePipelineDescriptor {
+        label: Some("layer_copy"),
+        layout: Some(&layout),
+        module: &shader,
+        entry_point: Some("cs_main"),
+        compilation_options: PipelineCompilationOptions::default(),
+        cache: None,
+    })
 }
 
 fn clear_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
