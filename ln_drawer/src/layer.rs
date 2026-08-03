@@ -1,8 +1,4 @@
 pub mod brush;
-pub mod dirty;
-pub mod interpolate;
-pub mod modifier;
-pub mod shape;
 pub mod stream;
 pub mod wrapper;
 
@@ -72,7 +68,7 @@ pub struct ChunkPool {
 
 #[derive(Clone)]
 pub struct Chunk {
-    pub key: Buffer,
+    pub rectangle: Buffer,
     pub texture: Texture,
     pub render: BindGroup,
     pub draw: BindGroup,
@@ -332,7 +328,7 @@ impl LayerPipeline {
             coords: rect.origin.into(),
             size: rect.extend.into(),
         };
-        self.queue.write_buffer(&chunk.key, 0, bytes_of(&uniform));
+        self.queue.write_buffer(&chunk.rectangle, 0, bytes_of(&uniform));
     }
 
     pub fn clear_chunk(&mut self, chunk: &Chunk, chunk_size: u32) {
@@ -561,7 +557,7 @@ fn create_chunk(
     });
 
     Chunk {
-        key: buffer,
+        rectangle: buffer,
         texture,
         render: render_bind,
         draw: draw_bind,

@@ -6,13 +6,18 @@ use ln_world::{Descriptor, Handle, World};
 use palette::{Hsla, IntoColor, RgbHue, Srgba};
 
 use crate::{
-    layer::{modifier::Modifier, wrapper::LayerWrapper}, layout::{
+    layer::{brush::round::RoundBrush, wrapper::LayerWrapper},
+    layout::{
         luni::{
             LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
             LuniRect,
         },
         transform::{Transform, TransformEdge, TransformValue},
-    }, measures::{Axis, Rectangle}, render::rounded::{RoundedRect, RoundedRectDescriptor}, theme::Theme, widgets::{
+    },
+    measures::{Axis, Rectangle},
+    render::rounded::{RoundedRect, RoundedRectDescriptor},
+    theme::Theme,
+    widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         echo::EchoWidget,
@@ -140,7 +145,7 @@ fn palette(world: &World, panel: Handle<Panel>, toggle_button_color_icon: Handle
     world.observer(palette_hsl, move |&PaletteHsla(color), world| {
         let mut layer = world.single_fetch_mut::<LayerWrapper>().unwrap();
         let mut toggle_button_color_icon = world.fetch_mut(toggle_button_color_icon).unwrap();
-        layer.brush.modifier.color = color.into_color();
+        layer.round_brush.color = color.into_color();
         toggle_button_color_icon.desc.color = color.into_color();
     });
 }
@@ -175,10 +180,10 @@ fn settings(world: &World, panel: Handle<Panel>) {
     let option1_slider = option_slider(world, option1_frame.untyped());
     world.observer(option1_slider, move |&SliderValue(value), world| {
         let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-        stroke.brush.modifier = Modifier {
+        stroke.round_brush = RoundBrush {
             max_flow: value + 0.1,
             min_flow: value,
-            ..stroke.brush.modifier
+            ..stroke.round_brush
         };
         world.queue_trigger(option1_slider, SetSliderValue(value));
     });

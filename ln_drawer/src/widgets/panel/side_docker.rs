@@ -4,7 +4,7 @@ use glam::{I64Vec2, IVec2, UVec2};
 use ln_world::{Descriptor, World};
 
 use crate::{
-    layer::{modifier::Modifier, wrapper::LayerWrapper},
+    layer::{brush::round::RoundBrush, wrapper::LayerWrapper},
     layout::{
         luni::{LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
@@ -94,7 +94,7 @@ impl Descriptor for SideDocker {
             world.trigger(brush, &SetButtonSelected(false));
             world.trigger(eraser, &SetButtonSelected(false));
             let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-            stroke.brush.modifier = Modifier {
+            stroke.round_brush = RoundBrush {
                 min_size: 0.0,
                 max_size: 6.0,
                 size_force_exp: 1.0,
@@ -102,9 +102,9 @@ impl Descriptor for SideDocker {
                 max_flow: 1.0,
                 flow_force_exp: 2.0,
                 softness: 0.2,
-                ..stroke.brush.modifier
+                erase: false,
+                ..stroke.round_brush
             };
-            stroke.brush.erase = false;
 
             let slider = world.fetch(slider).unwrap();
             world.queue_trigger(
@@ -118,7 +118,7 @@ impl Descriptor for SideDocker {
             world.trigger(brush, &SetButtonSelected(true));
             world.trigger(eraser, &SetButtonSelected(false));
             let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-            stroke.brush.modifier = Modifier {
+            stroke.round_brush = RoundBrush {
                 min_size: 1.0,
                 max_size: 25.0,
                 size_force_exp: 1.0,
@@ -126,9 +126,9 @@ impl Descriptor for SideDocker {
                 max_flow: 1.0,
                 flow_force_exp: 1.0,
                 softness: 0.5,
-                ..stroke.brush.modifier
+                erase: false,
+                ..stroke.round_brush
             };
-            stroke.brush.erase = false;
 
             let slider = world.fetch(slider).unwrap();
             world.queue_trigger(
@@ -142,7 +142,7 @@ impl Descriptor for SideDocker {
             world.trigger(brush, &SetButtonSelected(false));
             world.trigger(eraser, &SetButtonSelected(true));
             let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-            stroke.brush.modifier = Modifier {
+            stroke.round_brush = RoundBrush {
                 min_size: 10.0,
                 max_size: 50.0,
                 size_force_exp: 1.0,
@@ -150,9 +150,9 @@ impl Descriptor for SideDocker {
                 max_flow: 1.0,
                 flow_force_exp: 1.0,
                 softness: 0.5,
-                ..stroke.brush.modifier
+                erase: true,
+                ..stroke.round_brush
             };
-            stroke.brush.erase = true;
 
             let slider = world.fetch(slider).unwrap();
             world.queue_trigger(
@@ -173,9 +173,9 @@ impl Descriptor for SideDocker {
 
         world.observer(slider, move |&SliderValue(value), world| {
             let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-            stroke.brush.modifier = Modifier {
-                max_size: stroke.brush.modifier.min_size + (value.exp2() - 1.0) * 40.0,
-                ..stroke.brush.modifier
+            stroke.round_brush = RoundBrush {
+                max_size: stroke.round_brush.min_size + (value.exp2() - 1.0) * 40.0,
+                ..stroke.round_brush
             };
             world.trigger(slider, &SetSliderValue(value));
         });

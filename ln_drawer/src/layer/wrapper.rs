@@ -28,11 +28,8 @@ use winit::{
 use crate::{
     layer::{
         Layer, LayerPipeline,
-        brush::BrushPipeline,
-        chunk_to_rect, create_chunk, create_chunk_texture,
-        interpolate::Draw,
-        modifier::Modifier,
-        rect_to_chunks,
+        brush::{BrushPipeline, Draw, round::RoundBrush},
+        chunk_to_rect, create_chunk, create_chunk_texture, rect_to_chunks,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
     },
     lnwin::Lnwindow,
@@ -61,6 +58,7 @@ pub struct LayerDebugMessage(pub String);
 pub struct LayerWrapper {
     pub main: Layer,
     pub brush: BrushPipeline,
+    pub round_brush: RoundBrush,
 
     pub undos: VecDeque<Layer>,
     pub redos: Vec<Layer>,
@@ -149,6 +147,17 @@ impl LayerWrapper {
                 mipmap_levels: MAIN_CHUNK_MIPMAP,
                 chunk_size: MAIN_CHUNK_SIZE,
                 controlled: true,
+            },
+            round_brush: RoundBrush {
+                min_size: 0.0,
+                max_size: 6.0,
+                size_force_exp: 1.0,
+                min_flow: 0.7,
+                max_flow: 1.0,
+                flow_force_exp: 2.0,
+                softness: 0.2,
+                color: Srgba::new(0.0, 0.0, 0.0, 1.0),
+                erase: false,
             },
             undos: VecDeque::new(),
             redos: Vec::new(),
@@ -280,7 +289,7 @@ impl LayerWrapper {
                 let this = &mut *world.fetch_mut(this).unwrap();
 
                 if let MultiTouchStatus::Press = primary.status
-                    && !this.brush.erase
+                    && !this.round_brush.erase
                 {
                     drag_start = Some((primary.screen, Instant::now()));
                 }
@@ -289,7 +298,7 @@ impl LayerWrapper {
                     const DRAG_DISTANCE: f64 = 0.01;
                     const ERASE_TIMER: f64 = 0.8;
                     const ERASE_FORCE_THRESHOLD: f32 = 0.6;
-                    const TEMP_ERASE_MODIFIER: Modifier = Modifier {
+                    const TEMP_ERASE_MODIFIER: RoundBrush = RoundBrush {
                         min_size: 5.0,
                         max_size: 15.0,
                         size_force_exp: 1.0,
@@ -298,6 +307,7 @@ impl LayerWrapper {
                         flow_force_exp: 1.0,
                         softness: 0.5,
                         color: Srgba::new(1.0, 1.0, 1.0, 1.0),
+                        erase: true
                     };
 
                     if DVec2::from_array(primary.screen).distance(DVec2::from_array(start))
@@ -308,9 +318,8 @@ impl LayerWrapper {
                         if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
                             this.undo_stock();
                             this.brush.submit_stream(&mut this.main, &this.thread_tx);
-                            temp_erase_mode = Some(this.brush.modifier);
-                            this.brush.erase = true;
-                            this.brush.modifier = TEMP_ERASE_MODIFIER;
+                            temp_erase_mode = Some(this.round_brush);
+                            this.round_brush = TEMP_ERASE_MODIFIER;
                             drag_start = None;
                         } else {
                             drag_start = None;
@@ -320,6 +329,7 @@ impl LayerWrapper {
 
                 this.brush.paint(
                     &this.main,
+                    &this.round_brush,
                     Draw {
                         position: primary.position,
                         force: primary.data.force.unwrap_or(1.0),
@@ -338,8 +348,7 @@ impl LayerWrapper {
 
                 if let Some(ori) = temp_erase_mode {
                     temp_erase_mode = None;
-                    this.brush.erase = false;
-                    this.brush.modifier = ori;
+                    this.round_brush = ori;
                 }
             }
         });
@@ -409,7 +418,7 @@ impl LayerWrapper {
             &mut rpass,
             &camera,
             self.debug,
-            self.brush.erase,
+            self.round_brush.erase,
         );
         extra.diagnosis.write(&mut rpass, end);
     }

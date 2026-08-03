@@ -1,9 +1,10 @@
+pub mod round;
+
 use std::{mem::size_of, sync::mpsc::Sender};
 
 use bytemuck::{bytes_of, cast_slice};
-use glam::UVec2;
+use glam::{I64Vec2, UVec2};
 use hashbrown::HashMap;
-use palette::Srgba;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
@@ -15,9 +16,7 @@ use wgpu::{
 use crate::{
     layer::{
         ChunkPool, Layer, LayerPipeline,
-        dirty::Dirty,
-        interpolate::{Draw, Interpolation},
-        modifier::{DrawProcessedStorage, Modifier},
+        brush::round::{RoundBrush, RoundDrawStorage},
         stream::ThreadInput,
     },
     measures::{FI64Ext, Rectangle},
@@ -25,28 +24,6 @@ use crate::{
 
 const WORKGROUP_SIZE: u32 = 16;
 pub const MAX_STROKE: u64 = 200;
-
-const DEFAULT_INTERPOLATION: Interpolation = Interpolation {
-    step: |draw| draw.size / 5.0,
-};
-const DEFAULT_MODIFIER: Modifier = Modifier {
-    min_size: 0.5,
-    max_size: 6.0,
-    size_force_exp: 1.0,
-    min_flow: 0.1,
-    max_flow: 1.0,
-    flow_force_exp: 2.0,
-    softness: 0.2,
-    color: Srgba::new(0.0, 0.0, 0.0, 1.0),
-};
-const DEFAULT_DIRTY: Dirty = Dirty {
-    bounding: |draw| {
-        Rectangle::new_half(
-            draw.position.q32_round(),
-            UVec2::splat((draw.size * 2.0).ceil() as u32),
-        )
-    },
-};
 
 pub struct BrushPipeline {
     pub scratch: Layer,
@@ -62,18 +39,20 @@ pub struct BrushPipeline {
 
     dispatch_group_draw: BindGroup,
 
-    pub erase: bool,
-    pub interpolation: Interpolation,
-    pub modifier: Modifier,
-    pub dirty: Dirty,
-
     prev: Option<Draw>,
     stroke: Option<Stroke>,
+}
+
+#[derive(Clone, Copy)]
+pub struct Draw {
+    pub position: I64Vec2,
+    pub force: f32,
 }
 
 struct Stroke {
     dirty: Rectangle,
     chunks: Vec<super::ChunkKey>,
+    swap: bool,
 }
 
 impl BrushPipeline {
@@ -109,24 +88,22 @@ impl BrushPipeline {
             draws_length,
             draws_array,
             dispatch_group_draw,
-            erase: false,
-            interpolation: DEFAULT_INTERPOLATION,
-            modifier: DEFAULT_MODIFIER,
-            dirty: DEFAULT_DIRTY,
             prev: None,
             stroke: None,
         }
     }
 
     /// CPU-end draw process
-    pub fn paint(&mut self, dst: &Layer, next: Draw) {
-        let mut draw_buf = Vec::new();
-        let curr = self
-            .interpolation
-            .interpolate(self.prev, next, &self.modifier, &mut draw_buf);
-        self.prev = Some(curr);
+    pub fn paint(&mut self, dst: &Layer, brush: &RoundBrush, target: Draw) {
+        let mut draws = Vec::new();
+        let next = brush.interpolate(self.prev, target, &mut draws);
 
-        let dirty = self.dirty.compute(curr.position.q32_round(), &draw_buf);
+        let mut dirty = Rectangle::new_half(next.position.q32_as_i32(), UVec2::ZERO);
+        for &draw in &draws {
+            dirty = dirty.grow(draw.dirty());
+        }
+
+        self.prev = Some(next);
 
         if dirty.extend.x == 0 || dirty.extend.y == 0 {
             return;
@@ -137,21 +114,17 @@ impl BrushPipeline {
         } else {
             self.stroke = Some(Stroke {
                 dirty,
+                swap: brush.swap_mode(),
                 chunks: vec![],
             });
         }
 
-        let mut draw_stg = Vec::with_capacity(draw_buf.len());
-        for draw in draw_buf {
-            draw_stg.push(draw.into_storage());
+        let mut draws_proc = Vec::with_capacity(draws.len());
+        for draw in draws {
+            draws_proc.push(draw.into_storage());
         }
 
-        self.paint_dispatch(dst, dirty, &draw_stg);
-    }
-
-    /// dispatch to GPU for the rest
-    fn paint_dispatch(&mut self, dst: &Layer, dirty: Rectangle, draws: &[DrawProcessedStorage]) {
-        let swap = match self.swap_mode() {
+        let swap = match brush.swap_mode() {
             true => Some(dst),
             false => None,
         };
@@ -164,7 +137,7 @@ impl BrushPipeline {
         upload_draws(
             &self.draws_length,
             &self.draws_array,
-            draws,
+            &draws_proc,
             &self.layer.queue,
         );
 
@@ -180,16 +153,16 @@ impl BrushPipeline {
             timestamp_writes: None,
         });
 
-        match self.erase {
+        match brush.erase {
             true => cpass.set_pipeline(&self.erase_round),
             false => cpass.set_pipeline(&self.brush_round),
         }
 
         cpass.set_bind_group(0, Some(&self.dispatch_group_draw), &[]);
 
-        let (src, dst) = super::rect_to_chunks(dirty, 0, self.scratch.chunk_size);
-        for x in src.0..dst.0 {
-            for y in src.1..dst.1 {
+        let (start, end) = super::rect_to_chunks(dirty, 0, self.scratch.chunk_size);
+        for x in start.0..end.0 {
+            for y in start.1..end.1 {
                 let key = (x, y, 0);
                 if let Some(chunk) = self.scratch.chunks.get(&key) {
                     if let Some(stroke) = &mut self.stroke {
@@ -243,7 +216,7 @@ impl BrushPipeline {
 
         self.layer
             .prepare_chunks(dst, None, &mut self.scratch_pool, stroke.dirty);
-        self.layer.merge(dst, &self.scratch, self.swap_mode());
+        self.layer.merge(dst, &self.scratch, stroke.swap);
         self.layer.generate_mipmaps(dst, stroke.dirty);
 
         for (_key, chunk) in self.scratch.chunks.drain() {
@@ -260,7 +233,7 @@ impl BrushPipeline {
 
         // if failed to merge, we simply drop it.
         if self.layer.validate_chunks(dst, stroke.dirty) {
-            self.layer.merge(dst, &self.scratch, self.swap_mode());
+            self.layer.merge(dst, &self.scratch, stroke.swap);
             self.layer.generate_mipmaps(dst, stroke.dirty);
 
             for level in 0..dst.mipmap_levels {
@@ -276,12 +249,6 @@ impl BrushPipeline {
         for (_key, chunk) in self.scratch.chunks.drain() {
             self.scratch_pool.list.push(chunk);
         }
-    }
-
-    /// - Mode 1: Create transparent scratch chunks, merge to dst layer with over blend mode.
-    /// - Mode 2: Clone data from dst layer, change in-place and eventually swap chunks into dst layer.
-    fn swap_mode(&self) -> bool {
-        self.erase
     }
 }
 
@@ -343,7 +310,7 @@ fn dispatch_group(
 
     let draws_array = device.create_buffer(&BufferDescriptor {
         label: Some("layer_brush_draws_array"),
-        size: size_of::<DrawProcessedStorage>() as u64 * MAX_STROKE,
+        size: size_of::<RoundDrawStorage>() as u64 * MAX_STROKE,
         usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -399,7 +366,7 @@ fn brush_pipelines(
                 format!(
                     "{}{}fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
                     include_str!("lib_colorspace.wgsl"),
-                    include_str!("round.wgsl"),
+                    include_str!("brush/round.wgsl"),
                     formula
                 )
                 .into(),
@@ -426,7 +393,7 @@ fn brush_pipelines(
 fn upload_draws(
     draws_length: &Buffer,
     draws_array: &Buffer,
-    draws: &[DrawProcessedStorage],
+    draws: &[RoundDrawStorage],
     queue: &Queue,
 ) {
     queue.write_buffer(draws_length, 0, bytes_of(&(draws.len() as u32)));
