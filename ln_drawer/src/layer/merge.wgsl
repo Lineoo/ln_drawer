@@ -45,32 +45,3 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
 
     textureStore(swap_texture, swp_coords, select(vec4f(swp.rgb / swp.a, swp.a), vec4f(), swp.a < 1e-6));
 }
-
-@compute @workgroup_size(16, 16)
-fn cs_swap(@builtin(global_invocation_id) id: vec3u) {
-    // Assumption: three textures are all the same pixel size
-    let position = swap.coords + vec2i(id.xy);
-
-    if (any(position < destination.coords)) { return; }
-    if (any(position - destination.coords >= vec2i(destination.size))) { return; }
-
-    if (any(position < source.coords)) { return; }
-    if (any(position - source.coords >= vec2i(source.size))) { return; }
-    
-    if (any(position < swap.coords)) { return; }
-    if (any(position - swap.coords >= vec2i(swap.size))) { return; }
-
-    let src_coords = position - source.coords;
-    let dst_coords = position - destination.coords;
-    let swp_coords = position - swap.coords;
-
-    let dst_ump = textureLoad(destination_texture, dst_coords);
-    let src_ump = textureLoad(source_texture, src_coords);
-
-    let dst = vec4f(dst_ump.rgb, 1) * dst_ump.a;
-    let src = vec4f(src_ump.rgb, 1) * src_ump.a;
-
-    let swp = composite(src, dst);
-
-    textureStore(swap_texture, swp_coords, select(vec4f(swp.rgb / swp.a, swp.a), vec4f(), swp.a < 1e-6));
-}

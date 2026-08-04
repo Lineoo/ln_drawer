@@ -29,9 +29,9 @@ pub struct RoundDraw {
 }
 
 impl Brush for RoundBrush {
-    type BrushDraw = RoundDraw;
+    type Draw = RoundDraw;
 
-    fn process(&self, draw: Draw) -> Self::BrushDraw {
+    fn process(&self, draw: Draw) -> Self::Draw {
         RoundDraw {
             color: Vec4::from(self.color.into_components()),
             position: draw.position.q32_floor(),
@@ -43,12 +43,20 @@ impl Brush for RoundBrush {
         }
     }
 
-    fn step(&self, draw: Self::BrushDraw) -> f32 {
+    fn step(&self, draw: Self::Draw) -> f32 {
         draw.size / 5.0
     }
 
-    fn dirty(draw: Self::BrushDraw) -> Rectangle {
+    fn dirty(draw: Self::Draw) -> Rectangle {
         Rectangle::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
+    }
+
+    fn replace_mode(&self) -> bool {
+        self.erase
+    }
+
+    fn bridge_mode(&self) -> bool {
+        false
     }
 
     fn set_pipeline(&self, cpass: &mut wgpu::ComputePass, pipeline: &super::LayerDrawPipeline) {
@@ -56,10 +64,6 @@ impl Brush for RoundBrush {
             true => cpass.set_pipeline(&pipeline.pipelines.round_erase),
             false => cpass.set_pipeline(&pipeline.pipelines.round_over),
         }
-    }
-
-    fn replace_mode(&self) -> bool {
-        self.erase
     }
 }
 

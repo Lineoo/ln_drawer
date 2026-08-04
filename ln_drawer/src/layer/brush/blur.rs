@@ -26,9 +26,9 @@ pub struct BlurDraw {
 }
 
 impl Brush for BlurBrush {
-    type BrushDraw = BlurDraw;
+    type Draw = BlurDraw;
 
-    fn process(&self, draw: Draw) -> Self::BrushDraw {
+    fn process(&self, draw: Draw) -> Self::Draw {
         BlurDraw {
             position: draw.position.q32_floor(),
             position_fract: draw.position.q32_fract(),
@@ -39,20 +39,24 @@ impl Brush for BlurBrush {
         }
     }
 
-    fn step(&self, draw: Self::BrushDraw) -> f32 {
+    fn step(&self, draw: Self::Draw) -> f32 {
         draw.size / 5.0
     }
 
-    fn dirty(draw: Self::BrushDraw) -> Rectangle {
+    fn dirty(draw: Self::Draw) -> Rectangle {
         Rectangle::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
-    }
-
-    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerDrawPipeline) {
-        cpass.set_pipeline(&pipeline.pipelines.blur);
     }
 
     fn replace_mode(&self) -> bool {
         true
+    }
+
+    fn bridge_mode(&self) -> bool {
+        true
+    }
+
+    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerDrawPipeline) {
+        cpass.set_pipeline(&pipeline.pipelines.blur);
     }
 }
 

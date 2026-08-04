@@ -11,13 +11,14 @@ use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
     Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
-    ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState, Origin3d,
-    PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
-    RenderPass, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyTextureInfo,
-    Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
-    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
+    ColorWrites, CommandEncoder, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor,
+    ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState,
+    Origin3d, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState,
+    PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
+    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
+    TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -70,6 +71,7 @@ pub struct ChunkPool {
 pub struct Chunk {
     pub rectangle: Buffer,
     pub texture: Texture,
+    pub dispatch: BindGroup,
     pub render: BindGroup,
     pub read: BindGroup,
     pub write: BindGroup,
@@ -77,6 +79,7 @@ pub struct Chunk {
 
 #[derive(Clone)]
 pub struct ChunkLayout {
+    dispatch: BindGroupLayout,
     render: BindGroupLayout,
     read: BindGroupLayout,
     write: BindGroupLayout,
@@ -90,28 +93,15 @@ struct RenderPipelines {
 }
 
 struct MergePipelines {
-    over: MergePipelinePair,
-    replace: MergePipelinePair,
+    over: ComputePipeline,
+    replace: ComputePipeline,
     #[expect(unused)]
-    erase: MergePipelinePair,
-}
-
-struct MergePipelinePair {
-    #[expect(unused)]
-    dispatch: ComputePipeline,
-    swap: ComputePipeline,
+    erase: ComputePipeline,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct DispatchUniform {
-    coords: [i32; 2],
-    size: [u32; 2],
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct ChunkUniform {
     coords: [i32; 2],
     size: [u32; 2],
 }
@@ -123,22 +113,22 @@ impl LayerPipeline {
         surface_format: TextureFormat,
         camera_bind_layout: &BindGroupLayout,
     ) -> Self {
+        let dispatch_layout = device.create_bind_group_layout(&LAYOUT_DISPATCH);
+        let (dispatch, dispatch_group) = dispatch_group(&device, &dispatch_layout);
+
+        let sampler_layout = device.create_bind_group_layout(&LAYOUT_SAMPLER);
+        let (sampler_group_unfiltered, sampler_group_filtered) =
+            sampler_groups(&device, &sampler_layout);
+
         let chunk_render_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_RENDER);
         let chunk_read_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_READ);
         let chunk_write_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_WRITE);
         let chunk_layout = ChunkLayout {
+            dispatch: dispatch_layout,
             render: chunk_render_layout,
             read: chunk_read_layout,
             write: chunk_write_layout,
         };
-
-        let dispatch_layout = device.create_bind_group_layout(&LAYOUT_DISPATCH);
-        let sampler_layout = device.create_bind_group_layout(&LAYOUT_SAMPLER);
-
-        let (dispatch, dispatch_group) = dispatch_group(&device, &dispatch_layout);
-
-        let (sampler_group_unfiltered, sampler_group_filtered) =
-            sampler_groups(&device, &sampler_layout);
 
         let render_pipelines = render_pipelines(
             &device,
@@ -148,9 +138,9 @@ impl LayerPipeline {
             &chunk_layout.render,
         );
 
-        let merge_pipelines = merge_pipelines(&device, &chunk_layout, &dispatch_layout);
-        let mipmap_pipeline = mipmap_pipeline(&device, &chunk_layout, &dispatch_layout);
-        let copy_pipeline = copy_pipeline(&device, &chunk_layout, &dispatch_layout);
+        let merge_pipelines = merge_pipelines(&device, &chunk_layout);
+        let mipmap_pipeline = mipmap_pipeline(&device, &chunk_layout);
+        let copy_pipeline = copy_pipeline(&device, &chunk_layout);
         let clear_pipeline = clear_pipeline(&device, &chunk_layout);
 
         LayerPipeline {
@@ -193,6 +183,7 @@ impl LayerPipeline {
         src: Option<&Layer>,
         pool: &mut ChunkPool,
         rect: Rectangle,
+        encoder: &mut CommandEncoder,
     ) {
         debug_assert!(!dst.controlled, "controlled layer cannot prepare chunks");
         debug_assert_eq!(
@@ -213,12 +204,6 @@ impl LayerPipeline {
                 }
             }
         }
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("layer_prepare_copy"),
-            });
 
         // Copy texture if src layer is provided
         if let Some(src) = src {
@@ -278,8 +263,6 @@ impl LayerPipeline {
                 dst.chunks.insert(dst_key, dst_chunk);
             }
         }
-
-        self.queue.submit([encoder.finish()]);
     }
 
     pub fn generate_mipmaps(&self, layer: &Layer, dirty: Rectangle) {
@@ -380,7 +363,7 @@ impl LayerPipeline {
         pool: &mut ChunkPool,
     ) -> (Chunk, bool) {
         if let Some(chunk) = pool.list.pop() {
-            write_chunk(
+            write_dispatch(
                 &self.queue,
                 &chunk.rectangle,
                 chunk_to_rect(key, chunk_size),
@@ -409,16 +392,8 @@ fn dispatch_workgroups(cpass: &mut ComputePass, size: UVec2) {
     );
 }
 
-fn write_dispatch(queue: &Queue, buffer: &Buffer, dirty: Rectangle) {
+fn write_dispatch(queue: &Queue, buffer: &Buffer, rect: Rectangle) {
     let uniform = DispatchUniform {
-        coords: dirty.origin.into(),
-        size: dirty.extend.into(),
-    };
-    queue.write_buffer(buffer, 0, bytes_of(&uniform));
-}
-
-fn write_chunk(queue: &Queue, buffer: &Buffer, rect: Rectangle) {
-    let uniform = ChunkUniform {
         coords: rect.origin.into(),
         size: rect.extend.into(),
     };
@@ -486,7 +461,7 @@ fn create_chunk(
 ) -> Chunk {
     let rectangle = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("layer_chunk_buffer"),
-        contents: bytes_of(&ChunkUniform {
+        contents: bytes_of(&DispatchUniform {
             coords: rect.origin.into(),
             size: rect.extend.into(),
         }),
@@ -505,6 +480,19 @@ fn create_chunk(
         format: Some(TextureFormat::Rgba8Unorm),
         usage: Some(TextureUsages::STORAGE_BINDING),
         ..Default::default()
+    });
+
+    let dispatch = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_dispatch"),
+        layout: &chunk_layout.dispatch,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &rectangle,
+                offset: 0,
+                size: None,
+            }),
+        }],
     });
 
     let render = device.create_bind_group(&BindGroupDescriptor {
@@ -566,6 +554,7 @@ fn create_chunk(
 
     Chunk {
         rectangle,
+        dispatch,
         texture,
         render,
         read,
@@ -825,11 +814,7 @@ fn render_pipelines(
     }
 }
 
-fn mipmap_pipeline(
-    device: &Device,
-    chunk_layout: &ChunkLayout,
-    dispatch_layout: &BindGroupLayout,
-) -> ComputePipeline {
+fn mipmap_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_mipmap"),
         source: ShaderSource::Wgsl(
@@ -840,7 +825,7 @@ fn mipmap_pipeline(
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_mipmap"),
         bind_group_layouts: &[
-            Some(dispatch_layout),
+            Some(&chunk_layout.dispatch),
             Some(&chunk_layout.write),
             Some(&chunk_layout.read),
         ],
@@ -857,15 +842,11 @@ fn mipmap_pipeline(
     })
 }
 
-fn merge_pipelines(
-    device: &Device,
-    chunk_layout: &ChunkLayout,
-    dispatch_layout: &BindGroupLayout,
-) -> MergePipelines {
+fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipelines {
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_merge"),
         bind_group_layouts: &[
-            Some(dispatch_layout),
+            Some(&chunk_layout.dispatch),
             Some(&chunk_layout.read),
             Some(&chunk_layout.read),
             Some(&chunk_layout.write),
@@ -885,24 +866,14 @@ fn merge_pipelines(
                 .into(),
             ),
         });
-        MergePipelinePair {
-            dispatch: device.create_compute_pipeline(&ComputePipelineDescriptor {
-                label: Some(label),
-                layout: Some(&layout),
-                module: &shader,
-                entry_point: Some("cs_main"),
-                compilation_options: PipelineCompilationOptions::default(),
-                cache: None,
-            }),
-            swap: device.create_compute_pipeline(&ComputePipelineDescriptor {
-                label: Some(label),
-                layout: Some(&layout),
-                module: &shader,
-                entry_point: Some("cs_swap"),
-                compilation_options: PipelineCompilationOptions::default(),
-                cache: None,
-            }),
-        }
+        device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        })
     };
 
     MergePipelines {
@@ -912,11 +883,7 @@ fn merge_pipelines(
     }
 }
 
-fn copy_pipeline(
-    device: &Device,
-    chunk_layout: &ChunkLayout,
-    dispatch_layout: &BindGroupLayout,
-) -> ComputePipeline {
+fn copy_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_copy"),
         source: ShaderSource::Wgsl(include_str!("layer/copy.wgsl").into()),
@@ -925,7 +892,7 @@ fn copy_pipeline(
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_copy"),
         bind_group_layouts: &[
-            Some(dispatch_layout),
+            Some(&chunk_layout.dispatch),
             Some(&chunk_layout.write),
             Some(&chunk_layout.read),
         ],

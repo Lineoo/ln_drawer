@@ -10,9 +10,10 @@ use hashbrown::HashMap;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor,
-    ComputePipeline, ComputePipelineDescriptor, Device, PipelineCompilationOptions,
-    PipelineLayoutDescriptor, RenderPass, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    BufferDescriptor, BufferUsages, CommandEncoder, CommandEncoderDescriptor, ComputePass,
+    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
+    PipelineCompilationOptions, PipelineLayoutDescriptor, RenderPass, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages,
 };
 
 use crate::{
@@ -26,9 +27,8 @@ use crate::{
     widgets::shaders::LIB_CONSTANT,
 };
 
-pub const MAX_STROKE: u64 = 200;
 const DRAWS_ARRAY_CAPACITY: u64 = 48 * 200;
-const TEMP_CHUNK_SIZE: u32 = 1024;
+const BRIDGE_CHUNK_SIZE: u32 = 1024;
 
 pub struct LayerDrawPipeline {
     pub layer: LayerPipeline,
@@ -38,8 +38,8 @@ pub struct LayerDrawPipeline {
     scratch_swp: Layer,
     scratch_pool: ChunkPool,
 
-    #[expect(unused)]
     bridge_dst: Chunk,
+    bridge_swp: Chunk,
 
     pipelines: BrushPipelines,
 
@@ -71,21 +71,30 @@ struct Stroke {
 }
 
 pub trait Brush {
-    type BrushDraw: Clone + Copy + Pod + Zeroable;
+    type Draw: Clone + Copy + Pod + Zeroable;
 
-    fn process(&self, draw: Draw) -> Self::BrushDraw;
-    fn step(&self, draw: Self::BrushDraw) -> f32;
-    fn dirty(draw: Self::BrushDraw) -> Rectangle;
+    fn process(&self, draw: Draw) -> Self::Draw;
+    fn step(&self, draw: Self::Draw) -> f32;
+    fn dirty(draw: Self::Draw) -> Rectangle;
 
     /// - Normal Mode:
-    ///     - Scratch chunks start with __transparent texture__.
+    ///     - Destination texture start with __transparent texture__.
     ///     - Render in __over__ mode
     ///     - Merge in __over__ mode
     /// - Replace Mode:
-    ///     - Scratch chunks start with __data from destination layer__.
+    ///     - Destination texture start with __data from destination layer__.
     ///     - Render in __replace__ mode
     ///     - Merge in __replace__ mode
     fn replace_mode(&self) -> bool;
+
+    /// - Normal Mode:
+    ///     - Prepare scratch layer (new/copy depends on replace_mode)
+    ///     - Swap draw on scratch layer
+    /// - Bridge Mode:
+    ///     - Prepare bridge chunk (clear/copy depends on replace_mode)
+    ///     - Swap draw on bridge chunk
+    ///     - Copy back on scratch layer
+    fn bridge_mode(&self) -> bool;
 
     fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerDrawPipeline);
 }
@@ -113,12 +122,20 @@ impl LayerDrawPipeline {
             mipmap_levels: 1,
         };
 
-        let bridge_texture = create_chunk_texture(&layer.device, TEMP_CHUNK_SIZE);
+        let bridge_texture = create_chunk_texture(&layer.device, BRIDGE_CHUNK_SIZE);
         let bridge_dst = create_chunk(
             &layer.device,
             &layer.chunk_layout,
             bridge_texture,
-            chunk_to_rect((0, 0, 0), TEMP_CHUNK_SIZE),
+            chunk_to_rect((0, 0, 0), BRIDGE_CHUNK_SIZE),
+        );
+
+        let bridge_texture = create_chunk_texture(&layer.device, BRIDGE_CHUNK_SIZE);
+        let bridge_swp = create_chunk(
+            &layer.device,
+            &layer.chunk_layout,
+            bridge_texture,
+            chunk_to_rect((0, 0, 0), BRIDGE_CHUNK_SIZE),
         );
 
         LayerDrawPipeline {
@@ -131,6 +148,7 @@ impl LayerDrawPipeline {
             },
             pipelines,
             bridge_dst,
+            bridge_swp,
             draws_dispatch,
             draws_dispatch_group,
             draws_length,
@@ -155,7 +173,7 @@ impl LayerDrawPipeline {
         let mut curr = prev;
         let mut curr_position = prev_position;
         while curr_position.distance(target_position) >= brush.step(brush.process(curr)) as f64
-            && draws.len() < DRAWS_ARRAY_CAPACITY as usize / size_of::<T::BrushDraw>()
+            && draws.len() < DRAWS_ARRAY_CAPACITY as usize / size_of::<T::Draw>()
         {
             let step = brush.step(brush.process(curr));
             curr_position = curr_position.move_towards(target_position, step as f64);
@@ -180,15 +198,44 @@ impl LayerDrawPipeline {
             return;
         }
 
-        if let Some(stroke) = &mut self.stroke {
-            stroke.dirty = stroke.dirty.grow(dirty);
-        } else {
-            self.stroke = Some(Stroke {
-                dirty,
-                replace: brush.replace_mode(),
-                chunks: vec![],
-            });
+        let stroke = self.stroke.get_or_insert_with(|| Stroke {
+            dirty,
+            replace: brush.replace_mode(),
+            chunks: vec![],
+        });
+
+        stroke.dirty = stroke.dirty.grow(dirty);
+
+        let bridge_rect = Rectangle::new_extend(
+            dirty.horizontal_center() - BRIDGE_CHUNK_SIZE as i32 / 2,
+            dirty.vertical_center() - BRIDGE_CHUNK_SIZE as i32 / 2,
+            BRIDGE_CHUNK_SIZE,
+            BRIDGE_CHUNK_SIZE,
+        );
+
+        // submit data
+
+        let queue = &self.layer.queue;
+        write_dispatch(queue, &self.draws_dispatch, dirty);
+        write_dispatch(queue, &self.layer.dispatch, dirty);
+
+        let draw_length = draws.len() as u32;
+        queue.write_buffer(&self.draws_length, 0, bytes_of(&draw_length));
+        queue.write_buffer(&self.draws_array, 0, cast_slice(&draws));
+
+        if brush.bridge_mode() {
+            write_dispatch(&self.layer.queue, &self.bridge_dst.rectangle, bridge_rect);
+            write_dispatch(&self.layer.queue, &self.bridge_swp.rectangle, bridge_rect);
         }
+
+        // prepare
+
+        let mut encoder = self
+            .layer
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("layer_draw"),
+            });
 
         let reference_layer = match brush.replace_mode() {
             true => Some(dst),
@@ -201,31 +248,24 @@ impl LayerDrawPipeline {
             reference_layer,
             &mut self.scratch_pool,
             dirty,
+            &mut encoder,
         );
         self.layer.prepare_chunks(
             &mut self.scratch_swp,
             reference_layer,
             &mut self.scratch_pool,
             dirty,
+            &mut encoder,
         );
 
-        let queue = &self.layer.queue;
-        write_dispatch(queue, &self.draws_dispatch, dirty);
-        write_dispatch(queue, &self.layer.dispatch, dirty);
+        if brush.bridge_mode() {
+            self.prepare_bridge(reference_layer.is_some(), bridge_rect, &mut encoder);
+        }
 
-        let draw_length = draws.len() as u32;
-        queue.write_buffer(&self.draws_length, 0, bytes_of(&draw_length));
-        queue.write_buffer(&self.draws_array, 0, cast_slice(&draws));
-
-        let mut encoder = self
-            .layer
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("layer_brush"),
-            });
+        // draw
 
         let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_brush"),
+            label: Some("layer_draw"),
             timestamp_writes: None,
         });
 
@@ -233,14 +273,36 @@ impl LayerDrawPipeline {
         for x in start.0..end.0 {
             for y in start.1..end.1 {
                 let key = (x, y, 0);
-                if let Some(dst_chunk) = self.scratch_dst.chunks.get(&key)
-                    && let Some(swp_chunk) = self.scratch_swp.chunks.get(&key)
-                {
-                    if let Some(stroke) = &mut self.stroke {
-                        if !stroke.chunks.contains(&key) {
-                            stroke.chunks.push(key);
-                        }
+
+                if let Some(stroke) = &mut self.stroke {
+                    if !stroke.chunks.contains(&key) {
+                        stroke.chunks.push(key);
                     }
+                }
+
+                if brush.bridge_mode() {
+                    let Some(dst_chunk) = self.scratch_dst.chunks.get(&key) else {
+                        continue;
+                    };
+
+                    brush.set_pipeline(&mut cpass, self);
+                    cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
+                    cpass.set_bind_group(1, Some(&self.bridge_dst.read), &[]);
+                    cpass.set_bind_group(2, Some(&self.bridge_swp.write), &[]);
+                    dispatch_workgroups(&mut cpass, dirty.extend);
+
+                    cpass.set_pipeline(&self.layer.copy_pipeline);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
+                    cpass.set_bind_group(2, Some(&self.bridge_swp.read), &[]);
+                    dispatch_workgroups(&mut cpass, dirty.extend);
+                } else {
+                    let (Some(dst_chunk), Some(swp_chunk)) = (
+                        self.scratch_dst.chunks.get(&key),
+                        self.scratch_swp.chunks.get(&key),
+                    ) else {
+                        continue;
+                    };
 
                     brush.set_pipeline(&mut cpass, self);
                     cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
@@ -253,7 +315,7 @@ impl LayerDrawPipeline {
                     cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&swp_chunk.read), &[]);
                     dispatch_workgroups(&mut cpass, dirty.extend);
-                }
+                };
             }
         }
 
@@ -322,18 +384,16 @@ impl LayerDrawPipeline {
             timestamp_writes: None,
         });
 
-        write_dispatch(&self.layer.queue, &self.layer.dispatch, stroke.dirty);
-
         match stroke.replace {
-            true => cpass.set_pipeline(&self.layer.merge_pipelines.replace.swap),
-            false => cpass.set_pipeline(&self.layer.merge_pipelines.over.swap),
+            true => cpass.set_pipeline(&self.layer.merge_pipelines.replace),
+            false => cpass.set_pipeline(&self.layer.merge_pipelines.over),
         };
 
         for (src_key, src_chunk) in &self.scratch_dst.chunks {
             if let Some(dst_chunk) = dst.chunks.get(src_key)
                 && let Some(swp_chunk) = self.scratch_swp.chunks.get(src_key)
             {
-                cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                cpass.set_bind_group(0, Some(&swp_chunk.dispatch), &[]);
                 cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
                 cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
                 cpass.set_bind_group(3, Some(&swp_chunk.write), &[]);
@@ -370,6 +430,43 @@ impl LayerDrawPipeline {
         }
 
         self.recycle_scratch();
+    }
+
+    fn prepare_bridge(&self, replace: bool, rect: Rectangle, encoder: &mut CommandEncoder) {
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_bridge_prepare"),
+            timestamp_writes: None,
+        });
+
+        // Copy texture if is replace mode
+        if replace {
+            let (start, end) = rect_to_chunks(rect, 0, self.scratch_dst.chunk_size);
+            for x in start.0..end.0 {
+                for y in start.1..end.1 {
+                    let key = (x, y, 0);
+                    let Some(src_chunk) = self.scratch_dst.chunks.get(&key) else {
+                        continue;
+                    };
+
+                    cpass.set_pipeline(&self.layer.copy_pipeline);
+                    cpass.set_bind_group(0, Some(&self.bridge_dst.dispatch), &[]);
+                    cpass.set_bind_group(1, Some(&self.bridge_dst.write), &[]);
+                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
+                    dispatch_workgroups(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
+
+                    cpass.set_pipeline(&self.layer.copy_pipeline);
+                    cpass.set_bind_group(0, Some(&self.bridge_swp.dispatch), &[]);
+                    cpass.set_bind_group(1, Some(&self.bridge_swp.write), &[]);
+                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
+                    dispatch_workgroups(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
+                }
+            }
+        } else {
+            self.layer
+                .clear_chunk(&self.bridge_dst, BRIDGE_CHUNK_SIZE, &mut cpass);
+            self.layer
+                .clear_chunk(&self.bridge_swp, BRIDGE_CHUNK_SIZE, &mut cpass);
+        }
     }
 
     fn recycle_scratch(&mut self) {
