@@ -335,9 +335,9 @@ impl LayerWrapper {
                 //     },
                 // );
 
-                this.blur_brush.draw(
-                    &mut this.brush,
+                this.brush.draw(
                     &this.main,
+                    &this.blur_brush,
                     Draw {
                         position: primary.position,
                         force: primary.data.force.unwrap_or(1.0),

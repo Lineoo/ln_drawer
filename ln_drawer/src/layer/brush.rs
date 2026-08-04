@@ -1,25 +1,25 @@
 pub mod blur;
-pub mod round;
 pub mod param;
+pub mod round;
 
 use std::{mem::size_of, sync::mpsc::Sender};
 
-use bytemuck::{bytes_of, cast_slice};
+use bytemuck::{Pod, Zeroable, bytes_of, cast_slice};
 use glam::{I64Vec2, UVec2};
 use hashbrown::HashMap;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor,
     ComputePipeline, ComputePipelineDescriptor, Device, PipelineCompilationOptions,
     PipelineLayoutDescriptor, RenderPass, ShaderModuleDescriptor, ShaderSource, ShaderStages,
 };
 
 use crate::{
     layer::{
-        Chunk, ChunkLayout, ChunkPool, Layer, LayerPipeline, brush::round::RoundBrush,
-        chunk_to_rect, create_chunk, create_chunk_texture, dispatch_workgroups,
-        stream::ThreadInput, write_dispatch,
+        Chunk, ChunkLayout, ChunkPool, Layer, LayerPipeline, chunk_to_rect, create_chunk,
+        create_chunk_texture, dispatch_workgroups, rect_to_chunks, stream::ThreadInput,
+        write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
@@ -68,6 +68,29 @@ struct Stroke {
     dirty: Rectangle,
     chunks: Vec<super::ChunkKey>,
     replace: bool,
+}
+
+pub trait Brush {
+    // TODO remove redundant type. Just bytemuck type is totally enough.
+    type BrushDraw: Clone + Copy;
+    type BrushDrawStorage: Clone + Copy + Pod + Zeroable;
+
+    fn process(&self, draw: Draw) -> Self::BrushDraw;
+    fn into_storage(draw: Self::BrushDraw) -> Self::BrushDrawStorage;
+    fn step(&self, draw: Self::BrushDraw) -> f32;
+    fn dirty(draw: Self::BrushDraw) -> Rectangle;
+
+    /// - Normal Mode:
+    ///     - Scratch chunks start with __transparent texture__.
+    ///     - Render in __over__ mode
+    ///     - Merge in __over__ mode
+    /// - Replace Mode:
+    ///     - Scratch chunks start with __data from destination layer__.
+    ///     - Render in __replace__ mode
+    ///     - Merge in __replace__ mode
+    fn replace_mode(&self) -> bool;
+
+    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerDrawPipeline);
 }
 
 impl LayerDrawPipeline {
@@ -121,16 +144,53 @@ impl LayerDrawPipeline {
     }
 
     /// CPU-end draw process
-    pub fn draw(&mut self, dst: &Layer, brush: &RoundBrush, target: Draw) {
+    pub fn draw<T: Brush>(&mut self, dst: &Layer, brush: &T, target: Draw) {
         let mut draws = Vec::new();
-        let next = brush.interpolate(self.prev, target, &mut draws);
 
-        let mut dirty = Rectangle::new_half(next.position.q32_as_i32(), UVec2::ZERO);
-        for &draw in &draws {
-            dirty = dirty.grow(draw.dirty());
+        let prev = self.prev.unwrap_or_else(|| {
+            draws.push(brush.process(target));
+            target
+        });
+
+        let mut curr_draw = prev;
+        let mut curr_proc = brush.process(curr_draw);
+        let whole_dist = prev
+            .position
+            .q32_as_f64()
+            .distance(target.position.q32_as_f64());
+        while curr_draw
+            .position
+            .q32_as_f64()
+            .distance(target.position.q32_as_f64())
+            >= brush.step(curr_proc) as f64
+            && draws.len() < DRAWS_ARRAY_CAPACITY as usize / size_of::<T::BrushDrawStorage>()
+        {
+            let step = brush.step(curr_proc);
+            curr_draw.position = I64Vec2::q32_from_f64(
+                curr_draw
+                    .position
+                    .q32_as_f64()
+                    .move_towards(target.position.q32_as_f64(), step as f64),
+            );
+            let curr_dist = curr_draw
+                .position
+                .q32_as_f64()
+                .distance(target.position.q32_as_f64());
+            let progress = match whole_dist < 1e-6 {
+                true => 1.0,
+                false => 1.0 - (curr_dist / whole_dist) as f32,
+            };
+            curr_draw.force = (1.0 - progress) * prev.force + progress * target.force;
+            curr_proc = brush.process(curr_draw);
+            draws.push(curr_proc);
         }
 
-        self.prev = Some(next);
+        let mut dirty = Rectangle::new_half(target.position.q32_as_i32(), UVec2::ZERO);
+        for &draw in &draws {
+            dirty = dirty.grow(T::dirty(draw));
+        }
+
+        self.prev = Some(target);
 
         if dirty.extend.x == 0 || dirty.extend.y == 0 {
             return;
@@ -148,7 +208,7 @@ impl LayerDrawPipeline {
 
         let mut draws_proc = Vec::with_capacity(draws.len());
         for draw in draws {
-            draws_proc.push(draw.into_storage());
+            draws_proc.push(T::into_storage(draw));
         }
 
         let reference_layer = match brush.replace_mode() {
@@ -171,11 +231,11 @@ impl LayerDrawPipeline {
         );
 
         let queue = &self.layer.queue;
-        write_dispatch(&self.layer.queue, &self.draws_dispatch, dirty);
-        write_dispatch(&self.layer.queue, &self.layer.dispatch, dirty);
+        write_dispatch(queue, &self.draws_dispatch, dirty);
+        write_dispatch(queue, &self.layer.dispatch, dirty);
 
-        let draws_length = draws_proc.len() as u32;
-        queue.write_buffer(&self.draws_length, 0, bytes_of(&draws_length));
+        let draw_length = draws_proc.len() as u32;
+        queue.write_buffer(&self.draws_length, 0, bytes_of(&draw_length));
         queue.write_buffer(&self.draws_array, 0, cast_slice(&draws_proc));
 
         let mut encoder = self
@@ -190,12 +250,12 @@ impl LayerDrawPipeline {
             timestamp_writes: None,
         });
 
-        let (start, end) = super::rect_to_chunks(dirty, 0, self.scratch_dst.chunk_size);
+        let (start, end) = rect_to_chunks(dirty, 0, self.scratch_dst.chunk_size);
         for x in start.0..end.0 {
             for y in start.1..end.1 {
                 let key = (x, y, 0);
-                if let Some(dst_chunk) = self.scratch_dst.chunks.get_mut(&key)
-                    && let Some(swp_chunk) = self.scratch_swp.chunks.get_mut(&key)
+                if let Some(dst_chunk) = self.scratch_dst.chunks.get(&key)
+                    && let Some(swp_chunk) = self.scratch_swp.chunks.get(&key)
                 {
                     if let Some(stroke) = &mut self.stroke {
                         if !stroke.chunks.contains(&key) {
@@ -203,11 +263,7 @@ impl LayerDrawPipeline {
                         }
                     }
 
-                    match brush.erase {
-                        true => cpass.set_pipeline(&self.pipelines.round_erase),
-                        false => cpass.set_pipeline(&self.pipelines.round_over),
-                    }
-
+                    brush.set_pipeline(&mut cpass, self);
                     cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
                     cpass.set_bind_group(2, Some(&swp_chunk.write), &[]);
