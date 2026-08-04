@@ -46,7 +46,7 @@ use crate::{
         pointer::{PointerHover, PointerHoverStatus},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible},
+    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_COLORSPACE},
 };
 
 const UNDO_LIMIT: usize = 32;
@@ -444,6 +444,7 @@ impl LayerWrapper {
         extra.diagnosis.write(rpass, end);
     }
 
+    // TODO use a single texture sheets to hold all undo/redo and use dispatch-merge to apply
     fn undo_stock(&mut self) {
         self.redos.clear();
 
@@ -637,12 +638,7 @@ fn present_pipeline(device: &Device, config: &SurfaceConfiguration) -> RenderPip
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("wrapper_present_shader"),
         source: ShaderSource::Wgsl(
-            format!(
-                "{}{}",
-                include_str!("lib_colorspace.wgsl"),
-                include_str!("present.wgsl")
-            )
-            .into(),
+            format!("{}{}", LIB_COLORSPACE, include_str!("present.wgsl")).into(),
         ),
     });
 

@@ -9,7 +9,10 @@ use crate::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus},
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible},
+    widgets::{
+        SetWidgetRectangle, SetWidgetVisible,
+        shaders::{LIB_COLORSPACE, LIB_CONSTANT},
+    },
 };
 
 const BAND_WIDTH: f32 = 0.1;
@@ -127,8 +130,9 @@ impl RectangleMeshMaterial for PaletteHslMaterial {
     fn shader() -> wgpu::ShaderSource<'static> {
         wgpu::ShaderSource::Wgsl(
             format!(
-                "{}{}",
-                include_str!("../../layer/lib_colorspace.wgsl"),
+                "{}{}{}",
+                LIB_COLORSPACE,
+                LIB_CONSTANT,
                 include_str!("hsl.wgsl")
             )
             .into(),

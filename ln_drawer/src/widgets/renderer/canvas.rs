@@ -22,7 +22,7 @@ use crate::{
         camera::{Camera, CameraBind},
         rectangle::RectangleUniform,
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible},
+    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_CAMERA},
 };
 
 pub struct Canvas {
@@ -330,8 +330,8 @@ impl CanvasPipeline {
             source: ShaderSource::Wgsl(
                 format!(
                     "{}{}{}",
-                    include_str!("lib_camera.wgsl"),
-                    include_str!("lib_rectangle.wgsl"),
+                    LIB_CAMERA,
+                    LIB_RECTANGLE,
                     include_str!("canvas.wgsl"),
                 )
                 .into(),

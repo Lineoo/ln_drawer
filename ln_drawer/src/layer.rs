@@ -24,6 +24,7 @@ use wgpu::{
 use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
+    widgets::shaders::{LIB_CAMERA, LIB_COLORSPACE},
 };
 
 pub type ChunkKey = (i32, i32, u8);
@@ -759,12 +760,7 @@ fn render_pipelines(
     let render_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_chunk"),
         source: ShaderSource::Wgsl(
-            format!(
-                "{}{}",
-                include_str!("widgets/renderer/lib_camera.wgsl"),
-                include_str!("layer/chunk.wgsl"),
-            )
-            .into(),
+            format!("{}{}", LIB_CAMERA, include_str!("layer/chunk.wgsl"),).into(),
         ),
     });
 
@@ -837,12 +833,7 @@ fn mipmap_pipeline(
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_mipmap"),
         source: ShaderSource::Wgsl(
-            format!(
-                "{}{}",
-                include_str!("layer/lib_colorspace.wgsl"),
-                include_str!("layer/mipmap.wgsl"),
-            )
-            .into(),
+            format!("{}{}", LIB_COLORSPACE, include_str!("layer/mipmap.wgsl"),).into(),
         ),
     });
 
