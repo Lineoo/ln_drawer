@@ -6,7 +6,7 @@ use ln_world::{Descriptor, Handle, World};
 use palette::{Hsla, IntoColor, RgbHue, Srgba};
 
 use crate::{
-    layer::{brush::round::RoundBrush, wrapper::LayerWrapper},
+    layer::wrapper::LayerWrapper,
     layout::{
         luni::{
             LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
@@ -180,11 +180,7 @@ fn settings(world: &World, panel: Handle<Panel>) {
     let option1_slider = option_slider(world, option1_frame.untyped());
     world.observer(option1_slider, move |&SliderValue(value), world| {
         let mut stroke = world.single_fetch_mut::<LayerWrapper>().unwrap();
-        stroke.round_brush = RoundBrush {
-            max_flow: value + 0.1,
-            min_flow: value,
-            ..stroke.round_brush
-        };
+        stroke.round_brush.flow.offset = value;
         world.queue_trigger(option1_slider, SetSliderValue(value));
     });
 

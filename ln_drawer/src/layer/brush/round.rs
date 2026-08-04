@@ -3,19 +3,15 @@ use ln_world::Element;
 use palette::Srgba;
 
 use crate::{
-    layer::brush::Draw,
+    layer::brush::{Draw, param::BrushParam},
     measures::{FI64Ext, Rectangle},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct RoundBrush {
-    pub min_size: f32,
-    pub max_size: f32,
-    pub size_force_exp: f32,
-    pub min_flow: f32,
-    pub max_flow: f32,
-    pub flow_force_exp: f32,
-    pub softness: f32,
+    pub size: BrushParam<f32>,
+    pub flow: BrushParam<f32>,
+    pub softness: BrushParam<f32>,
     pub color: Srgba,
     pub erase: bool,
 }
@@ -24,19 +20,11 @@ impl RoundBrush {
     pub fn process(&self, draw: Draw) -> RoundDraw {
         RoundDraw {
             position: draw.position,
-            softness: self.softness,
+            softness: self.softness.get(draw),
             color: self.color,
-            size: self.size(draw),
-            flow: self.flow(draw),
+            size: self.size.get(draw),
+            flow: self.flow.get(draw),
         }
-    }
-
-    pub fn size(&self, draw: Draw) -> f32 {
-        self.min_size + (self.max_size - self.min_size) * draw.force.powf(self.size_force_exp)
-    }
-
-    pub fn flow(&self, draw: Draw) -> f32 {
-        self.min_flow + (self.max_flow - self.min_flow) * draw.force.powf(self.flow_force_exp)
     }
 
     pub fn step(&self, draw: RoundDraw) -> f32 {
@@ -87,7 +75,7 @@ impl RoundBrush {
         curr_draw
     }
 
-    /// - Normal Mode: 
+    /// - Normal Mode:
     ///     - Scratch chunks start with __transparent texture__.
     ///     - Render in __over__ mode
     ///     - Merge in __over__ mode

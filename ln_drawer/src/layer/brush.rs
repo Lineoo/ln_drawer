@@ -1,5 +1,6 @@
 pub mod blur;
 pub mod round;
+pub mod param;
 
 use std::{mem::size_of, sync::mpsc::Sender};
 

@@ -6,23 +6,17 @@ use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor};
 use crate::{
     layer::{
         Layer,
-        brush::{Draw, LayerDrawPipeline, Stroke},
+        brush::{Draw, LayerDrawPipeline, Stroke, param::BrushParam},
         dispatch_workgroups, rect_to_chunks, write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
 };
 
-#[derive(Clone, Copy)]
-pub enum StandardParam<T> {
-    Constant { val: T },
-    ForceIndex { min: T, max: T, idx: T },
-}
-
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct BlurBrush {
-    pub size: StandardParam<f32>,
-    pub sigma: StandardParam<f32>,
-    pub softness: StandardParam<f32>,
+    pub size: BrushParam<f32>,
+    pub sigma: BrushParam<f32>,
+    pub softness: BrushParam<f32>,
 }
 
 impl BlurBrush {
@@ -195,23 +189,6 @@ impl BlurBrush {
     ///     - Merge in __replace__ mode
     pub fn replace_mode(&self) -> bool {
         true
-    }
-}
-
-impl StandardParam<f32> {
-    pub fn constant(val: f32) -> StandardParam<f32> {
-        StandardParam::Constant { val }
-    }
-
-    pub fn force_index(min: f32, max: f32, idx: f32) -> StandardParam<f32> {
-        StandardParam::ForceIndex { min, max, idx }
-    }
-
-    pub fn get(self, draw: Draw) -> f32 {
-        match self {
-            StandardParam::Constant { val: value } => value,
-            StandardParam::ForceIndex { min, max, idx } => min + (max - min) * draw.force.powf(idx),
-        }
     }
 }
 
