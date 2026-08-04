@@ -71,12 +71,9 @@ struct Stroke {
 }
 
 pub trait Brush {
-    // TODO remove redundant type. Just bytemuck type is totally enough.
-    type BrushDraw: Clone + Copy;
-    type BrushDrawStorage: Clone + Copy + Pod + Zeroable;
+    type BrushDraw: Clone + Copy + Pod + Zeroable;
 
     fn process(&self, draw: Draw) -> Self::BrushDraw;
-    fn into_storage(draw: Self::BrushDraw) -> Self::BrushDrawStorage;
     fn step(&self, draw: Self::BrushDraw) -> f32;
     fn dirty(draw: Self::BrushDraw) -> Rectangle;
 
@@ -152,37 +149,24 @@ impl LayerDrawPipeline {
             target
         });
 
-        let mut curr_draw = prev;
-        let mut curr_proc = brush.process(curr_draw);
-        let whole_dist = prev
-            .position
-            .q32_as_f64()
-            .distance(target.position.q32_as_f64());
-        while curr_draw
-            .position
-            .q32_as_f64()
-            .distance(target.position.q32_as_f64())
-            >= brush.step(curr_proc) as f64
-            && draws.len() < DRAWS_ARRAY_CAPACITY as usize / size_of::<T::BrushDrawStorage>()
+        let prev_position = prev.position.q32_as_f64();
+        let target_position = target.position.q32_as_f64();
+        let whole_dist = prev_position.distance(target_position);
+        let mut curr = prev;
+        let mut curr_position = prev_position;
+        while curr_position.distance(target_position) >= brush.step(brush.process(curr)) as f64
+            && draws.len() < DRAWS_ARRAY_CAPACITY as usize / size_of::<T::BrushDraw>()
         {
-            let step = brush.step(curr_proc);
-            curr_draw.position = I64Vec2::q32_from_f64(
-                curr_draw
-                    .position
-                    .q32_as_f64()
-                    .move_towards(target.position.q32_as_f64(), step as f64),
-            );
-            let curr_dist = curr_draw
-                .position
-                .q32_as_f64()
-                .distance(target.position.q32_as_f64());
+            let step = brush.step(brush.process(curr));
+            curr_position = curr_position.move_towards(target_position, step as f64);
+            curr.position = I64Vec2::q32_from_f64(curr_position);
+            let curr_dist = curr_position.distance(target_position);
             let progress = match whole_dist < 1e-6 {
                 true => 1.0,
                 false => 1.0 - (curr_dist / whole_dist) as f32,
             };
-            curr_draw.force = (1.0 - progress) * prev.force + progress * target.force;
-            curr_proc = brush.process(curr_draw);
-            draws.push(curr_proc);
+            curr.force = (1.0 - progress) * prev.force + progress * target.force;
+            draws.push(brush.process(curr));
         }
 
         let mut dirty = Rectangle::new_half(target.position.q32_as_i32(), UVec2::ZERO);
@@ -190,7 +174,7 @@ impl LayerDrawPipeline {
             dirty = dirty.grow(T::dirty(draw));
         }
 
-        self.prev = Some(target);
+        self.prev = Some(curr);
 
         if dirty.extend.x == 0 || dirty.extend.y == 0 {
             return;
@@ -204,11 +188,6 @@ impl LayerDrawPipeline {
                 replace: brush.replace_mode(),
                 chunks: vec![],
             });
-        }
-
-        let mut draws_proc = Vec::with_capacity(draws.len());
-        for draw in draws {
-            draws_proc.push(T::into_storage(draw));
         }
 
         let reference_layer = match brush.replace_mode() {
@@ -234,9 +213,9 @@ impl LayerDrawPipeline {
         write_dispatch(queue, &self.draws_dispatch, dirty);
         write_dispatch(queue, &self.layer.dispatch, dirty);
 
-        let draw_length = draws_proc.len() as u32;
+        let draw_length = draws.len() as u32;
         queue.write_buffer(&self.draws_length, 0, bytes_of(&draw_length));
-        queue.write_buffer(&self.draws_array, 0, cast_slice(&draws_proc));
+        queue.write_buffer(&self.draws_array, 0, cast_slice(&draws));
 
         let mut encoder = self
             .layer
