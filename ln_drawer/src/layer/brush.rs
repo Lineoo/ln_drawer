@@ -1,3 +1,4 @@
+pub mod blur;
 pub mod round;
 
 use std::{mem::size_of, sync::mpsc::Sender};
@@ -10,34 +11,36 @@ use wgpu::{
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
     BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor,
     ComputePipeline, ComputePipelineDescriptor, Device, PipelineCompilationOptions,
-    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    PipelineLayoutDescriptor, RenderPass, ShaderModuleDescriptor, ShaderSource, ShaderStages,
 };
 
 use crate::{
     layer::{
-        Chunk, ChunkLayout, ChunkPool, Layer, LayerPipeline,
-        brush::round::{RoundBrush, RoundDrawStorage},
+        Chunk, ChunkLayout, ChunkPool, Layer, LayerPipeline, brush::round::RoundBrush,
         chunk_to_rect, create_chunk, create_chunk_texture, dispatch_workgroups,
-        stream::ThreadInput,
-        write_dispatch,
+        stream::ThreadInput, write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
+    render::camera::Camera,
+    widgets::shaders::LIB_CONSTANT,
 };
 
 pub const MAX_STROKE: u64 = 200;
+const DRAWS_ARRAY_CAPACITY: u64 = 48 * 200;
 const TEMP_CHUNK_SIZE: u32 = 1024;
 
-pub struct BrushPipeline {
-    pub scratch_dst: Layer,
-    pub scratch_swp: Layer,
-    pub scratch_pool: ChunkPool,
+pub struct LayerDrawPipeline {
     pub layer: LayerPipeline,
 
-    #[expect(unused)]
-    temp: Chunk,
+    // TODO currently unintendedly public for undo/redo system
+    pub scratch_dst: Layer,
+    scratch_swp: Layer,
+    scratch_pool: ChunkPool,
 
-    brush_round: ComputePipeline,
-    erase_round: ComputePipeline,
+    #[expect(unused)]
+    bridge_dst: Chunk,
+
+    pipelines: BrushPipelines,
 
     draws_dispatch: Buffer,
     draws_dispatch_group: BindGroup,
@@ -46,6 +49,12 @@ pub struct BrushPipeline {
 
     prev: Option<Draw>,
     stroke: Option<Stroke>,
+}
+
+struct BrushPipelines {
+    blur: ComputePipeline,
+    round_over: ComputePipeline,
+    round_erase: ComputePipeline,
 }
 
 #[derive(Clone, Copy)]
@@ -60,15 +69,14 @@ struct Stroke {
     replace: bool,
 }
 
-impl BrushPipeline {
+impl LayerDrawPipeline {
     pub fn new(layer: LayerPipeline) -> Self {
-        let dispatch_draw_layout = layer.device.create_bind_group_layout(&LAYOUT_DISPATCH_DRAW);
+        let draw_dispatch_layout = layer.device.create_bind_group_layout(&LAYOUT_DRAW_DISPATCH);
 
         let (draws_dispatch, draws_length, draws_array, draws_dispatch_group) =
-            draws_dispatch_group(&layer.device, &dispatch_draw_layout);
+            draws_dispatch_group(&layer.device, &draw_dispatch_layout);
 
-        let (brush_round, erase_round) =
-            brush_pipelines(&layer.device, &dispatch_draw_layout, &layer.chunk_layout);
+        let pipelines = brush_pipelines(&layer.device, &draw_dispatch_layout, &layer.chunk_layout);
 
         let scratch_dst = Layer {
             chunks: HashMap::new(),
@@ -84,25 +92,24 @@ impl BrushPipeline {
             mipmap_levels: 1,
         };
 
-        let temp_texture = create_chunk_texture(&layer.device, TEMP_CHUNK_SIZE);
-        let temp = create_chunk(
+        let bridge_texture = create_chunk_texture(&layer.device, TEMP_CHUNK_SIZE);
+        let bridge_dst = create_chunk(
             &layer.device,
             &layer.chunk_layout,
-            temp_texture,
+            bridge_texture,
             chunk_to_rect((0, 0, 0), TEMP_CHUNK_SIZE),
         );
 
-        BrushPipeline {
+        LayerDrawPipeline {
+            layer,
             scratch_dst,
             scratch_swp,
             scratch_pool: ChunkPool {
                 list: Vec::new(),
                 chunk_size: 512,
             },
-            layer,
-            temp,
-            brush_round,
-            erase_round,
+            pipelines,
+            bridge_dst,
             draws_dispatch,
             draws_dispatch_group,
             draws_length,
@@ -162,15 +169,13 @@ impl BrushPipeline {
             dirty,
         );
 
+        let queue = &self.layer.queue;
         write_dispatch(&self.layer.queue, &self.draws_dispatch, dirty);
         write_dispatch(&self.layer.queue, &self.layer.dispatch, dirty);
 
-        upload_draws(
-            &self.draws_length,
-            &self.draws_array,
-            &draws_proc,
-            &self.layer.queue,
-        );
+        let draws_length = draws_proc.len() as u32;
+        queue.write_buffer(&self.draws_length, 0, bytes_of(&draws_length));
+        queue.write_buffer(&self.draws_array, 0, cast_slice(&draws_proc));
 
         let mut encoder = self
             .layer
@@ -198,8 +203,8 @@ impl BrushPipeline {
                     }
 
                     match brush.erase {
-                        true => cpass.set_pipeline(&self.erase_round),
-                        false => cpass.set_pipeline(&self.brush_round),
+                        true => cpass.set_pipeline(&self.pipelines.round_erase),
+                        false => cpass.set_pipeline(&self.pipelines.round_over),
                     }
 
                     cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
@@ -218,6 +223,13 @@ impl BrushPipeline {
 
         drop(cpass);
         self.layer.queue.submit([encoder.finish()]);
+    }
+
+    pub fn scratch_render(&self, rpass: &mut RenderPass, camera: &Camera, debug: bool) {
+        if let Some(stroke) = &self.stroke {
+            self.layer
+                .render(&self.scratch_dst, rpass, camera, debug, stroke.replace);
+        }
     }
 
     pub fn request_stream(&mut self, dst: &Layer, tx: &Sender<ThreadInput>) {
@@ -336,7 +348,7 @@ impl BrushPipeline {
 
 // --- Resources --- //
 
-const LAYOUT_DISPATCH_DRAW: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+const LAYOUT_DRAW_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
     label: Some("layer_brush_dispatch_draw"),
     entries: &[
         BindGroupLayoutEntry {
@@ -392,7 +404,7 @@ fn draws_dispatch_group(
 
     let draws_array = device.create_buffer(&BufferDescriptor {
         label: Some("layer_brush_draws_array"),
-        size: size_of::<RoundDrawStorage>() as u64 * MAX_STROKE,
+        size: DRAWS_ARRAY_CAPACITY,
         usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -434,7 +446,7 @@ fn brush_pipelines(
     device: &Device,
     dispatch_draw_layout: &BindGroupLayout,
     chunk_layout: &ChunkLayout,
-) -> (ComputePipeline, ComputePipeline) {
+) -> BrushPipelines {
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_brush"),
         bind_group_layouts: &[
@@ -445,7 +457,7 @@ fn brush_pipelines(
         immediate_size: 0,
     });
 
-    let new_pipeline = |label, formula| {
+    let round_pipeline = |label, formula| {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(label),
             source: ShaderSource::Wgsl(
@@ -467,20 +479,26 @@ fn brush_pipelines(
         })
     };
 
-    let over = new_pipeline("over", "src + dst * (1 - src.a)");
-    let erase = new_pipeline("erase", "dst * (1 - src.a)");
+    let blur_pipeline = |label| {
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: ShaderSource::Wgsl(
+                format!("{}{}", LIB_CONSTANT, include_str!("brush/blur.wgsl"),).into(),
+            ),
+        });
+        device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    };
 
-    (over, erase)
-}
-
-// --- Utils --- //
-
-fn upload_draws(
-    draws_length: &Buffer,
-    draws_array: &Buffer,
-    draws: &[RoundDrawStorage],
-    queue: &Queue,
-) {
-    queue.write_buffer(draws_length, 0, bytes_of(&(draws.len() as u32)));
-    queue.write_buffer(draws_array, 0, cast_slice(draws));
+    BrushPipelines {
+        blur: blur_pipeline("blur"),
+        round_over: round_pipeline("over", "src + dst * (1 - src.a)"),
+        round_erase: round_pipeline("erase", "dst * (1 - src.a)"),
+    }
 }

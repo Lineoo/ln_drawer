@@ -28,7 +28,11 @@ use winit::{
 use crate::{
     layer::{
         Layer, LayerPipeline,
-        brush::{BrushPipeline, Draw, round::RoundBrush},
+        brush::{
+            Draw, LayerDrawPipeline,
+            blur::{BlurBrush, StandardParam},
+            round::RoundBrush,
+        },
         chunk_to_rect, create_chunk, create_chunk_texture, rect_to_chunks,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
     },
@@ -57,8 +61,9 @@ pub struct LayerDebugMessage(pub String);
 
 pub struct LayerWrapper {
     pub main: Layer,
-    pub brush: BrushPipeline,
+    pub brush: LayerDrawPipeline,
     pub round_brush: RoundBrush,
+    pub blur_brush: BlurBrush,
 
     pub undos: VecDeque<Layer>,
     pub redos: Vec<Layer>,
@@ -82,7 +87,7 @@ impl LayerWrapper {
         let render = world.single_fetch::<Render>().unwrap();
         let camera_bind = world.single_fetch::<CameraBind>().unwrap();
 
-        let brush = BrushPipeline::new(LayerPipeline::new(
+        let brush = LayerDrawPipeline::new(LayerPipeline::new(
             render.device.clone(),
             render.queue.clone(),
             TextureFormat::Rgba8Unorm,
@@ -157,6 +162,11 @@ impl LayerWrapper {
                 softness: 0.2,
                 color: Srgba::new(0.0, 0.0, 0.0, 1.0),
                 erase: false,
+            },
+            blur_brush: BlurBrush {
+                size: StandardParam::constant(20.0),
+                sigma: StandardParam::constant(2.0),
+                softness: StandardParam::constant(0.3),
             },
             undos: VecDeque::new(),
             redos: Vec::new(),
@@ -326,9 +336,18 @@ impl LayerWrapper {
                     }
                 }
 
-                this.brush.draw(
+                // this.brush.draw(
+                //     &this.main,
+                //     &this.round_brush,
+                //     Draw {
+                //         position: primary.position,
+                //         force: primary.data.force.unwrap_or(1.0),
+                //     },
+                // );
+
+                this.blur_brush.draw(
+                    &mut this.brush,
                     &this.main,
-                    &this.round_brush,
                     Draw {
                         position: primary.position,
                         force: primary.data.force.unwrap_or(1.0),
@@ -405,20 +424,12 @@ impl LayerWrapper {
 
         let (start, end) = extra.diagnosis.assign("layers > main");
         extra.diagnosis.write(&mut rpass, start);
-        self.brush
-            .layer
-            .render(&self.main, &mut rpass, &camera, self.debug, false);
+        (self.brush.layer).render(&self.main, &mut rpass, &camera, self.debug, false);
         extra.diagnosis.write(&mut rpass, end);
 
         let (start, end) = extra.diagnosis.assign("layers > scratch");
         extra.diagnosis.write(&mut rpass, start);
-        self.brush.layer.render(
-            &self.brush.scratch_dst,
-            &mut rpass,
-            &camera,
-            self.debug,
-            self.round_brush.erase,
-        );
+        (self.brush).scratch_render(&mut rpass, &camera, self.debug);
         extra.diagnosis.write(&mut rpass, end);
     }
 
