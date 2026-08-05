@@ -72,6 +72,8 @@ pub struct LayerWrapper {
 
     pub debug: bool,
 
+    temp_erase: RoundBrush,
+
     brush_preview: Handle<RoundedRect>,
     compositing_texture: Texture,
     compositing_config: SurfaceConfiguration,
@@ -177,6 +179,13 @@ impl LayerWrapper {
             brush,
             brush_preview,
             debug: false,
+            temp_erase: RoundBrush {
+                size: BrushParam::force_index(5.0, 15.0, 1.0),
+                flow: BrushParam::force_index(0.5, 1.0, 1.0),
+                softness: BrushParam::constant(0.5),
+                color: Srgba::new(1.0, 1.0, 1.0, 1.0),
+                erase: true,
+            },
             compositing_texture,
             compositing_config: render.config.clone(),
             compositing_render_bind,
@@ -253,7 +262,7 @@ impl LayerWrapper {
 
         let mut pinch_distance = None;
         let mut drag_start = None;
-        let mut temp_erase_mode = None;
+        let mut temp_erase_mode = false;
         world.observer(collider, move |event: &MultiTouchGroup, world| {
             let primary = event.members.first().unwrap();
 
@@ -308,38 +317,25 @@ impl LayerWrapper {
                 }
 
                 if let Some((start, timer)) = drag_start {
-                    const DRAG_DISTANCE: f64 = 0.01;
+                    const DRAG_DISTANCE: f64 = 0.005;
                     const ERASE_TIMER: f64 = 0.8;
-                    const ERASE_FORCE_THRESHOLD: f32 = 0.6;
-                    const TEMP_ERASE_MODIFIER: RoundBrush = RoundBrush {
-                        size: BrushParam::force_index(5.0, 15.0, 1.0),
-                        flow: BrushParam::force_index(0.5, 1.0, 1.0),
-                        softness: BrushParam::constant(0.5),
-                        color: Srgba::new(1.0, 1.0, 1.0, 1.0),
-                        erase: true,
-                    };
 
                     if DVec2::from_array(primary.screen).distance(DVec2::from_array(start))
                         > DRAG_DISTANCE
                     {
                         drag_start = None;
                     } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
-                        if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
-                            this.undo_stock();
-                            this.brush.submit(&mut this.main, Some(&this.thread_tx));
-                            // TODO integrate erase brush into brush_mode
-                            let ori = std::mem::replace(&mut this.round_brush, TEMP_ERASE_MODIFIER);
-                            temp_erase_mode = Some(ori);
-                            drag_start = None;
-                        } else {
-                            drag_start = None;
-                        }
+                        this.undo_stock();
+                        this.brush.submit(&mut this.main, Some(&this.thread_tx));
+                        temp_erase_mode = true;
+                        drag_start = None;
                     }
                 }
 
-                let brush: &dyn Brush = match this.brush_mode {
-                    BrushMode::Round => &this.round_brush,
-                    BrushMode::Blur => &this.blur_brush,
+                let brush: &dyn Brush = match (temp_erase_mode, &this.brush_mode) {
+                    (true, _) => &this.temp_erase,
+                    (_, BrushMode::Round) => &this.round_brush,
+                    (_, BrushMode::Blur) => &this.blur_brush,
                 };
 
                 brush.draw(
@@ -360,10 +356,7 @@ impl LayerWrapper {
 
                 this.undo_stock();
                 this.brush.submit(&mut this.main, Some(&this.thread_tx));
-
-                if let Some(ori) = temp_erase_mode.take() {
-                    this.round_brush = ori;
-                }
+                temp_erase_mode = false;
             }
         });
     }
