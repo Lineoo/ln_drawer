@@ -30,31 +30,28 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
     
     let coord = vertex.uv * dims - 0.5;
     let base = vec2i(floor(coord));
-    let frac = coord - vec2f(base);
+    let frac = fract(coord);
 
     let min_idx = vec2i(0, 0);
-    let max_idx = vec2i(textureDimensions(texture)) - vec2i(1, 1);
+    let max_idx = vec2i(dims) - vec2i(1, 1);
 
     let idx_00 = clamp(base + vec2i(0, 0), min_idx, max_idx);
     let idx_10 = clamp(base + vec2i(1, 0), min_idx, max_idx);
     let idx_01 = clamp(base + vec2i(0, 1), min_idx, max_idx);
     let idx_11 = clamp(base + vec2i(1, 1), min_idx, max_idx);
 
-    let c00 = textureLoad(texture, idx_00, 0);
-    let c10 = textureLoad(texture, idx_10, 0);
-    let c01 = textureLoad(texture, idx_01, 0);
-    let c11 = textureLoad(texture, idx_11, 0);
+    let c00_ump = srgb_to_linear(textureLoad(texture, idx_00, 0));
+    let c10_ump = srgb_to_linear(textureLoad(texture, idx_10, 0));
+    let c01_ump = srgb_to_linear(textureLoad(texture, idx_01, 0));
+    let c11_ump = srgb_to_linear(textureLoad(texture, idx_11, 0));
 
-    let p00 = vec4f(c00.rgb * c00.a, c00.a);
-    let p10 = vec4f(c10.rgb * c10.a, c10.a);
-    let p01 = vec4f(c01.rgb * c01.a, c01.a);
-    let p11 = vec4f(c11.rgb * c11.a, c11.a);
+    let c00 = vec4f(c00_ump.rgb, 1) * c00_ump.a;
+    let c10 = vec4f(c10_ump.rgb, 1) * c10_ump.a;
+    let c01 = vec4f(c01_ump.rgb, 1) * c01_ump.a;
+    let c11 = vec4f(c11_ump.rgb, 1) * c11_ump.a;
 
-    let top = mix(p00, p10, frac.x);
-    let bottom = mix(p01, p11, frac.x);
-    let result = mix(top, bottom, frac.y);
-
-    return result;
+    let result = mix(mix(c00, c10, frac.x), mix(c01, c11, frac.x), frac.y);
+    return linear_to_srgb(result);
 }
 
 @fragment

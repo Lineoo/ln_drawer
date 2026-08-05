@@ -87,8 +87,10 @@ pub struct ChunkLayout {
 
 struct RenderPipelines {
     over: RenderPipeline,
+    over_fast: RenderPipeline,
     over_debug: RenderPipeline,
     replace: RenderPipeline,
+    replace_fast: RenderPipeline,
     replace_debug: RenderPipeline,
 }
 
@@ -323,20 +325,22 @@ impl LayerPipeline {
         let mipmap = (-camera.zoom).q32_floor().max(0) as u8;
         let actual_mipmap = mipmap.min(layer.mipmap_levels.saturating_sub(1));
         let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, layer.chunk_size);
+        let pixel = camera.zoom.q32_as_f64().exp2() > 6.0;
 
-        match (debug, replace) {
-            (false, false) => rpass.set_pipeline(&self.render_pipelines.over),
-            (true, false) => rpass.set_pipeline(&self.render_pipelines.over_debug),
-            (false, true) => rpass.set_pipeline(&self.render_pipelines.replace),
-            (true, true) => rpass.set_pipeline(&self.render_pipelines.replace_debug),
+        match (debug, replace, pixel) {
+            (false, false, false) => rpass.set_pipeline(&self.render_pipelines.over),
+            (false, false, true) => rpass.set_pipeline(&self.render_pipelines.over_fast),
+            (true, false, _) => rpass.set_pipeline(&self.render_pipelines.over_debug),
+            (false, true, false) => rpass.set_pipeline(&self.render_pipelines.replace),
+            (false, true, true) => rpass.set_pipeline(&self.render_pipelines.replace_fast),
+            (true, true, _) => rpass.set_pipeline(&self.render_pipelines.replace_debug),
         }
 
         rpass.set_bind_group(0, &camera.bind, &[]);
 
-        if camera.zoom.q32_as_f64().exp2() > 6.0 {
-            rpass.set_bind_group(1, &self.sampler_group_unfiltered, &[]);
-        } else {
-            rpass.set_bind_group(1, &self.sampler_group_filtered, &[]);
+        match pixel {
+            true => rpass.set_bind_group(1, &self.sampler_group_unfiltered, &[]),
+            false => rpass.set_bind_group(1, &self.sampler_group_filtered, &[]),
         }
 
         for x in src.0..dst.0 {
@@ -749,7 +753,13 @@ fn render_pipelines(
     let render_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_chunk"),
         source: ShaderSource::Wgsl(
-            format!("{}{}", LIB_CAMERA, include_str!("layer/chunk.wgsl"),).into(),
+            format!(
+                "{}{}{}",
+                LIB_CAMERA,
+                LIB_COLORSPACE,
+                include_str!("layer/chunk.wgsl"),
+            )
+            .into(),
         ),
     });
 
@@ -800,12 +810,18 @@ fn render_pipelines(
             "layer_chunk_over",
             "fs_main",
         ),
+        over_fast: new_pipeline(
+            BlendState::PREMULTIPLIED_ALPHA_BLENDING,
+            "layer_chunk_over",
+            "fs_fast",
+        ),
         over_debug: new_pipeline(
             BlendState::PREMULTIPLIED_ALPHA_BLENDING,
             "layer_chunk_over_debug",
             "fs_debug0",
         ),
         replace: new_pipeline(BlendState::REPLACE, "layer_chunk_replace", "fs_main"),
+        replace_fast: new_pipeline(BlendState::REPLACE, "layer_chunk_replace", "fs_fast"),
         replace_debug: new_pipeline(
             BlendState::REPLACE,
             "layer_chunk_replace_debug",
