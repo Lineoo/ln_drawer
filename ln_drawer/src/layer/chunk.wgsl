@@ -51,7 +51,8 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
     let c11 = vec4f(c11_ump.rgb, 1) * c11_ump.a;
 
     let result = mix(mix(c00, c10, frac.x), mix(c01, c11, frac.x), frac.y);
-    return linear_to_srgb(result);
+    let result_srgb_ump = linear_to_srgb(alpha_premultiplied_invert(result));
+    return vec4f(result_srgb_ump.rgb, 1) * result_srgb_ump.a;
 }
 
 @fragment
