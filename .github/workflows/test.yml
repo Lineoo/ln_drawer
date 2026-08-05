@@ -23,6 +23,7 @@ jobs:
         key: ubuntu-all-cross-test-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           ubuntu-all-cross-test-
+          ubuntu-all-cross-
         path: |
           ~/.cargo
           target
