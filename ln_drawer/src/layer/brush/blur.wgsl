@@ -50,7 +50,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
 
     var k_sum = 0.0;
     var dst = vec4f();
-    let radius = sqrt(variance) * 3.0;
+    let radius = max(sqrt(variance) * 3.0, 1.0);
     for (var x = i32(round(-radius)); x <= i32(round(radius)); x++) {
         for (var y = i32(round(-radius)); y <= i32(round(radius)); y++) {
             let cnv_coords = dst_coords + vec2i(x, y);
