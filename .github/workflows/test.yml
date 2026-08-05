@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Actions Checkout
+    - name: '[Actions] Checkout'
       uses: actions/checkout@v6
 
-    - name: Actions Cache
+    - name: '[Actions] Cache'
       uses: actions/cache@v5
       with:
         key: ubuntu-all-cross-test-${{ hashFiles('Cargo.lock') }}
@@ -28,11 +28,11 @@ jobs:
           ~/.cargo
           target
 
-    - name: Install ALSA Library
+    - name: '[Install] ALSA Library'
       run: sudo apt-get install libasound2-dev
 
-    - name: Cargo Fmt
+    - name: '[Test] Cargo Fmt'
       run: cargo fmt --all --check
 
-    - name: Cargo Test x86_64 Linux
+    - name: '[Test] Cargo Test x86_64 Linux'
       run: cargo test
