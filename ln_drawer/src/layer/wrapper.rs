@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    sync::mpsc::channel,
+    sync::mpsc::{Receiver, Sender, channel},
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -28,7 +28,9 @@ use winit::{
 use crate::{
     layer::{
         Layer, LayerPipeline,
-        brush::{Draw, LayerDrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush},
+        brush::{
+            Brush, Draw, LayerDrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush,
+        },
         chunk_to_rect, create_chunk, create_chunk_texture, rect_to_chunks,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
     },
@@ -55,11 +57,13 @@ const MAIN_CHUNK_MIPMAP: u8 = 8;
 
 pub struct LayerDebugMessage(pub String);
 
+pub struct BrushConfigurationChanged;
+
 pub struct LayerWrapper {
     pub main: Layer,
     pub brush: LayerDrawPipeline,
 
-    // TODO brush selection
+    pub brush_mode: BrushMode,
     pub round_brush: RoundBrush,
     pub blur_brush: BlurBrush,
 
@@ -75,9 +79,14 @@ pub struct LayerWrapper {
 
     present_pipeline: RenderPipeline,
 
-    thread_tx: std::sync::mpsc::Sender<ThreadInput>,
-    thread_rx: std::sync::mpsc::Receiver<ThreadOutput>,
+    thread_tx: Sender<ThreadInput>,
+    thread_rx: Receiver<ThreadOutput>,
     thread: Option<JoinHandle<()>>,
+}
+
+pub enum BrushMode {
+    Round,
+    Blur,
 }
 
 impl LayerWrapper {
@@ -150,6 +159,7 @@ impl LayerWrapper {
                 chunk_size: MAIN_CHUNK_SIZE,
                 controlled: true,
             },
+            brush_mode: BrushMode::Round,
             round_brush: RoundBrush {
                 size: BrushParam::force_index(0.0, 6.0, 1.0),
                 flow: BrushParam::force_index(0.7, 1.0, 2.0),
@@ -317,6 +327,7 @@ impl LayerWrapper {
                         if primary.data.force.unwrap_or(1.0) >= ERASE_FORCE_THRESHOLD {
                             this.undo_stock();
                             this.brush.submit(&mut this.main, Some(&this.thread_tx));
+                            // TODO integrate erase brush into brush_mode
                             let ori = std::mem::replace(&mut this.round_brush, TEMP_ERASE_MODIFIER);
                             temp_erase_mode = Some(ori);
                             drag_start = None;
@@ -326,18 +337,14 @@ impl LayerWrapper {
                     }
                 }
 
-                // this.brush.draw(
-                //     &this.main,
-                //     &this.round_brush,
-                //     Draw {
-                //         position: primary.position,
-                //         force: primary.data.force.unwrap_or(1.0),
-                //     },
-                // );
+                let brush: &dyn Brush = match this.brush_mode {
+                    BrushMode::Round => &this.round_brush,
+                    BrushMode::Blur => &this.blur_brush,
+                };
 
-                this.brush.draw(
+                brush.draw(
                     &this.main,
-                    &this.blur_brush,
+                    &mut this.brush,
                     Draw {
                         position: primary.position,
                         force: primary.data.force.unwrap_or(1.0),

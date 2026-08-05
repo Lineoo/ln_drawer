@@ -3,7 +3,10 @@ use ln_world::Element;
 use wgpu::ComputePass;
 
 use crate::{
-    layer::brush::{Brush, Draw, LayerDrawPipeline, param::BrushParam},
+    layer::{
+        Layer,
+        brush::{BrushInner, Brush, Draw, LayerDrawPipeline, param::BrushParam},
+    },
     measures::{FI64Ext, Rectangle},
 };
 
@@ -25,7 +28,7 @@ pub struct BlurDraw {
     pub _pad: u32,
 }
 
-impl Brush for BlurBrush {
+impl BrushInner for BlurBrush {
     type Draw = BlurDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
@@ -43,7 +46,7 @@ impl Brush for BlurBrush {
         draw.size / 5.0
     }
 
-    fn dirty(draw: Self::Draw) -> Rectangle {
+    fn dirty(&self, draw: Self::Draw) -> Rectangle {
         Rectangle::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
     }
 
@@ -57,6 +60,12 @@ impl Brush for BlurBrush {
 
     fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerDrawPipeline) {
         cpass.set_pipeline(&pipeline.pipelines.blur);
+    }
+}
+
+impl Brush for BlurBrush {
+    fn draw(&self, dst: &Layer, pipeline: &mut LayerDrawPipeline, target: Draw) {
+        pipeline.draw(dst, self, target);
     }
 }
 

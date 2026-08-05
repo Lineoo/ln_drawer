@@ -3,7 +3,10 @@ use ln_world::Element;
 use palette::Srgba;
 
 use crate::{
-    layer::brush::{Brush, Draw, param::BrushParam},
+    layer::{
+        Layer,
+        brush::{Brush, BrushInner, Draw, LayerDrawPipeline, param::BrushParam},
+    },
     measures::{FI64Ext, Rectangle},
 };
 
@@ -28,7 +31,7 @@ pub struct RoundDraw {
     pub _pad: u32,
 }
 
-impl Brush for RoundBrush {
+impl BrushInner for RoundBrush {
     type Draw = RoundDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
@@ -47,7 +50,7 @@ impl Brush for RoundBrush {
         draw.size / 5.0
     }
 
-    fn dirty(draw: Self::Draw) -> Rectangle {
+    fn dirty(&self, draw: Self::Draw) -> Rectangle {
         Rectangle::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
     }
 
@@ -64,6 +67,12 @@ impl Brush for RoundBrush {
             true => cpass.set_pipeline(&pipeline.pipelines.round_erase),
             false => cpass.set_pipeline(&pipeline.pipelines.round_over),
         }
+    }
+}
+
+impl Brush for RoundBrush {
+    fn draw(&self, dst: &Layer, pipeline: &mut LayerDrawPipeline, target: Draw) {
+        pipeline.draw(dst, self, target);
     }
 }
 

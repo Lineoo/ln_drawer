@@ -64,18 +64,22 @@ pub struct Draw {
     pub force: f32,
 }
 
-struct Stroke {
+pub struct Stroke {
     dirty: Rectangle,
     chunks: Vec<super::ChunkKey>,
     replace: bool,
 }
 
 pub trait Brush {
+    fn draw(&self, dst: &Layer, pipeline: &mut LayerDrawPipeline, target: Draw);
+}
+
+pub trait BrushInner {
     type Draw: Clone + Copy + Pod + Zeroable;
 
     fn process(&self, draw: Draw) -> Self::Draw;
     fn step(&self, draw: Self::Draw) -> f32;
-    fn dirty(draw: Self::Draw) -> Rectangle;
+    fn dirty(&self, draw: Self::Draw) -> Rectangle;
 
     /// - Normal Mode:
     ///     - Destination texture start with __transparent texture__.
@@ -159,7 +163,7 @@ impl LayerDrawPipeline {
     }
 
     /// CPU-end draw process
-    pub fn draw<T: Brush>(&mut self, dst: &Layer, brush: &T, target: Draw) {
+    pub fn draw<T: BrushInner>(&mut self, dst: &Layer, brush: &T, target: Draw) {
         let mut draws = Vec::new();
 
         let prev = self.prev.unwrap_or_else(|| {
@@ -189,7 +193,7 @@ impl LayerDrawPipeline {
 
         let mut dirty = Rectangle::new_half(target.position.q32_as_i32(), UVec2::ZERO);
         for &draw in &draws {
-            dirty = dirty.grow(T::dirty(draw));
+            dirty = dirty.grow(brush.dirty(draw));
         }
 
         self.prev = Some(curr);
