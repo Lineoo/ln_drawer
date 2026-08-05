@@ -6,14 +6,29 @@ use ln_world::{Descriptor, Handle, World};
 use palette::{Hsla, IntoColor, RgbHue, Srgba};
 
 use crate::{
-    layer::wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper}, layout::{
+    layer::wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
+    layout::{
         luni::{
             LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
             LuniRect,
         },
         transform::{Transform, TransformEdge, TransformValue},
-    }, measures::{Axis, Rectangle}, render::rounded::{RoundedRect, RoundedRectDescriptor}, theme::Theme, widgets::{
-        SetWidgetRectangle, SetWidgetVisible, button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton}, echo::EchoWidget, palette::hsl::{PaletteHsl, PaletteHsla}, panel::Panel, renderer::{svg::svg_render, text::{SetText, Text}}, slider::{SetSliderValue, Slider, SliderLabel, SliderValue}, tabs::Tabs,
+    },
+    measures::{Axis, Rectangle},
+    render::rounded::{RoundedRect, RoundedRectDescriptor},
+    theme::Theme,
+    widgets::{
+        SetWidgetRectangle, SetWidgetVisible,
+        button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
+        echo::EchoWidget,
+        palette::hsl::{PaletteHsl, PaletteHsla},
+        panel::Panel,
+        renderer::{
+            svg::svg_render,
+            text::{SetText, Text},
+        },
+        slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
+        tabs::Tabs,
     },
 };
 
