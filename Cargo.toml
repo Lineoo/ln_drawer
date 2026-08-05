@@ -9,6 +9,10 @@ edition = "2024"
 git = "https://github.com/Lineoo/winit/"
 branch = "ln_drawer"
 
+[patch.crates-io.wgpu]
+git = "https://github.com/Lineoo/wgpu/"
+branch = "fence-fix"
+
 [profile.release]
 strip = "symbols"
 lto = "thin"

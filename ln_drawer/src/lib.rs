@@ -1,10 +1,10 @@
 pub mod animation;
+pub mod layer;
 pub mod layout;
 pub mod lnwin;
 pub mod measures;
 pub mod render;
 pub mod save;
-pub mod stroke;
 pub mod theme;
 pub mod tools;
 pub mod widgets;

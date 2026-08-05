@@ -49,9 +49,9 @@ pub struct RectangleMesh<M: RectangleMeshMaterial> {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct RectangleUniform {
-    origin: [i32; 2],
-    extend: [u32; 2],
+pub struct RectangleUniform {
+    pub origin: [i32; 2],
+    pub extend: [u32; 2],
 }
 
 impl<M: RectangleMeshMaterial> RectangleMesh<M> {
@@ -98,7 +98,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(M::label()),
-            bind_group_layouts: &[&camera.layout, &bind],
+            bind_group_layouts: &[Some(&camera.layout), Some(&bind)],
             immediate_size: 0,
         });
 
@@ -183,14 +183,20 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
         let control = world.insert(RenderControl {
             prepare: None,
-            draw: Some(Box::new(move |world, rpass| {
+            draw: Some(Box::new(move |world, rpass, extra| {
                 let pipeline = world.single_fetch::<RectangleMeshPipeline<M>>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
+
+                let key = format!("main > rectangle > {}", M::label());
+                let (start, end) = extra.diagnosis.assign_string(key);
+                extra.diagnosis.write(rpass, start);
 
                 rpass.set_pipeline(&pipeline.pipeline);
                 rpass.set_bind_group(0, &camera.bind, &[]);
                 rpass.set_bind_group(1, &bind, &[]);
                 rpass.draw(0..4, 0..1);
+
+                extra.diagnosis.write(rpass, end);
             })),
         });
 

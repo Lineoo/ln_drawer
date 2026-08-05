@@ -7,7 +7,7 @@ use std::{
 };
 
 use ln_world::{Element, Handle, World, WorldError};
-use redb::{Database, ReadableTable, TableDefinition, WriteTransaction};
+use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition, WriteTransaction};
 
 #[cfg(target_os = "android")]
 use crate::lnwin::LnAndroid;
@@ -38,9 +38,14 @@ pub struct SaveDatabase(pub Arc<Database>);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, bytemuck::AnyBitPattern, bytemuck::NoUninit)]
-struct SaveMetadata0 {
+pub struct SaveMetadata0 {
     /// See [`FORMAT_VERSION`]
-    version: u32,
+    pub version: u32,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct SaveMetadata1 {
+    pub compact_on_startup: bool,
 }
 
 impl SaveDatabase {
@@ -50,15 +55,15 @@ impl SaveDatabase {
             return;
         };
 
-        let target = get_file_path(world, "world.lndb");
-        std::fs::create_dir_all(&target.parent().unwrap()).unwrap();
-        SaveDatabase::create_backup(&target);
-        if let Ok(db) = Database::open(&target) {
-            SaveDatabase::touch(&db).unwrap();
+        let file = get_file_path(world, "world.lndb");
+        std::fs::create_dir_all(&file.parent().unwrap()).unwrap();
+        SaveDatabase::create_backup(&file, "old", true, BACKUP_SLOT);
+        if let Ok(mut db) = Database::open(&file) {
+            SaveDatabase::touch(&mut db, &file).unwrap();
             world.insert(SaveDatabase(Arc::new(db)));
             log::debug!("database loaded");
         } else {
-            let db = Database::create(&target).unwrap();
+            let db = Database::create(&file).unwrap();
             SaveDatabase::fresh(&db).unwrap();
             world.insert(SaveDatabase(Arc::new(db)));
             log::debug!("database created");
@@ -72,7 +77,11 @@ impl SaveDatabase {
     fn fresh(db: &Database) -> Result<(), redb::Error> {
         let write = db.begin_write()?;
 
-        Self::update_metadata(&write)?;
+        let mut metadata = write.open_table(TABLE_METADATA)?;
+        metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
+        let meta1 = postcard::to_stdvec(&SaveMetadata1::default_value()).unwrap();
+        metadata.insert(1, &meta1[..])?;
+        drop(metadata);
 
         write.commit()?;
         Ok(())
@@ -80,27 +89,23 @@ impl SaveDatabase {
 
     /// Touch a existed database, including updating necessary timestamps,
     /// validation, and most of all migration data from older versions.
-    fn touch(db: &Database) -> Result<(), redb::Error> {
+    fn touch(db: &mut Database, file: &Path) -> Result<(), redb::Error> {
         let write = db.begin_write()?;
-
-        Self::migrate_format(&write)?;
-        Self::update_metadata(&write)?;
-
+        Self::migrate_format(&write, file)?;
         write.commit()?;
+
+        Self::perform_compact(db)?;
+
         Ok(())
     }
 
-    fn update_metadata(write: &WriteTransaction) -> Result<(), redb::Error> {
+    fn migrate_format(write: &WriteTransaction, file: &Path) -> Result<(), redb::Error> {
         let mut metadata = write.open_table(TABLE_METADATA)?;
-        metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
-        Ok(())
-    }
 
-    fn migrate_format(write: &WriteTransaction) -> Result<(), redb::Error> {
-        let metadata = write.open_table(TABLE_METADATA)?;
         let access0 = metadata.get(0)?.unwrap();
         let meta0 = *bytemuck::from_bytes::<SaveMetadata0>(access0.value());
         let from_format = meta0.version;
+        drop(access0);
 
         if meta0.version > FORMAT_VERSION {
             panic!("cannot open database from newer version {}", meta0.version);
@@ -108,6 +113,7 @@ impl SaveDatabase {
             return Ok(());
         }
 
+        SaveDatabase::create_backup(file, "migration", false, 256);
         log::info!("start migration from {from_format} to {FORMAT_VERSION}");
 
         for migrate_format in from_format..FORMAT_VERSION {
@@ -120,31 +126,67 @@ impl SaveDatabase {
             log::info!("finish migration from {migrate_format}");
         }
 
+        // update metadata
+        metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
+
         log::info!("migration all finished");
         Ok(())
     }
 
-    fn create_backup(target: &Path) {
-        let Ok(true) = std::fs::exists(target) else {
+    fn perform_compact(db: &mut Database) -> Result<(), redb::Error> {
+        let read = db.begin_read()?;
+        let metadata = read.open_table(TABLE_METADATA)?;
+        let access = metadata.get(1)?;
+        drop(metadata);
+        drop(read);
+
+        if let Some(access) = access
+            && let Ok(meta1) = postcard::from_bytes::<SaveMetadata1>(access.value())
+            && meta1.compact_on_startup
+        {
+            log::debug!("database compact started");
+            let result = db.compact()?;
+            log::debug!("database compact finished, result: {result}");
+        }
+
+        let write = db.begin_write()?;
+        let mut metadata = write.open_table(TABLE_METADATA)?;
+
+        // update metadata
+        let meta1 = postcard::to_stdvec(&SaveMetadata1::default_value()).unwrap();
+        metadata.insert(1, &meta1[..])?;
+
+        drop(metadata);
+        write.commit()?;
+
+        Ok(())
+    }
+
+    fn create_backup(file: &Path, key: &'static str, skippable: bool, slot: u32) {
+        let Ok(true) = std::fs::exists(file) else {
             return;
         };
 
-        let mut backup = PathBuf::new();
         let mut temp = PathBuf::new();
-        let mut oldest = Duration::ZERO;
-        let mut newest = Duration::ZERO;
-        for i in 0..BACKUP_SLOT {
+        let mut backup = PathBuf::new();
+        let mut oldest_backup = PathBuf::new();
+        let mut newest_backup = PathBuf::new();
+        let mut oldest = None;
+        let mut newest = None;
+        for i in 0..slot {
             temp.clear();
-            temp.push(target);
+            temp.push(file);
             temp.add_extension(&i.to_string());
-            temp.add_extension("old");
+            temp.add_extension(key);
 
             let Ok(metadata) = std::fs::metadata(&temp) else {
+                log::debug!("backup slot {temp:?} is empty");
                 backup.clone_from(&temp);
                 break;
             };
 
             let Ok(modified) = metadata.modified() else {
+                log::debug!("cannot reach metadata of {temp:?}");
                 backup.clone_from(&temp);
                 break;
             };
@@ -153,22 +195,45 @@ impl SaveDatabase {
                 .duration_since(modified)
                 .unwrap_or_default();
 
-            if duration > oldest {
+            if oldest.is_none_or(|it| duration > it) {
                 backup.clone_from(&temp);
-                oldest = duration;
+                oldest_backup.clone_from(&temp);
+                oldest = Some(duration);
             }
 
-            if duration < newest {
-                newest = duration;
+            if newest.is_none_or(|it| duration < it) {
+                newest_backup.clone_from(&temp);
+                newest = Some(duration);
             }
         }
 
-        if newest < BACKUP_MINIMUM_DURATION {
+        log::debug!("newest {newest_backup:?} {newest:?}");
+        log::debug!("oldest {oldest_backup:?} {oldest:?}");
+
+        if skippable && newest.is_some_and(|it| it < BACKUP_MINIMUM_DURATION) {
+            log::debug!("backup skipped: very recent backup file");
             return;
         }
 
         log::debug!("backup file is written to {backup:?}");
-        std::fs::copy(target, backup).unwrap();
+        std::fs::copy(file, backup).unwrap();
+    }
+
+    pub fn write_compact(db: &Database) -> Result<(), redb::Error> {
+        let write = db.begin_write()?;
+        let mut metadata = write.open_table(TABLE_METADATA)?;
+
+        // update metadata
+        let meta1 = postcard::to_stdvec(&SaveMetadata1 {
+            compact_on_startup: true,
+        })
+        .unwrap();
+        metadata.insert(1, &meta1[..])?;
+
+        drop(metadata);
+        write.commit()?;
+
+        Ok(())
     }
 }
 
@@ -176,6 +241,14 @@ impl SaveMetadata0 {
     const fn current_version() -> Self {
         SaveMetadata0 {
             version: FORMAT_VERSION,
+        }
+    }
+}
+
+impl SaveMetadata1 {
+    const fn default_value() -> Self {
+        SaveMetadata1 {
+            compact_on_startup: false,
         }
     }
 }

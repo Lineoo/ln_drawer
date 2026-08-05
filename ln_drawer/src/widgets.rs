@@ -1,50 +1,21 @@
-use ::palette::Hsla;
-
 use crate::measures::Rectangle;
 
 pub mod button;
+pub mod echo;
 pub mod palette;
 pub mod panel;
 pub mod renderer;
+pub mod shaders;
 pub mod slider;
+pub mod tabs;
 
-/// Send when widget's hovering status is changed.
 pub enum WidgetHover {
-    HoverEnter,
-    HoverLeave,
+    Enter,
+    Leave,
 }
 
-/// Send when widget's status as a button is changed.
-pub enum WidgetButton {
-    ButtonPress,
-    ButtonRelease,
-}
-
-pub struct WidgetUpdate;
-
-/// Send when widget is clicked.
-pub struct WidgetClick;
-
-/// Send when widget's selection is changed.
-pub struct WidgetSelect(pub Option<i32>);
-
-/// Send when widget's rectangle data is changed.
 pub struct WidgetRectangle(pub Rectangle);
+pub struct WidgetVisible(pub bool);
 
-/// Send when widget's rectangle data is changed which needs to be animated.
-pub struct WidgetAnimatedRectangle(pub Rectangle);
-
-/// Send when widget's checked data is changed.
-pub struct WidgetChecked(pub bool);
-
-/// Send when widget's color data formatted in hsl is changed.
-pub struct WidgetHsla(pub Hsla);
-
-/// Send when widget is folded or expanded.
-pub struct WidgetExpanded(pub bool);
-
-/// Send when widget is enabled or disabled.
-pub struct WidgetEnabled(pub bool);
-
-/// Send when widget is about to be removed.
-pub struct WidgetDestroyed;
+pub struct SetWidgetRectangle(pub Rectangle);
+pub struct SetWidgetVisible(pub bool);

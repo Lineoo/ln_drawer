@@ -1,4 +1,4 @@
-// include! colorspace
+// include! colorspace constant
 
 struct PaletteHsl {
     band_width: f32,
@@ -10,10 +10,6 @@ struct PaletteHsl {
 };
 
 @group(1) @binding(1) var<uniform> palette: PaletteHsl;
-
-const TAU: f32 = 6.28318530717958647692528676655900577;
-const WHITE: vec4f = vec4f(1);
-const BLACK: vec4f = vec4f(vec3f(0), 1);
 
 struct VertexOutput {
     @builtin(position) pos: vec4f,

@@ -1,1 +1,3 @@
-pub mod grid;
+pub mod canvas;
+pub mod svg;
+pub mod text;

@@ -2,6 +2,8 @@ use std::{fmt, ops};
 
 use glam::{IVec2, UVec2};
 
+use crate::measures::Axis;
+
 #[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rectangle {
     pub origin: IVec2,
@@ -67,6 +69,13 @@ impl Rectangle {
         Rectangle {
             origin: IVec2::new(left.min(right), down.min(up)),
             extend: UVec2::new((right - left).unsigned_abs(), (up - down).unsigned_abs()),
+        }
+    }
+
+    pub fn new_extend(left: i32, down: i32, width: u32, height: u32) -> Rectangle {
+        Rectangle {
+            origin: IVec2::new(left, down),
+            extend: UVec2::new(width, height),
         }
     }
 
@@ -177,13 +186,21 @@ impl Rectangle {
     }
 
     #[inline]
+    pub const fn center(self) -> IVec2 {
+        self.origin.wrapping_add(IVec2::new(
+            self.extend.x as i32 / 2,
+            self.extend.y as i32 / 2,
+        ))
+    }
+
+    #[inline]
     pub const fn horizontal_center(self) -> i32 {
-        self.origin.x + self.extend.x as i32 / 2
+        self.origin.x.wrapping_add(self.extend.x as i32 / 2)
     }
 
     #[inline]
     pub const fn vertical_center(self) -> i32 {
-        self.origin.y + self.extend.y as i32 / 2
+        self.origin.y.wrapping_add(self.extend.y as i32 / 2)
     }
 
     pub fn expand(self, val: i32) -> Rectangle {
@@ -211,5 +228,41 @@ impl Rectangle {
     pub fn contains(self, p: IVec2) -> bool {
         let delta = p.wrapping_sub(self.origin).as_uvec2();
         delta.x < self.extend.x && delta.y < self.extend.y
+    }
+
+    pub fn axis_new(start: i32, right: i32, end: i32, left: i32, axis: Axis) -> Rectangle {
+        match axis {
+            Axis::Right => Rectangle::new(start, right, end, left),
+            Axis::Down => Rectangle::new(right, end, left, start),
+            Axis::Left => Rectangle::new(end, left, start, right),
+            Axis::Up => Rectangle::new(left, start, right, end),
+        }
+    }
+
+    pub fn axis_start(self, axis: Axis) -> i32 {
+        self.axis_end(axis.flip())
+    }
+
+    pub fn axis_end(self, axis: Axis) -> i32 {
+        match axis {
+            Axis::Left => self.left(),
+            Axis::Down => self.down(),
+            Axis::Right => self.right(),
+            Axis::Up => self.up(),
+        }
+    }
+
+    pub fn axis_length(self, axis: Axis) -> u32 {
+        match axis.is_horizontal() {
+            true => self.width(),
+            false => self.height(),
+        }
+    }
+
+    pub fn axis_center(self, axis: Axis) -> i32 {
+        match axis.is_horizontal() {
+            true => self.horizontal_center(),
+            false => self.vertical_center(),
+        }
     }
 }

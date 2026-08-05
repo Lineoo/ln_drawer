@@ -5,10 +5,10 @@ use wgpu::*;
 use crate::{
     measures::Rectangle,
     render::{
-        MSAA_STATE, Render, RenderControl,
+        MSAA_STATE, Render, RenderControl, RenderExtra,
         camera::{Camera, CameraBind},
     },
-    widgets::{WidgetEnabled, WidgetRectangle},
+    widgets::{SetWidgetRectangle, SetWidgetVisible},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -20,6 +20,7 @@ pub struct RoundedRectDescriptor {
     pub shadow_blur: f32,
     pub shrink: f32,
     pub value: f32,
+    // TODO vertex_extend = theme.shadow_blur.ceil() as i32 + theme.shadow_offset.abs().max_element().ceil() as i32
     pub vertex_extend: i32,
     pub visible: bool,
     pub order: isize,
@@ -96,7 +97,7 @@ impl RoundedRect {
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("rounded"),
-            bind_group_layouts: &[&camera.layout, &bind],
+            bind_group_layouts: &[Some(&camera.layout), Some(&bind)],
             immediate_size: 0,
         });
 
@@ -158,14 +159,11 @@ impl RoundedRect {
 
         let control = world.insert(RenderControl {
             prepare: None,
-            draw: Some(Box::new(move |world, rpass| {
-                let manager = world.single_fetch::<RoundedRectPipeline>().unwrap();
+            draw: Some(Box::new(move |world, rpass, mut extra| {
+                let pipeline = world.single_fetch::<RoundedRectPipeline>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
 
-                rpass.set_pipeline(&manager.pipeline);
-                rpass.set_bind_group(0, &camera.bind, &[]);
-                rpass.set_bind_group(1, &bind, &[]);
-                rpass.draw(0..4, 0..1);
+                Self::render(&bind, rpass, &mut extra, &pipeline, &camera);
             })),
         });
 
@@ -177,6 +175,24 @@ impl RoundedRect {
             uniform,
             queue: render.queue.clone(),
         }
+    }
+
+    fn render(
+        bind: &BindGroup,
+        rpass: &mut RenderPass,
+        extra: &mut RenderExtra,
+        pipeline: &RoundedRectPipeline,
+        camera: &Camera,
+    ) {
+        let (start, end) = extra.diagnosis.assign("main > rounded");
+        extra.diagnosis.write(rpass, start);
+
+        rpass.set_pipeline(&pipeline.pipeline);
+        rpass.set_bind_group(0, &camera.bind, &[]);
+        rpass.set_bind_group(1, bind, &[]);
+        rpass.draw(0..4, 0..1);
+
+        extra.diagnosis.write(rpass, end);
     }
 
     fn reorder(&mut self, world: &World) {
@@ -221,12 +237,12 @@ impl Element for RoundedRect {
         self.reorder(world);
         world.dependency(self.control, this);
 
-        world.observer(this, move |&WidgetRectangle(rect), world| {
+        world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.desc.rect = rect;
         });
 
-        world.observer(this, move |&WidgetEnabled(enabled), world| {
+        world.observer(this, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.desc.visible = enabled;
         });

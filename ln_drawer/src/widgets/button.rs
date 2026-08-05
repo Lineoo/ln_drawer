@@ -1,47 +1,46 @@
+use std::sync::Arc;
+
 use glam::{DVec2, Vec2};
-use ln_world::{Element, Handle, World};
+use image::DynamicImage;
+use ln_world::{Descriptor, Element, Handle, World};
 use palette::Srgba;
 
 use crate::{
-    animation::{
-        AnimationDescriptor, AnimationType, AnimationValue, SetAnimationDst,
-        SimpleAnimationDescriptor,
-    },
-    layout::transform::{Transform, TransformValue},
+    animation::{DirectAnimation, SetAnimationDst},
+    layout::transform::TransformValue,
     measures::Rectangle,
-    render::{canvas::CanvasDescriptor, rounded::RoundedRectDescriptor},
+    render::rounded::RoundedRectDescriptor,
+    theme::Theme,
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{WidgetButton, WidgetClick, WidgetEnabled, WidgetHover, WidgetRectangle},
+    widgets::{
+        SetWidgetRectangle, SetWidgetVisible, WidgetHover,
+        renderer::canvas::{Canvas, SetCanvasColor},
+    },
 };
 
-pub struct Button {
+pub struct ToggleButton {
     pub rect: Rectangle,
-    pub rect_transition: bool,
-    pub enabled: bool,
-    pub attach_pointer: bool,
-    pub checked: bool,
-    pub order: isize,
-    pub color: Srgba,
-    pub active_color: Srgba,
-    pub press_color: Srgba,
-    pub roundness: f32,
-    pub shadow_color: Srgba,
-    pub shadow_offset: Vec2,
-    pub shadow_blur: f32,
-    pub press_roundness: f32,
-    pub anim_factor: f32,
-    pub anim_factor_menu: f32,
-    pub pad: i32,
+    pub theme: ToggleButtonTheme,
     pub image: Option<ButtonImage>,
+    pub selected: bool,
+    pub visible: bool,
+    pub hovering: bool,
 }
 
-#[derive(Clone, Copy)]
+pub struct ToggleButtonTheme {
+    pub idle_color: Srgba,
+    pub hover_color: Srgba,
+    pub press_color: Srgba,
+    pub selected_color: Srgba,
+}
+
+#[derive(Clone)]
 pub struct ButtonImage {
     pub transform: TransformValue,
-    pub bytes: &'static [u8],
+    pub bytes: Arc<DynamicImage>,
 }
 
 pub struct ButtonDrag {
@@ -50,13 +49,17 @@ pub struct ButtonDrag {
     pub status: ButtonDragStatus,
 }
 
-pub struct ButtonChecked(pub bool);
-pub struct ButtonColor(pub Srgba);
-pub struct ButtonAnim {
-    pub src: Rectangle,
-    pub dst: Rectangle,
-    pub hidden_after_finished: bool,
+pub struct ButtonClick;
+
+pub enum ButtonAction {
+    Press,
+    Release,
 }
+
+pub struct ButtonSelected(pub bool);
+pub struct SetButtonSelected(pub bool);
+
+pub struct SetButtonIconColor(pub Srgba);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ButtonDragStatus {
@@ -65,152 +68,101 @@ pub enum ButtonDragStatus {
     End,
 }
 
-impl Button {
-    fn attach_render(&mut self, world: &World, this: Handle<Self>) {
-        // display
+impl ToggleButton {
+    pub fn build(self, world: &World) -> Handle<ToggleButton> {
+        let theme = world.single_fetch::<Theme>().unwrap();
 
         let frame = world.build(RoundedRectDescriptor {
             rect: self.rect,
-            color: self.color,
-            shadow_color: self.shadow_color,
-            shadow_offset: self.shadow_offset,
-            shadow_blur: self.shadow_blur,
-            shrink: self.roundness,
-            value: self.roundness,
-            vertex_extend: 20,
-            visible: self.enabled,
-            order: self.order,
+            color: self.theme.idle_color,
+            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+            shadow_offset: Vec2::ZERO,
+            shadow_blur: 0.0,
+            shrink: theme.roundness,
+            value: theme.roundness,
+            vertex_extend: 0,
+            visible: self.visible,
+            order: 10,
         });
 
-        let frame_rect = world.build(SimpleAnimationDescriptor {
-            animation: AnimationDescriptor::new(
-                [
-                    self.rect.left() as f32,
-                    self.rect.down() as f32,
-                    self.rect.right() as f32,
-                    self.rect.up() as f32,
-                ],
-                self.anim_factor,
-            ),
+        let frame_anim_color = world.build(DirectAnimation {
+            init: theme.primary_color,
+            factor: theme.anim_factor,
             widget: frame,
-            action: move |_, world, rect| {
-                world.queue_trigger(
-                    this,
-                    WidgetRectangle(Rectangle::new(
-                        rect[0].round() as i32,
-                        rect[1].round() as i32,
-                        rect[2].round() as i32,
-                        rect[3].round() as i32,
-                    )),
-                );
-            },
+            access: |frame| &mut frame.desc.color,
         });
 
-        let frame_anim_color = world.build(AnimationDescriptor::new(self.color, self.anim_factor));
-
-        world.observer(frame_anim_color, move |&AnimationValue(value), world| {
-            let mut frame = world.fetch_mut(frame).unwrap();
-            frame.desc.color = value;
-        });
-
-        // dependency
-
-        world.dependency(frame, this);
-        world.dependency(frame_anim_color, this);
-
-        // behavior
-
-        world.observer(this, move |&ButtonChecked(checked), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.checked = checked;
-            match checked {
-                true => world.trigger(frame_anim_color, &SetAnimationDst(this.press_color)),
-                false => world.trigger(frame_anim_color, &SetAnimationDst(this.color)),
-            };
-        });
-
-        world.observer(this, move |event: &WidgetHover, world| {
-            let this = world.fetch(this).unwrap();
-            if this.checked {
-                return;
-            }
-            match event {
-                WidgetHover::HoverEnter => {
-                    world.trigger(frame_anim_color, &SetAnimationDst(this.active_color))
-                }
-                WidgetHover::HoverLeave => {
-                    world.trigger(frame_anim_color, &SetAnimationDst(this.color))
-                }
-            };
-        });
-
-        world.observer(this, move |&ButtonColor(color), world| {
-            let mut frame_anim_color = world.fetch_mut(frame_anim_color).unwrap();
-            frame_anim_color.src = color.into_storage();
-            frame_anim_color.dst = color.into_storage();
-        });
-
-        world.observer(this, move |event: &WidgetButton, world| {
-            let this = world.fetch(this).unwrap();
-            if this.checked {
-                return;
-            }
-            match event {
-                WidgetButton::ButtonPress => {
-                    world.trigger(frame_anim_color, &SetAnimationDst(this.press_color))
-                }
-                WidgetButton::ButtonRelease => {
-                    world.trigger(frame_anim_color, &SetAnimationDst(this.active_color))
-                }
-            };
-        });
-
-        world.observer(this, move |&WidgetRectangle(rect), world| {
-            let mut frame = world.fetch_mut(frame).unwrap();
-            frame.desc.rect = rect;
-        });
-
-        world.observer(this, move |anim: &ButtonAnim, world| {
-            let this = world.fetch(this).unwrap();
-            if !this.rect_transition {
-                return;
-            }
-
-            let mut frame_rect = world.fetch_mut(frame_rect).unwrap();
-            let src = [
-                anim.src.left() as f32,
-                anim.src.down() as f32,
-                anim.src.right() as f32,
-                anim.src.up() as f32,
-            ];
-            let dst = [
-                anim.dst.left() as f32,
-                anim.dst.down() as f32,
-                anim.dst.right() as f32,
-                anim.dst.up() as f32,
-            ];
-
-            frame_rect.src = src;
-            frame_rect.dst = dst;
-        });
-
-        world.observer(this, move |&WidgetEnabled(enabled), world| {
-            let mut frame = world.fetch_mut(frame).unwrap();
-            frame.desc.visible = enabled;
-        });
-    }
-
-    fn attach_pointer(&mut self, world: &World, this: Handle<Self>) {
         let collider = world.insert(ToolCollider {
             rect: self.rect,
-            order: self.order,
-            enabled: self.enabled,
+            order: 10,
+            enabled: self.visible,
         });
 
-        world.insert(Transform {
-            value: TransformValue::copy(),
-            source: this.untyped(),
-            target: collider.untyped(),
+        let canvas = if let Some(image) = &self.image {
+            let data = image.bytes.to_rgba8();
+            let canvas = world.insert(Canvas {
+                data_width: data.width(),
+                data_height: data.height(),
+                rect: image.transform.compute(self.rect),
+                order: 11,
+                visible: self.visible,
+                data: data.into_raw(),
+                color: theme.symbolic_color,
+            });
+            Some(canvas)
+        } else {
+            None
+        };
+
+        let handle = world.insert(self);
+
+        world.observer(handle, move |&SetButtonSelected(selected), world| {
+            let mut this = world.fetch_mut(handle).unwrap();
+            this.selected = selected;
+            if selected {
+                world.trigger(
+                    frame_anim_color,
+                    &SetAnimationDst(this.theme.selected_color),
+                );
+            } else if this.hovering {
+                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.hover_color));
+            } else {
+                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.idle_color));
+            }
+        });
+
+        world.observer(handle, move |&SetWidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(handle).unwrap();
+            let mut frame = world.fetch_mut(frame).unwrap();
+            let mut collider = world.fetch_mut(collider).unwrap();
+            this.rect = rect;
+            frame.desc.rect = rect;
+            collider.rect = rect;
+
+            if let Some(canvas) = canvas
+                && let Some(image) = &this.image
+            {
+                world.queue_trigger(canvas, SetWidgetRectangle(image.transform.compute(rect)));
+            }
+        });
+
+        world.observer(handle, move |&SetWidgetVisible(visible), world| {
+            let mut this = world.fetch_mut(handle).unwrap();
+            let mut frame = world.fetch_mut(frame).unwrap();
+            let mut collider = world.fetch_mut(collider).unwrap();
+            this.visible = visible;
+            frame.desc.visible = visible;
+            collider.enabled = visible;
+
+            if let Some(canvas) = canvas {
+                world.queue_trigger(canvas, SetWidgetVisible(visible));
+            }
+        });
+
+        world.observer(handle, move |&SetButtonIconColor(color), world| {
+            if let Some(canvas) = canvas {
+                world.queue_trigger(canvas, SetCanvasColor(color));
+            }
         });
 
         let mut drag_start = None;
@@ -220,7 +172,7 @@ impl Button {
 
             match event.status {
                 PointerHitStatus::Press => {
-                    world.trigger(this, &WidgetButton::ButtonPress);
+                    world.trigger(handle, &ButtonAction::Press);
                     drag_start = Some(*event);
                     dragging = false;
                 }
@@ -233,7 +185,7 @@ impl Button {
                         {
                             dragging = true;
                             world.trigger(
-                                this,
+                                handle,
                                 &ButtonDrag {
                                     from: start,
                                     here: *event,
@@ -242,7 +194,7 @@ impl Button {
                             );
                         } else if dragging {
                             world.trigger(
-                                this,
+                                handle,
                                 &ButtonDrag {
                                     from: start,
                                     here: *event,
@@ -254,10 +206,12 @@ impl Button {
                 }
                 PointerHitStatus::Release => {
                     if !dragging {
-                        world.trigger(this, &WidgetClick);
+                        let this = world.fetch(handle).unwrap();
+                        world.queue_trigger(handle, ButtonClick);
+                        world.queue_trigger(handle, ButtonSelected(!this.selected));
                     } else if let Some(start) = drag_start {
                         world.trigger(
-                            this,
+                            handle,
                             &ButtonDrag {
                                 from: start,
                                 here: *event,
@@ -266,7 +220,7 @@ impl Button {
                         );
                     }
 
-                    world.trigger(this, &WidgetButton::ButtonRelease);
+                    world.trigger(handle, &ButtonAction::Release);
                     drag_start = None;
                     dragging = false;
                 }
@@ -274,89 +228,56 @@ impl Button {
         });
 
         world.observer(collider, move |event: &PointerHover, world| {
+            let mut this = world.fetch_mut(handle).unwrap();
             match event.status {
                 PointerHoverStatus::Enter => {
-                    world.trigger(this, &WidgetHover::HoverEnter);
+                    this.hovering = true;
+                    world.queue_trigger(handle, WidgetHover::Enter);
                 }
                 PointerHoverStatus::Leave => {
-                    world.trigger(this, &WidgetHover::HoverLeave);
+                    this.hovering = false;
+                    world.queue_trigger(handle, WidgetHover::Leave);
                 }
                 _ => {}
             }
         });
 
-        world.observer(this, move |&WidgetEnabled(enabled), world| {
-            let mut collider = world.fetch_mut(collider).unwrap();
-            collider.enabled = enabled;
+        world.observer(handle, move |event: &WidgetHover, world| {
+            let this = world.fetch(handle).unwrap();
+            if this.selected {
+                return;
+            }
+
+            if let WidgetHover::Enter = event {
+                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.hover_color));
+            } else {
+                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.idle_color));
+            }
         });
 
-        world.dependency(collider, this);
+        world.observer(handle, move |event: &ButtonAction, world| {
+            let this = world.fetch(handle).unwrap();
+            if this.selected {
+                return;
+            }
+
+            if let ButtonAction::Press = event {
+                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.press_color));
+            } else if this.hovering {
+                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.hover_color));
+            } else {
+                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.idle_color));
+            }
+        });
+
+        handle
     }
 }
 
-impl Default for Button {
-    fn default() -> Self {
-        Self {
-            rect: Rectangle::new(0, 0, 100, 100),
-            rect_transition: true,
-            enabled: true,
-            attach_pointer: true,
-            checked: false,
-            order: 10,
-            color: Srgba::new(0.949, 0.949, 0.949, 1.0),
-            active_color: Srgba::new(0.898, 0.898, 0.898, 1.0),
-            press_color: Srgba::new(0.722, 0.722, 0.722, 1.0),
-            roundness: 5.0,
-            shadow_color: palette::Srgba::new(0.0, 0.0, 0.0, 0.5),
-            shadow_offset: Vec2::new(0.0, -4.0),
-            shadow_blur: 4.0,
-            press_roundness: 15.0,
-            anim_factor: 30.0,
-            anim_factor_menu: 50.0,
-            pad: 5,
-            image: None,
-        }
-    }
-}
-
-impl Element for Button {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        self.attach_render(world, this);
-        if self.attach_pointer {
-            self.attach_pointer(world, this);
-        }
-
-        if let Some(image) = self.image
-            && let Ok(data) = image::load_from_memory(image.bytes)
-        {
-            let data = data.into_rgba8();
-            let canvas = world.build(CanvasDescriptor {
-                data_width: data.width(),
-                data_height: data.height(),
-                rect: image.transform.compute(self.rect),
-                order: self.order + 1,
-                visible: self.enabled,
-                data: Some(data.into_raw()),
-            });
-
-            world.observer(this, move |&WidgetRectangle(rect), world| {
-                let mut canvas = world.fetch_mut(canvas).unwrap();
-                canvas.rect = image.transform.compute(rect);
-            });
-        }
-
-        world.observer(this, move |&WidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.rect = rect;
-        });
-
-        world.observer(this, move |&WidgetEnabled(enabled), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            this.enabled = enabled;
-        });
-
-        world.queue_trigger(this, WidgetRectangle(self.rect));
-        world.queue_trigger(this, WidgetEnabled(self.enabled));
-        world.queue_trigger(this, ButtonChecked(self.checked));
+impl Element for ToggleButton {}
+impl Descriptor for ToggleButton {
+    type Target = Handle<ToggleButton>;
+    fn when_build(self, world: &World) -> Self::Target {
+        self.build(world)
     }
 }
