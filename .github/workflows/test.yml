@@ -3,8 +3,8 @@ name: Test
 on:
   push:
     branches:
+      - dev
       - master
-      - releases/**
 
 env:
   CARGO_TERM_COLOR: always
