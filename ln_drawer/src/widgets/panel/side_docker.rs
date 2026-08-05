@@ -18,14 +18,13 @@ use crate::{
     save::SaveDatabase,
     theme::Theme,
     widgets::{
-        SetWidgetRectangle,
         button::{
             ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton,
             ToggleButtonTheme,
         },
         panel::{Panel, color_picker::ColorPicker, debug_panel::DebugPanel},
-        renderer::svg::svg_render,
-        slider::{SetSliderValue, Slider, SliderValue},
+        renderer::{svg::svg_render, text::SetText},
+        slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
 };
 
@@ -35,6 +34,7 @@ impl Descriptor for SideDocker {
     fn when_build(self, world: &World) -> Self::Target {
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         let theme = world.single_fetch::<Theme>().unwrap();
+        let layer = world.single::<LayerWrapper>().unwrap();
 
         let side_panel = world.insert(Panel {
             rect: Rectangle::default(),
@@ -96,7 +96,14 @@ impl Descriptor for SideDocker {
             pressed: false,
         });
 
-        let layer = world.single::<LayerWrapper>().unwrap();
+        let slider_label = world.insert(SliderLabel {
+            text: String::new(),
+            clockwise: true,
+            source: slider,
+            hover: false,
+            visible: true,
+        });
+
         world.observer(pen, move |&ButtonClick, world| {
             world.trigger(pen, &SetButtonSelected(true));
             world.trigger(brush, &SetButtonSelected(false));
@@ -181,6 +188,7 @@ impl Descriptor for SideDocker {
                 BrushMode::Blur => layer.blur_brush.size.scale,
             };
             world.trigger(slider, &SetSliderValue(value.log2() / 4. - 0.5));
+            world.queue_trigger(slider_label, SetText(format!("{value:.2} px")));
         });
 
         let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
@@ -283,9 +291,6 @@ impl Descriptor for SideDocker {
             ],
         });
 
-        world.queue_trigger(
-            side_panel,
-            SetWidgetRectangle(Rectangle::new(0, 0, 500, 100)),
-        );
+        world.queue_trigger(layer, BrushConfigurationChanged);
     }
 }

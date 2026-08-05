@@ -6,26 +6,14 @@ use ln_world::{Descriptor, Handle, World};
 use palette::{Hsla, IntoColor, RgbHue, Srgba};
 
 use crate::{
-    layer::wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
-    layout::{
+    layer::wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper}, layout::{
         luni::{
             LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
             LuniRect,
         },
         transform::{Transform, TransformEdge, TransformValue},
-    },
-    measures::{Axis, Rectangle},
-    render::rounded::{RoundedRect, RoundedRectDescriptor},
-    theme::Theme,
-    widgets::{
-        SetWidgetRectangle, SetWidgetVisible,
-        button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
-        echo::EchoWidget,
-        palette::hsl::{PaletteHsl, PaletteHsla},
-        panel::Panel,
-        renderer::{svg::svg_render, text::Text},
-        slider::{SetSliderValue, Slider, SliderValue},
-        tabs::Tabs,
+    }, measures::{Axis, Rectangle}, render::rounded::{RoundedRect, RoundedRectDescriptor}, theme::Theme, widgets::{
+        SetWidgetRectangle, SetWidgetVisible, button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton}, echo::EchoWidget, palette::hsl::{PaletteHsl, PaletteHsla}, panel::Panel, renderer::{svg::svg_render, text::{SetText, Text}}, slider::{SetSliderValue, Slider, SliderLabel, SliderValue}, tabs::Tabs,
     },
 };
 
@@ -183,7 +171,7 @@ fn settings(world: &World, panel: Handle<Panel>) {
     let flow_frame = world.insert(EchoWidget);
     let flow_label = option_label(world, String::new(), flow_frame.untyped());
     let flow_desc = option_desc(world, String::new(), flow_frame.untyped());
-    let flow_slider = option_slider(world, flow_frame.untyped());
+    let (flow_slider, flow_slider_label) = option_slider(world, flow_frame.untyped());
     world.observer(flow_slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         match layer.brush_mode {
@@ -196,7 +184,7 @@ fn settings(world: &World, panel: Handle<Panel>) {
     let softness_frame = world.insert(EchoWidget);
     let softness_label = option_label(world, String::new(), softness_frame.untyped());
     let softness_desc = option_desc(world, String::new(), softness_frame.untyped());
-    let softness_slider = option_slider(world, softness_frame.untyped());
+    let (softness_slider, softness_slider_label) = option_slider(world, softness_frame.untyped());
     world.observer(softness_slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         match layer.brush_mode {
@@ -218,6 +206,7 @@ fn settings(world: &World, panel: Handle<Panel>) {
         };
 
         world.queue_trigger(flow_slider, SetSliderValue(value));
+        world.queue_trigger(flow_slider_label, SetText(format!("{value:.2}")));
 
         let (label, desc) = match layer.brush_mode {
             BrushMode::Round => ("流量", "笔刷每步流量（范围：[0, 1]）"),
@@ -243,6 +232,7 @@ fn settings(world: &World, panel: Handle<Panel>) {
         };
 
         world.queue_trigger(softness_slider, SetSliderValue(value));
+        world.queue_trigger(softness_slider_label, SetText(format!("{value:.2}")));
 
         let (label, desc) = ("硬度", "三次多项式平滑（范围：[0, 1]）");
 
@@ -377,7 +367,7 @@ fn option_desc(world: &World, text: String, option1_frame: Handle) -> Handle<Tex
     label
 }
 
-fn option_slider(world: &World, option1_frame: Handle) -> Handle<Slider> {
+fn option_slider(world: &World, option1_frame: Handle) -> (Handle<Slider>, Handle<SliderLabel>) {
     let slider = world.insert(Slider {
         value: 0.5,
         axis: Axis::Right,
@@ -408,5 +398,13 @@ fn option_slider(world: &World, option1_frame: Handle) -> Handle<Slider> {
         target: slider.untyped(),
     });
 
-    slider
+    let slider_label = world.insert(SliderLabel {
+        text: String::new(),
+        clockwise: false,
+        source: slider,
+        hover: false,
+        visible: true,
+    });
+
+    (slider, slider_label)
 }

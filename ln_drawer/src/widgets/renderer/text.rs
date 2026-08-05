@@ -1,4 +1,4 @@
-use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache};
+use cosmic_text::{Align, Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache};
 use glam::prelude::UVec2;
 use ln_world::{Element, Handle, World};
 use palette::{Srgba, WithAlpha};
@@ -19,6 +19,7 @@ pub struct Text {
     pub rect: Rectangle,
     pub metrics: Metrics,
     pub attrs: Attrs<'static>,
+    pub align: Align,
     pub color: Srgba,
     pub extra_upscale: f32,
     pub order: isize,
@@ -33,6 +34,8 @@ pub struct TextPipeline {
     swash_cache: SwashCache,
 }
 
+pub struct SetText(pub String);
+
 impl Default for Text {
     fn default() -> Self {
         Self {
@@ -40,6 +43,7 @@ impl Default for Text {
             rect: Rectangle::new(0, 0, 200, 24),
             metrics: Metrics::new(24.0, 20.0),
             attrs: Attrs::new(),
+            align: Align::Justified,
             color: Srgba::new(0.0, 0.0, 0.0, 1.0),
             extra_upscale: 1.0,
             order: 100,
@@ -80,11 +84,19 @@ impl Text {
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
-            if this.rect != rect {
+            if this.rect.extend != rect.extend {
                 this.canvas_outdated = true;
             }
             this.rect = rect;
             world.queue_trigger(canvas, SetWidgetRectangle(rect));
+        });
+
+        world.observer(this, move |SetText(text), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            if this.text != *text {
+                this.text.clone_from(text);
+                this.outdated = true;
+            }
         });
 
         self.outdated = true;
@@ -145,7 +157,7 @@ impl Text {
 
         buffer_font.set_metrics(upscale_metrics);
         buffer_font.set_size(Some(width as f32), Some(height as f32));
-        buffer_font.set_text(&self.text, &self.attrs, Shaping::Advanced, None);
+        buffer_font.set_text(&self.text, &self.attrs, Shaping::Advanced, Some(self.align));
         buffer_font.shape_until_scroll(true);
 
         self.draw_buffer(&buffer, canvas, pipeline);

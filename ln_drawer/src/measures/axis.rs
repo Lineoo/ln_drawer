@@ -76,28 +76,28 @@ impl Axis {
         self.positive().flip()
     }
 
-    pub fn horizontal_extend(self, extend: UVec2) -> UVec2 {
+    pub fn horizontal_uvec2(self, extend: UVec2) -> UVec2 {
         match self.is_horizontal() {
             true => extend,
             false => UVec2::new(extend.y, extend.x),
         }
     }
 
-    pub fn vertical_extend(self, extend: UVec2) -> UVec2 {
+    pub fn vertical_uvec2(self, extend: UVec2) -> UVec2 {
         match self.is_vertical() {
             true => extend,
             false => UVec2::new(extend.y, extend.x),
         }
     }
 
-    pub fn horizontal_position(self, position: IVec2) -> IVec2 {
+    pub fn horizontal_ivec2(self, position: IVec2) -> IVec2 {
         match self.is_horizontal() {
             true => position,
             false => IVec2::new(position.y, position.x),
         }
     }
 
-    pub fn vertical_position(self, position: IVec2) -> IVec2 {
+    pub fn vertical_ivec2(self, position: IVec2) -> IVec2 {
         match self.is_vertical() {
             true => position,
             false => IVec2::new(position.y, position.x),

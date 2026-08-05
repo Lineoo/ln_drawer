@@ -186,6 +186,14 @@ impl Rectangle {
     }
 
     #[inline]
+    pub const fn center(self) -> IVec2 {
+        self.origin.wrapping_add(IVec2::new(
+            self.extend.x as i32 / 2,
+            self.extend.y as i32 / 2,
+        ))
+    }
+
+    #[inline]
     pub const fn horizontal_center(self) -> i32 {
         self.origin.x.wrapping_add(self.extend.x as i32 / 2)
     }

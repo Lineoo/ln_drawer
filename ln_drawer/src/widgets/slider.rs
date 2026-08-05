@@ -1,3 +1,4 @@
+use cosmic_text::{Align, Metrics};
 use glam::{IVec2, UVec2, Vec2};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -9,9 +10,12 @@ use crate::{
     theme::Theme,
     tools::{
         collider::ToolCollider,
-        pointer::{PointerHit, PointerHitStatus},
+        pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible},
+    widgets::{
+        SetWidgetRectangle, SetWidgetVisible, WidgetHover,
+        renderer::text::{SetText, Text},
+    },
 };
 
 pub struct SliderValue(pub f32);
@@ -22,6 +26,14 @@ pub struct Slider {
     pub axis: Axis,
     pub rect: Rectangle,
     pub pressed: bool,
+}
+
+pub struct SliderLabel {
+    pub text: String,
+    pub clockwise: bool,
+    pub source: Handle<Slider>,
+    pub hover: bool,
+    pub visible: bool,
 }
 
 impl Slider {
@@ -147,6 +159,14 @@ impl Slider {
             collider.enabled = visible;
         });
 
+        world.observer(collider, move |event: &PointerHover, world| {
+            if let PointerHoverStatus::Enter = event.status {
+                world.queue_trigger(handle, WidgetHover::Enter);
+            } else if let PointerHoverStatus::Leave = event.status {
+                world.queue_trigger(handle, WidgetHover::Leave);
+            }
+        });
+
         world.observer(collider, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(handle).unwrap();
             let theme = world.single_fetch::<Theme>().unwrap();
@@ -226,11 +246,85 @@ impl Slider {
     }
 }
 
+impl SliderLabel {
+    fn init(&self, world: &World, this: Handle<Self>) {
+        let slider = world.fetch(self.source).unwrap();
+        let theme = world.single_fetch::<Theme>().unwrap();
+
+        let position = into_position(slider.rect, slider.axis, slider.value);
+
+        let back = world.build(RoundedRectDescriptor {
+            rect: label_back_rect(slider.rect, slider.axis, self.clockwise, position),
+            color: theme.blank_color,
+            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
+            shadow_offset: Vec2::ZERO,
+            shadow_blur: 0.0,
+            shrink: LABEL_HALF.y as f32,
+            value: LABEL_HALF.y as f32,
+            vertex_extend: 0,
+            visible: self.visible && self.hover,
+            order: 100,
+        });
+
+        let label = world.insert(Text {
+            text: self.text.clone(),
+            order: 150,
+            metrics: Metrics::new(12., 2. * LABEL_HALF.y as f32),
+            align: Align::Center,
+            visible: self.visible && self.hover,
+            ..Default::default()
+        });
+
+        world.observer(self.source, move |event: &WidgetHover, world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.hover = match event {
+                WidgetHover::Enter => true,
+                WidgetHover::Leave => false,
+            };
+            world.queue_trigger(back, SetWidgetVisible(this.hover && this.visible));
+            world.queue_trigger(label, SetWidgetVisible(this.hover && this.visible));
+        });
+
+        world.observer(self.source, move |&SetWidgetRectangle(rect), world| {
+            let this = world.fetch(this).unwrap();
+            let slider = world.fetch(this.source).unwrap();
+            let position = into_position_pressed(rect, slider.axis, slider.value);
+            let rect = label_back_rect(rect, slider.axis, this.clockwise, position);
+            world.queue_trigger(back, SetWidgetRectangle(rect));
+            world.queue_trigger(label, SetWidgetRectangle(rect));
+        });
+
+        world.observer(self.source, move |&SetWidgetVisible(visible), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.visible = visible;
+            world.queue_trigger(back, SetWidgetVisible(this.hover && this.visible));
+            world.queue_trigger(label, SetWidgetVisible(this.hover && this.visible));
+        });
+
+        world.observer(self.source, move |&SetSliderValue(val), world| {
+            let this = world.fetch(this).unwrap();
+            let slider = world.fetch(this.source).unwrap();
+            let position = into_position_pressed(slider.rect, slider.axis, val);
+            let rect = label_back_rect(slider.rect, slider.axis, this.clockwise, position);
+            world.queue_trigger(back, SetWidgetRectangle(rect));
+            world.queue_trigger(label, SetWidgetRectangle(rect));
+        });
+
+        world.observer(this, move |val: &SetText, world| {
+            world.trigger(label, val);
+        });
+
+        world.queue_trigger(this, SetSliderValue(slider.value));
+    }
+}
+
 const BAR_EX: i32 = 5;
 const BAR_HW: i32 = 6;
 const KNOB_SIZE: UVec2 = UVec2::new(8, 16);
 const KNOB_SIZE_PRESSED: UVec2 = UVec2::new(8, 14);
 const KNOB_SPLIT_SIZE: UVec2 = UVec2::new(5, 2);
+const LABEL_GAP: i32 = 2;
+const LABEL_HALF: UVec2 = UVec2::new(30, 12);
 
 fn back_rect(rect: Rectangle, axis: Axis) -> Rectangle {
     front_rect(rect, axis, rect.axis_end(axis))
@@ -252,22 +346,22 @@ fn front_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
 
 fn knob_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
     Rectangle::new_half(
-        axis.vertical_position(IVec2::new(rect.axis_center(axis.rotate()), position)),
-        axis.vertical_extend(KNOB_SIZE),
+        axis.vertical_ivec2(IVec2::new(rect.axis_center(axis.rotate()), position)),
+        axis.vertical_uvec2(KNOB_SIZE),
     )
 }
 
 fn knob_rect_pressed(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
     Rectangle::new_half(
-        axis.vertical_position(IVec2::new(rect.axis_center(axis.rotate()), position)),
-        axis.vertical_extend(KNOB_SIZE_PRESSED),
+        axis.vertical_ivec2(IVec2::new(rect.axis_center(axis.rotate()), position)),
+        axis.vertical_uvec2(KNOB_SIZE_PRESSED),
     )
 }
 
 fn knob_split_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
     Rectangle::new_half(
-        axis.vertical_position(IVec2::new(rect.axis_center(axis.rotate()), position)),
-        axis.vertical_extend(KNOB_SPLIT_SIZE),
+        axis.vertical_ivec2(IVec2::new(rect.axis_center(axis.rotate()), position)),
+        axis.vertical_uvec2(KNOB_SPLIT_SIZE),
     )
 }
 
@@ -300,7 +394,26 @@ fn knob_limit_pressed(rect: Rectangle, axis: Axis) -> (i32, i32) {
     )
 }
 
+fn label_back_rect(rect: Rectangle, axis: Axis, clockwise: bool, position: i32) -> Rectangle {
+    let raxis = match clockwise {
+        true => axis.rotate(),
+        false => axis.rotate_rev(),
+    };
+    let offset = BAR_HW + BAR_EX + LABEL_GAP + axis.horizontal_uvec2(LABEL_HALF).y as i32;
+    Rectangle::new_half(
+        axis.horizontal_ivec2(IVec2::new(position, rect.axis_center(axis.rotate())))
+            + raxis.vertical_ivec2(IVec2::new(0, offset)),
+        LABEL_HALF,
+    )
+}
+
 impl Element for Slider {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        self.init(world, this);
+    }
+}
+
+impl Element for SliderLabel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.init(world, this);
     }
