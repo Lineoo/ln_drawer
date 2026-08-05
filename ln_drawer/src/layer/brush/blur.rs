@@ -5,7 +5,7 @@ use wgpu::ComputePass;
 use crate::{
     layer::{
         Layer,
-        brush::{BrushInner, Brush, Draw, LayerDrawPipeline, param::BrushParam},
+        brush::{Brush, BrushInner, Draw, LayerDrawPipeline, param::BrushParam},
     },
     measures::{FI64Ext, Rectangle},
 };
