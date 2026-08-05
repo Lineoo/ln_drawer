@@ -168,7 +168,7 @@ impl Descriptor for SideDocker {
             let scale = ((value + 0.5) * 4.).exp2();
             match layer.brush_mode {
                 BrushMode::Round => layer.round_brush.size.scale = scale,
-                BrushMode::Blur => layer.round_brush.size.scale = scale,
+                BrushMode::Blur => layer.blur_brush.size.scale = scale,
             }
 
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
