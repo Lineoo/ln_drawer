@@ -19,7 +19,6 @@ use crate::{
     render::{
         Render,
         camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, UICamera},
-        rectangle::RectangleMesh,
         rounded::RoundedRect,
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
@@ -32,7 +31,7 @@ use crate::{
         WidgetRectangle,
         palette::hsl::PaletteHslMaterial,
         panel::side_docker::SideDocker,
-        renderer::{canvas::CanvasPipeline, text::TextPipeline},
+        renderer::{canvas::CanvasPipeline, rectangle::RectangleMesh, text::TextPipeline},
     },
 };
 

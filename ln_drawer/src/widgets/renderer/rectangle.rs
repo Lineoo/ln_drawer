@@ -12,6 +12,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
     },
+    widgets::shaders::{LIB_CAMERA},
 };
 
 pub trait RectangleMeshMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {
@@ -62,7 +63,9 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
 
         let rectangle_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(M::label()),
-            source: ShaderSource::Wgsl(include_str!("rectangle.wgsl").into()),
+            source: ShaderSource::Wgsl(
+                format!("{}{}", LIB_CAMERA, include_str!("rectangle.wgsl")).into(),
+            ),
         });
 
         let custom_shader = device.create_shader_module(ShaderModuleDescriptor {

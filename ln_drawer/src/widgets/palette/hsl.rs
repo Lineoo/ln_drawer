@@ -4,13 +4,13 @@ use palette::{Hsla, RgbHue};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
-    render::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus},
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
+        renderer::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
         shaders::{LIB_COLORSPACE, LIB_CONSTANT},
     },
 };
