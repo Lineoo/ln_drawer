@@ -387,12 +387,6 @@ impl LayerDrawPipeline {
             return;
         };
 
-        // if failed to merge, we simply drop it.
-        if tx.is_some() && !self.layer.validate_chunks(dst, stroke.dirty) {
-            self.recycle_scratch();
-            return;
-        }
-
         debug_assert_eq!(dst.chunk_size, self.scratch_dst.chunk_size);
         debug_assert_eq!(self.scratch_swp.chunk_size, self.scratch_dst.chunk_size);
 
@@ -408,6 +402,14 @@ impl LayerDrawPipeline {
         });
 
         write_dispatch(&self.layer.queue, &self.layer.dispatch, stroke.dirty);
+
+        // if failed to merge, we simply drop it.
+        if tx.is_some() && !self.layer.validate_chunks(dst, stroke.dirty) {
+            self.recycle_scratch(&stroke, &mut cpass);
+            drop(cpass);
+            self.layer.queue.submit([encoder.finish()]);
+            return;
+        }
 
         for (src_key, src_chunk) in &self.scratch_dst.chunks {
             let src_rect = chunk_to_rect(*src_key, self.scratch_dst.chunk_size);
@@ -441,14 +443,18 @@ impl LayerDrawPipeline {
         if stroke.bridge {
             if stroke.replace {
                 cpass.set_pipeline(&self.layer.clear_pipeline);
-                cpass.set_bind_group(0, Some(&self.bridge_dst.write), &[]);
+                cpass.set_bind_group(0, Some(&self.bridge_dst.dispatch), &[]);
+                cpass.set_bind_group(1, Some(&self.bridge_dst.write), &[]);
                 dispatch_workgroups_extend(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
             }
 
             cpass.set_pipeline(&self.layer.clear_pipeline);
-            cpass.set_bind_group(0, Some(&self.bridge_swp.write), &[]);
+            cpass.set_bind_group(0, Some(&self.bridge_swp.dispatch), &[]);
+            cpass.set_bind_group(1, Some(&self.bridge_swp.write), &[]);
             dispatch_workgroups_extend(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
         }
+
+        self.recycle_scratch(&stroke, &mut cpass);
 
         drop(cpass);
         self.layer.queue.submit([encoder.finish()]);
@@ -465,38 +471,27 @@ impl LayerDrawPipeline {
                 }
             }
         }
-
-        self.recycle_scratch();
     }
 
-    fn recycle_scratch(&mut self) {
-        let mut encoder = self
-            .layer
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("layer_brush_recycle"),
-            });
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_brush_recycle"),
-            timestamp_writes: None,
-        });
-
-        for (_key, chunk) in self.scratch_dst.chunks.drain() {
+    /// Need dispatch buffer to be written ahead
+    fn recycle_scratch(&mut self, stroke: &Stroke, cpass: &mut ComputePass) {
+        for (key, chunk) in self.scratch_dst.chunks.drain() {
             cpass.set_pipeline(&self.layer.clear_pipeline);
-            cpass.set_bind_group(0, Some(&chunk.write), &[]);
-            dispatch_workgroups_extend(&mut cpass, UVec2::splat(self.scratch_dst.chunk_size));
+            cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+            cpass.set_bind_group(1, Some(&chunk.write), &[]);
+            let chunk_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
+            dispatch_workgroups(cpass, &[stroke.dirty, chunk_rect]);
             self.scratch_pool.list.push(chunk);
         }
 
-        for (_key, chunk) in self.scratch_swp.chunks.drain() {
+        for (key, chunk) in self.scratch_swp.chunks.drain() {
             cpass.set_pipeline(&self.layer.clear_pipeline);
-            cpass.set_bind_group(0, Some(&chunk.write), &[]);
-            dispatch_workgroups_extend(&mut cpass, UVec2::splat(self.scratch_swp.chunk_size));
+            cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+            cpass.set_bind_group(1, Some(&chunk.write), &[]);
+            let chunk_rect = chunk_to_rect(key, self.scratch_swp.chunk_size);
+            dispatch_workgroups(cpass, &[stroke.dirty, chunk_rect]);
             self.scratch_pool.list.push(chunk);
         }
-
-        drop(cpass);
-        self.layer.queue.submit([encoder.finish()]);
     }
 }
 

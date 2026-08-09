@@ -932,12 +932,14 @@ fn copy_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline
 fn clear_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_clear"),
-        source: ShaderSource::Wgsl(include_str!("layer/clear.wgsl").into()),
+        source: ShaderSource::Wgsl(
+            format!("{}{}", LIB_RECTANGLE, include_str!("layer/clear.wgsl")).into(),
+        ),
     });
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_clear"),
-        bind_group_layouts: &[Some(&chunk_layout.write)],
+        bind_group_layouts: &[Some(&chunk_layout.dispatch), Some(&chunk_layout.write)],
         immediate_size: 0,
     });
 
