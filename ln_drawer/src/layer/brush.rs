@@ -10,17 +10,16 @@ use hashbrown::HashMap;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoder, CommandEncoderDescriptor, ComputePass,
-    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
-    PipelineCompilationOptions, PipelineLayoutDescriptor, RenderPass, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor,
+    ComputePipeline, ComputePipelineDescriptor, Device, PipelineCompilationOptions,
+    PipelineLayoutDescriptor, RenderPass, ShaderModuleDescriptor, ShaderSource, ShaderStages,
 };
 
 use crate::{
     layer::{
         Chunk, ChunkLayout, ChunkPool, Layer, LayerPipeline, chunk_to_rect, create_chunk,
-        create_chunk_texture, dispatch_workgroups, rect_to_chunks, stream::ThreadInput,
-        write_dispatch,
+        create_chunk_texture, dispatch_workgroups, dispatch_workgroups_extend, rect_to_chunks,
+        stream::ThreadInput, write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
@@ -262,16 +261,32 @@ impl LayerDrawPipeline {
             &mut encoder,
         );
 
-        if brush.bridge_mode() {
-            self.prepare_bridge(reference_layer.is_some(), bridge_rect, &mut encoder);
-        }
-
         // draw
 
         let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("layer_draw"),
             timestamp_writes: None,
         });
+
+        if brush.bridge_mode() && brush.replace_mode() {
+            let (start, end) = rect_to_chunks(bridge_rect, 0, self.scratch_dst.chunk_size);
+            for x in start.0..end.0 {
+                for y in start.1..end.1 {
+                    let key = (x, y, 0);
+                    let src_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
+
+                    let Some(src_chunk) = self.scratch_dst.chunks.get(&key) else {
+                        continue;
+                    };
+
+                    cpass.set_pipeline(&self.layer.copy_pipeline);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(1, Some(&self.bridge_dst.write), &[]);
+                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
+                    dispatch_workgroups(&mut cpass, &[dirty, bridge_rect, src_rect]);
+                }
+            }
+        }
 
         let (start, end) = rect_to_chunks(dirty, 0, self.scratch_dst.chunk_size);
         for x in start.0..end.0 {
@@ -322,6 +337,12 @@ impl LayerDrawPipeline {
                     dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
                 };
             }
+        }
+
+        if brush.bridge_mode() {
+            cpass.set_pipeline(&self.layer.clear_pipeline);
+            cpass.set_bind_group(0, Some(&self.bridge_swp.write), &[]);
+            dispatch_workgroups_extend(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
         }
 
         drop(cpass);
@@ -436,45 +457,6 @@ impl LayerDrawPipeline {
         }
 
         self.recycle_scratch();
-    }
-
-    fn prepare_bridge(&self, replace: bool, bridge_rect: Rectangle, encoder: &mut CommandEncoder) {
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_bridge_prepare"),
-            timestamp_writes: None,
-        });
-
-        // Copy texture if is replace mode
-        if replace {
-            let (start, end) = rect_to_chunks(bridge_rect, 0, self.scratch_dst.chunk_size);
-            for x in start.0..end.0 {
-                for y in start.1..end.1 {
-                    let key = (x, y, 0);
-                    let src_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
-
-                    let Some(src_chunk) = self.scratch_dst.chunks.get(&key) else {
-                        continue;
-                    };
-
-                    cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.bridge_dst.dispatch), &[]);
-                    cpass.set_bind_group(1, Some(&self.bridge_dst.write), &[]);
-                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(&mut cpass, &[bridge_rect, src_rect]);
-
-                    cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.bridge_swp.dispatch), &[]);
-                    cpass.set_bind_group(1, Some(&self.bridge_swp.write), &[]);
-                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(&mut cpass, &[bridge_rect, src_rect]);
-                }
-            }
-        } else {
-            self.layer
-                .clear_chunk(&self.bridge_dst, BRIDGE_CHUNK_SIZE, &mut cpass);
-            self.layer
-                .clear_chunk(&self.bridge_swp, BRIDGE_CHUNK_SIZE, &mut cpass);
-        }
     }
 
     fn recycle_scratch(&mut self) {

@@ -219,6 +219,7 @@ impl LayerPipeline {
                 let src_chunk = src.chunks.get(&dst_key);
                 let (dst_chunk, cleared) = self.recycle_chunk(dst_key, dst.chunk_size, pool);
 
+                // TODO Use unified approach to copy and prevent manual encoder creation
                 if let Some(src_chunk) = src_chunk {
                     encoder.copy_texture_to_texture(
                         TexelCopyTextureInfo {
