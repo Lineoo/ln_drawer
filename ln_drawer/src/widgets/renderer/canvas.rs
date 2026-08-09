@@ -20,11 +20,10 @@ use crate::{
     render::{
         MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
-        rectangle::RectangleUniform,
     },
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible,
-        shaders::{LIB_CAMERA, LIB_RECTANGLE},
+        SetWidgetRectangle, SetWidgetVisible, renderer::rectangle::RectangleUniform,
+        shaders::LIB_CAMERA,
     },
 };
 
@@ -334,7 +333,7 @@ impl CanvasPipeline {
                 format!(
                     "{}{}{}",
                     LIB_CAMERA,
-                    LIB_RECTANGLE,
+                    include_str!("rectangle.wgsl"),
                     include_str!("canvas.wgsl"),
                 )
                 .into(),
