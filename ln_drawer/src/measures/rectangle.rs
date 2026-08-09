@@ -225,6 +225,18 @@ impl Rectangle {
         )
     }
 
+    pub fn intersect(self, rhs: Rectangle) -> Option<Rectangle> {
+        let left = self.left().max(rhs.left());
+        let down = self.down().max(rhs.down());
+        let right = self.right().min(rhs.right());
+        let up = self.up().min(rhs.up());
+
+        match right > left && up > down {
+            true => Some(Rectangle::new(left, down, right, up)),
+            false => None,
+        }
+    }
+
     pub fn contains(self, p: IVec2) -> bool {
         let delta = p.wrapping_sub(self.origin).as_uvec2();
         delta.x < self.extend.x && delta.y < self.extend.y

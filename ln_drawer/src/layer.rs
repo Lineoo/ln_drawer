@@ -25,7 +25,7 @@ use wgpu::{
 use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    widgets::shaders::{LIB_CAMERA, LIB_COLORSPACE},
+    widgets::shaders::{LIB_CAMERA, LIB_COLORSPACE, LIB_RECTANGLE},
 };
 
 pub type ChunkKey = (i32, i32, u8);
@@ -304,7 +304,9 @@ impl LayerPipeline {
 
                     cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(&mut cpass, dirty.extend / scale);
+                    let dst_rect = chunk_to_rect(dst_key, layer.chunk_size);
+                    let src_rect = chunk_to_rect(src_key, layer.chunk_size);
+                    dispatch_workgroups_divide(&mut cpass, &[dirty, dst_rect, src_rect], scale);
                 }
             }
         }
@@ -353,10 +355,11 @@ impl LayerPipeline {
         }
     }
 
+    // TODO Optimize
     fn clear_chunk(&self, chunk: &Chunk, chunk_size: u32, cpass: &mut ComputePass) {
         cpass.set_pipeline(&self.clear_pipeline);
         cpass.set_bind_group(0, Some(&chunk.write), &[]);
-        dispatch_workgroups(cpass, UVec2::splat(chunk_size));
+        dispatch_workgroups_extend(cpass, UVec2::splat(chunk_size));
     }
 
     /// return `true` if the chunk is guaranteed to be empty
@@ -388,12 +391,31 @@ impl LayerPipeline {
 
 // --- Utils --- //
 
-fn dispatch_workgroups(cpass: &mut ComputePass, size: UVec2) {
+fn dispatch_workgroups_extend(cpass: &mut ComputePass, size: UVec2) {
     cpass.dispatch_workgroups(
         size.x.saturating_sub(1) / WORKGROUP_SIZE.x + 1,
         size.y.saturating_sub(1) / WORKGROUP_SIZE.y + 1,
         1,
     );
+}
+
+fn dispatch_workgroups_divide(cpass: &mut ComputePass, rects: &[Rectangle], div: u32) {
+    let mut fnl = rects[0];
+    for &rect in rects {
+        if let Some(rect) = fnl.intersect(rect)
+            && (rect.width() > 0 && rect.height() > 0)
+        {
+            fnl = rect;
+        } else {
+            return;
+        }
+    }
+
+    dispatch_workgroups_extend(cpass, fnl.extend / div);
+}
+
+fn dispatch_workgroups(cpass: &mut ComputePass, rects: &[Rectangle]) {
+    dispatch_workgroups_divide(cpass, rects, 1);
 }
 
 fn write_dispatch(queue: &Queue, buffer: &Buffer, rect: Rectangle) {
@@ -757,7 +779,7 @@ fn render_pipelines(
                 "{}{}{}",
                 LIB_CAMERA,
                 LIB_COLORSPACE,
-                include_str!("layer/chunk.wgsl"),
+                include_str!("layer/render.wgsl"),
             )
             .into(),
         ),
@@ -834,7 +856,13 @@ fn mipmap_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeli
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_mipmap"),
         source: ShaderSource::Wgsl(
-            format!("{}{}", LIB_COLORSPACE, include_str!("layer/mipmap.wgsl"),).into(),
+            format!(
+                "{}{}{}",
+                LIB_COLORSPACE,
+                LIB_RECTANGLE,
+                include_str!("layer/mipmap.wgsl"),
+            )
+            .into(),
         ),
     });
 
@@ -875,7 +903,8 @@ fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipeline
             label: Some(label),
             source: ShaderSource::Wgsl(
                 format!(
-                    "{} fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
+                    "{}{} fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
+                    LIB_RECTANGLE,
                     include_str!("layer/merge.wgsl"),
                     formula,
                 )
@@ -902,7 +931,9 @@ fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipeline
 fn copy_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_copy"),
-        source: ShaderSource::Wgsl(include_str!("layer/copy.wgsl").into()),
+        source: ShaderSource::Wgsl(
+            format!("{}{}", LIB_RECTANGLE, include_str!("layer/copy.wgsl")).into(),
+        ),
     });
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {

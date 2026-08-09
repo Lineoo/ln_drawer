@@ -1,7 +1,4 @@
-struct Rectangle {
-    coords: vec2i,
-    size: vec2u,
-}
+// include! rectangle
 
 @group(0) @binding(0) var<uniform> dispatch: Rectangle;
 
@@ -14,16 +11,13 @@ struct Rectangle {
 @compute @workgroup_size(16, 16)
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     // Assumption: two textures are the same pixel size
-    let position = dispatch.coords + vec2i(id.xy);
+    let start = max(max(dispatch.coords, destination.coords), source.coords);
+    let position = start + vec2i(id.xy);
 
-    if (any(position < dispatch.coords)) { return; }
-    if (any(position - dispatch.coords >= vec2i(dispatch.size))) { return; }
-
-    if (any(position < destination.coords)) { return; }
-    if (any(position - destination.coords >= vec2i(destination.size))) { return; }
-
-    if (any(position < source.coords)) { return; }
-    if (any(position - source.coords >= vec2i(source.size))) { return; }
+    let validated = rectangle_contains(dispatch, position)
+        && rectangle_contains(destination, position)
+        && rectangle_contains(source, position);
+    if !validated { return; }
     
     let src_coords = position - source.coords;
     let dst_coords = position - destination.coords;

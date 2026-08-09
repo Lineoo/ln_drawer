@@ -24,7 +24,7 @@ use crate::{
     },
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    widgets::shaders::LIB_CONSTANT,
+    widgets::shaders::{LIB_CONSTANT, LIB_RECTANGLE},
 };
 
 const DRAWS_ARRAY_CAPACITY: u64 = 48 * 200;
@@ -277,6 +277,7 @@ impl LayerDrawPipeline {
         for x in start.0..end.0 {
             for y in start.1..end.1 {
                 let key = (x, y, 0);
+                let scratch_rect = chunk_to_rect(key, dst.chunk_size);
 
                 if let Some(stroke) = &mut self.stroke {
                     if !stroke.chunks.contains(&key) {
@@ -293,13 +294,13 @@ impl LayerDrawPipeline {
                     cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&self.bridge_dst.read), &[]);
                     cpass.set_bind_group(2, Some(&self.bridge_swp.write), &[]);
-                    dispatch_workgroups(&mut cpass, dirty.extend);
+                    dispatch_workgroups(&mut cpass, &[dirty, bridge_rect]);
 
                     cpass.set_pipeline(&self.layer.copy_pipeline);
                     cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&self.bridge_swp.read), &[]);
-                    dispatch_workgroups(&mut cpass, dirty.extend);
+                    dispatch_workgroups(&mut cpass, &[dirty, scratch_rect, bridge_rect]);
                 } else {
                     let (Some(dst_chunk), Some(swp_chunk)) = (
                         self.scratch_dst.chunks.get(&key),
@@ -312,13 +313,13 @@ impl LayerDrawPipeline {
                     cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
                     cpass.set_bind_group(2, Some(&swp_chunk.write), &[]);
-                    dispatch_workgroups(&mut cpass, dirty.extend);
+                    dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
 
                     cpass.set_pipeline(&self.layer.copy_pipeline);
                     cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&swp_chunk.read), &[]);
-                    dispatch_workgroups(&mut cpass, dirty.extend);
+                    dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
                 };
             }
         }
@@ -394,6 +395,7 @@ impl LayerDrawPipeline {
         };
 
         for (src_key, src_chunk) in &self.scratch_dst.chunks {
+            let src_rect = chunk_to_rect(*src_key, self.scratch_dst.chunk_size);
             if let Some(dst_chunk) = dst.chunks.get(src_key)
                 && let Some(swp_chunk) = self.scratch_swp.chunks.get(src_key)
             {
@@ -401,7 +403,7 @@ impl LayerDrawPipeline {
                 cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
                 cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
                 cpass.set_bind_group(3, Some(&swp_chunk.write), &[]);
-                dispatch_workgroups(&mut cpass, UVec2::splat(self.scratch_swp.chunk_size));
+                dispatch_workgroups(&mut cpass, &[src_rect]);
             }
         }
 
@@ -409,7 +411,7 @@ impl LayerDrawPipeline {
         self.layer.queue.submit([encoder.finish()]);
 
         // flip out dst layer's chunks
-        // TODO instead of recycle these chunks, they should be consumed by undo/redo systems
+        // TODO do NOT flip chunks! instead use copy pipeline to minimum data copy
         for (key, chunk) in self.scratch_swp.chunks.drain() {
             if let Some(tx) = tx {
                 tx.send(ThreadInput::SwapChunk(key, chunk.clone())).unwrap();
@@ -436,7 +438,7 @@ impl LayerDrawPipeline {
         self.recycle_scratch();
     }
 
-    fn prepare_bridge(&self, replace: bool, rect: Rectangle, encoder: &mut CommandEncoder) {
+    fn prepare_bridge(&self, replace: bool, bridge_rect: Rectangle, encoder: &mut CommandEncoder) {
         let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("layer_bridge_prepare"),
             timestamp_writes: None,
@@ -444,10 +446,12 @@ impl LayerDrawPipeline {
 
         // Copy texture if is replace mode
         if replace {
-            let (start, end) = rect_to_chunks(rect, 0, self.scratch_dst.chunk_size);
+            let (start, end) = rect_to_chunks(bridge_rect, 0, self.scratch_dst.chunk_size);
             for x in start.0..end.0 {
                 for y in start.1..end.1 {
                     let key = (x, y, 0);
+                    let src_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
+
                     let Some(src_chunk) = self.scratch_dst.chunks.get(&key) else {
                         continue;
                     };
@@ -456,13 +460,13 @@ impl LayerDrawPipeline {
                     cpass.set_bind_group(0, Some(&self.bridge_dst.dispatch), &[]);
                     cpass.set_bind_group(1, Some(&self.bridge_dst.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
+                    dispatch_workgroups(&mut cpass, &[bridge_rect, src_rect]);
 
                     cpass.set_pipeline(&self.layer.copy_pipeline);
                     cpass.set_bind_group(0, Some(&self.bridge_swp.dispatch), &[]);
                     cpass.set_bind_group(1, Some(&self.bridge_swp.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
+                    dispatch_workgroups(&mut cpass, &[bridge_rect, src_rect]);
                 }
             }
         } else {
@@ -599,7 +603,8 @@ fn brush_pipelines(
             label: Some(label),
             source: ShaderSource::Wgsl(
                 format!(
-                    "{}fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
+                    "{}{} fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
+                    LIB_RECTANGLE,
                     include_str!("brush/round.wgsl"),
                     formula
                 )
@@ -620,7 +625,13 @@ fn brush_pipelines(
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(label),
             source: ShaderSource::Wgsl(
-                format!("{}{}", LIB_CONSTANT, include_str!("brush/blur.wgsl"),).into(),
+                format!(
+                    "{}{}{}",
+                    LIB_CONSTANT,
+                    LIB_RECTANGLE,
+                    include_str!("brush/blur.wgsl"),
+                )
+                .into(),
             ),
         });
         device.create_compute_pipeline(&ComputePipelineDescriptor {
