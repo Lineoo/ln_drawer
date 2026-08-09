@@ -217,7 +217,7 @@ impl LayerPipeline {
 
             for dst_key in dst_chunks {
                 let src_chunk = src.chunks.get(&dst_key);
-                let (dst_chunk, cleared) = self.recycle_chunk(dst_key, dst.chunk_size, pool);
+                let dst_chunk = self.recycle_chunk(dst_key, dst.chunk_size, pool);
 
                 // TODO Use unified approach to copy and prevent manual encoder creation
                 if let Some(src_chunk) = src_chunk {
@@ -240,30 +240,13 @@ impl LayerPipeline {
                             depth_or_array_layers: 1,
                         },
                     );
-                } else if !cleared {
-                    let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                        label: Some("layer_clear"),
-                        timestamp_writes: None,
-                    });
-
-                    self.clear_chunk(&dst_chunk, dst.chunk_size, &mut cpass);
                 }
 
                 dst.chunks.insert(dst_key, dst_chunk);
             }
         } else {
             for dst_key in dst_chunks {
-                let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                    label: Some("layer_clear"),
-                    timestamp_writes: None,
-                });
-
-                let (dst_chunk, cleared) = self.recycle_chunk(dst_key, dst.chunk_size, pool);
-
-                if !cleared {
-                    self.clear_chunk(&dst_chunk, dst.chunk_size, &mut cpass);
-                }
-
+                let dst_chunk = self.recycle_chunk(dst_key, dst.chunk_size, pool);
                 dst.chunks.insert(dst_key, dst_chunk);
             }
         }
@@ -357,27 +340,15 @@ impl LayerPipeline {
         }
     }
 
-    // TODO Optimize
-    fn clear_chunk(&self, chunk: &Chunk, chunk_size: u32, cpass: &mut ComputePass) {
-        cpass.set_pipeline(&self.clear_pipeline);
-        cpass.set_bind_group(0, Some(&chunk.write), &[]);
-        dispatch_workgroups_extend(cpass, UVec2::splat(chunk_size));
-    }
-
     /// return `true` if the chunk is guaranteed to be empty
-    fn recycle_chunk(
-        &mut self,
-        key: ChunkKey,
-        chunk_size: u32,
-        pool: &mut ChunkPool,
-    ) -> (Chunk, bool) {
+    fn recycle_chunk(&mut self, key: ChunkKey, chunk_size: u32, pool: &mut ChunkPool) -> Chunk {
         if let Some(chunk) = pool.list.pop() {
             write_dispatch(
                 &self.queue,
                 &chunk.rectangle,
                 chunk_to_rect(key, chunk_size),
             );
-            (chunk, false)
+            chunk
         } else {
             let texture = create_chunk_texture(&self.device, chunk_size);
             let chunk = create_chunk(
@@ -386,7 +357,7 @@ impl LayerPipeline {
                 texture,
                 chunk_to_rect(key, chunk_size),
             );
-            (chunk, true)
+            chunk
         }
     }
 }

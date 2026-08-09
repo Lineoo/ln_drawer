@@ -67,6 +67,7 @@ pub struct Stroke {
     dirty: Rectangle,
     chunks: Vec<super::ChunkKey>,
     replace: bool,
+    bridge: bool,
 }
 
 pub trait Brush {
@@ -204,6 +205,7 @@ impl LayerDrawPipeline {
         let stroke = self.stroke.get_or_insert_with(|| Stroke {
             dirty,
             replace: brush.replace_mode(),
+            bridge: brush.bridge_mode(),
             chunks: vec![],
         });
 
@@ -279,11 +281,12 @@ impl LayerDrawPipeline {
                         continue;
                     };
 
+                    // TODO need a extra buffer to represent bridge *sample* rect
                     cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(0, Some(&self.bridge_dst.dispatch), &[]);
                     cpass.set_bind_group(1, Some(&self.bridge_dst.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(&mut cpass, &[dirty, bridge_rect, src_rect]);
+                    dispatch_workgroups(&mut cpass, &[bridge_rect, src_rect]);
                 }
             }
         }
@@ -337,12 +340,6 @@ impl LayerDrawPipeline {
                     dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
                 };
             }
-        }
-
-        if brush.bridge_mode() {
-            cpass.set_pipeline(&self.layer.clear_pipeline);
-            cpass.set_bind_group(0, Some(&self.bridge_swp.write), &[]);
-            dispatch_workgroups_extend(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
         }
 
         drop(cpass);
@@ -440,6 +437,19 @@ impl LayerDrawPipeline {
             }
         }
 
+        // Clear bridge chunk
+        if stroke.bridge {
+            if stroke.replace {
+                cpass.set_pipeline(&self.layer.clear_pipeline);
+                cpass.set_bind_group(0, Some(&self.bridge_dst.write), &[]);
+                dispatch_workgroups_extend(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
+            }
+
+            cpass.set_pipeline(&self.layer.clear_pipeline);
+            cpass.set_bind_group(0, Some(&self.bridge_swp.write), &[]);
+            dispatch_workgroups_extend(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
+        }
+
         drop(cpass);
         self.layer.queue.submit([encoder.finish()]);
 
@@ -460,12 +470,33 @@ impl LayerDrawPipeline {
     }
 
     fn recycle_scratch(&mut self) {
+        let mut encoder = self
+            .layer
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("layer_brush_recycle"),
+            });
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_brush_recycle"),
+            timestamp_writes: None,
+        });
+
         for (_key, chunk) in self.scratch_dst.chunks.drain() {
+            cpass.set_pipeline(&self.layer.clear_pipeline);
+            cpass.set_bind_group(0, Some(&chunk.write), &[]);
+            dispatch_workgroups_extend(&mut cpass, UVec2::splat(self.scratch_dst.chunk_size));
             self.scratch_pool.list.push(chunk);
         }
+
         for (_key, chunk) in self.scratch_swp.chunks.drain() {
+            cpass.set_pipeline(&self.layer.clear_pipeline);
+            cpass.set_bind_group(0, Some(&chunk.write), &[]);
+            dispatch_workgroups_extend(&mut cpass, UVec2::splat(self.scratch_swp.chunk_size));
             self.scratch_pool.list.push(chunk);
         }
+
+        drop(cpass);
+        self.layer.queue.submit([encoder.finish()]);
     }
 }
 
