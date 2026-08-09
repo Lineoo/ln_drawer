@@ -96,6 +96,7 @@ struct RenderPipelines {
 
 struct MergePipelines {
     over: ComputePipeline,
+    #[expect(unused)]
     replace: ComputePipeline,
     #[expect(unused)]
     erase: ComputePipeline,

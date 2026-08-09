@@ -389,38 +389,38 @@ impl LayerDrawPipeline {
             timestamp_writes: None,
         });
 
-        match stroke.replace {
-            true => cpass.set_pipeline(&self.layer.merge_pipelines.replace),
-            false => cpass.set_pipeline(&self.layer.merge_pipelines.over),
-        };
+        write_dispatch(&self.layer.queue, &self.layer.dispatch, stroke.dirty);
 
         for (src_key, src_chunk) in &self.scratch_dst.chunks {
             let src_rect = chunk_to_rect(*src_key, self.scratch_dst.chunk_size);
             if let Some(dst_chunk) = dst.chunks.get(src_key)
                 && let Some(swp_chunk) = self.scratch_swp.chunks.get(src_key)
             {
-                cpass.set_bind_group(0, Some(&swp_chunk.dispatch), &[]);
-                cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
-                cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                cpass.set_bind_group(3, Some(&swp_chunk.write), &[]);
-                dispatch_workgroups(&mut cpass, &[src_rect]);
+                if stroke.replace {
+                    cpass.set_pipeline(&self.layer.copy_pipeline);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
+                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
+                    dispatch_workgroups(&mut cpass, &[stroke.dirty, src_rect]);
+                } else {
+                    cpass.set_pipeline(&self.layer.merge_pipelines.over);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
+                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
+                    cpass.set_bind_group(3, Some(&swp_chunk.write), &[]);
+                    dispatch_workgroups(&mut cpass, &[stroke.dirty, src_rect]);
+
+                    cpass.set_pipeline(&self.layer.copy_pipeline);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
+                    cpass.set_bind_group(2, Some(&swp_chunk.read), &[]);
+                    dispatch_workgroups(&mut cpass, &[stroke.dirty, src_rect]);
+                };
             }
         }
 
         drop(cpass);
         self.layer.queue.submit([encoder.finish()]);
-
-        // flip out dst layer's chunks
-        // TODO do NOT flip chunks! instead use copy pipeline to minimum data copy
-        for (key, chunk) in self.scratch_swp.chunks.drain() {
-            if let Some(tx) = tx {
-                tx.send(ThreadInput::SwapChunk(key, chunk.clone())).unwrap();
-            }
-            let old = dst.chunks.insert(key, chunk);
-            if let Some(old) = old {
-                self.scratch_pool.list.push(old);
-            }
-        }
 
         self.layer.generate_mipmaps(dst, stroke.dirty);
 
