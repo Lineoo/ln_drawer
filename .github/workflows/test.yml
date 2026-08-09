@@ -10,7 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  test-linux:
+    name: Cargo Test x86_64 Linux
     runs-on: ubuntu-latest
 
     steps:
@@ -31,8 +32,16 @@ jobs:
     - name: '[Install] ALSA Library'
       run: sudo apt-get install libasound2-dev
 
+    - name: '[Test] Cargo Test x86_64 Linux'
+      run: cargo test --verbose
+
+  rustfmt-check:
+    name: Format Check
+    runs-on: ubuntu-latest
+  
+    steps:
+    - name: '[Actions] Checkout'
+      uses: actions/checkout@v6
+
     - name: '[Test] Cargo Fmt'
       run: cargo fmt --all --check
-
-    - name: '[Test] Cargo Test x86_64 Linux'
-      run: cargo test
