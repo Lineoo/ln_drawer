@@ -12,7 +12,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
     },
-    widgets::shaders::{LIB_CAMERA},
+    widgets::shaders::LIB_CAMERA,
 };
 
 pub trait RectangleMeshMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {
