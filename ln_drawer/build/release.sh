@@ -17,5 +17,6 @@ sed -i '/^\[package\.metadata\.android\.application\]/,/^\[/ s/^label = "\(.*\) 
 # icon.png: res/icon_hicolor_dev-512x.png -> res/icon_hicolor_lime-512x.png
 ln -sf ../../../res/icon_hicolor_lime-512x.png ln_drawer/build/android/mipmap/icon.png
 
+# Release Mode:
 # src/save.rs::get_file_path
-export LN_SAVE_FILE_LOCATION=LnDrawer
+export LNDRAWER_RELEASE=1

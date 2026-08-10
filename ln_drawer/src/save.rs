@@ -288,7 +288,10 @@ pub fn get_file_path(world: &World, filename: &str) -> PathBuf {
 #[cfg(not(target_os = "android"))]
 pub fn get_file_path(_world: &World, filename: &str) -> PathBuf {
     let mut path = dirs::data_local_dir().unwrap();
-    path.push(option_env!("LN_SAVE_FILE_LOCATION").unwrap_or("LnDrawerDev"));
+    match option_env!("LNDRAWER_RELEASE").is_some() {
+        true => path.push("LnDrawer"),
+        false => path.push("LnDrawerDev"),
+    }
     path.push(filename);
     path
 }
