@@ -16,15 +16,16 @@ jobs:
 
     steps:
     - name: '[Actions] Checkout'
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: '[Actions] Cache'
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
-        key: ubuntu-all-cross-test-${{ hashFiles('Cargo.lock') }}
+        key: ubuntu-test-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          ubuntu-all-cross-test-
-          ubuntu-all-cross-
+          ubuntu-test-x86_64-unknown-linux-gnu-
+          ubuntu-test-
+          ubuntu-test
         path: |
           ~/.cargo
           target

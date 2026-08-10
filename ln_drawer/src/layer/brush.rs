@@ -475,22 +475,42 @@ impl LayerDrawPipeline {
 
     /// Need dispatch buffer to be written ahead
     fn recycle_scratch(&mut self, stroke: &Stroke, cpass: &mut ComputePass) {
-        for (key, chunk) in self.scratch_dst.chunks.drain() {
-            cpass.set_pipeline(&self.layer.clear_pipeline);
-            cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
-            cpass.set_bind_group(1, Some(&chunk.write), &[]);
-            let chunk_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
-            dispatch_workgroups(cpass, &[stroke.dirty, chunk_rect]);
-            self.scratch_pool.list.push(chunk);
-        }
+        if stroke.replace {
+            for (key, chunk) in self.scratch_dst.chunks.drain() {
+                cpass.set_pipeline(&self.layer.clear_pipeline);
+                cpass.set_bind_group(0, Some(&chunk.dispatch), &[]);
+                cpass.set_bind_group(1, Some(&chunk.write), &[]);
+                let chunk_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
+                dispatch_workgroups(cpass, &[chunk_rect]);
+                self.scratch_pool.list.push(chunk);
+            }
 
-        for (key, chunk) in self.scratch_swp.chunks.drain() {
-            cpass.set_pipeline(&self.layer.clear_pipeline);
-            cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
-            cpass.set_bind_group(1, Some(&chunk.write), &[]);
-            let chunk_rect = chunk_to_rect(key, self.scratch_swp.chunk_size);
-            dispatch_workgroups(cpass, &[stroke.dirty, chunk_rect]);
-            self.scratch_pool.list.push(chunk);
+            for (key, chunk) in self.scratch_swp.chunks.drain() {
+                cpass.set_pipeline(&self.layer.clear_pipeline);
+                cpass.set_bind_group(0, Some(&chunk.dispatch), &[]);
+                cpass.set_bind_group(1, Some(&chunk.write), &[]);
+                let chunk_rect = chunk_to_rect(key, self.scratch_swp.chunk_size);
+                dispatch_workgroups(cpass, &[chunk_rect]);
+                self.scratch_pool.list.push(chunk);
+            }
+        } else {
+            for (key, chunk) in self.scratch_dst.chunks.drain() {
+                cpass.set_pipeline(&self.layer.clear_pipeline);
+                cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                cpass.set_bind_group(1, Some(&chunk.write), &[]);
+                let chunk_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
+                dispatch_workgroups(cpass, &[stroke.dirty, chunk_rect]);
+                self.scratch_pool.list.push(chunk);
+            }
+
+            for (key, chunk) in self.scratch_swp.chunks.drain() {
+                cpass.set_pipeline(&self.layer.clear_pipeline);
+                cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                cpass.set_bind_group(1, Some(&chunk.write), &[]);
+                let chunk_rect = chunk_to_rect(key, self.scratch_swp.chunk_size);
+                dispatch_workgroups(cpass, &[stroke.dirty, chunk_rect]);
+                self.scratch_pool.list.push(chunk);
+            }
         }
     }
 }
