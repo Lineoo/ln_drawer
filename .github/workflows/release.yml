@@ -124,45 +124,29 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
 
-    - name: '[Release] Git Tag Version'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        VER: ${{ inputs.version }}
-      run: |
-        git tag -a "$VER" -m "Release $VER (Github Action)"
-        git push https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git "$VER"
-
-    - name: '[Release] Setup Release'
+    - name: '[Release] Draft Release'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO: ${{ github.repository }}
         VER: ${{ inputs.version }}
+        SHA: ${{ github.sha }}
       run: |
         set -e
 
-        RESPONSE=$(curl -s -X GET \
+        PAYLOAD=$(jq -n \
+          --arg tag "$VER" \
+          --arg name "LnDrawer $VER" \
+          --arg body "This release is auto-generated." \
+          --arg commit "$SHA" \
+          '{tag_name: $tag, target_commitish: $commit, name: $name, body: $body, draft: true, prerelease: false}')
+
+        RESPONSE=$(curl -s -X POST \
           -H "Authorization: token $GITHUB_TOKEN" \
-          -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/$REPO/releases/tags/$VER")
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/$REPO/releases" \
+          -d "$PAYLOAD")
 
         RELEASE_ID=$(echo "$RESPONSE" | jq '.id')
-
-        if [ "$RELEASE_ID" = "null" ] || [ -z "$RELEASE_ID" ]; then
-          PAYLOAD=$(jq -n \
-            --arg tag "$VER" \
-            --arg name "LnDrawer $VER" \
-            --arg body "This release is auto-generated from branch release/$VER." \
-            '{tag_name: $tag, name: $name, body: $body, draft: true, prerelease: false}')
-          
-          RESPONSE=$(curl -s -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/$REPO/releases" \
-            -d "$PAYLOAD")
-          
-          RELEASE_ID=$(echo "$RESPONSE" | jq '.id')
-          echo "Created Release ID: $RELEASE_ID"
-        fi
 
         if [ "$RELEASE_ID" = "null" ] || [ -z "$RELEASE_ID" ]; then
           echo "Failed to obtain Release ID"
@@ -183,17 +167,6 @@ jobs:
       run: |
         set -e
 
-        for ASSET in $ASSETS; do
-          [ -e "$ASSET" ] || continue
-          UPLOAD_URL="https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$(basename "$ASSET")"
-          curl -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary @"$ASSET" \
-            "$UPLOAD_URL"
-          echo "$ASSET Uploaded"
-        done
-        
         for entry in $ASSETS; do
           file="$(echo "$entry" | cut -d'|' -f1)"
           name="$(echo "$entry" | cut -d'|' -f2)"
