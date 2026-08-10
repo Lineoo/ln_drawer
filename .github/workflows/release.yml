@@ -26,17 +26,17 @@ jobs:
           - name: x86_64 Linux
             platform: desktop
             target: x86_64-unknown-linux-gnu
-            artifact: target/x86_64-unknown-linux-gnu/release/ln_drawer.tar.gz
+            package: linux-tar
 
           - name: x86_64 Windows
             platform: desktop
             target: x86_64-pc-windows-gnu
-            artifact: target/x86_64-pc-windows-gnu/release/ln_drawer.zip
+            package: windows-zip
 
           - name: Aarch64 Android
             platform: android
             target: aarch64-linux-android
-            artifact: target/release/apk/ln_drawer.apk
+            package: android-apk
 
     steps:
     - name: '[Actions] Checkout'
@@ -89,23 +89,29 @@ jobs:
       env:
         CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
         CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
-      run: cargo apk build --release --package=ln_drawer --lib --target ${{ matrix.target }}
+      run: |
+        cargo apk build --release --package=ln_drawer --lib --target ${{ matrix.target }}
+        echo "ARTIFACT=$(readlink -f target/release/apk/ln_drawer.apk)" > $GITHUB_ENV
 
     - name: '[Build] Package for Windows (Zip)'
-      if: ${{ matrix.target == 'x86_64-pc-windows-gnu' }}
+      if: ${{ matrix.package == 'windows-zip' }}
       working-directory: target/${{ matrix.target }}/release/
-      run: zip -v ln_drawer.zip ln_drawer.exe
+      run: | 
+        zip -v ln_drawer.zip ln_drawer.exe
+        echo "ARTIFACT=$(readlink -f ln_drawer.zip)" > $GITHUB_ENV
 
     - name: '[Build] Package for Linux (Tar + Gzip)'
-      if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
+      if: ${{ matrix.package == 'linux-tar' }}
       working-directory: target/${{ matrix.target }}/release/
-      run: tar -czvf ln_drawer.tar.gz ln_drawer
+      run: |
+        tar -czvf ln_drawer.tar.gz ln_drawer
+        echo "ARTIFACT=$(readlink -f ln_drawer.tar.gz)" > $GITHUB_ENV
 
     - name: '[Actions] Upload Artifacts'
       uses: actions/upload-artifact@v7
       with:
-        name: ln_drawer-${{ matrix.target }}
-        path: ${{ matrix.artifact }}
+        name: artifact-${{ matrix.target }}-${{ matrix.package }}
+        path: ${{ env.ARTIFACT }}
   
   release:
     name: Release
@@ -160,18 +166,21 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO: ${{ github.repository }}
-        ASSETS: >
-          target/x86_64-unknown-linux-gnu/release/ln_drawer.tar.gz|ln_drawer-${{ inputs.version }}-linux-x86_64.tar.gz
-          target/x86_64-pc-windows-gnu/release/ln_drawer.zip|ln_drawer-${{ inputs.version }}-windows-x86_64.zip
-          target/release/apk/ln_drawer.apk|ln_drawer-${{ inputs.version }}-android-aarch64.apk
+        ASSETS: |
+          artifacts-x86_64-unknown-linux-gnu-linux-tar/ln_drawer.tar.gz|ln_drawer-${{ inputs.version }}-linux-x86_64.tar.gz
+          artifacts-x86_64-pc-windows-gnu-windows-zip/ln_drawer.zip|ln_drawer-${{ inputs.version }}-windows-x86_64.zip
+          artifacts-aarch64-linux-android-android-apk/ln_drawer.apk|ln_drawer-${{ inputs.version }}-android-aarch64.apk
       run: |
         set -e
 
-        for entry in $ASSETS; do
-          file="$(echo "$entry" | cut -d'|' -f1)"
-          name="$(echo "$entry" | cut -d'|' -f2)"
+        while IFS= read -r entry; do
+          file=${entry%|*}
+          name=${entry##*|}
 
-          [ -f "$file" ] || continue
+          if [ ! -f "$file" ]; then
+            echo "Missing artifact: $file"
+            exit 1
+          fi
           
           echo "Uploading '$file' as '$name'"
           curl -X POST \
@@ -179,4 +188,4 @@ jobs:
             -H "Content-Type: application/octet-stream" \
             --data-binary @"$file" \
             "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$name"
-        done
+        done <<< "$ASSETS"
