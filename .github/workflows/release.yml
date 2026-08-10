@@ -167,9 +167,9 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO: ${{ github.repository }}
         ASSETS: |
-          artifacts-x86_64-unknown-linux-gnu-linux-tar/ln_drawer.tar.gz|ln_drawer-${{ inputs.version }}-linux-x86_64.tar.gz
-          artifacts-x86_64-pc-windows-gnu-windows-zip/ln_drawer.zip|ln_drawer-${{ inputs.version }}-windows-x86_64.zip
-          artifacts-aarch64-linux-android-android-apk/ln_drawer.apk|ln_drawer-${{ inputs.version }}-android-aarch64.apk
+          artifact-x86_64-unknown-linux-gnu-linux-tar/ln_drawer.tar.gz|ln_drawer-${{ inputs.version }}-linux-x86_64.tar.gz
+          artifact-x86_64-pc-windows-gnu-windows-zip/ln_drawer.zip|ln_drawer-${{ inputs.version }}-windows-x86_64.zip
+          artifact-aarch64-linux-android-android-apk/ln_drawer.apk|ln_drawer-${{ inputs.version }}-android-aarch64.apk
       run: |
         set -e
 
