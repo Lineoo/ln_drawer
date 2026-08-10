@@ -189,5 +189,7 @@ jobs:
             -H "Content-Type: application/octet-stream" \
             --data-binary @"$file" \
             "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$name"
-          echo "\nUpload '$file' as '$name'"
+
+          echo ""
+          echo "Upload '$file' as '$name'"
         done <<< "$ASSETS"
