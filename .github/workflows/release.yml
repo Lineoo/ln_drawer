@@ -89,7 +89,7 @@ jobs:
       env:
         CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
         CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
-      run: cargo apk build --verbose --release --package=ln_drawer --lib --target ${{ matrix.target }}
+      run: cargo apk build --release --package=ln_drawer --lib --target ${{ matrix.target }}
 
     - name: '[Build] Package for Windows (Zip)'
       if: ${{ matrix.target == 'x86_64-pc-windows-gnu' }}
