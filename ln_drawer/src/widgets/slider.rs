@@ -321,7 +321,7 @@ impl SliderLabel {
 const BAR_EX: i32 = 5;
 const BAR_HW: i32 = 6;
 const KNOB_SIZE: UVec2 = UVec2::new(8, 16);
-const KNOB_SIZE_PRESSED: UVec2 = UVec2::new(8, 14);
+const KNOB_SIZE_PRESSED: UVec2 = UVec2::new(7, 16);
 const KNOB_SPLIT_SIZE: UVec2 = UVec2::new(5, 2);
 const LABEL_GAP: i32 = 2;
 const LABEL_HALF: UVec2 = UVec2::new(30, 12);
