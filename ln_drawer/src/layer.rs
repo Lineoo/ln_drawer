@@ -8,7 +8,7 @@ use bytemuck::bytes_of;
 use glam::{IVec2, UVec2};
 use hashbrown::HashMap;
 use wgpu::{
-    AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+    Adapter, AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
     Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
     ColorWrites, CommandEncoder, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor,
@@ -17,15 +17,15 @@ use wgpu::{
     PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
     SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
-    TextureViewDimension, VertexState,
+    TextureDimension, TextureFormat, TextureFormatFeatureFlags, TextureSampleType, TextureUsages,
+    TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    widgets::shaders::{LIB_CAMERA, LIB_COLORSPACE, LIB_RECTANGLE},
+    widgets::shaders::{LIB_CAMERA, LIB_COLORSPACE, LIB_RECTANGLE, shader_compile},
 };
 
 pub type ChunkKey = (i32, i32, u8);
@@ -34,10 +34,13 @@ pub const DEFAULT_MIPMAP_DISABLED: u32 = 1;
 pub const DEFAULT_MIPMAP_ENABLED: u32 = 8;
 pub const DEFAULT_CHUNK_SIZE: u32 = 512;
 
+pub const CHUNK_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
+
 const WORKGROUP_SIZE: UVec2 = UVec2::new(16, 16);
 
 // function: render, merge, mipmap, clear & chunk recycle
 pub struct LayerPipeline {
+    _adapter: Adapter,
     device: Device,
     queue: Queue,
 
@@ -53,6 +56,8 @@ pub struct LayerPipeline {
     mipmap_pipeline: ComputePipeline,
     copy_pipeline: ComputePipeline,
     clear_pipeline: ComputePipeline,
+
+    support_read_write: bool,
 }
 
 pub struct Layer {
@@ -75,6 +80,8 @@ pub struct Chunk {
     pub render: BindGroup,
     pub read: BindGroup,
     pub write: BindGroup,
+    /// Same to `read` if not supported.
+    pub read_write: BindGroup,
 }
 
 #[derive(Clone)]
@@ -83,6 +90,7 @@ pub struct ChunkLayout {
     render: BindGroupLayout,
     read: BindGroupLayout,
     write: BindGroupLayout,
+    read_write: BindGroupLayout,
 }
 
 struct RenderPipelines {
@@ -111,11 +119,18 @@ struct DispatchUniform {
 
 impl LayerPipeline {
     pub fn new(
+        _adapter: Adapter,
         device: Device,
         queue: Queue,
         surface_format: TextureFormat,
         camera_bind_layout: &BindGroupLayout,
     ) -> Self {
+        let texture_features = _adapter.get_texture_format_features(CHUNK_TEXTURE_FORMAT);
+        let support_read_write =
+            (texture_features.flags).contains(TextureFormatFeatureFlags::STORAGE_READ_WRITE);
+
+        log::debug!("texture read write: {support_read_write}");
+
         let dispatch_layout = device.create_bind_group_layout(&LAYOUT_DISPATCH);
         let (dispatch, dispatch_group) = dispatch_group(&device, &dispatch_layout);
 
@@ -123,14 +138,15 @@ impl LayerPipeline {
         let (sampler_group_unfiltered, sampler_group_filtered) =
             sampler_groups(&device, &sampler_layout);
 
-        let chunk_render_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_RENDER);
-        let chunk_read_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_READ);
-        let chunk_write_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_WRITE);
         let chunk_layout = ChunkLayout {
             dispatch: dispatch_layout,
-            render: chunk_render_layout,
-            read: chunk_read_layout,
-            write: chunk_write_layout,
+            render: device.create_bind_group_layout(&LAYOUT_CHUNK_RENDER),
+            read: device.create_bind_group_layout(&LAYOUT_CHUNK_READ),
+            write: device.create_bind_group_layout(&LAYOUT_CHUNK_WRITE),
+            read_write: match support_read_write {
+                true => device.create_bind_group_layout(&LAYOUT_CHUNK_READ_WRITE),
+                false => device.create_bind_group_layout(&LAYOUT_CHUNK_READ),
+            },
         };
 
         let render_pipelines = render_pipelines(
@@ -141,12 +157,13 @@ impl LayerPipeline {
             &chunk_layout.render,
         );
 
-        let merge_pipelines = merge_pipelines(&device, &chunk_layout);
+        let merge_pipelines = merge_pipelines(&device, support_read_write, &chunk_layout);
         let mipmap_pipeline = mipmap_pipeline(&device, &chunk_layout);
         let copy_pipeline = copy_pipeline(&device, &chunk_layout);
         let clear_pipeline = clear_pipeline(&device, &chunk_layout);
 
         LayerPipeline {
+            _adapter,
             device,
             queue,
             chunk_layout,
@@ -159,6 +176,7 @@ impl LayerPipeline {
             mipmap_pipeline,
             copy_pipeline,
             clear_pipeline,
+            support_read_write,
         }
     }
 
@@ -443,7 +461,7 @@ fn create_chunk_texture(device: &Device, chunk_size: u32) -> Texture {
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D2,
-        format: TextureFormat::Rgba8Unorm,
+        format: CHUNK_TEXTURE_FORMAT,
         usage: TextureUsages::COPY_SRC
             | TextureUsages::COPY_DST
             | TextureUsages::TEXTURE_BINDING
@@ -469,14 +487,14 @@ fn create_chunk(
 
     let texture_fragment_view = texture.create_view(&TextureViewDescriptor {
         label: Some("layer_chunk_texture_view"),
-        format: Some(TextureFormat::Rgba8Unorm),
+        format: Some(CHUNK_TEXTURE_FORMAT),
         usage: Some(TextureUsages::TEXTURE_BINDING),
         ..Default::default()
     });
 
     let texture_compute_view = texture.create_view(&TextureViewDescriptor {
         label: Some("layer_chunk_texture_view"),
-        format: Some(TextureFormat::Rgba8Unorm),
+        format: Some(CHUNK_TEXTURE_FORMAT),
         usage: Some(TextureUsages::STORAGE_BINDING),
         ..Default::default()
     });
@@ -551,6 +569,25 @@ fn create_chunk(
         ],
     });
 
+    let read_write = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_read_write"),
+        layout: &chunk_layout.read_write,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&texture_compute_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &rectangle,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
     Chunk {
         rectangle,
         dispatch,
@@ -558,6 +595,7 @@ fn create_chunk(
         render,
         read,
         write,
+        read_write,
     }
 }
 
@@ -596,7 +634,7 @@ const LAYOUT_CHUNK_READ: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescript
             visibility: ShaderStages::COMPUTE,
             ty: BindingType::StorageTexture {
                 access: StorageTextureAccess::ReadOnly,
-                format: TextureFormat::Rgba8Unorm,
+                format: CHUNK_TEXTURE_FORMAT,
                 view_dimension: TextureViewDimension::D2,
             },
             count: None,
@@ -623,7 +661,34 @@ const LAYOUT_CHUNK_WRITE: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescrip
             visibility: ShaderStages::COMPUTE,
             ty: BindingType::StorageTexture {
                 access: StorageTextureAccess::WriteOnly,
-                format: TextureFormat::Rgba8Unorm,
+                format: CHUNK_TEXTURE_FORMAT,
+                view_dimension: TextureViewDimension::D2,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+    ],
+};
+
+/// Contains write storage texture of chunk in format `Rgba8Unorm` and chunk key in vec3
+const LAYOUT_CHUNK_READ_WRITE: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("layer_chunk_write"),
+    entries: &[
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::StorageTexture {
+                access: StorageTextureAccess::ReadWrite,
+                format: CHUNK_TEXTURE_FORMAT,
                 view_dimension: TextureViewDimension::D2,
             },
             count: None,
@@ -859,31 +924,53 @@ fn mipmap_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeli
     })
 }
 
-fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipelines {
+fn merge_pipelines(
+    device: &Device,
+    read_write: bool,
+    chunk_layout: &ChunkLayout,
+) -> MergePipelines {
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_merge"),
-        bind_group_layouts: &[
-            Some(&chunk_layout.dispatch),
-            Some(&chunk_layout.read),
-            Some(&chunk_layout.read),
-            Some(&chunk_layout.write),
-        ],
+        bind_group_layouts: &match read_write {
+            true => [
+                Some(&chunk_layout.dispatch),
+                Some(&chunk_layout.read_write),
+                Some(&chunk_layout.read),
+                Some(&chunk_layout.read_write),
+            ],
+            false => [
+                Some(&chunk_layout.dispatch),
+                Some(&chunk_layout.read),
+                Some(&chunk_layout.read),
+                Some(&chunk_layout.write),
+            ],
+        },
         immediate_size: 0,
     });
 
     let new_pipeline = |label, formula| {
+        let constants = match read_write {
+            true => [
+                ("read", "read_write"),
+                ("write", "read_write"),
+                ("rectangle", LIB_RECTANGLE),
+                ("composite", formula),
+            ],
+            false => [
+                ("read", "read"),
+                ("write", "write"),
+                ("rectangle", LIB_RECTANGLE),
+                ("composite", formula),
+            ],
+        };
+
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(label),
             source: ShaderSource::Wgsl(
-                format!(
-                    "{}{} fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
-                    LIB_RECTANGLE,
-                    include_str!("layer/merge.wgsl"),
-                    formula,
-                )
-                .into(),
+                shader_compile(include_str!("layer/merge.wgsl"), &constants[..]).into(),
             ),
         });
+
         device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: Some(label),
             layout: Some(&layout),

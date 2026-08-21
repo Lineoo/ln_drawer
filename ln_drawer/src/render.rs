@@ -110,11 +110,14 @@ impl Render {
 
         log::debug!("wgpu adapter: {:?}", adapter.get_info());
 
+        let ideal_features = Features::TIMESTAMP_QUERY
+            | Features::TIMESTAMP_QUERY_INSIDE_PASSES
+            | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES;
+
         let (device, queue) = adapter
             .request_device(&DeviceDescriptor {
                 label: None,
-                required_features: Features::TIMESTAMP_QUERY
-                    | Features::TIMESTAMP_QUERY_INSIDE_PASSES,
+                required_features: adapter.features() & ideal_features,
                 required_limits: Limits::defaults(),
                 experimental_features: ExperimentalFeatures::disabled(),
                 memory_hints: MemoryHints::MemoryUsage,

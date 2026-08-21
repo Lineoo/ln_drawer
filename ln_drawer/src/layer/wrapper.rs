@@ -97,6 +97,7 @@ impl LayerWrapper {
         let camera_bind = world.single_fetch::<CameraBind>().unwrap();
 
         let brush = LayerDrawPipeline::new(LayerPipeline::new(
+            render.adapter.clone(),
             render.device.clone(),
             render.queue.clone(),
             TextureFormat::Rgba8Unorm,

@@ -1,14 +1,14 @@
-// include! rectangle
+#rectangle
 
 @group(0) @binding(0) var<uniform> dispatch: Rectangle;
 
-@group(1) @binding(0) var destination_texture: texture_storage_2d<rgba8unorm, read>;
+@group(1) @binding(0) var destination_texture: texture_storage_2d<rgba8unorm, #read>;
 @group(1) @binding(1) var<uniform> destination: Rectangle;
 
 @group(2) @binding(0) var source_texture: texture_storage_2d<rgba8unorm, read>;
 @group(2) @binding(1) var<uniform> source: Rectangle;
 
-@group(3) @binding(0) var swap_texture: texture_storage_2d<rgba8unorm, write>;
+@group(3) @binding(0) var swap_texture: texture_storage_2d<rgba8unorm, #write>;
 @group(3) @binding(1) var<uniform> swap: Rectangle;
 
 @compute @workgroup_size(16, 16)
@@ -33,7 +33,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     let dst = vec4f(dst_ump.rgb, 1) * dst_ump.a;
     let src = vec4f(src_ump.rgb, 1) * src_ump.a;
 
-    let swp = composite(src, dst);
+    let swp = #composite;
 
     textureStore(swap_texture, swp_coords, select(vec4f(swp.rgb / swp.a, swp.a), vec4f(), swp.a < 1e-6));
 }

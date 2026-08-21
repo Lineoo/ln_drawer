@@ -33,6 +33,16 @@ const BACKUP_MINIMUM_DURATION: Duration = Duration::from_hours(24);
 
 const TABLE_METADATA: TableDefinition<u32, &[u8]> = TableDefinition::new("metadata");
 
+/// The core database.
+/// 
+/// ## Tables
+/// 
+/// | name | key | value |
+/// |------|-----|-------|
+/// | `metadata`            | `u32`                     | `&[u8]`   |
+/// | `stroke_chunk`        | `(u64, ChunkKey)`         | `&[u8]`   |
+/// | `stroke_chunk_meta`   | `((u64, ChunkKey), u32)`  | `&[u8]`   |
+/// | `camera`              | ` &str`                   | `&[u8]`   |
 #[derive(Clone)]
 pub struct SaveDatabase(pub Arc<Database>);
 
