@@ -19,7 +19,7 @@ use wgpu::{
 use winit::window::Window;
 
 use crate::{
-    layer::{Chunk, ChunkKey, ChunkLayout, chunk_to_rect},
+    layer::{Chunk, ChunkKey, LayerPipeline, chunk_to_rect},
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
     save::SaveDatabase,
@@ -74,9 +74,9 @@ pub struct StreamConfig {
     pub database: SaveDatabase,
     pub device: Device,
     pub queue: Queue,
-    pub chunk_layout: ChunkLayout,
     pub chunk_size: u32,
     pub mipmap_levels: u8,
+    pub layer_pipeline: Arc<LayerPipeline>,
     pub window: Arc<dyn Window>,
 }
 
@@ -479,7 +479,7 @@ fn chunk_prepare(
     let texture = super::create_chunk_texture(&config.device, config.chunk_size);
     let chunk = super::create_chunk(
         &config.device,
-        &config.chunk_layout,
+        &config.layer_pipeline.chunk_layout,
         (&texture).clone(),
         chunk_to_rect(key, config.chunk_size),
     );

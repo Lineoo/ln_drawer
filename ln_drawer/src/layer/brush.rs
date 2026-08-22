@@ -2,7 +2,10 @@ pub mod blur;
 pub mod param;
 pub mod round;
 
-use std::{mem::size_of, sync::mpsc::Sender};
+use std::{
+    mem::size_of,
+    sync::{Arc, mpsc::Sender},
+};
 
 use bytemuck::{Pod, Zeroable, bytes_of, cast_slice};
 use glam::{I64Vec2, UVec2};
@@ -22,7 +25,7 @@ use crate::{
 const BRIDGE_CHUNK_SIZE: u32 = 1024;
 
 pub struct DrawPipeline {
-    pub layer: LayerPipeline,
+    pub layer: Arc<LayerPipeline>,
 
     // TODO currently unintendedly public for undo/redo system
     pub scratch_dst: Layer,
@@ -82,7 +85,7 @@ pub trait BrushInner {
 }
 
 impl DrawPipeline {
-    pub fn new(layer: LayerPipeline) -> Self {
+    pub fn new(layer: Arc<LayerPipeline>) -> Self {
         let scratch_dst = Layer {
             chunks: HashMap::new(),
             chunk_size: 512,

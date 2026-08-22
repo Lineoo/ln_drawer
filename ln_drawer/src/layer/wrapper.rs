@@ -1,6 +1,9 @@
 use std::{
     collections::VecDeque,
-    sync::mpsc::{Receiver, Sender, channel},
+    sync::{
+        Arc,
+        mpsc::{Receiver, Sender, channel},
+    },
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -28,9 +31,7 @@ use winit::{
 use crate::{
     layer::{
         Layer, LayerPipeline,
-        brush::{
-            Brush, Draw, DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush,
-        },
+        brush::{Brush, Draw, DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush},
         chunk_to_rect, create_chunk, create_chunk_texture, rect_to_chunks,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
     },
@@ -96,13 +97,15 @@ impl LayerWrapper {
         let render = world.single_fetch::<Render>().unwrap();
         let camera_bind = world.single_fetch::<CameraBind>().unwrap();
 
-        let brush = DrawPipeline::new(LayerPipeline::new(
+        let layer = Arc::new(LayerPipeline::new(
             render.adapter.clone(),
             render.device.clone(),
             render.queue.clone(),
             TextureFormat::Rgba8Unorm,
             &camera_bind.layout,
         ));
+
+        let brush = DrawPipeline::new(layer.clone());
 
         let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
         let window = world.single_fetch::<Lnwindow>().unwrap().window.clone();
@@ -114,9 +117,9 @@ impl LayerWrapper {
             database,
             device: render.device.clone(),
             queue: render.queue.clone(),
-            chunk_layout: brush.layer.chunk_layout.clone(),
             chunk_size: MAIN_CHUNK_SIZE,
             mipmap_levels: MAIN_CHUNK_MIPMAP,
+            layer_pipeline: layer.clone(),
             window,
         };
 
