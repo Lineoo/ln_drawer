@@ -113,11 +113,13 @@ pub struct CameraInfo {
 /// Debug information for diagnosis.
 #[derive(Default)]
 pub struct DebugInfo {
+    decode: usize,
     load: usize,
-    unload: usize,
     load_real: usize,
-    unload_real: usize,
     encode: usize,
+    unload: usize,
+    unload_real: usize,
+    clean: usize,
 }
 
 pub fn loading_thread(
@@ -184,6 +186,8 @@ pub fn loading_thread(
                     base.active.insert(key, Some(texture));
                     base.unsaved.insert(key);
                     base.real_cnt += 1;
+                    debug.load += 1;
+                    debug.load_real += 1;
                     output_tx.send(ThreadOutput::Insert(key, chunk))?;
                 }
             }
@@ -191,6 +195,8 @@ pub fn loading_thread(
                 base.active.insert(key, Some(chunk.texture.clone()));
                 base.unsaved.insert(key);
                 base.real_cnt += 1;
+                debug.load += 1;
+                debug.load_real += 1;
                 output_tx.send(ThreadOutput::Insert(key, chunk))?;
             }
             Some(ThreadInput::Autosave) => {
@@ -205,22 +211,23 @@ pub fn loading_thread(
 
         output_tx.send(ThreadOutput::ThreadDebugMessage(format!(
             "Loading Queue: length {} - pending {} \n\
-            Texture Index: real {} / total {} \n\
+            Texture Index: real {} total {} \n\
             Debug Counter: \n    \
-                | load {} | load_read {} | \n    \
-                | unload {} | unload_real {} | \n    \
-                | encode {} | \n\
+                | load decode {} real {} total {} | \n    \
+                | unload encode {} real {} total {} clean {} | \n\
             Camera Center: {:?} \n\
             ",
             queue.inner.len(),
             queue.inner.len() - queue.front,
             base.real_cnt,
             base.active.len(),
-            debug.load,
+            debug.decode,
             debug.load_real,
-            debug.unload,
-            debug.unload_real,
+            debug.load,
             debug.encode,
+            debug.unload_real,
+            debug.unload,
+            debug.clean,
             camera.center
         )))?;
 
@@ -306,6 +313,7 @@ fn load(
         if let Some(data) = table_chunk.get((0, key))? {
             let mut bytes = zstd::decode_all(data.value())?;
             let (texture, chunk) = chunk_prepare(config, key)?;
+            debug.decode += 1;
 
             if let Some(meta) = table_meta.get(((0, key), 0))?
                 && let Ok(meta0) = postcard::from_bytes::<ChunkMeta0>(meta.value())
@@ -335,9 +343,8 @@ fn load(
             chunk_write(config, &bytes, &texture);
             base.active.insert(key, Some(texture));
             base.real_cnt += 1;
-            output_tx.send(ThreadOutput::Insert(key, chunk))?;
-
             debug.load_real += 1;
+            output_tx.send(ThreadOutput::Insert(key, chunk))?;
         } else {
             base.active.insert(key, None);
         }
@@ -458,9 +465,11 @@ fn write_chunk_data(
     if transparent {
         table_chunk.remove((0, key))?;
         table_meta.remove(((0, key), 0))?;
+        debug.clean += 1;
     } else {
         let compressed = zstd::encode_all(&bytes[..], 0)?;
         table_chunk.insert((0, key), &compressed[..])?;
+        debug.encode += 1;
 
         let meta0 = ChunkMeta0 {
             format: CHUNK_META0_FORMAT,
@@ -473,7 +482,6 @@ fn write_chunk_data(
     }
 
     texel.unsaved.remove(&key);
-    debug.encode += 1;
 
     Ok(())
 }
