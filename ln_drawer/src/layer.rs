@@ -36,7 +36,7 @@ pub const DEFAULT_CHUNK_SIZE: u32 = 512;
 
 pub const CHUNK_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
-const DISPATCH_CAPACITY: u64 = 256;
+const DISPATCH_CAPACITY: u64 = 4;
 const DRAWS_ARRAY_CAPACITY: u64 = 0x2000;
 const WORKGROUP_SIZE: UVec2 = UVec2::new(16, 16);
 

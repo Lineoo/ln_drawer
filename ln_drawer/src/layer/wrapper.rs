@@ -15,11 +15,10 @@ use palette::Srgba;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Color, ColorTargetState,
-    ColorWrites, CommandEncoderDescriptor, Device, Extent3d, FragmentState, LoadOp, Operations,
-    Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPass,
-    RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites, RenderPipeline,
-    RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp,
-    SurfaceConfiguration, TexelCopyTextureInfoBase, Texture, TextureAspect, TextureDescriptor,
+    ColorWrites, Device, Extent3d, FragmentState, LoadOp, Operations, PipelineLayoutDescriptor,
+    PrimitiveState, PrimitiveTopology, RenderPass, RenderPassColorAttachment, RenderPassDescriptor,
+    RenderPassTimestampWrites, RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StoreOp, SurfaceConfiguration, Texture, TextureDescriptor,
     TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
     TextureViewDimension, VertexState,
 };
@@ -32,8 +31,8 @@ use crate::{
     layer::{
         Layer, LayerPipeline,
         brush::{Brush, Draw, DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush},
-        chunk_to_rect, create_chunk, create_chunk_texture, rect_to_chunks,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
+        traveler::Traveler,
     },
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
@@ -52,7 +51,6 @@ use crate::{
     widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_COLORSPACE},
 };
 
-const UNDO_LIMIT: usize = 32;
 const MAIN_CHUNK_SIZE: u32 = 512;
 const MAIN_CHUNK_MIPMAP: u8 = 8;
 
@@ -63,6 +61,7 @@ pub struct BrushConfigurationChanged;
 pub struct LayerWrapper {
     pub main: Layer,
     pub brush: DrawPipeline,
+    pub traveler: Traveler,
 
     pub brush_mode: BrushMode,
     pub round_brush: RoundBrush,
@@ -106,6 +105,7 @@ impl LayerWrapper {
         ));
 
         let brush = DrawPipeline::new(layer.clone());
+        let traveler = Traveler::new(layer.clone());
 
         let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
         let window = world.single_fetch::<Lnwindow>().unwrap().window.clone();
@@ -165,6 +165,8 @@ impl LayerWrapper {
                 chunk_size: MAIN_CHUNK_SIZE,
                 controlled: true,
             },
+            brush,
+            traveler,
             brush_mode: BrushMode::Round,
             round_brush: RoundBrush {
                 size: BrushParam::force_index(0.0, 6.0, 1.0),
@@ -180,8 +182,6 @@ impl LayerWrapper {
             },
             undos: VecDeque::new(),
             redos: Vec::new(),
-            brush,
-            brush_preview,
             debug: false,
             temp_erase: RoundBrush {
                 size: BrushParam::force_index(5.0, 15.0, 1.0),
@@ -190,6 +190,7 @@ impl LayerWrapper {
                 color: Srgba::new(1.0, 1.0, 1.0, 1.0),
                 erase: true,
             },
+            brush_preview,
             compositing_texture,
             compositing_config: render.config.clone(),
             compositing_render_bind,
@@ -448,149 +449,30 @@ impl LayerWrapper {
         extra.diagnosis.write(rpass, end);
     }
 
-    // TODO use a single texture sheets to hold all undo/redo and use dispatch-merge to apply
     fn undo_stock(&mut self) {
-        self.redos.clear();
-
-        let mut to_backup = Vec::new();
-        for &src_key in self.brush.scratch_dst.chunks.keys() {
-            let (start, end) = rect_to_chunks(
-                chunk_to_rect(src_key, self.brush.scratch_dst.chunk_size),
-                0,
-                self.main.chunk_size,
-            );
-
-            for x in start.0..end.0 {
-                for y in start.1..end.1 {
-                    let dst_key = (x, y, 0);
-
-                    if !to_backup.contains(&dst_key) {
-                        to_backup.push(dst_key);
-                    }
-                }
-            }
-        }
-
-        let mut encoder =
-            self.brush
-                .layer
-                .device
-                .create_command_encoder(&CommandEncoderDescriptor {
-                    label: Some("layer_backup"),
-                });
-
-        let mut backup_layer = Layer {
-            chunks: HashMap::new(),
-            chunk_size: MAIN_CHUNK_SIZE,
-            mipmap_levels: 1,
-            controlled: false,
+        let Some(stroke) = &self.brush.stroke else {
+            return;
         };
-        for dst_key in to_backup {
-            let Some(src_chunk) = self.main.chunks.get(&dst_key) else {
-                continue;
-            };
-            let dst_texture =
-                create_chunk_texture(&self.brush.layer.device, backup_layer.chunk_size);
-            let dst_chunk = create_chunk(
-                &self.brush.layer.device,
-                &self.brush.layer.chunk_layout,
-                dst_texture,
-                chunk_to_rect(dst_key, backup_layer.chunk_size),
-            );
-            encoder.copy_texture_to_texture(
-                TexelCopyTextureInfoBase {
-                    texture: &src_chunk.texture,
-                    mip_level: 0,
-                    origin: Origin3d::ZERO,
-                    aspect: TextureAspect::All,
-                },
-                TexelCopyTextureInfoBase {
-                    texture: &dst_chunk.texture,
-                    mip_level: 0,
-                    origin: Origin3d::ZERO,
-                    aspect: TextureAspect::All,
-                },
-                Extent3d {
-                    width: backup_layer.chunk_size,
-                    height: backup_layer.chunk_size,
-                    depth_or_array_layers: 1,
-                },
-            );
-            backup_layer.chunks.insert(dst_key, dst_chunk);
-        }
 
-        self.brush.layer.queue.submit([encoder.finish()]);
-        self.undos.push_back(backup_layer);
-
-        while self.undos.len() > UNDO_LIMIT {
-            self.undos.pop_front();
-        }
+        self.traveler.stock(&self.main, stroke.dirty);
     }
 
     pub fn undo(&mut self) {
-        let Some(mut backup) = self.undos.pop_back() else {
-            return;
-        };
-
-        for key in backup.chunks.keys() {
-            if !self.main.chunks.contains_key(key) {
-                log::debug!("failed to undo");
-                return;
-            }
+        if self.traveler.undo_available(&self.main) {
+            let dirty = self.traveler.undo(&self.main).unwrap();
+            self.brush.layer.generate_mipmaps(&self.main, dirty);
+        } else {
+            log::debug!("failed to undo");
         }
-
-        let mut redo_chunks = Vec::new();
-        for (key, chunk) in backup.chunks.drain() {
-            self.thread_tx
-                .send(ThreadInput::SwapChunk(key, chunk.clone()))
-                .unwrap();
-            if let Some(old) = self.main.chunks.get(&key).cloned() {
-                redo_chunks.push((key, old));
-            }
-            self.main.chunks.insert(key, chunk);
-            self.brush
-                .layer
-                .generate_mipmaps(&self.main, chunk_to_rect(key, self.main.chunk_size));
-        }
-
-        for (key, chunk) in redo_chunks {
-            backup.chunks.insert(key, chunk);
-        }
-
-        self.redos.push(backup);
     }
 
     pub fn redo(&mut self) {
-        let Some(mut backup) = self.redos.pop() else {
-            return;
-        };
-
-        for key in backup.chunks.keys() {
-            if !self.main.chunks.contains_key(key) {
-                log::debug!("failed to redo");
-                return;
-            }
+        if self.traveler.redo_available(&self.main) {
+            let dirty = self.traveler.redo(&self.main).unwrap();
+            self.brush.layer.generate_mipmaps(&self.main, dirty);
+        } else {
+            log::debug!("failed to redo");
         }
-
-        let mut undo_chunks = Vec::new();
-        for (key, chunk) in backup.chunks.drain() {
-            self.thread_tx
-                .send(ThreadInput::SwapChunk(key, chunk.clone()))
-                .unwrap();
-            if let Some(old) = self.main.chunks.get(&key).cloned() {
-                undo_chunks.push((key, old));
-            }
-            self.main.chunks.insert(key, chunk);
-            self.brush
-                .layer
-                .generate_mipmaps(&self.main, chunk_to_rect(key, self.main.chunk_size));
-        }
-
-        for (key, chunk) in undo_chunks {
-            backup.chunks.insert(key, chunk);
-        }
-
-        self.undos.push_back(backup);
     }
 }
 

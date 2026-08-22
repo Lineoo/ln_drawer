@@ -34,8 +34,8 @@ pub struct DrawPipeline {
 
     bridge: Chunk,
 
-    prev: Option<Draw>,
-    stroke: Option<Stroke>,
+    pub prev: Option<Draw>,
+    pub stroke: Option<Stroke>,
 }
 
 #[derive(Clone, Copy)]
