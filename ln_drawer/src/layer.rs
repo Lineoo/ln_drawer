@@ -208,7 +208,7 @@ impl LayerPipeline {
         }
     }
 
-    pub fn validate_chunks(&mut self, dst: &mut Layer, rect: Rectangle) -> bool {
+    pub fn validate_chunks(&self, dst: &mut Layer, rect: Rectangle) -> bool {
         for mipmap in 0..dst.mipmap_levels {
             let (start, end) = rect_to_chunks(rect, mipmap, dst.chunk_size);
             for chunk_x in start.0..end.0 {
@@ -227,12 +227,12 @@ impl LayerPipeline {
     /// Assume `self.controlled` is false. if `origin` is `None`, create transparent chunk, otherwise
     /// clone data from the `origin` layer
     pub fn prepare_chunks(
-        &mut self,
+        &self,
         dst: &mut Layer,
         src: Option<&Layer>,
         pool: &mut ChunkPool,
         rect: Rectangle,
-        encoder: &mut CommandEncoder,
+        cpass: &mut ComputePass,
     ) {
         debug_assert!(!dst.controlled, "controlled layer cannot prepare chunks");
         debug_assert_eq!(
@@ -265,27 +265,13 @@ impl LayerPipeline {
                 let src_chunk = src.chunks.get(&dst_key);
                 let dst_chunk = self.recycle_chunk(dst_key, dst.chunk_size, pool);
 
-                // TODO Use unified approach to copy and prevent manual encoder creation
                 if let Some(src_chunk) = src_chunk {
-                    encoder.copy_texture_to_texture(
-                        TexelCopyTextureInfo {
-                            texture: &src_chunk.texture,
-                            mip_level: 0,
-                            origin: Origin3d::ZERO,
-                            aspect: TextureAspect::All,
-                        },
-                        TexelCopyTextureInfo {
-                            texture: &dst_chunk.texture,
-                            mip_level: 0,
-                            origin: Origin3d::ZERO,
-                            aspect: TextureAspect::All,
-                        },
-                        Extent3d {
-                            width: src.chunk_size,
-                            height: src.chunk_size,
-                            depth_or_array_layers: 1,
-                        },
-                    );
+                    cpass.set_pipeline(&self.copy_pipeline);
+                    cpass.set_bind_group(0, &dst_chunk.dispatch, &[]);
+                    cpass.set_bind_group(1, &dst_chunk.write, &[]);
+                    cpass.set_bind_group(2, &src_chunk.read, &[]);
+                    let chunk_rect = chunk_to_rect(dst_key, dst.chunk_size);
+                    dispatch_workgroups(cpass, &[chunk_rect]);
                 }
 
                 dst.chunks.insert(dst_key, dst_chunk);
@@ -387,7 +373,7 @@ impl LayerPipeline {
     }
 
     /// return `true` if the chunk is guaranteed to be empty
-    fn recycle_chunk(&mut self, key: ChunkKey, chunk_size: u32, pool: &mut ChunkPool) -> Chunk {
+    fn recycle_chunk(&self, key: ChunkKey, chunk_size: u32, pool: &mut ChunkPool) -> Chunk {
         if let Some(chunk) = pool.list.pop() {
             write_dispatch(
                 &self.queue,

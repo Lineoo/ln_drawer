@@ -203,12 +203,14 @@ impl DrawPipeline {
     ) {
         // prepare
 
-        let mut encoder = self
-            .layer
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("layer_draw"),
-            });
+        let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("layer_draw"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_draw"),
+            timestamp_writes: None,
+        });
 
         let reference_layer = match brush.replace_mode() {
             true => Some(dst),
@@ -221,22 +223,17 @@ impl DrawPipeline {
             reference_layer,
             &mut self.scratch_pool,
             dirty,
-            &mut encoder,
+            &mut cpass,
         );
         self.layer.prepare_chunks(
             &mut self.scratch_swp,
             reference_layer,
             &mut self.scratch_pool,
             dirty,
-            &mut encoder,
+            &mut cpass,
         );
 
         // draw
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_draw"),
-            timestamp_writes: None,
-        });
 
         if brush.bridge_mode() && brush.replace_mode() {
             let (start, end) = rect_to_chunks(bridge_rect, 0, self.scratch_dst.chunk_size);
@@ -317,12 +314,14 @@ impl DrawPipeline {
     ) {
         // prepare
 
-        let mut encoder = self
-            .layer
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("layer_draw"),
-            });
+        let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("layer_draw"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_draw"),
+            timestamp_writes: None,
+        });
 
         let reference_layer = match brush.replace_mode() {
             true => Some(dst),
@@ -335,15 +334,10 @@ impl DrawPipeline {
             reference_layer,
             &mut self.scratch_pool,
             dirty,
-            &mut encoder,
+            &mut cpass,
         );
 
         // draw
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_draw"),
-            timestamp_writes: None,
-        });
 
         if brush.bridge_mode() && brush.replace_mode() {
             let (start, end) = rect_to_chunks(bridge_rect, 0, self.scratch_dst.chunk_size);
