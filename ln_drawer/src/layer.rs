@@ -36,6 +36,7 @@ pub const DEFAULT_CHUNK_SIZE: u32 = 512;
 
 pub const CHUNK_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
+const DISPATCH_CAPACITY: u64 = 256;
 const DRAWS_ARRAY_CAPACITY: u64 = 0x2000;
 const WORKGROUP_SIZE: UVec2 = UVec2::new(16, 16);
 
@@ -49,6 +50,7 @@ pub struct LayerPipeline {
 
     dispatch: Buffer,
     dispatch_group: BindGroup,
+
     sampler_group_unfiltered: BindGroup,
     sampler_group_filtered: BindGroup,
 
@@ -267,7 +269,7 @@ impl LayerPipeline {
 
                 if let Some(src_chunk) = src_chunk {
                     cpass.set_pipeline(&self.copy_pipeline);
-                    cpass.set_bind_group(0, &dst_chunk.dispatch, &[]);
+                    cpass.set_bind_group(0, &dst_chunk.dispatch, &[0]);
                     cpass.set_bind_group(1, &dst_chunk.write, &[]);
                     cpass.set_bind_group(2, &src_chunk.read, &[]);
                     let chunk_rect = chunk_to_rect(dst_key, dst.chunk_size);
@@ -289,7 +291,7 @@ impl LayerPipeline {
             return;
         }
 
-        write_dispatch(&self.queue, &self.dispatch, dirty);
+        write_dispatch(&self.queue, &self.dispatch, 0, dirty);
 
         let mut encoder = self
             .device
@@ -302,7 +304,7 @@ impl LayerPipeline {
         });
 
         cpass.set_pipeline(&self.mipmap_pipeline);
-        cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
+        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
 
         for src_level in 0..layer.mipmap_levels - 1 {
             let (src, dst) = rect_to_chunks(dirty, src_level, layer.chunk_size);
@@ -378,6 +380,7 @@ impl LayerPipeline {
             write_dispatch(
                 &self.queue,
                 &chunk.rectangle,
+                0,
                 chunk_to_rect(key, chunk_size),
             );
             chunk
@@ -423,12 +426,16 @@ fn dispatch_workgroups(cpass: &mut ComputePass, rects: &[Rectangle]) {
     dispatch_workgroups_divide(cpass, rects, 1);
 }
 
-fn write_dispatch(queue: &Queue, buffer: &Buffer, rect: Rectangle) {
+fn write_dispatch(queue: &Queue, buffer: &Buffer, index: u64, rect: Rectangle) {
     let uniform = DispatchUniform {
         coords: rect.origin.into(),
         size: rect.extend.into(),
     };
-    queue.write_buffer(buffer, 0, bytes_of(&uniform));
+    queue.write_buffer(
+        buffer,
+        size_of::<DispatchUniform>() as u64 * index,
+        bytes_of(&uniform),
+    );
 }
 
 fn chunk_to_rect((x, y, z): ChunkKey, chunk_size: u32) -> Rectangle {
@@ -462,157 +469,6 @@ fn lower_chunk_of(chunk: ChunkKey) -> [ChunkKey; 4] {
     ]
 }
 
-// --- Chunks --- //
-
-fn create_chunk_texture(device: &Device, chunk_size: u32) -> Texture {
-    device.create_texture(&TextureDescriptor {
-        label: Some("layer_chunk_texture"),
-        size: Extent3d {
-            width: chunk_size,
-            height: chunk_size,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: TextureDimension::D2,
-        format: CHUNK_TEXTURE_FORMAT,
-        usage: TextureUsages::COPY_SRC
-            | TextureUsages::COPY_DST
-            | TextureUsages::TEXTURE_BINDING
-            | TextureUsages::STORAGE_BINDING,
-        view_formats: &[],
-    })
-}
-
-fn create_chunk(
-    device: &Device,
-    chunk_layout: &ChunkLayout,
-    texture: Texture,
-    rect: Rectangle,
-) -> Chunk {
-    let rectangle = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("layer_chunk_buffer"),
-        contents: bytes_of(&DispatchUniform {
-            coords: rect.origin.into(),
-            size: rect.extend.into(),
-        }),
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-    });
-
-    let texture_fragment_view = texture.create_view(&TextureViewDescriptor {
-        label: Some("layer_chunk_texture_view"),
-        format: Some(CHUNK_TEXTURE_FORMAT),
-        usage: Some(TextureUsages::TEXTURE_BINDING),
-        ..Default::default()
-    });
-
-    let texture_compute_view = texture.create_view(&TextureViewDescriptor {
-        label: Some("layer_chunk_texture_view"),
-        format: Some(CHUNK_TEXTURE_FORMAT),
-        usage: Some(TextureUsages::STORAGE_BINDING),
-        ..Default::default()
-    });
-
-    let dispatch = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_chunk_dispatch"),
-        layout: &chunk_layout.dispatch,
-        entries: &[BindGroupEntry {
-            binding: 0,
-            resource: BindingResource::Buffer(BufferBinding {
-                buffer: &rectangle,
-                offset: 0,
-                size: None,
-            }),
-        }],
-    });
-
-    let render = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_chunk_render"),
-        layout: &chunk_layout.render,
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(&texture_fragment_view),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &rectangle,
-                    offset: 0,
-                    size: None,
-                }),
-            },
-        ],
-    });
-
-    let read = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_chunk_read"),
-        layout: &chunk_layout.read,
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(&texture_compute_view),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &rectangle,
-                    offset: 0,
-                    size: None,
-                }),
-            },
-        ],
-    });
-
-    let write = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_chunk_write"),
-        layout: &chunk_layout.write,
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(&texture_compute_view),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &rectangle,
-                    offset: 0,
-                    size: None,
-                }),
-            },
-        ],
-    });
-
-    let read_write = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_chunk_read_write"),
-        layout: &chunk_layout.read_write,
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(&texture_compute_view),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &rectangle,
-                    offset: 0,
-                    size: None,
-                }),
-            },
-        ],
-    });
-
-    Chunk {
-        rectangle,
-        dispatch,
-        texture,
-        render,
-        read,
-        write,
-        read_write,
-    }
-}
-
 // --- Layouts --- //
 
 const LAYOUT_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
@@ -622,7 +478,7 @@ const LAYOUT_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor
         visibility: ShaderStages::COMPUTE,
         ty: BindingType::Buffer {
             ty: BufferBindingType::Uniform,
-            has_dynamic_offset: false,
+            has_dynamic_offset: true,
             min_binding_size: None,
         },
         count: None,
@@ -637,6 +493,42 @@ const LAYOUT_SAMPLER: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor 
         ty: BindingType::Sampler(SamplerBindingType::Filtering),
         count: None,
     }],
+};
+
+const LAYOUT_DRAW_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("layer_brush_dispatch_draw"),
+    entries: &[
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 2,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+    ],
 };
 
 /// Contains read storage texture of chunk in format `Rgba8Unorm` and chunk key in vec3
@@ -821,7 +713,7 @@ fn draws_dispatch_group(
 ) -> (Buffer, Buffer, Buffer, BindGroup) {
     let dispatch = device.create_buffer(&BufferDescriptor {
         label: Some("layer_brush_dispatch"),
-        size: size_of::<u32>() as u64 * 8,
+        size: size_of::<DispatchUniform>() as u64 * DISPATCH_CAPACITY,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -871,6 +763,157 @@ fn draws_dispatch_group(
         ],
     });
     (dispatch, draws_length, draws_array, dispatch_group_draw)
+}
+
+// --- Chunks --- //
+
+fn create_chunk_texture(device: &Device, chunk_size: u32) -> Texture {
+    device.create_texture(&TextureDescriptor {
+        label: Some("layer_chunk_texture"),
+        size: Extent3d {
+            width: chunk_size,
+            height: chunk_size,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: CHUNK_TEXTURE_FORMAT,
+        usage: TextureUsages::COPY_SRC
+            | TextureUsages::COPY_DST
+            | TextureUsages::TEXTURE_BINDING
+            | TextureUsages::STORAGE_BINDING,
+        view_formats: &[],
+    })
+}
+
+fn create_chunk(
+    device: &Device,
+    chunk_layout: &ChunkLayout,
+    texture: Texture,
+    rect: Rectangle,
+) -> Chunk {
+    let rectangle = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("layer_chunk_buffer"),
+        contents: bytes_of(&DispatchUniform {
+            coords: rect.origin.into(),
+            size: rect.extend.into(),
+        }),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    let texture_fragment_view = texture.create_view(&TextureViewDescriptor {
+        label: Some("layer_chunk_texture_view"),
+        format: Some(CHUNK_TEXTURE_FORMAT),
+        usage: Some(TextureUsages::TEXTURE_BINDING),
+        ..Default::default()
+    });
+
+    let texture_compute_view = texture.create_view(&TextureViewDescriptor {
+        label: Some("layer_chunk_texture_view"),
+        format: Some(CHUNK_TEXTURE_FORMAT),
+        usage: Some(TextureUsages::STORAGE_BINDING),
+        ..Default::default()
+    });
+
+    let dispatch = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_dispatch"),
+        layout: &chunk_layout.dispatch,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &rectangle,
+                offset: 0,
+                size: None,
+            }),
+        }],
+    });
+
+    let render = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_render"),
+        layout: &chunk_layout.render,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&texture_fragment_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &rectangle,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    let read = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_read"),
+        layout: &chunk_layout.read,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&texture_compute_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &rectangle,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    let write = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_write"),
+        layout: &chunk_layout.write,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&texture_compute_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &rectangle,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    let read_write = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_read_write"),
+        layout: &chunk_layout.read_write,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&texture_compute_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &rectangle,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    Chunk {
+        rectangle,
+        dispatch,
+        texture,
+        render,
+        read,
+        write,
+        read_write,
+    }
 }
 
 // --- Pipelines --- //
@@ -1208,41 +1251,3 @@ fn brush_pipelines(
         round_erase: round_pipeline("erase", "dst * (1 - src.a)"),
     }
 }
-
-// --- Resources --- //
-
-const LAYOUT_DRAW_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
-    label: Some("layer_brush_dispatch_draw"),
-    entries: &[
-        BindGroupLayoutEntry {
-            binding: 0,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 1,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 2,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-    ],
-};

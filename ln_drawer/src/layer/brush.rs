@@ -178,15 +178,15 @@ impl DrawPipeline {
         );
 
         let queue = &self.layer.queue;
-        write_dispatch(queue, &self.layer.draws_dispatch, dirty);
-        write_dispatch(queue, &self.layer.dispatch, dirty);
+        write_dispatch(queue, &self.layer.draws_dispatch, 0, dirty);
+        write_dispatch(queue, &self.layer.dispatch, 0, dirty);
 
         let draw_length = draws.len() as u32;
         queue.write_buffer(&self.layer.draws_length, 0, bytes_of(&draw_length));
         queue.write_buffer(&self.layer.draws_array, 0, cast_slice(&draws));
 
         if brush.bridge_mode() {
-            write_dispatch(&self.layer.queue, &self.bridge.rectangle, bridge_rect);
+            write_dispatch(&self.layer.queue, &self.bridge.rectangle, 0, bridge_rect);
         }
 
         if !self.layer.support_read_write {
@@ -250,7 +250,7 @@ impl DrawPipeline {
 
                     // TODO need a extra buffer to represent bridge *sample* rect
                     cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[]);
+                    cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[0]);
                     cpass.set_bind_group(1, Some(&self.bridge.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
                     dispatch_workgroups(&mut cpass, &[bridge_rect, src_rect]);
@@ -289,7 +289,7 @@ impl DrawPipeline {
                     dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
 
                     cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
                     cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&swp_chunk.read), &[]);
                     dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
@@ -348,7 +348,7 @@ impl DrawPipeline {
 
                     // TODO need a extra buffer to represent bridge *sample* rect
                     cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[]);
+                    cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[0]);
                     cpass.set_bind_group(1, Some(&self.bridge.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
                     dispatch_workgroups(&mut cpass, &[bridge_rect, src_rect]);
@@ -443,7 +443,7 @@ impl DrawPipeline {
             timestamp_writes: None,
         });
 
-        write_dispatch(&self.layer.queue, &self.layer.dispatch, stroke.dirty);
+        write_dispatch(&self.layer.queue, &self.layer.dispatch, 0, stroke.dirty);
 
         // if failed to merge, we simply drop it.
         if tx.is_some() && !self.layer.validate_chunks(dst, stroke.dirty) {
@@ -462,7 +462,7 @@ impl DrawPipeline {
         // Clear bridge chunk
         if stroke.bridge && stroke.replace {
             cpass.set_pipeline(&self.layer.clear_pipeline);
-            cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[]);
+            cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[0]);
             cpass.set_bind_group(1, Some(&self.bridge.write), &[]);
             dispatch_workgroups_extend(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
         }
@@ -494,20 +494,20 @@ impl DrawPipeline {
             {
                 if stroke.replace {
                     cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
                     cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
                     dispatch_workgroups(cpass, &[stroke.dirty, src_rect]);
                 } else {
                     cpass.set_pipeline(&self.layer.merge_pipelines.over);
-                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
                     cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
                     cpass.set_bind_group(3, Some(&swp_chunk.write), &[]);
                     dispatch_workgroups(cpass, &[stroke.dirty, src_rect]);
 
                     cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
                     cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&swp_chunk.read), &[]);
                     dispatch_workgroups(cpass, &[stroke.dirty, src_rect]);
@@ -527,13 +527,13 @@ impl DrawPipeline {
             if let Some(dst_chunk) = dst.chunks.get(src_key) {
                 if stroke.replace {
                     cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
                     cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
                     dispatch_workgroups(cpass, &[stroke.dirty, src_rect]);
                 } else {
                     cpass.set_pipeline(&self.layer.merge_pipelines.over);
-                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
                     cpass.set_bind_group(1, Some(&dst_chunk.read_write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
                     cpass.set_bind_group(3, Some(&dst_chunk.read_write), &[]);
@@ -558,7 +558,7 @@ impl DrawPipeline {
             timestamp_writes: None,
         });
 
-        write_dispatch(&self.layer.queue, &self.layer.dispatch, stroke.dirty);
+        write_dispatch(&self.layer.queue, &self.layer.dispatch, 0, stroke.dirty);
         self.recycle_scratch(&stroke, &mut cpass);
 
         drop(cpass);
@@ -570,7 +570,7 @@ impl DrawPipeline {
         if stroke.replace {
             for (key, chunk) in self.scratch_dst.chunks.drain() {
                 cpass.set_pipeline(&self.layer.clear_pipeline);
-                cpass.set_bind_group(0, Some(&chunk.dispatch), &[]);
+                cpass.set_bind_group(0, Some(&chunk.dispatch), &[0]);
                 cpass.set_bind_group(1, Some(&chunk.write), &[]);
                 let chunk_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
                 dispatch_workgroups(cpass, &[chunk_rect]);
@@ -579,7 +579,7 @@ impl DrawPipeline {
 
             for (key, chunk) in self.scratch_swp.chunks.drain() {
                 cpass.set_pipeline(&self.layer.clear_pipeline);
-                cpass.set_bind_group(0, Some(&chunk.dispatch), &[]);
+                cpass.set_bind_group(0, Some(&chunk.dispatch), &[0]);
                 cpass.set_bind_group(1, Some(&chunk.write), &[]);
                 let chunk_rect = chunk_to_rect(key, self.scratch_swp.chunk_size);
                 dispatch_workgroups(cpass, &[chunk_rect]);
@@ -588,7 +588,7 @@ impl DrawPipeline {
         } else {
             for (key, chunk) in self.scratch_dst.chunks.drain() {
                 cpass.set_pipeline(&self.layer.clear_pipeline);
-                cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
                 cpass.set_bind_group(1, Some(&chunk.write), &[]);
                 let chunk_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
                 dispatch_workgroups(cpass, &[stroke.dirty, chunk_rect]);
@@ -597,7 +597,7 @@ impl DrawPipeline {
 
             for (key, chunk) in self.scratch_swp.chunks.drain() {
                 cpass.set_pipeline(&self.layer.clear_pipeline);
-                cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[]);
+                cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
                 cpass.set_bind_group(1, Some(&chunk.write), &[]);
                 let chunk_rect = chunk_to_rect(key, self.scratch_swp.chunk_size);
                 dispatch_workgroups(cpass, &[stroke.dirty, chunk_rect]);
