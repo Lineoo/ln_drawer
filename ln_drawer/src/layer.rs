@@ -36,7 +36,7 @@ pub const DEFAULT_CHUNK_SIZE: u32 = 512;
 
 pub const CHUNK_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
-const DRAWS_ARRAY_CAPACITY: u64 = 48 * 200;
+const DRAWS_ARRAY_CAPACITY: u64 = 0x2000;
 const WORKGROUP_SIZE: UVec2 = UVec2::new(16, 16);
 
 // function: render, merge, mipmap, clear & chunk recycle
