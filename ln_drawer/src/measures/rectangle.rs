@@ -72,6 +72,13 @@ impl Rectangle {
         }
     }
 
+    pub fn new_minmax(min: IVec2, max: IVec2) -> Rectangle {
+        Rectangle {
+            origin: min.min(max),
+            extend: (min.max(max) - min.min(max)).abs().as_uvec2(),
+        }
+    }
+
     pub fn new_extend(left: i32, down: i32, width: u32, height: u32) -> Rectangle {
         Rectangle {
             origin: IVec2::new(left, down),

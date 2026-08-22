@@ -1,5 +1,6 @@
 pub mod brush;
 pub mod stream;
+pub mod traveler;
 pub mod wrapper;
 
 use std::mem::size_of;
