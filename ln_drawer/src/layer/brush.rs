@@ -175,21 +175,6 @@ impl DrawPipeline {
             BRIDGE_CHUNK_SIZE,
         );
 
-        if !self.layer.support_read_write {
-            self.draw_upload_swap(dst, brush, draws, dirty, bridge_rect);
-        } else {
-            self.draw_upload_read_write(dst, brush, draws, dirty, bridge_rect);
-        }
-    }
-
-    fn draw_upload_swap<T: BrushInner>(
-        &mut self,
-        dst: &Layer,
-        brush: &T,
-        draws: Vec<T::Draw>,
-        dirty: Rectangle,
-        bridge_rect: Rectangle,
-    ) {
         let queue = &self.layer.queue;
         write_dispatch(queue, &self.layer.draws_dispatch, dirty);
         write_dispatch(queue, &self.layer.dispatch, dirty);
@@ -202,6 +187,20 @@ impl DrawPipeline {
             write_dispatch(&self.layer.queue, &self.bridge.rectangle, bridge_rect);
         }
 
+        if !self.layer.support_read_write {
+            self.draw_upload_swap(dst, brush, dirty, bridge_rect);
+        } else {
+            self.draw_upload_read_write(dst, brush, dirty, bridge_rect);
+        }
+    }
+
+    fn draw_upload_swap<T: BrushInner>(
+        &mut self,
+        dst: &Layer,
+        brush: &T,
+        dirty: Rectangle,
+        bridge_rect: Rectangle,
+    ) {
         // prepare
 
         let mut encoder = self
@@ -313,22 +312,9 @@ impl DrawPipeline {
         &mut self,
         dst: &Layer,
         brush: &T,
-        draws: Vec<T::Draw>,
         dirty: Rectangle,
         bridge_rect: Rectangle,
     ) {
-        let queue = &self.layer.queue;
-        write_dispatch(queue, &self.layer.draws_dispatch, dirty);
-        write_dispatch(queue, &self.layer.dispatch, dirty);
-
-        let draw_length = draws.len() as u32;
-        queue.write_buffer(&self.layer.draws_length, 0, bytes_of(&draw_length));
-        queue.write_buffer(&self.layer.draws_array, 0, cast_slice(&draws));
-
-        if brush.bridge_mode() {
-            write_dispatch(&self.layer.queue, &self.bridge.rectangle, bridge_rect);
-        }
-
         // prepare
 
         let mut encoder = self
