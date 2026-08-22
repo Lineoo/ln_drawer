@@ -444,12 +444,10 @@ impl DrawPipeline {
         debug_assert_eq!(dst.chunk_size, self.scratch_dst.chunk_size);
         debug_assert_eq!(self.scratch_swp.chunk_size, self.scratch_dst.chunk_size);
 
-        let mut encoder = self
-            .layer
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("layer_submit"),
-            });
+        let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("layer_submit"),
+        });
+
         let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("layer_submit"),
             timestamp_writes: None,
@@ -553,6 +551,28 @@ impl DrawPipeline {
                 };
             }
         }
+    }
+
+    pub fn discard(&mut self) {
+        self.prev = None;
+        let Some(stroke) = self.stroke.take() else {
+            return;
+        };
+
+        let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("layer_discard"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_discard"),
+            timestamp_writes: None,
+        });
+
+        write_dispatch(&self.layer.queue, &self.layer.dispatch, stroke.dirty);
+        self.recycle_scratch(&stroke, &mut cpass);
+
+        drop(cpass);
+        self.layer.queue.submit([encoder.finish()]);
     }
 
     /// Need dispatch buffer to be written ahead

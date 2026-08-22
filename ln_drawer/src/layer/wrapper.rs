@@ -327,7 +327,7 @@ impl LayerWrapper {
                         drag_start = None;
                     } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         this.undo_stock();
-                        this.brush.submit(&mut this.main, Some(&this.thread_tx));
+                        this.brush.discard();
                         temp_erase_mode = true;
                         drag_start = None;
                     }
