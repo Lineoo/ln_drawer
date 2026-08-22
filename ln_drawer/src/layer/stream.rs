@@ -25,7 +25,8 @@ use crate::{
     save::SaveDatabase,
 };
 
-const CHUNK_CAPS: usize = 512;
+const CHUNK_REAL_CAPS: usize = 512;
+const CHUNK_HARD_CAPS: usize = 1024;
 const CHUNK_BATCH: usize = 8;
 const CHUNK_META0_FORMAT: u32 = 1;
 
@@ -84,6 +85,7 @@ pub struct StreamConfig {
 pub struct StreamBase {
     active: IndexMap<ChunkKey, Option<Texture>>,
     unsaved: HashSet<ChunkKey>,
+    real_cnt: usize,
 }
 
 /// Single batch of streaming chunks selected out of [`StreamQueue`] and waited to
@@ -126,6 +128,7 @@ pub fn loading_thread(
     let mut base = StreamBase {
         active: IndexMap::<ChunkKey, Option<Texture>>::new(),
         unsaved: HashSet::new(),
+        real_cnt: 0,
     };
 
     let mut staging = StreamStaging { active: Vec::new() };
@@ -180,16 +183,15 @@ pub fn loading_thread(
                     let (texture, chunk) = chunk_prepare(&config, key)?;
                     base.active.insert(key, Some(texture));
                     base.unsaved.insert(key);
+                    base.real_cnt += 1;
                     output_tx.send(ThreadOutput::Insert(key, chunk))?;
                 }
-                continue;
             }
             Some(ThreadInput::SwapChunk(key, chunk)) => {
                 base.active.insert(key, Some(chunk.texture.clone()));
                 base.unsaved.insert(key);
+                base.real_cnt += 1;
                 output_tx.send(ThreadOutput::Insert(key, chunk))?;
-
-                continue;
             }
             Some(ThreadInput::Autosave) => {
                 autosave(&config, &mut base, &mut debug)?;
@@ -212,7 +214,7 @@ pub fn loading_thread(
             ",
             queue.inner.len(),
             queue.inner.len() - queue.front,
-            base.active.values().flatten().count(),
+            base.real_cnt,
             base.active.len(),
             debug.load,
             debug.load_real,
@@ -267,7 +269,7 @@ fn restock_queue(config: &StreamConfig, camera: &mut CameraInfo, queue: &mut Str
         }
     }
 
-    debug_assert!(queue.inner.len() < CHUNK_CAPS - 1);
+    debug_assert!(queue.inner.len() < CHUNK_REAL_CAPS - 1);
 
     queue
         .inner
@@ -332,6 +334,7 @@ fn load(
 
             chunk_write(config, &bytes, &texture);
             base.active.insert(key, Some(texture));
+            base.real_cnt += 1;
             output_tx.send(ThreadOutput::Insert(key, chunk))?;
 
             debug.load_real += 1;
@@ -357,7 +360,9 @@ fn unload(
     let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
     let mut frnt = base.active.len();
-    while base.active.len() + staging.active.len() >= CHUNK_CAPS {
+    while base.real_cnt + staging.active.len() >= CHUNK_REAL_CAPS
+        || base.active.len() + staging.active.len() >= CHUNK_HARD_CAPS
+    {
         frnt -= 1;
         if (queue.inner).contains(base.active.get_index(frnt).unwrap().0) {
             continue;
@@ -376,6 +381,7 @@ fn unload(
         }
 
         if texture.is_some() {
+            base.real_cnt -= 1;
             debug.unload_real += 1;
         }
 
