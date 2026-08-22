@@ -48,7 +48,7 @@ impl Tabs {
         let mut children = Vec::new();
         let mut luni_children = Vec::new();
         for (entry, _) in &self.tabs {
-            let button = world.build(ToggleButton {
+            let button = world.insert(ToggleButton {
                 rect: self.rect,
                 theme: ToggleButtonTheme {
                     idle_color: theme.secondary_color,

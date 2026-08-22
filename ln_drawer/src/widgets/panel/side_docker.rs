@@ -43,7 +43,7 @@ impl Descriptor for SideDocker {
         });
 
         let docker_button = |image_bytes| {
-            world.build(ToggleButton {
+            world.insert(ToggleButton {
                 rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
                 theme: ToggleButtonTheme {
                     idle_color: theme.primary_color,
@@ -71,7 +71,7 @@ impl Descriptor for SideDocker {
         let undo = docker_button(include_bytes!("../../../res/interface/undo-2.svg"));
         let redo = docker_button(include_bytes!("../../../res/interface/redo-2.svg"));
 
-        let color_picker = world.build(ToggleButton {
+        let color_picker = world.insert(ToggleButton {
             rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
             theme: ToggleButtonTheme {
                 idle_color: theme.primary_color,

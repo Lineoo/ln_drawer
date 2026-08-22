@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use glam::{DVec2, Vec2};
 use image::DynamicImage;
-use ln_world::{Descriptor, Element, Handle, World};
+use ln_world::{Element, Handle, World};
 use palette::Srgba;
 
 use crate::{
@@ -69,7 +69,7 @@ pub enum ButtonDragStatus {
 }
 
 impl ToggleButton {
-    pub fn build(self, world: &World) -> Handle<ToggleButton> {
+    pub fn init(&self, world: &World, handle: Handle<Self>) {
         let theme = world.single_fetch::<Theme>().unwrap();
 
         let frame = world.build(RoundedRectDescriptor {
@@ -113,8 +113,6 @@ impl ToggleButton {
         } else {
             None
         };
-
-        let handle = world.insert(self);
 
         world.observer(handle, move |&SetButtonSelected(selected), world| {
             let mut this = world.fetch_mut(handle).unwrap();
@@ -269,15 +267,11 @@ impl ToggleButton {
                 world.trigger(frame_anim_color, &SetAnimationDst(this.theme.idle_color));
             }
         });
-
-        handle
     }
 }
 
-impl Element for ToggleButton {}
-impl Descriptor for ToggleButton {
-    type Target = Handle<ToggleButton>;
-    fn when_build(self, world: &World) -> Self::Target {
-        self.build(world)
+impl Element for ToggleButton {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        self.init(world, this);
     }
 }
