@@ -13,6 +13,9 @@ branch = "ln_drawer"
 git = "https://github.com/Lineoo/wgpu/"
 branch = "fence-fix"
 
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 strip = "symbols"
 lto = "thin"
