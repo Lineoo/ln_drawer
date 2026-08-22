@@ -44,11 +44,11 @@ pub struct Draw {
     pub force: f32,
 }
 
+#[derive(Clone, Copy)]
 pub struct Stroke {
-    dirty: Rectangle,
-    chunks: Vec<super::ChunkKey>,
-    replace: bool,
-    bridge: bool,
+    pub dirty: Rectangle,
+    pub replace: bool,
+    pub bridge: bool,
 }
 
 pub trait Brush {
@@ -166,7 +166,6 @@ impl DrawPipeline {
             dirty,
             replace: brush.replace_mode(),
             bridge: brush.bridge_mode(),
-            chunks: vec![],
         });
 
         stroke.dirty = stroke.dirty.grow(dirty);
@@ -265,12 +264,6 @@ impl DrawPipeline {
                 let key = (x, y, 0);
                 let scratch_rect = chunk_to_rect(key, dst.chunk_size);
 
-                if let Some(stroke) = &mut self.stroke {
-                    if !stroke.chunks.contains(&key) {
-                        stroke.chunks.push(key);
-                    }
-                }
-
                 if brush.bridge_mode() {
                     let Some(dst_chunk) = self.scratch_dst.chunks.get(&key) else {
                         continue;
@@ -368,12 +361,6 @@ impl DrawPipeline {
             for y in start.1..end.1 {
                 let key = (x, y, 0);
                 let scratch_rect = chunk_to_rect(key, dst.chunk_size);
-
-                if let Some(stroke) = &mut self.stroke {
-                    if !stroke.chunks.contains(&key) {
-                        stroke.chunks.push(key);
-                    }
-                }
 
                 if brush.bridge_mode() {
                     let Some(dst_chunk) = self.scratch_dst.chunks.get(&key) else {
