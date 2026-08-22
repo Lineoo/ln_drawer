@@ -611,21 +611,116 @@ fn touch_chunk_meta(
 }
 
 /// Guaranteed assumption: Upper layer is always loaded first
-fn chunk_distance((x, y, z): ChunkKey, (cx, cy, cz): ChunkKey, mipmap: u8) -> u32 {
-    fn scale(mipmap: u8) -> i32 {
-        2i32.pow(mipmap as u32)
-    }
-
-    let dx = (x * scale(z) + scale(z.saturating_sub(1)))
-        - (cx * scale(cz) + scale(cz.saturating_sub(1)));
-    let dy = (y * scale(z) + scale(z.saturating_sub(1)))
-        - (cy * scale(cz) + scale(cz.saturating_sub(1)));
-    let dz = (mipmap - z) as i32 * 0x8000;
-    dx.unsigned_abs() + dy.unsigned_abs() + dz.unsigned_abs()
+fn chunk_distance((x, y, z): ChunkKey, (cx, cy, cz): ChunkKey, m: u8) -> u64 {
+    let dx = (x << z).abs_diff(cx << cz).saturating_sub(1 << z) as u64;
+    let dy = (y << z).abs_diff(cy << cz).saturating_sub(1 << z) as u64;
+    (dx + dy << m) + (255 - z) as u64
 }
 
 fn chunk_of(center: IVec2, zoom: i64, chunk_size: u32) -> ChunkKey {
     let mipmap = (-zoom).q32_round().max(0) as u8;
-    let size = chunk_size as i32 * (1i32 << mipmap as i32);
+    let size = (chunk_size << mipmap) as i32;
     (center.x.div_euclid(size), center.y.div_euclid(size), mipmap)
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn chunk_order_overlap() {
+        let golden: [super::ChunkKey; _] = [
+            (0, 1, 1),
+            (0, 0, 1),
+            (0, 2, 0),
+            (0, 1, 0),
+            (1, 1, 0),
+            (0, 0, 0),
+            (1, 0, 0),
+        ];
+
+        let center: super::ChunkKey = (0, 2, 0);
+        let mut test = golden.clone();
+        test.sort_by_key(|&chunk| super::chunk_distance(chunk, center, 8));
+        assert_eq!(test, golden);
+    }
+
+    #[test]
+    fn chunk_order_random() {
+        // raw data from script/gen/chunks.py
+        let golden: [super::ChunkKey; _] = [
+            (0, -1, 8),
+            (-1, 0, 8),
+            (-1, -1, 8),
+            (-1, -1, 7),
+            (0, -1, 7),
+            (-1, 0, 7),
+            (0, 0, 6),
+            (-1, -1, 6),
+            (0, -1, 5),
+            (-3, 2, 1),
+            (-13, -3, 0),
+            (-1, 2, 4),
+            (-1, -2, 5),
+            (-14, 5, 1),
+            (-10, 0, 2),
+            (-6, -41, 0),
+            (23, 26, 0),
+            (-3, 2, 4),
+            (-30, -22, 0),
+            (-6, -9, 2),
+            (-8, -49, 0),
+            (44, 19, 0),
+            (7, 3, 3),
+            (15, 3, 2),
+            (-11, -7, 2),
+            (26, 10, 1),
+            (-57, 21, 0),
+            (-35, 46, 0),
+            (6, 6, 3),
+            (16, -27, 1),
+            (-20, -24, 1),
+            (-57, -29, 0),
+            (14, -31, 1),
+            (-56, -41, 0),
+            (-30, 29, 1),
+        ];
+
+        let center: super::ChunkKey = (0, 0, 0);
+        let mut test = golden.clone();
+        test.sort_by_key(|&chunk| super::chunk_distance(chunk, center, 8));
+        assert_eq!(test, golden);
+    }
+
+    #[test]
+    fn chunk_order_key() {
+        // raw data from script/gen/chunks.py
+        let golden: [(super::ChunkKey, u64); _] = [
+            ((0, -1, 2), 765),
+            ((-1, 3, 1), 766),
+            ((1, 2, 1), 1278),
+            ((-5, 1, 1), 1278),
+            ((-3, -1, 2), 1789),
+            ((-4, 4, 1), 1790),
+            ((-10, 0, 0), 1791),
+            ((-1, -3, 2), 2813),
+            ((-5, 5, 1), 2814),
+            ((-7, -7, 0), 2815),
+            ((-6, -9, 0), 3071),
+            ((-15, -1, 0), 3327),
+            ((-11, -7, 0), 3839),
+            ((2, -3, 2), 4861),
+            ((7, 3, 1), 4862),
+            ((15, 3, 0), 4863),
+            ((4, 7, 1), 5374),
+            ((6, 6, 1), 5886),
+            ((8, -15, 0), 7167),
+            ((7, -16, 0), 7167),
+        ];
+
+        let center: super::ChunkKey = (-2, 1, 1);
+        let mut test = golden.clone();
+        test.iter_mut()
+            .for_each(|(chunk, key)| *key = super::chunk_distance(*chunk, center, 8));
+        test.sort_by_key(|(_, key)| *key);
+        assert_eq!(test, golden);
+    }
 }
