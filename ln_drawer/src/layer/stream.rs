@@ -59,13 +59,6 @@ struct ChunkMeta0 {
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct DispatchUniform {
-    dispatch_coords: [i32; 2],
-    dispatch_size: [u32; 2],
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct ChunkUniform {
     chunk: [i32; 3],
     _pad: u32,

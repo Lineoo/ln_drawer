@@ -10,7 +10,7 @@ use crate::{
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
-        renderer::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
+        renderer::quad::{QuadMaterial, QuadMeshDescriptor},
         shaders::{LIB_COLORSPACE, LIB_CONSTANT},
     },
 };
@@ -42,7 +42,7 @@ pub struct PaletteHsla(pub Hsla);
 
 impl PaletteHsl {
     fn init(&mut self, world: &World, this: Handle<Self>) {
-        let rectangle = world.build(RectangleMeshDescriptor {
+        let rectangle = world.build(QuadMeshDescriptor {
             rect: self.rect,
             visible: self.enabled,
             order: 60,
@@ -122,7 +122,7 @@ impl PaletteHsl {
     }
 }
 
-impl RectangleMeshMaterial for PaletteHslMaterial {
+impl QuadMaterial for PaletteHslMaterial {
     fn label() -> &'static str {
         "palette_hsl"
     }

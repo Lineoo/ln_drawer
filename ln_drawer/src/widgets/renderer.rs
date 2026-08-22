@@ -1,4 +1,4 @@
 pub mod canvas;
-pub mod rectangle;
+pub mod quad;
 pub mod svg;
 pub mod text;

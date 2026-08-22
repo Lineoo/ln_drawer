@@ -15,7 +15,7 @@ use crate::{
     widgets::shaders::LIB_CAMERA,
 };
 
-pub trait RectangleMeshMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {
+pub trait QuadMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {
     fn label() -> &'static str;
 
     fn shader() -> ShaderSource<'static>;
@@ -27,21 +27,21 @@ pub trait RectangleMeshMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroab
     fn fragment() -> Option<&'static str>;
 }
 
-pub struct RectangleMeshPipeline<M: RectangleMeshMaterial> {
+pub struct QuadMeshPipeline<M: QuadMaterial> {
     pipeline: RenderPipeline,
     bind: BindGroupLayout,
     _marker: PhantomData<M>,
 }
 
-pub struct RectangleMeshDescriptor<M: RectangleMeshMaterial> {
+pub struct QuadMeshDescriptor<M: QuadMaterial> {
     pub rect: Rectangle,
     pub visible: bool,
     pub order: isize,
     pub material: M,
 }
 
-pub struct RectangleMesh<M: RectangleMeshMaterial> {
-    pub desc: RectangleMeshDescriptor<M>,
+pub struct QuadMesh<M: QuadMaterial> {
+    pub desc: QuadMeshDescriptor<M>,
     control: Handle<RenderControl>,
     rectangle: Buffer,
     material: Buffer,
@@ -55,16 +55,16 @@ pub struct RectangleUniform {
     pub extend: [u32; 2],
 }
 
-impl<M: RectangleMeshMaterial> RectangleMesh<M> {
+impl<M: QuadMaterial> QuadMesh<M> {
     pub fn init(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
         let camera = world.single_fetch::<CameraBind>().unwrap();
         let device = &render.device;
 
-        let rectangle_shader = device.create_shader_module(ShaderModuleDescriptor {
+        let quad_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(M::label()),
             source: ShaderSource::Wgsl(
-                format!("{}{}", LIB_CAMERA, include_str!("rectangle.wgsl")).into(),
+                format!("{}{}", LIB_CAMERA, include_str!("quad.wgsl")).into(),
             ),
         });
 
@@ -116,7 +116,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
                     buffers: &[],
                 },
                 None => VertexState {
-                    module: &rectangle_shader,
+                    module: &quad_shader,
                     entry_point: None,
                     compilation_options: Default::default(),
                     buffers: &[],
@@ -142,16 +142,16 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
             cache: None,
         });
 
-        world.insert(RectangleMeshPipeline {
+        world.insert(QuadMeshPipeline {
             pipeline,
             bind,
             _marker: PhantomData::<M>,
         });
     }
 
-    pub fn create(desc: RectangleMeshDescriptor<M>, world: &World) -> Self {
+    pub fn create(desc: QuadMeshDescriptor<M>, world: &World) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
-        let pipeline = world.single_fetch::<RectangleMeshPipeline<M>>().unwrap();
+        let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
         let device = &render.device;
 
         let rectangle = device.create_buffer_init(&BufferInitDescriptor {
@@ -187,10 +187,10 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
         let control = world.insert(RenderControl {
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
-                let pipeline = world.single_fetch::<RectangleMeshPipeline<M>>().unwrap();
+                let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
                 let camera = world.single_fetch::<Camera>().unwrap();
 
-                let key = format!("main > rectangle > {}", M::label());
+                let key = format!("main > common > {}", M::label());
                 let (start, end) = extra.diagnosis.assign_string(key);
                 extra.diagnosis.write(rpass, start);
 
@@ -203,7 +203,7 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
             })),
         });
 
-        RectangleMesh {
+        QuadMesh {
             desc,
             control,
             rectangle,
@@ -234,16 +234,16 @@ impl<M: RectangleMeshMaterial> RectangleMesh<M> {
     }
 }
 
-impl<M: RectangleMeshMaterial> Descriptor for RectangleMeshDescriptor<M> {
-    type Target = Handle<RectangleMesh<M>>;
+impl<M: QuadMaterial> Descriptor for QuadMeshDescriptor<M> {
+    type Target = Handle<QuadMesh<M>>;
     fn when_build(self, world: &World) -> Self::Target {
-        world.insert(RectangleMesh::create(self, world))
+        world.insert(QuadMesh::create(self, world))
     }
 }
 
-impl<M: RectangleMeshMaterial> Element for RectangleMeshPipeline<M> {}
+impl<M: QuadMaterial> Element for QuadMeshPipeline<M> {}
 
-impl<M: RectangleMeshMaterial> Element for RectangleMesh<M> {
+impl<M: QuadMaterial> Element for QuadMesh<M> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.reorder(world);
         world.dependency(self.control, this);

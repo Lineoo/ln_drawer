@@ -22,8 +22,7 @@ use crate::{
         camera::{Camera, CameraBind},
     },
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible, renderer::rectangle::RectangleUniform,
-        shaders::LIB_CAMERA,
+        SetWidgetRectangle, SetWidgetVisible, renderer::quad::RectangleUniform, shaders::LIB_CAMERA,
     },
 };
 
@@ -333,7 +332,7 @@ impl CanvasPipeline {
                 format!(
                     "{}{}{}",
                     LIB_CAMERA,
-                    include_str!("rectangle.wgsl"),
+                    include_str!("quad.wgsl"),
                     include_str!("canvas.wgsl"),
                 )
                 .into(),
