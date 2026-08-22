@@ -4,8 +4,10 @@ use wgpu::ComputePass;
 
 use crate::{
     layer::{
-        Layer, LayerPipeline, brush::{Brush, BrushInner, Draw, DrawPipeline, param::BrushParam},
-    }, measures::{FI64Ext, Rectangle},
+        Layer, LayerPipeline,
+        brush::{Brush, BrushInner, Draw, DrawPipeline, param::BrushParam},
+    },
+    measures::{FI64Ext, Rectangle},
 };
 
 #[derive(Clone)]

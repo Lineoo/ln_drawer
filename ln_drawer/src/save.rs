@@ -34,9 +34,9 @@ const BACKUP_MINIMUM_DURATION: Duration = Duration::from_hours(24);
 const TABLE_METADATA: TableDefinition<u32, &[u8]> = TableDefinition::new("metadata");
 
 /// The core database.
-/// 
+///
 /// ## Tables
-/// 
+///
 /// | name | key | value |
 /// |------|-----|-------|
 /// | `metadata`            | `u32`                     | `&[u8]`   |
