@@ -33,6 +33,7 @@ pub struct QuadMeshPipeline<M: QuadMaterial> {
     _marker: PhantomData<M>,
 }
 
+// TODO upgrade to modern code style
 pub struct QuadMeshDescriptor<M: QuadMaterial> {
     pub rect: Rectangle,
     pub visible: bool,
@@ -56,7 +57,93 @@ pub struct RectangleUniform {
 }
 
 impl<M: QuadMaterial> QuadMesh<M> {
-    pub fn init(world: &World) {
+    pub fn create(desc: QuadMeshDescriptor<M>, world: &World) -> Self {
+        let render = world.single_fetch::<Render>().unwrap();
+        let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
+        let device = &render.device;
+
+        let rectangle = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("rectangle"),
+            contents: bytemuck::bytes_of(&RectangleUniform {
+                origin: desc.rect.origin.into(),
+                extend: desc.rect.extend.into(),
+            }),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let material = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some(M::label()),
+            contents: bytemuck::bytes_of(&desc.material),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some(M::label()),
+            layout: &pipeline.bind,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: rectangle.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: material.as_entire_binding(),
+                },
+            ],
+        });
+
+        let control = world.insert(RenderControl {
+            prepare: None,
+            draw: Some(Box::new(move |world, rpass, extra| {
+                let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
+                let camera = world.single_fetch::<Camera>().unwrap();
+
+                let key = format!("main > common > {}", M::label());
+                let (start, end) = extra.diagnosis.assign_string(key);
+                extra.diagnosis.write(rpass, start);
+
+                rpass.set_pipeline(&pipeline.pipeline);
+                rpass.set_bind_group(0, &camera.bind, &[]);
+                rpass.set_bind_group(1, &bind, &[]);
+                rpass.draw(0..4, 0..1);
+
+                extra.diagnosis.write(rpass, end);
+            })),
+        });
+
+        QuadMesh {
+            desc,
+            control,
+            rectangle,
+            material,
+            queue: render.queue.clone(),
+        }
+    }
+
+    fn reorder(&mut self, world: &World) {
+        RenderControl::reorder(
+            self.desc.visible.then_some(self.desc.order),
+            world,
+            self.control,
+        );
+    }
+
+    fn update_buffer(&mut self) {
+        let rectangle = RectangleUniform {
+            origin: self.desc.rect.origin.into(),
+            extend: self.desc.rect.extend.into(),
+        };
+
+        let rectangle = bytemuck::bytes_of(&rectangle);
+        let material = bytemuck::bytes_of(&self.desc.material);
+
+        self.queue.write_buffer(&self.rectangle, 0, rectangle);
+        self.queue.write_buffer(&self.material, 0, material);
+    }
+}
+
+impl<M: QuadMaterial> QuadMeshPipeline<M> {
+    pub fn from_world(world: &World) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let camera = world.single_fetch::<CameraBind>().unwrap();
         let device = &render.device;
@@ -142,95 +229,11 @@ impl<M: QuadMaterial> QuadMesh<M> {
             cache: None,
         });
 
-        world.insert(QuadMeshPipeline {
+        QuadMeshPipeline {
             pipeline,
             bind,
             _marker: PhantomData::<M>,
-        });
-    }
-
-    pub fn create(desc: QuadMeshDescriptor<M>, world: &World) -> Self {
-        let render = world.single_fetch::<Render>().unwrap();
-        let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
-        let device = &render.device;
-
-        let rectangle = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("rectangle"),
-            contents: bytemuck::bytes_of(&RectangleUniform {
-                origin: desc.rect.origin.into(),
-                extend: desc.rect.extend.into(),
-            }),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        let material = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some(M::label()),
-            contents: bytemuck::bytes_of(&desc.material),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        let bind = device.create_bind_group(&BindGroupDescriptor {
-            label: Some(M::label()),
-            layout: &pipeline.bind,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: rectangle.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: material.as_entire_binding(),
-                },
-            ],
-        });
-
-        let control = world.insert(RenderControl {
-            prepare: None,
-            draw: Some(Box::new(move |world, rpass, extra| {
-                let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
-
-                let key = format!("main > common > {}", M::label());
-                let (start, end) = extra.diagnosis.assign_string(key);
-                extra.diagnosis.write(rpass, start);
-
-                rpass.set_pipeline(&pipeline.pipeline);
-                rpass.set_bind_group(0, &camera.bind, &[]);
-                rpass.set_bind_group(1, &bind, &[]);
-                rpass.draw(0..4, 0..1);
-
-                extra.diagnosis.write(rpass, end);
-            })),
-        });
-
-        QuadMesh {
-            desc,
-            control,
-            rectangle,
-            material,
-            queue: render.queue.clone(),
         }
-    }
-
-    fn reorder(&mut self, world: &World) {
-        RenderControl::reorder(
-            self.desc.visible.then_some(self.desc.order),
-            world,
-            self.control,
-        );
-    }
-
-    fn update_buffer(&mut self) {
-        let rectangle = RectangleUniform {
-            origin: self.desc.rect.origin.into(),
-            extend: self.desc.rect.extend.into(),
-        };
-
-        let rectangle = bytemuck::bytes_of(&rectangle);
-        let material = bytemuck::bytes_of(&self.desc.material);
-
-        self.queue.write_buffer(&self.rectangle, 0, rectangle);
-        self.queue.write_buffer(&self.material, 0, material);
     }
 }
 

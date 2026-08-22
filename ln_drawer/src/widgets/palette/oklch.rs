@@ -1,6 +1,6 @@
-use glam::I64Vec2;
+use glam::{I64Vec2, Vec3A};
 use ln_world::{Element, Handle, World};
-use palette::{Hsla, RgbHue};
+use palette::{IntoColor, OklabHue, Oklch, Srgb, convert::FromColorUnclamped};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
@@ -20,39 +20,41 @@ const BAND_WIDTH: f32 = 0.1;
 /// Standard palette for picking hsl color. Contains a circle of hue value and a square
 /// whose x axis stands for saturation and y axis stands for lightness.
 ///
-/// Corresponding material is [`PaletteHslMaterial`].
-pub struct PaletteHsl {
+/// Corresponding material is [`PaletteOkLchMaterial`].
+pub struct PaletteOklch {
     pub rect: Rectangle,
-    pub color: Hsla,
+    pub color: Oklch,
     pub enabled: bool,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct PaletteHslMaterial {
+pub struct PaletteOklchMaterial {
+    oklch: Vec3A,
     band_width: f32,
     main_knob_size: f32,
     hue_knob_size: f32,
-    hue: f32,
-    saturation: f32,
-    lightness: f32,
+    _pad: u32,
 }
 
-pub struct PaletteColorHsla(pub Hsla);
+pub struct PaletteColorOklch(pub Oklch);
 
-impl PaletteHsl {
+impl PaletteOklch {
     fn init(&mut self, world: &World, this: Handle<Self>) {
         let rectangle = world.build(QuadMeshDescriptor {
             rect: self.rect,
             visible: self.enabled,
             order: 60,
-            material: PaletteHslMaterial {
+            material: PaletteOklchMaterial {
+                oklch: Vec3A::new(
+                    self.color.l,
+                    self.color.chroma,
+                    self.color.hue.into_positive_radians(),
+                ),
                 band_width: BAND_WIDTH,
                 main_knob_size: 0.015,
                 hue_knob_size: 0.005,
-                hue: self.color.hue.into_degrees() / 360.0,
-                saturation: self.color.saturation,
-                lightness: self.color.lightness,
+                _pad: 0,
             },
         });
 
@@ -79,13 +81,13 @@ impl PaletteHsl {
 
             if lock == 1 || (lock == 0 && suv.x > 0. && suv.x < 1. && suv.y > 0. && suv.y < 1.) {
                 lock = 1;
-                this.color.saturation = (suv.x).clamp(0.0, 1.0);
-                this.color.lightness = (suv.y).clamp(0.0, 1.0);
-                world.queue_trigger(this.handle(), PaletteColorHsla(this.color));
+                this.color.chroma = (suv.x).clamp(0.0, 1.0) * 0.4;
+                this.color.l = (suv.y).clamp(0.0, 1.0);
+                world.queue_trigger(this.handle(), PaletteColorOklch(this.color));
             } else if lock == 2 || (lock == 0 && radius > 0.5 - BAND_WIDTH && radius < 0.5) {
                 lock = 2;
-                this.color.hue = RgbHue::from_radians(angle);
-                world.queue_trigger(this.handle(), PaletteColorHsla(this.color));
+                this.color.hue = OklabHue::from_radians(angle);
+                world.queue_trigger(this.handle(), PaletteColorOklch(this.color));
             } else {
                 lock = 3;
             }
@@ -111,20 +113,19 @@ impl PaletteHsl {
             collider.rect = rect;
         });
 
-        world.observer(this, move |&PaletteColorHsla(hsla), world| {
+        world.observer(this, move |&PaletteColorOklch(color), world| {
             let mut rectangle = world.fetch_mut(rectangle).unwrap();
-            rectangle.desc.material.hue = hsla.hue.into_positive_degrees() / 360.0;
-            rectangle.desc.material.saturation = hsla.saturation;
-            rectangle.desc.material.lightness = hsla.lightness;
+            rectangle.desc.material.oklch =
+                Vec3A::new(color.l, color.chroma, color.hue.into_positive_radians());
         });
 
         world.dependency(rectangle, this);
     }
 }
 
-impl QuadMaterial for PaletteHslMaterial {
+impl QuadMaterial for PaletteOklchMaterial {
     fn label() -> &'static str {
-        "palette_hsl"
+        "palette_oklch"
     }
 
     fn shader() -> wgpu::ShaderSource<'static> {
@@ -133,7 +134,7 @@ impl QuadMaterial for PaletteHslMaterial {
                 "{}{}{}",
                 LIB_COLORSPACE,
                 LIB_CONSTANT,
-                include_str!("hsl.wgsl")
+                include_str!("oklch.wgsl")
             )
             .into(),
         )
@@ -144,7 +145,7 @@ impl QuadMaterial for PaletteHslMaterial {
     }
 }
 
-impl Element for PaletteHsl {
+impl Element for PaletteOklch {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.init(world, this);
     }

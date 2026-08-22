@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cosmic_text::{Attrs, Metrics, Weight};
 use glam::{IVec2, UVec2, Vec2};
 use ln_world::{Descriptor, Handle, World};
-use palette::{Hsla, IntoColor, RgbHue, Srgba};
+use palette::{Hsla, IntoColor, Oklch, RgbHue, Srgba};
 
 use crate::{
     layer::wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
@@ -15,13 +15,16 @@ use crate::{
         transform::{Transform, TransformEdge, TransformValue},
     },
     measures::{Axis, Rectangle},
-    render::rounded::{RoundedRect, RoundedRectDescriptor},
+    render::rounded::RoundedRectDescriptor,
     theme::Theme,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         echo::EchoWidget,
-        palette::hsl::{PaletteHsl, PaletteHsla},
+        palette::{
+            hsl::{PaletteColorHsla, PaletteHsl},
+            oklch::{PaletteColorOklch, PaletteOklch},
+        },
         panel::Panel,
         renderer::{
             svg::svg_render,
@@ -63,13 +66,21 @@ impl Descriptor for ColorPicker {
             world.queue_trigger(toggle_button_color_icon, SetWidgetRectangle(target));
         });
 
-        let tab_palette = world.insert(Panel {
+        let tab_palette_hsl = world.insert(Panel {
             rect: Rectangle::default(),
             visible: true,
             shadow: false,
         });
 
-        palette(world, tab_palette, toggle_button_color_icon);
+        palette_hsl(world, tab_palette_hsl);
+
+        let tab_palette_oklch = world.insert(Panel {
+            rect: Rectangle::default(),
+            visible: true,
+            shadow: false,
+        });
+
+        palette_oklch(world, tab_palette_oklch);
 
         let tab_settings = world.insert(Panel {
             rect: Rectangle::default(),
@@ -95,7 +106,20 @@ impl Descriptor for ColorPicker {
                             1.0,
                         ))),
                     },
-                    tab_palette.untyped(),
+                    tab_palette_hsl.untyped(),
+                ),
+                (
+                    ButtonImage {
+                        transform: TransformValue::anchor(
+                            (0.5, 0.5),
+                            Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                        ),
+                        bytes: Arc::new(image::DynamicImage::from(svg_render(
+                            include_bytes!("../../../res/interface/palette.svg"),
+                            1.0,
+                        ))),
+                    },
+                    tab_palette_oklch.untyped(),
                 ),
                 (
                     ButtonImage {
@@ -111,6 +135,15 @@ impl Descriptor for ColorPicker {
                     tab_settings.untyped(),
                 ),
             ],
+        });
+
+        let layer = world.single::<LayerWrapper>().unwrap();
+        world.observer(layer, move |&BrushConfigurationChanged, world| {
+            let layer = world.fetch(layer).unwrap();
+            let mut toggle_button_color_icon = world.fetch_mut(toggle_button_color_icon).unwrap();
+            let color = layer.round_brush.color;
+            toggle_button_color_icon.desc.color = color.into_color();
+            // trigger palette_hsl SetPaletteHsl
         });
 
         world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
@@ -129,7 +162,7 @@ impl Descriptor for ColorPicker {
     }
 }
 
-fn palette(world: &World, panel: Handle<Panel>, toggle_button_color_icon: Handle<RoundedRect>) {
+fn palette_hsl(world: &World, panel: Handle<Panel>) {
     let palette_hsl = world.insert(PaletteHsl {
         rect: Rectangle::default(),
         color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
@@ -146,18 +179,34 @@ fn palette(world: &World, panel: Handle<Panel>, toggle_button_color_icon: Handle
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();
-    world.observer(palette_hsl, move |&PaletteHsla(color), world| {
+    world.observer(palette_hsl, move |&PaletteColorHsla(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
+}
 
-    world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let layer = world.fetch(layer).unwrap();
-        let mut toggle_button_color_icon = world.fetch_mut(toggle_button_color_icon).unwrap();
-        let color = layer.round_brush.color;
-        toggle_button_color_icon.desc.color = color.into_color();
-        // trigger palette_hsl SetPaletteHsl
+fn palette_oklch(world: &World, panel: Handle<Panel>) {
+    let palette_oklch = world.insert(PaletteOklch {
+        rect: Rectangle::default(),
+        color: Oklch::default(),
+        enabled: true,
+    });
+
+    world.insert(Transform {
+        value: TransformValue::anchor(
+            (0.5, 0.5),
+            Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
+        ),
+        source: panel.untyped(),
+        target: palette_oklch.untyped(),
+    });
+
+    let layer = world.single::<LayerWrapper>().unwrap();
+    world.observer(palette_oklch, move |&PaletteColorOklch(color), world| {
+        let mut layer = world.fetch_mut(layer).unwrap();
+        layer.round_brush.color = color.into_color();
+        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 }
 

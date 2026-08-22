@@ -29,9 +29,9 @@ use crate::{
     },
     widgets::{
         WidgetRectangle,
-        palette::hsl::PaletteHslMaterial,
+        palette::{hsl::PaletteHslMaterial, oklch::PaletteOklchMaterial},
         panel::side_docker::SideDocker,
-        renderer::{canvas::CanvasPipeline, quad::QuadMesh, text::TextPipeline},
+        renderer::{canvas::CanvasPipeline, quad::QuadMeshPipeline, text::TextPipeline},
     },
 };
 
@@ -130,9 +130,10 @@ impl Element for Lnwindow {
             world.flush();
 
             world.insert(CanvasPipeline::from_world(world));
+            world.insert(QuadMeshPipeline::<PaletteHslMaterial>::from_world(world));
+            world.insert(QuadMeshPipeline::<PaletteOklchMaterial>::from_world(world));
             world.insert(TextPipeline::new());
             RoundedRect::init(world);
-            QuadMesh::<PaletteHslMaterial>::init(world);
             world.insert(Theme::default());
         });
 
