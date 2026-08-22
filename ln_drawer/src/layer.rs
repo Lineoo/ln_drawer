@@ -25,7 +25,7 @@ use wgpu::{
 use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    widgets::shaders::{LIB_CAMERA, LIB_COLORSPACE, LIB_RECTANGLE, shader_compile},
+    widgets::shaders::{LIB_CAMERA, LIB_COLORSPACE, LIB_CONSTANT, LIB_RECTANGLE, shader_compile},
 };
 
 pub type ChunkKey = (i32, i32, u8);
@@ -36,6 +36,7 @@ pub const DEFAULT_CHUNK_SIZE: u32 = 512;
 
 pub const CHUNK_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
+const DRAWS_ARRAY_CAPACITY: u64 = 48 * 200;
 const WORKGROUP_SIZE: UVec2 = UVec2::new(16, 16);
 
 // function: render, merge, mipmap, clear & chunk recycle
@@ -51,11 +52,17 @@ pub struct LayerPipeline {
     sampler_group_unfiltered: BindGroup,
     sampler_group_filtered: BindGroup,
 
+    draws_dispatch: Buffer,
+    draws_dispatch_group: BindGroup,
+    draws_length: Buffer,
+    draws_array: Buffer,
+
     render_pipelines: RenderPipelines,
     merge_pipelines: MergePipelines,
     mipmap_pipeline: ComputePipeline,
     copy_pipeline: ComputePipeline,
     clear_pipeline: ComputePipeline,
+    brush_pipelines: BrushPipelines,
 
     support_read_write: bool,
 }
@@ -110,6 +117,12 @@ struct MergePipelines {
     erase: ComputePipeline,
 }
 
+struct BrushPipelines {
+    blur: ComputePipeline,
+    round_over: ComputePipeline,
+    round_erase: ComputePipeline,
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct DispatchUniform {
@@ -138,6 +151,10 @@ impl LayerPipeline {
         let (sampler_group_unfiltered, sampler_group_filtered) =
             sampler_groups(&device, &sampler_layout);
 
+        let draw_dispatch_layout = device.create_bind_group_layout(&LAYOUT_DRAW_DISPATCH);
+        let (draws_dispatch, draws_length, draws_array, draws_dispatch_group) =
+            draws_dispatch_group(&device, &draw_dispatch_layout);
+
         let chunk_layout = ChunkLayout {
             dispatch: dispatch_layout,
             render: device.create_bind_group_layout(&LAYOUT_CHUNK_RENDER),
@@ -157,6 +174,12 @@ impl LayerPipeline {
             &chunk_layout.render,
         );
 
+        let brush_pipelines = brush_pipelines(
+            &device,
+            support_read_write,
+            &draw_dispatch_layout,
+            &chunk_layout,
+        );
         let merge_pipelines = merge_pipelines(&device, support_read_write, &chunk_layout);
         let mipmap_pipeline = mipmap_pipeline(&device, &chunk_layout);
         let copy_pipeline = copy_pipeline(&device, &chunk_layout);
@@ -171,11 +194,16 @@ impl LayerPipeline {
             dispatch_group,
             sampler_group_unfiltered,
             sampler_group_filtered,
+            draws_dispatch,
+            draws_dispatch_group,
+            draws_length,
+            draws_array,
             render_pipelines,
             merge_pipelines,
             mipmap_pipeline,
             copy_pipeline,
             clear_pipeline,
+            brush_pipelines,
             support_read_write,
         }
     }
@@ -801,6 +829,64 @@ fn sampler_groups(device: &Device, sampler_layout: &BindGroupLayout) -> (BindGro
     (sampler_group_unfiltered, sampler_group_filtered)
 }
 
+fn draws_dispatch_group(
+    device: &Device,
+    dispatch_draw_layout: &BindGroupLayout,
+) -> (Buffer, Buffer, Buffer, BindGroup) {
+    let dispatch = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_brush_dispatch"),
+        size: size_of::<u32>() as u64 * 8,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let draws_length = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_brush_draws_length"),
+        size: size_of::<u32>() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let draws_array = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_brush_draws_array"),
+        size: DRAWS_ARRAY_CAPACITY,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let dispatch_group_draw = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_brush_dispatch_draw"),
+        layout: dispatch_draw_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &dispatch,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &draws_length,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &draws_array,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+    (dispatch, draws_length, draws_array, dispatch_group_draw)
+}
+
 // --- Pipelines --- //
 
 fn render_pipelines(
@@ -1039,3 +1125,138 @@ fn clear_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipelin
         cache: None,
     })
 }
+
+fn brush_pipelines(
+    device: &Device,
+    read_write: bool,
+    dispatch_draw_layout: &BindGroupLayout,
+    chunk_layout: &ChunkLayout,
+) -> BrushPipelines {
+    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_brush"),
+        bind_group_layouts: &match read_write {
+            true => [
+                Some(dispatch_draw_layout),
+                Some(&chunk_layout.read_write),
+                Some(&chunk_layout.read_write),
+            ],
+            false => [
+                Some(dispatch_draw_layout),
+                Some(&chunk_layout.read),
+                Some(&chunk_layout.write),
+            ],
+        },
+        immediate_size: 0,
+    });
+
+    let bridge_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_brush"),
+        bind_group_layouts: &[
+            Some(dispatch_draw_layout),
+            Some(&chunk_layout.read),
+            Some(&chunk_layout.write),
+        ],
+        immediate_size: 0,
+    });
+
+    let round_pipeline = |label, formula| {
+        let constants = match read_write {
+            true => [
+                ("read", "read_write"),
+                ("write", "read_write"),
+                ("rectangle", LIB_RECTANGLE),
+                ("composite", formula),
+            ],
+            false => [
+                ("read", "read"),
+                ("write", "write"),
+                ("rectangle", LIB_RECTANGLE),
+                ("composite", formula),
+            ],
+        };
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: ShaderSource::Wgsl(
+                shader_compile(include_str!("layer/brush/round.wgsl"), &constants[..]).into(),
+            ),
+        });
+        device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    };
+
+    let blur_pipeline = |label| {
+        // bridge mode does not need read_write bind
+        let constants = [
+            ("read", "read"),
+            ("write", "write"),
+            ("constant", LIB_CONSTANT),
+            ("rectangle", LIB_RECTANGLE),
+        ];
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: ShaderSource::Wgsl(
+                shader_compile(include_str!("layer/brush/blur.wgsl"), &constants).into(),
+            ),
+        });
+        device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some(label),
+            layout: Some(&bridge_layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    };
+
+    BrushPipelines {
+        blur: blur_pipeline("blur"),
+        round_over: round_pipeline("over", "src + dst * (1 - src.a)"),
+        round_erase: round_pipeline("erase", "dst * (1 - src.a)"),
+    }
+}
+
+// --- Resources --- //
+
+const LAYOUT_DRAW_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("layer_brush_dispatch_draw"),
+    entries: &[
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 2,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+    ],
+};

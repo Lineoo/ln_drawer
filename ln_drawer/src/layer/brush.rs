@@ -7,29 +7,21 @@ use std::{mem::size_of, sync::mpsc::Sender};
 use bytemuck::{Pod, Zeroable, bytes_of, cast_slice};
 use glam::{I64Vec2, UVec2};
 use hashbrown::HashMap;
-use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor,
-    ComputePipeline, ComputePipelineDescriptor, Device, PipelineCompilationOptions,
-    PipelineLayoutDescriptor, RenderPass, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-};
+use wgpu::{CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, RenderPass};
 
 use crate::{
     layer::{
-        Chunk, ChunkLayout, ChunkPool, Layer, LayerPipeline, chunk_to_rect, create_chunk,
+        Chunk, ChunkPool, DRAWS_ARRAY_CAPACITY, Layer, LayerPipeline, chunk_to_rect, create_chunk,
         create_chunk_texture, dispatch_workgroups, dispatch_workgroups_extend, rect_to_chunks,
         stream::ThreadInput, write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    widgets::shaders::{LIB_CONSTANT, LIB_RECTANGLE, shader_compile},
 };
 
-const DRAWS_ARRAY_CAPACITY: u64 = 48 * 200;
 const BRIDGE_CHUNK_SIZE: u32 = 1024;
 
-pub struct LayerDrawPipeline {
+pub struct DrawPipeline {
     pub layer: LayerPipeline,
 
     // TODO currently unintendedly public for undo/redo system
@@ -39,21 +31,8 @@ pub struct LayerDrawPipeline {
 
     bridge: Chunk,
 
-    pipelines: BrushPipelines,
-
-    draws_dispatch: Buffer,
-    draws_dispatch_group: BindGroup,
-    draws_length: Buffer,
-    draws_array: Buffer,
-
     prev: Option<Draw>,
     stroke: Option<Stroke>,
-}
-
-struct BrushPipelines {
-    blur: ComputePipeline,
-    round_over: ComputePipeline,
-    round_erase: ComputePipeline,
 }
 
 #[derive(Clone, Copy)]
@@ -70,7 +49,7 @@ pub struct Stroke {
 }
 
 pub trait Brush {
-    fn draw(&self, dst: &Layer, pipeline: &mut LayerDrawPipeline, target: Draw);
+    fn draw(&self, dst: &Layer, pipeline: &mut DrawPipeline, target: Draw);
 }
 
 pub trait BrushInner {
@@ -99,23 +78,11 @@ pub trait BrushInner {
     ///     - Copy back on scratch layer
     fn bridge_mode(&self) -> bool;
 
-    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerDrawPipeline);
+    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline);
 }
 
-impl LayerDrawPipeline {
+impl DrawPipeline {
     pub fn new(layer: LayerPipeline) -> Self {
-        let draw_dispatch_layout = layer.device.create_bind_group_layout(&LAYOUT_DRAW_DISPATCH);
-
-        let (draws_dispatch, draws_length, draws_array, draws_dispatch_group) =
-            draws_dispatch_group(&layer.device, &draw_dispatch_layout);
-
-        let pipelines = brush_pipelines(
-            &layer.device,
-            layer.support_read_write,
-            &draw_dispatch_layout,
-            &layer.chunk_layout,
-        );
-
         let scratch_dst = Layer {
             chunks: HashMap::new(),
             chunk_size: 512,
@@ -138,7 +105,7 @@ impl LayerDrawPipeline {
             chunk_to_rect((0, 0, 0), BRIDGE_CHUNK_SIZE),
         );
 
-        LayerDrawPipeline {
+        DrawPipeline {
             layer,
             scratch_dst,
             scratch_swp,
@@ -147,11 +114,6 @@ impl LayerDrawPipeline {
                 chunk_size: 512,
             },
             bridge,
-            pipelines,
-            draws_dispatch,
-            draws_dispatch_group,
-            draws_length,
-            draws_array,
             prev: None,
             stroke: None,
         }
@@ -229,12 +191,12 @@ impl LayerDrawPipeline {
         bridge_rect: Rectangle,
     ) {
         let queue = &self.layer.queue;
-        write_dispatch(queue, &self.draws_dispatch, dirty);
+        write_dispatch(queue, &self.layer.draws_dispatch, dirty);
         write_dispatch(queue, &self.layer.dispatch, dirty);
 
         let draw_length = draws.len() as u32;
-        queue.write_buffer(&self.draws_length, 0, bytes_of(&draw_length));
-        queue.write_buffer(&self.draws_array, 0, cast_slice(&draws));
+        queue.write_buffer(&self.layer.draws_length, 0, bytes_of(&draw_length));
+        queue.write_buffer(&self.layer.draws_array, 0, cast_slice(&draws));
 
         if brush.bridge_mode() {
             write_dispatch(&self.layer.queue, &self.bridge.rectangle, bridge_rect);
@@ -315,8 +277,8 @@ impl LayerDrawPipeline {
                         continue;
                     };
 
-                    brush.set_pipeline(&mut cpass, self);
-                    cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
+                    brush.set_pipeline(&mut cpass, &self.layer);
+                    cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&self.bridge.read), &[]);
                     cpass.set_bind_group(2, Some(&dst_chunk.write), &[]);
                     dispatch_workgroups(&mut cpass, &[dirty, scratch_rect, bridge_rect]);
@@ -328,8 +290,8 @@ impl LayerDrawPipeline {
                         continue;
                     };
 
-                    brush.set_pipeline(&mut cpass, self);
-                    cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
+                    brush.set_pipeline(&mut cpass, &self.layer);
+                    cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
                     cpass.set_bind_group(2, Some(&swp_chunk.write), &[]);
                     dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
@@ -356,12 +318,12 @@ impl LayerDrawPipeline {
         bridge_rect: Rectangle,
     ) {
         let queue = &self.layer.queue;
-        write_dispatch(queue, &self.draws_dispatch, dirty);
+        write_dispatch(queue, &self.layer.draws_dispatch, dirty);
         write_dispatch(queue, &self.layer.dispatch, dirty);
 
         let draw_length = draws.len() as u32;
-        queue.write_buffer(&self.draws_length, 0, bytes_of(&draw_length));
-        queue.write_buffer(&self.draws_array, 0, cast_slice(&draws));
+        queue.write_buffer(&self.layer.draws_length, 0, bytes_of(&draw_length));
+        queue.write_buffer(&self.layer.draws_array, 0, cast_slice(&draws));
 
         if brush.bridge_mode() {
             write_dispatch(&self.layer.queue, &self.bridge.rectangle, bridge_rect);
@@ -435,8 +397,8 @@ impl LayerDrawPipeline {
                         continue;
                     };
 
-                    brush.set_pipeline(&mut cpass, self);
-                    cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
+                    brush.set_pipeline(&mut cpass, &self.layer);
+                    cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&self.bridge.read), &[]);
                     cpass.set_bind_group(2, Some(&dst_chunk.write), &[]);
                     dispatch_workgroups(&mut cpass, &[dirty, scratch_rect, bridge_rect]);
@@ -445,8 +407,8 @@ impl LayerDrawPipeline {
                         continue;
                     };
 
-                    brush.set_pipeline(&mut cpass, self);
-                    cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
+                    brush.set_pipeline(&mut cpass, &self.layer);
+                    cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&dst_chunk.read_write), &[]);
                     cpass.set_bind_group(2, Some(&dst_chunk.read_write), &[]);
                     dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
@@ -652,198 +614,5 @@ impl LayerDrawPipeline {
                 self.scratch_pool.list.push(chunk);
             }
         }
-    }
-}
-
-// --- Resources --- //
-
-const LAYOUT_DRAW_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
-    label: Some("layer_brush_dispatch_draw"),
-    entries: &[
-        BindGroupLayoutEntry {
-            binding: 0,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 1,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 2,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        },
-    ],
-};
-
-fn draws_dispatch_group(
-    device: &Device,
-    dispatch_draw_layout: &BindGroupLayout,
-) -> (Buffer, Buffer, Buffer, BindGroup) {
-    let dispatch = device.create_buffer(&BufferDescriptor {
-        label: Some("layer_brush_dispatch"),
-        size: size_of::<u32>() as u64 * 8,
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let draws_length = device.create_buffer(&BufferDescriptor {
-        label: Some("layer_brush_draws_length"),
-        size: size_of::<u32>() as u64,
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let draws_array = device.create_buffer(&BufferDescriptor {
-        label: Some("layer_brush_draws_array"),
-        size: DRAWS_ARRAY_CAPACITY,
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let dispatch_group_draw = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_brush_dispatch_draw"),
-        layout: dispatch_draw_layout,
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &dispatch,
-                    offset: 0,
-                    size: None,
-                }),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &draws_length,
-                    offset: 0,
-                    size: None,
-                }),
-            },
-            BindGroupEntry {
-                binding: 2,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &draws_array,
-                    offset: 0,
-                    size: None,
-                }),
-            },
-        ],
-    });
-    (dispatch, draws_length, draws_array, dispatch_group_draw)
-}
-
-fn brush_pipelines(
-    device: &Device,
-    read_write: bool,
-    dispatch_draw_layout: &BindGroupLayout,
-    chunk_layout: &ChunkLayout,
-) -> BrushPipelines {
-    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: Some("layer_brush"),
-        bind_group_layouts: &match read_write {
-            true => [
-                Some(dispatch_draw_layout),
-                Some(&chunk_layout.read_write),
-                Some(&chunk_layout.read_write),
-            ],
-            false => [
-                Some(dispatch_draw_layout),
-                Some(&chunk_layout.read),
-                Some(&chunk_layout.write),
-            ],
-        },
-        immediate_size: 0,
-    });
-
-    let bridge_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: Some("layer_brush"),
-        bind_group_layouts: &[
-            Some(dispatch_draw_layout),
-            Some(&chunk_layout.read),
-            Some(&chunk_layout.write),
-        ],
-        immediate_size: 0,
-    });
-
-    let round_pipeline = |label, formula| {
-        let constants = match read_write {
-            true => [
-                ("read", "read_write"),
-                ("write", "read_write"),
-                ("rectangle", LIB_RECTANGLE),
-                ("composite", formula),
-            ],
-            false => [
-                ("read", "read"),
-                ("write", "write"),
-                ("rectangle", LIB_RECTANGLE),
-                ("composite", formula),
-            ],
-        };
-
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some(label),
-            source: ShaderSource::Wgsl(
-                shader_compile(include_str!("brush/round.wgsl"), &constants[..]).into(),
-            ),
-        });
-        device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some(label),
-            layout: Some(&layout),
-            module: &shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        })
-    };
-
-    let blur_pipeline = |label| {
-        // bridge mode does not need read_write bind
-        let constants = [
-            ("read", "read"),
-            ("write", "write"),
-            ("constant", LIB_CONSTANT),
-            ("rectangle", LIB_RECTANGLE),
-        ];
-
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some(label),
-            source: ShaderSource::Wgsl(
-                shader_compile(include_str!("brush/blur.wgsl"), &constants).into(),
-            ),
-        });
-        device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some(label),
-            layout: Some(&bridge_layout),
-            module: &shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        })
-    };
-
-    BrushPipelines {
-        blur: blur_pipeline("blur"),
-        round_over: round_pipeline("over", "src + dst * (1 - src.a)"),
-        round_erase: round_pipeline("erase", "dst * (1 - src.a)"),
     }
 }

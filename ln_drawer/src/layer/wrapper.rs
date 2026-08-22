@@ -29,7 +29,7 @@ use crate::{
     layer::{
         Layer, LayerPipeline,
         brush::{
-            Brush, Draw, LayerDrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush,
+            Brush, Draw, DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush,
         },
         chunk_to_rect, create_chunk, create_chunk_texture, rect_to_chunks,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
@@ -61,7 +61,7 @@ pub struct BrushConfigurationChanged;
 
 pub struct LayerWrapper {
     pub main: Layer,
-    pub brush: LayerDrawPipeline,
+    pub brush: DrawPipeline,
 
     pub brush_mode: BrushMode,
     pub round_brush: RoundBrush,
@@ -96,7 +96,7 @@ impl LayerWrapper {
         let render = world.single_fetch::<Render>().unwrap();
         let camera_bind = world.single_fetch::<CameraBind>().unwrap();
 
-        let brush = LayerDrawPipeline::new(LayerPipeline::new(
+        let brush = DrawPipeline::new(LayerPipeline::new(
             render.adapter.clone(),
             render.device.clone(),
             render.queue.clone(),
