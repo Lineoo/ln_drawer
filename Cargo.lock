@@ -1124,6 +1124,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "guillotiere"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b17e70c989c36bad147b27a58d148c0741c51448aa5653436547323e524d0ab"
+dependencies = [
+ "euclid",
+]
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1526,6 +1535,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "glam",
+ "guillotiere",
  "hashbrown 0.17.1",
  "image",
  "indexmap",
