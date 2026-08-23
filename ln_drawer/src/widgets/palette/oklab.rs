@@ -1,6 +1,8 @@
+use std::f32::consts::TAU;
+
 use glam::{I64Vec2, Vec3A};
 use ln_world::{Element, Handle, World};
-use palette::{OklabHue, Oklch};
+use palette::Oklab;
 
 use crate::{
     measures::{FI64Ext, Rectangle},
@@ -22,36 +24,32 @@ const BAND_WIDTH: f32 = 0.1;
 /// whose x axis stands for saturation and y axis stands for lightness.
 ///
 /// Corresponding material is [`PaletteOkLchMaterial`].
-pub struct PaletteOklch {
+pub struct PaletteOklab {
     pub rect: Rectangle,
-    pub color: Oklch,
+    pub color: Oklab,
     pub enabled: bool,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct PaletteOklchMaterial {
-    oklch: Vec3A,
+pub struct PaletteOklabMaterial {
+    oklab: Vec3A,
     band_width: f32,
     main_knob_size: f32,
     hue_knob_size: f32,
     _pad: u32,
 }
 
-pub struct PaletteColorOklch(pub Oklch);
+pub struct PaletteColorOklab(pub Oklab);
 
-impl PaletteOklch {
+impl PaletteOklab {
     fn init(&mut self, world: &World, this: Handle<Self>) {
         let rectangle = world.build(QuadMeshDescriptor {
             rect: self.rect,
             visible: self.enabled,
             order: 60,
-            material: PaletteOklchMaterial {
-                oklch: Vec3A::new(
-                    self.color.l,
-                    self.color.chroma,
-                    self.color.hue.into_positive_radians(),
-                ),
+            material: PaletteOklabMaterial {
+                oklab: Vec3A::new(self.color.l, self.color.a, self.color.b),
                 band_width: BAND_WIDTH,
                 main_knob_size: 0.015,
                 hue_knob_size: 0.005,
@@ -82,15 +80,14 @@ impl PaletteOklch {
 
             if lock == 1 || (lock == 0 && suv.x > 0. && suv.x < 1. && suv.y > 0. && suv.y < 1.) {
                 lock = 1;
-                this.color.chroma = (suv.x).clamp(0.0, 1.0) * 0.4;
-                this.color.l = (suv.y).clamp(0.0, 1.0);
+                this.color.a = ((suv.x - 0.5) * 0.8).clamp(-0.4, 0.4);
+                this.color.b = ((suv.y - 0.5) * 0.8).clamp(-0.4, 0.4);
                 this.color = clip_to_srgb_gamut(this.color);
-                world.queue_trigger(this.handle(), PaletteColorOklch(this.color));
+                world.queue_trigger(this.handle(), PaletteColorOklab(this.color));
             } else if lock == 2 || (lock == 0 && radius > 0.5 - BAND_WIDTH && radius < 0.5) {
                 lock = 2;
-                this.color.hue = OklabHue::from_radians(angle);
-                this.color = clip_to_srgb_gamut(this.color);
-                world.queue_trigger(this.handle(), PaletteColorOklch(this.color));
+                this.color.l = angle.rem_euclid(TAU) / TAU;
+                world.queue_trigger(this.handle(), PaletteColorOklab(this.color));
             } else {
                 lock = 3;
             }
@@ -116,10 +113,9 @@ impl PaletteOklch {
             collider.rect = rect;
         });
 
-        world.observer(this, move |&PaletteColorOklch(color), world| {
+        world.observer(this, move |&PaletteColorOklab(color), world| {
             let mut rectangle = world.fetch_mut(rectangle).unwrap();
-            rectangle.desc.material.oklch =
-                Vec3A::new(color.l, color.chroma, color.hue.into_positive_radians());
+            rectangle.desc.material.oklab = Vec3A::new(color.l, color.a, color.b);
         });
 
         world.dependency(rectangle, this);
@@ -131,18 +127,17 @@ impl PaletteOklch {
 ///
 /// Ported from Björn Ottosson's "sRGB gamut clipping".
 /// https://bottosson.github.io/posts/gamutclipping/
-fn clip_to_srgb_gamut(color: Oklch) -> Oklch {
+fn clip_to_srgb_gamut(color: Oklab) -> Oklab {
     let l = color.l.clamp(0.0, 1.0);
-    let hue = color.hue.into_positive_radians();
-    let (sin, cos) = hue.sin_cos();
-    let c = color.chroma.max(1e-5);
-    let t = find_gamut_intersection(cos, sin, l, c, l).min(1.0);
-    Oklch::new(l, t * c, OklabHue::from_radians(hue))
+    let (b, a) = (color.b, color.a);
+    let c = (a * a + b * b).sqrt().max(1e-5);
+    let t = find_gamut_intersection(a / c, b / c, l, c, l).min(1.0);
+    Oklab::new(l, t * a, t * b)
 }
 
-impl QuadMaterial for PaletteOklchMaterial {
+impl QuadMaterial for PaletteOklabMaterial {
     fn label() -> &'static str {
-        "palette_oklch"
+        "palette_oklab"
     }
 
     fn shader() -> wgpu::ShaderSource<'static> {
@@ -151,7 +146,7 @@ impl QuadMaterial for PaletteOklchMaterial {
                 "{}{}{}",
                 LIB_COLORSPACE,
                 LIB_CONSTANT,
-                include_str!("oklch.wgsl")
+                include_str!("oklab.wgsl")
             )
             .into(),
         )
@@ -162,7 +157,7 @@ impl QuadMaterial for PaletteOklchMaterial {
     }
 }
 
-impl Element for PaletteOklch {
+impl Element for PaletteOklab {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.init(world, this);
     }

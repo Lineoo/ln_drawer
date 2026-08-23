@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cosmic_text::{Attrs, Metrics, Weight};
 use glam::{IVec2, UVec2, Vec2};
 use ln_world::{Descriptor, Handle, World};
-use palette::{Hsla, IntoColor, Oklch, RgbHue, Srgba};
+use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
 use crate::{
     layer::wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
@@ -23,7 +23,7 @@ use crate::{
         echo::EchoWidget,
         palette::{
             hsl::{PaletteColorHsla, PaletteHsl},
-            oklch::{PaletteColorOklch, PaletteOklch},
+            oklab::{PaletteColorOklab, PaletteOklab},
         },
         panel::Panel,
         renderer::{
@@ -187,9 +187,9 @@ fn palette_hsl(world: &World, panel: Handle<Panel>) {
 }
 
 fn palette_oklch(world: &World, panel: Handle<Panel>) {
-    let palette_oklch = world.insert(PaletteOklch {
+    let palette_oklch = world.insert(PaletteOklab {
         rect: Rectangle::default(),
-        color: Oklch::default(),
+        color: Oklab::default(),
         enabled: true,
     });
 
@@ -203,7 +203,7 @@ fn palette_oklch(world: &World, panel: Handle<Panel>) {
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();
-    world.observer(palette_oklch, move |&PaletteColorOklch(color), world| {
+    world.observer(palette_oklch, move |&PaletteColorOklab(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
