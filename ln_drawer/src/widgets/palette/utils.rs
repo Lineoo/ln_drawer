@@ -88,6 +88,11 @@ fn find_cusp(a: f32, b: f32) -> (f32, f32) {
     (l_cusp, c_cusp)
 }
 
+/// Clips an Oklch color into the sRGB gamut while keeping lightness and hue
+/// constant, only compressing chroma.
+///
+/// Ported from Björn Ottosson's "sRGB gamut clipping".
+/// https://bottosson.github.io/posts/gamutclipping/
 pub fn find_gamut_intersection(a: f32, b: f32, l1: f32, c1: f32, l0: f32) -> f32 {
     let (l, c) = find_cusp(a, b);
 

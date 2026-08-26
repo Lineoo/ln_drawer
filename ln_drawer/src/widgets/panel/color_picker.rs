@@ -23,7 +23,7 @@ use crate::{
         echo::EchoWidget,
         palette::{
             hsl::{PaletteColorHsla, PaletteHsl},
-            oklab::{PaletteColorOklab, PaletteOklab},
+            oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
         panel::Panel,
         renderer::{
@@ -80,7 +80,7 @@ impl Descriptor for ColorPicker {
             shadow: false,
         });
 
-        palette_oklch(world, tab_palette_oklch);
+        palette_oklab(world, tab_palette_oklch);
 
         let tab_settings = world.insert(Panel {
             rect: Rectangle::default(),
@@ -186,8 +186,13 @@ fn palette_hsl(world: &World, panel: Handle<Panel>) {
     });
 }
 
-fn palette_oklch(world: &World, panel: Handle<Panel>) {
-    let palette_oklch = world.insert(PaletteOklab {
+fn palette_oklab(world: &World, panel: Handle<Panel>) {
+    let polar = world.insert(OklabPolar {
+        rect: Rectangle::default(),
+        color: Oklab::default(),
+        enabled: true,
+    });
+    let bar = world.insert(OklabBar {
         rect: Rectangle::default(),
         color: Oklab::default(),
         enabled: true,
@@ -196,17 +201,36 @@ fn palette_oklch(world: &World, panel: Handle<Panel>) {
     world.insert(Transform {
         value: TransformValue::anchor(
             (0.5, 0.5),
-            Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
+            Rectangle::new_half(IVec2::new(-30, 0), UVec2::splat(100)),
         ),
         source: panel.untyped(),
-        target: palette_oklch.untyped(),
+        target: polar.untyped(),
+    });
+    world.insert(Transform {
+        value: TransformValue::anchor(
+            (0.5, 0.5),
+            Rectangle::new_half(IVec2::new(110, 0), UVec2::new(20, 100)),
+        ),
+        source: panel.untyped(),
+        target: bar.untyped(),
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();
-    world.observer(palette_oklch, move |&PaletteColorOklab(color), world| {
+    world.observer(polar, move |&ColorOklab(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    });
+    world.observer(bar, move |&ColorOklab(color), world| {
+        let mut layer = world.fetch_mut(layer).unwrap();
+        layer.round_brush.color = color.into_color();
+        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    });
+    world.observer(layer, move |&BrushConfigurationChanged, world| {
+        let layer = world.fetch(layer).unwrap();
+        let oklab = layer.round_brush.color.into_color();
+        world.trigger(polar, &SetColorOklab(oklab));
+        world.trigger(bar, &SetColorOklab(oklab));
     });
 }
 
