@@ -10,6 +10,10 @@ pub fn shader_compile(raw: &str, maps: &[(&str, &str)]) -> String {
     let mut matching = false;
 
     let mut map = hashbrown::HashMap::new();
+    map.insert("lib_camera", LIB_CAMERA);
+    map.insert("lib_colorspace", LIB_COLORSPACE);
+    map.insert("lib_constant", LIB_CONSTANT);
+    map.insert("lib_rectangle", LIB_RECTANGLE);
     for &(key, value) in maps {
         map.insert(key, value);
     }

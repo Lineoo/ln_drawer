@@ -22,7 +22,7 @@ use crate::{
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         echo::EchoWidget,
         palette::{
-            hsl::{PaletteColorHsla, PaletteHsl},
+            hsl::{ColorHsla, HslPanel, SetColorHsla},
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
         panel::Panel,
@@ -162,8 +162,8 @@ impl Descriptor for ColorPicker {
     }
 }
 
-fn palette_hsl(world: &World, panel: Handle<Panel>) {
-    let palette_hsl = world.insert(PaletteHsl {
+fn palette_hsl(world: &World, bg: Handle<Panel>) {
+    let panel = world.insert(HslPanel {
         rect: Rectangle::default(),
         color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
         enabled: true,
@@ -174,19 +174,24 @@ fn palette_hsl(world: &World, panel: Handle<Panel>) {
             (0.5, 0.5),
             Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
         ),
-        source: panel.untyped(),
-        target: palette_hsl.untyped(),
+        source: bg.untyped(),
+        target: panel.untyped(),
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();
-    world.observer(palette_hsl, move |&PaletteColorHsla(color), world| {
+    world.observer(panel, move |&ColorHsla(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
+    world.observer(layer, move |&BrushConfigurationChanged, world| {
+        let layer = world.fetch(layer).unwrap();
+        let hsla = layer.round_brush.color.into_color();
+        world.trigger(panel, &SetColorHsla(hsla));
+    });
 }
 
-fn palette_oklab(world: &World, panel: Handle<Panel>) {
+fn palette_oklab(world: &World, bg: Handle<Panel>) {
     let polar = world.insert(OklabPolar {
         rect: Rectangle::default(),
         color: Oklab::default(),
@@ -203,7 +208,7 @@ fn palette_oklab(world: &World, panel: Handle<Panel>) {
             (0.5, 0.5),
             Rectangle::new_half(IVec2::new(-30, 0), UVec2::splat(100)),
         ),
-        source: panel.untyped(),
+        source: bg.untyped(),
         target: polar.untyped(),
     });
     world.insert(Transform {
@@ -211,7 +216,7 @@ fn palette_oklab(world: &World, panel: Handle<Panel>) {
             (0.5, 0.5),
             Rectangle::new_half(IVec2::new(110, 0), UVec2::new(20, 100)),
         ),
-        source: panel.untyped(),
+        source: bg.untyped(),
         target: bar.untyped(),
     });
 

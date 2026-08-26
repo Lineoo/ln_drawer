@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
-use ln_world::{Descriptor, Element, Handle, World};
+use glam::UVec2;
+use ln_world::{Element, Handle, World};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
     *,
@@ -12,7 +13,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
     },
-    widgets::shaders::LIB_CAMERA,
+    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_CAMERA},
 };
 
 pub trait QuadMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {
@@ -25,55 +26,55 @@ pub trait QuadMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {
     }
 
     fn fragment() -> Option<&'static str>;
+
+    fn edge(&self) -> UVec2 {
+        UVec2::ZERO
+    }
 }
 
+// TODO switch between pixel snap
 pub struct QuadMeshPipeline<M: QuadMaterial> {
     pipeline: RenderPipeline,
     bind: BindGroupLayout,
     _marker: PhantomData<M>,
 }
 
-// TODO upgrade to modern code style
-pub struct QuadMeshDescriptor<M: QuadMaterial> {
+pub struct QuadMesh<M: QuadMaterial> {
     pub rect: Rectangle,
     pub visible: bool,
     pub order: isize,
     pub material: M,
 }
 
-pub struct QuadMesh<M: QuadMaterial> {
-    pub desc: QuadMeshDescriptor<M>,
-    control: Handle<RenderControl>,
-    rectangle: Buffer,
-    material: Buffer,
-    queue: Queue,
-}
+pub struct SetQuadMaterial<M: QuadMaterial>(pub M);
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct RectangleUniform {
+pub struct QuadUniform {
     pub origin: [i32; 2],
     pub extend: [u32; 2],
+    pub edge: UVec2,
 }
 
 impl<M: QuadMaterial> QuadMesh<M> {
-    pub fn create(desc: QuadMeshDescriptor<M>, world: &World) -> Self {
+    pub fn init(&self, world: &World, this: Handle<Self>) {
         let render = world.single_fetch::<Render>().unwrap();
         let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
         let device = &render.device;
 
-        let rectangle = device.create_buffer_init(&BufferInitDescriptor {
+        let rectangle_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("rectangle"),
-            contents: bytemuck::bytes_of(&RectangleUniform {
-                origin: desc.rect.origin.into(),
-                extend: desc.rect.extend.into(),
+            contents: bytemuck::bytes_of(&QuadUniform {
+                origin: self.rect.origin.into(),
+                extend: self.rect.extend.into(),
+                edge: self.material.edge(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let material = device.create_buffer_init(&BufferInitDescriptor {
+        let material_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some(M::label()),
-            contents: bytemuck::bytes_of(&desc.material),
+            contents: bytemuck::bytes_of(&self.material),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
@@ -83,11 +84,11 @@ impl<M: QuadMaterial> QuadMesh<M> {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: rectangle.as_entire_binding(),
+                    resource: rectangle_buffer.as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: material.as_entire_binding(),
+                    resource: material_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -111,34 +112,36 @@ impl<M: QuadMaterial> QuadMesh<M> {
             })),
         });
 
-        QuadMesh {
-            desc,
-            control,
-            rectangle,
-            material,
-            queue: render.queue.clone(),
-        }
-    }
+        world.observer(this, move |&SetWidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            let render = world.single_fetch::<Render>().unwrap();
+            this.rect = rect;
+            let uniform = QuadUniform {
+                origin: rect.origin.into(),
+                extend: rect.extend.into(),
+                edge: this.material.edge(),
+            };
 
-    fn reorder(&mut self, world: &World) {
-        RenderControl::reorder(
-            self.desc.visible.then_some(self.desc.order),
-            world,
-            self.control,
-        );
-    }
+            let bytes = bytemuck::bytes_of(&uniform);
 
-    fn update_buffer(&mut self) {
-        let rectangle = RectangleUniform {
-            origin: self.desc.rect.origin.into(),
-            extend: self.desc.rect.extend.into(),
-        };
+            render.queue.write_buffer(&rectangle_buffer, 0, bytes);
+        });
 
-        let rectangle = bytemuck::bytes_of(&rectangle);
-        let material = bytemuck::bytes_of(&self.desc.material);
+        world.observer(this, move |&SetWidgetVisible(visible), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            this.visible = visible;
+            RenderControl::reorder(visible.then_some(this.order), world, control);
+        });
 
-        self.queue.write_buffer(&self.rectangle, 0, rectangle);
-        self.queue.write_buffer(&self.material, 0, material);
+        world.observer(this, move |&SetQuadMaterial(mat), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            let render = world.single_fetch::<Render>().unwrap();
+            this.material = mat;
+
+            render
+                .queue
+                .write_buffer(&material_buffer, 0, bytemuck::bytes_of(&mat));
+        });
     }
 }
 
@@ -165,7 +168,7 @@ impl<M: QuadMaterial> QuadMeshPipeline<M> {
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: ShaderStages::VERTEX,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -237,24 +240,10 @@ impl<M: QuadMaterial> QuadMeshPipeline<M> {
     }
 }
 
-impl<M: QuadMaterial> Descriptor for QuadMeshDescriptor<M> {
-    type Target = Handle<QuadMesh<M>>;
-    fn when_build(self, world: &World) -> Self::Target {
-        world.insert(QuadMesh::create(self, world))
-    }
-}
-
 impl<M: QuadMaterial> Element for QuadMeshPipeline<M> {}
 
 impl<M: QuadMaterial> Element for QuadMesh<M> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        self.reorder(world);
-        world.dependency(self.control, this);
-    }
-
-    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
-        self.reorder(world);
-        self.update_buffer();
-        RenderControl::redraw(world);
+        self.init(world, this);
     }
 }

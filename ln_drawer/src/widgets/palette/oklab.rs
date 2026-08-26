@@ -1,6 +1,6 @@
-use glam::{I64Vec2, Vec3A};
+use glam::{I64Vec2, IVec2, UVec2, Vec2, Vec3A};
 use ln_world::{Element, Handle, World};
-use palette::Oklab;
+use palette::{IntoColor, Oklab, Srgba};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
@@ -8,10 +8,15 @@ use crate::{
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         palette::utils::find_gamut_intersection,
-        renderer::quad::{QuadMaterial, QuadMeshDescriptor},
-        shaders::{LIB_COLORSPACE, LIB_CONSTANT},
+        renderer::{
+            quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
+            rrect::{RRect, SetRRectColor},
+        },
+        shaders::shader_compile,
     },
 };
+
+const THUMB_RADIUS: f32 = 5.0;
 
 pub struct OklabPolar {
     pub rect: Rectangle,
@@ -42,13 +47,40 @@ pub struct SetColorOklab(pub Oklab);
 
 impl OklabPolar {
     fn init(&mut self, world: &World, this: Handle<Self>) {
-        let rectangle = world.build(QuadMeshDescriptor {
+        let quad = world.insert(QuadMesh {
             rect: self.rect,
             visible: self.enabled,
             order: 60,
             material: OklabPolarMaterial {
                 oklab: Vec3A::new(self.color.l, self.color.a, self.color.b),
             },
+        });
+
+        let thumb = world.insert(RRect {
+            rect: Rectangle::default(),
+            order: 150,
+            color: self.color.into_color(),
+            radius: THUMB_RADIUS,
+            width: 0.0,
+            enabled: true,
+        });
+
+        let thumb_light = world.insert(RRect {
+            rect: Rectangle::default(),
+            order: 140,
+            color: Srgba::new(1.0, 1.0, 1.0, 1.0),
+            radius: THUMB_RADIUS + 1.0,
+            width: 0.0,
+            enabled: true,
+        });
+
+        let thumb_shadow = world.insert(RRect {
+            rect: Rectangle::default(),
+            order: 130,
+            color: Srgba::new(0.0, 0.0, 0.0, 1.0),
+            radius: THUMB_RADIUS + 2.0,
+            width: 0.0,
+            enabled: true,
         });
 
         let collider = world.insert(ToolCollider {
@@ -71,41 +103,86 @@ impl OklabPolar {
         });
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
+            let mut this = world.fetch_mut(this).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
-            rectangle.desc.visible = enabled;
+            this.enabled = enabled;
             collider.enabled = enabled;
+            world.queue_trigger(thumb, SetWidgetVisible(enabled));
+            world.queue_trigger(thumb_light, SetWidgetVisible(enabled));
+            world.queue_trigger(thumb_shadow, SetWidgetVisible(enabled));
+            world.queue_trigger(quad, SetWidgetVisible(enabled));
         });
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
             this.rect = rect;
-            rectangle.desc.rect = rect;
             collider.rect = rect;
+            world.queue_trigger(quad, SetWidgetRectangle(rect));
         });
 
         world.observer(this, move |&SetColorOklab(color), world| {
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
             let mut this = world.fetch_mut(this).unwrap();
             this.color = color;
-            rectangle.desc.material.oklab = Vec3A::new(color.l, color.a, color.b);
+            world.queue_trigger(
+                quad,
+                SetQuadMaterial(OklabPolarMaterial {
+                    oklab: Vec3A::new(color.l, color.a, color.b),
+                }),
+            );
+            let thumb_rect = Rectangle::new_half(
+                this.rect.origin
+                    + (Vec2::new(color.a / 0.8 + 0.5, color.b / 0.8 + 0.5)
+                        * this.rect.extend.as_vec2())
+                    .as_ivec2(),
+                UVec2::splat(THUMB_RADIUS as u32),
+            );
+            world.queue_trigger(thumb, SetWidgetRectangle(thumb_rect));
+            world.queue_trigger(thumb_light, SetWidgetRectangle(thumb_rect.expand(1)));
+            world.queue_trigger(thumb_shadow, SetWidgetRectangle(thumb_rect.expand(2)));
+            world.queue_trigger(thumb, SetRRectColor(color.into_color()));
         });
 
-        world.dependency(rectangle, this);
+        world.dependency(quad, this);
     }
 }
 
 impl OklabBar {
     fn init(&mut self, world: &World, this: Handle<Self>) {
-        let rectangle = world.build(QuadMeshDescriptor {
+        let quad = world.insert(QuadMesh {
             rect: self.rect,
             visible: self.enabled,
             order: 60,
             material: OklabBarMaterial {
                 oklab: Vec3A::new(self.color.l, self.color.a, self.color.b),
             },
+        });
+
+        let thumb = world.insert(RRect {
+            rect: Rectangle::default(),
+            order: 150,
+            color: self.color.into_color(),
+            radius: THUMB_RADIUS,
+            width: 0.0,
+            enabled: true,
+        });
+
+        let thumb_light = world.insert(RRect {
+            rect: Rectangle::default(),
+            order: 140,
+            color: Srgba::new(1.0, 1.0, 1.0, 1.0),
+            radius: THUMB_RADIUS + 1.0,
+            width: 0.0,
+            enabled: true,
+        });
+
+        let thumb_shadow = world.insert(RRect {
+            rect: Rectangle::default(),
+            order: 130,
+            color: Srgba::new(0.0, 0.0, 0.0, 1.0),
+            radius: THUMB_RADIUS + 2.0,
+            width: 0.0,
+            enabled: true,
         });
 
         let collider = world.insert(ToolCollider {
@@ -127,29 +204,47 @@ impl OklabBar {
         });
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
+            let mut this = world.fetch_mut(this).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
-            rectangle.desc.visible = enabled;
+            this.enabled = enabled;
             collider.enabled = enabled;
+            world.queue_trigger(thumb, SetWidgetVisible(enabled));
+            world.queue_trigger(thumb_light, SetWidgetVisible(enabled));
+            world.queue_trigger(thumb_shadow, SetWidgetVisible(enabled));
+            world.queue_trigger(quad, SetWidgetVisible(enabled));
         });
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
             this.rect = rect;
-            rectangle.desc.rect = rect;
             collider.rect = rect;
+            world.queue_trigger(quad, SetWidgetRectangle(rect));
         });
 
         world.observer(this, move |&SetColorOklab(color), world| {
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
             let mut this = world.fetch_mut(this).unwrap();
             this.color = color;
-            rectangle.desc.material.oklab = Vec3A::new(color.l, color.a, color.b);
+            world.queue_trigger(
+                quad,
+                SetQuadMaterial(OklabBarMaterial {
+                    oklab: Vec3A::new(color.l, color.a, color.b),
+                }),
+            );
+            let thumb_rect = Rectangle::new_half(
+                IVec2::new(
+                    this.rect.horizontal_center(),
+                    this.rect.origin.y + (color.l * this.rect.extend.y as f32) as i32,
+                ),
+                UVec2::new(this.rect.extend.x / 2, THUMB_RADIUS as u32),
+            );
+            world.queue_trigger(thumb, SetWidgetRectangle(thumb_rect));
+            world.queue_trigger(thumb_light, SetWidgetRectangle(thumb_rect.expand(1)));
+            world.queue_trigger(thumb_shadow, SetWidgetRectangle(thumb_rect.expand(2)));
+            world.queue_trigger(thumb, SetRRectColor(color.into_color()));
         });
 
-        world.dependency(rectangle, this);
+        world.dependency(quad, this);
     }
 }
 
@@ -167,15 +262,7 @@ impl QuadMaterial for OklabPolarMaterial {
     }
 
     fn shader() -> wgpu::ShaderSource<'static> {
-        wgpu::ShaderSource::Wgsl(
-            format!(
-                "{}{}{}",
-                LIB_COLORSPACE,
-                LIB_CONSTANT,
-                include_str!("oklab_polar.wgsl")
-            )
-            .into(),
-        )
+        wgpu::ShaderSource::Wgsl(shader_compile(include_str!("oklab_polar.wgsl"), &[]).into())
     }
 
     fn fragment() -> Option<&'static str> {
@@ -189,15 +276,7 @@ impl QuadMaterial for OklabBarMaterial {
     }
 
     fn shader() -> wgpu::ShaderSource<'static> {
-        wgpu::ShaderSource::Wgsl(
-            format!(
-                "{}{}{}",
-                LIB_COLORSPACE,
-                LIB_CONSTANT,
-                include_str!("oklab_bar.wgsl")
-            )
-            .into(),
-        )
+        wgpu::ShaderSource::Wgsl(shader_compile(include_str!("oklab_bar.wgsl"), &[]).into())
     }
 
     fn fragment() -> Option<&'static str> {

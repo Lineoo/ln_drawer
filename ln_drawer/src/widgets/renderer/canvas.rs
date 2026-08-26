@@ -21,9 +21,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl,
         camera::{Camera, CameraBind},
     },
-    widgets::{
-        SetWidgetRectangle, SetWidgetVisible, renderer::quad::RectangleUniform, shaders::LIB_CAMERA,
-    },
+    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_CAMERA},
 };
 
 pub struct Canvas {
@@ -52,6 +50,13 @@ pub struct CanvasPipeline {
 pub struct SetCanvasColor(pub Srgba);
 pub struct UploadCanvasData;
 pub struct RemakeCanvasTexture;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RectangleUniform {
+    pub origin: [i32; 2],
+    pub extend: [u32; 2],
+}
 
 impl Canvas {
     pub fn init(&mut self, world: &World, this: Handle<Self>) {
@@ -329,13 +334,7 @@ impl CanvasPipeline {
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("canvas_shader"),
             source: ShaderSource::Wgsl(
-                format!(
-                    "{}{}{}",
-                    LIB_CAMERA,
-                    include_str!("quad.wgsl"),
-                    include_str!("canvas.wgsl"),
-                )
-                .into(),
+                format!("{}{}", LIB_CAMERA, include_str!("canvas.wgsl"),).into(),
             ),
         });
 
