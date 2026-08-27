@@ -118,6 +118,16 @@ impl OklabPolar {
             let mut collider = world.fetch_mut(collider).unwrap();
             this.rect = rect;
             collider.rect = rect;
+            let thumb_rect = Rectangle::new_half(
+                this.rect.origin
+                    + (Vec2::new(this.color.a / 0.8 + 0.5, this.color.b / 0.8 + 0.5)
+                        * rect.extend.as_vec2())
+                    .as_ivec2(),
+                UVec2::splat(THUMB_RADIUS as u32),
+            );
+            world.queue_trigger(thumb, SetWidgetRectangle(thumb_rect));
+            world.queue_trigger(thumb_light, SetWidgetRectangle(thumb_rect.expand(1)));
+            world.queue_trigger(thumb_shadow, SetWidgetRectangle(thumb_rect.expand(2)));
             world.queue_trigger(quad, SetWidgetRectangle(rect));
         });
 
@@ -219,6 +229,16 @@ impl OklabBar {
             let mut collider = world.fetch_mut(collider).unwrap();
             this.rect = rect;
             collider.rect = rect;
+            let thumb_rect = Rectangle::new_half(
+                IVec2::new(
+                    rect.horizontal_center(),
+                    rect.origin.y + (this.color.l * rect.extend.y as f32) as i32,
+                ),
+                UVec2::new(rect.extend.x / 2, THUMB_RADIUS as u32),
+            );
+            world.queue_trigger(thumb, SetWidgetRectangle(thumb_rect));
+            world.queue_trigger(thumb_light, SetWidgetRectangle(thumb_rect.expand(1)));
+            world.queue_trigger(thumb_shadow, SetWidgetRectangle(thumb_rect.expand(2)));
             world.queue_trigger(quad, SetWidgetRectangle(rect));
         });
 
