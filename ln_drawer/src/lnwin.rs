@@ -207,14 +207,9 @@ impl Element for Lnwindow {
                     let lnwindow = world.single::<Lnwindow>().unwrap();
                     world.observer(lnwindow, move |event: &WindowEvent, world| {
                         if let WindowEvent::SurfaceResized(size) = event {
-                            let mut camera = world.single_fetch_mut::<CameraUtils>().unwrap();
-                            camera.camera_size(UVec2::new(size.width, size.height));
-                        }
-                    });
-                    world.observer(lnwindow, move |event: &WindowEvent, world| {
-                        if let WindowEvent::SurfaceResized(size) = event {
                             let lnwindow = world.fetch(lnwindow).unwrap();
                             let mut camera2 = world.fetch_mut(camera2).unwrap();
+                            let mut camera = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                             let scale = lnwindow.window.scale_factor();
                             world.queue_trigger(
@@ -229,6 +224,7 @@ impl Element for Lnwindow {
                             );
 
                             camera2.zoom = i64::q32_from_f64(scale.log2());
+                            camera.update_from(&camera2);
                         }
                     });
                 });

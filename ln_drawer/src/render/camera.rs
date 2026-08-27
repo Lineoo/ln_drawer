@@ -276,6 +276,12 @@ impl CameraUtils {
         }
     }
 
+    pub fn update_from(&mut self, camera: &Camera) {
+        self.camera_center = camera.center;
+        self.camera_zoom = camera.zoom;
+        self.camera_size = camera.size;
+    }
+
     pub fn force_camera_center(&mut self, center: I64Vec2) {
         self.camera_center = center;
     }
@@ -295,6 +301,7 @@ impl CameraUtils {
         self.camera_center = self.resolve_camera_center();
     }
 
+    #[cfg_attr(not(test), expect(unused))]
     pub fn camera_cursor_by_anchor_cursor(&mut self, cursor: DVec2) {
         self.camera_cursor = cursor;
         self.anchor_cursor = self.resolve_anchor_cursor();
@@ -311,6 +318,7 @@ impl CameraUtils {
         self.anchor_cursor = self.resolve_anchor_cursor();
     }
 
+    #[cfg_attr(not(test), expect(unused))]
     pub fn camera_distance_by_anchor_distance(&mut self, distance: f64) {
         self.camera_distance = distance;
         self.anchor_distance = self.resolve_anchor_distance();
