@@ -14,9 +14,9 @@ use wgpu::{CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, RenderP
 
 use crate::{
     layer::{
-        Chunk, ChunkPool, DRAWS_ARRAY_CAPACITY, Layer, LayerPipeline, chunk_to_rect, create_chunk,
-        create_chunk_texture, dispatch_workgroups, dispatch_workgroups_extend, rect_to_chunks,
-        stream::ThreadInput, write_dispatch,
+        Chunk, ChunkPool, DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_DISABLED, DRAWS_ARRAY_CAPACITY, Layer,
+        LayerPipeline, chunk_to_rect, create_chunk, create_chunk_texture, dispatch_workgroups,
+        dispatch_workgroups_extend, rect_to_chunks, stream::ThreadInput, write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
@@ -88,16 +88,16 @@ impl DrawPipeline {
     pub fn new(layer: Arc<LayerPipeline>) -> Self {
         let scratch_dst = Layer {
             chunks: HashMap::new(),
-            chunk_size: 512,
+            chunk_size: DEFAULT_CHUNK_SIZE,
+            mipmap_levels: DEFAULT_MIPMAP_DISABLED,
             controlled: false,
-            mipmap_levels: 1,
         };
 
         let scratch_swp = Layer {
             chunks: HashMap::new(),
-            chunk_size: 512,
+            chunk_size: DEFAULT_CHUNK_SIZE,
+            mipmap_levels: DEFAULT_MIPMAP_DISABLED,
             controlled: false,
-            mipmap_levels: 1,
         };
 
         let bridge_texture = create_chunk_texture(&layer.device, BRIDGE_CHUNK_SIZE);

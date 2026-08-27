@@ -39,6 +39,7 @@ pub enum ThreadInput {
     SetStreamCamera(i64, UVec2, I64Vec2),
     MarkUnsaved(ChunkKey),
     RequestReal(ChunkKey),
+    #[expect(unused)]
     SwapChunk(ChunkKey, Chunk),
     Autosave,
     Abort,

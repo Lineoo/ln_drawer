@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     sync::{
         Arc,
         mpsc::{Receiver, Sender, channel},
@@ -29,7 +28,7 @@ use winit::{
 
 use crate::{
     layer::{
-        Layer, LayerPipeline,
+        DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_ENABLED, Layer, LayerPipeline,
         brush::{Brush, Draw, DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush},
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
         traveler::Traveler,
@@ -51,9 +50,6 @@ use crate::{
     widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_COLORSPACE},
 };
 
-const MAIN_CHUNK_SIZE: u32 = 512;
-const MAIN_CHUNK_MIPMAP: u8 = 8;
-
 pub struct LayerDebugMessage(pub String);
 
 pub struct BrushConfigurationChanged;
@@ -66,9 +62,6 @@ pub struct LayerWrapper {
     pub brush_mode: BrushMode,
     pub round_brush: RoundBrush,
     pub blur_brush: BlurBrush,
-
-    pub undos: VecDeque<Layer>,
-    pub redos: Vec<Layer>,
 
     pub debug: bool,
 
@@ -117,8 +110,8 @@ impl LayerWrapper {
             database,
             device: render.device.clone(),
             queue: render.queue.clone(),
-            chunk_size: MAIN_CHUNK_SIZE,
-            mipmap_levels: MAIN_CHUNK_MIPMAP,
+            chunk_size: DEFAULT_CHUNK_SIZE,
+            mipmap_levels: DEFAULT_MIPMAP_ENABLED,
             layer_pipeline: layer.clone(),
             window,
         };
@@ -161,8 +154,8 @@ impl LayerWrapper {
         LayerWrapper {
             main: Layer {
                 chunks: HashMap::new(),
-                mipmap_levels: MAIN_CHUNK_MIPMAP,
-                chunk_size: MAIN_CHUNK_SIZE,
+                mipmap_levels: DEFAULT_MIPMAP_ENABLED,
+                chunk_size: DEFAULT_CHUNK_SIZE,
                 controlled: true,
             },
             brush,
@@ -180,8 +173,6 @@ impl LayerWrapper {
                 sigma: BrushParam::constant(2.0),
                 softness: BrushParam::constant(0.3),
             },
-            undos: VecDeque::new(),
-            redos: Vec::new(),
             debug: false,
             temp_erase: RoundBrush {
                 size: BrushParam::force_index(5.0, 15.0, 1.0),

@@ -47,6 +47,7 @@ impl<T: AnimationType> Descriptor for AnimationDescriptor<T> {
     }
 }
 
+#[expect(unused)]
 pub struct SimpleAnimationDescriptor<T, W, F>
 where
     T: AnimationType,
@@ -78,6 +79,7 @@ where
     }
 }
 
+#[expect(unused)]
 pub struct OnceAnimationDescriptor<T, W, F>
 where
     T: AnimationType,

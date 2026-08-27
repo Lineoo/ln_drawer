@@ -18,6 +18,7 @@ use crate::{
     },
 };
 
+#[expect(unused)]
 pub struct TabsActive(pub usize);
 pub struct SetTabsActive(pub usize);
 

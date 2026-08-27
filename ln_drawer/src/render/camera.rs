@@ -35,6 +35,7 @@ pub struct MainCamera(pub Handle<Camera>);
 
 pub struct UICamera(pub Handle<Camera>);
 
+#[expect(unused)]
 pub struct CameraPositionChanged {
     pub from: I64Vec2,
     pub here: I64Vec2,
@@ -146,6 +147,7 @@ impl Camera {
         I64Vec2::q32_from_f64(pf)
     }
 
+    #[expect(unused)]
     pub fn world_to_screen_absolute(&self, point: I64Vec2) -> [f64; 2] {
         self.world_to_screen_relative(point - self.center)
     }

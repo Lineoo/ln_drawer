@@ -30,8 +30,8 @@ use crate::{
 
 pub type ChunkKey = (i32, i32, u8);
 
-pub const DEFAULT_MIPMAP_DISABLED: u32 = 1;
-pub const DEFAULT_MIPMAP_ENABLED: u32 = 8;
+pub const DEFAULT_MIPMAP_DISABLED: u8 = 1;
+pub const DEFAULT_MIPMAP_ENABLED: u8 = 8;
 pub const DEFAULT_CHUNK_SIZE: u32 = 512;
 
 pub const CHUNK_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;

@@ -24,6 +24,7 @@ pub struct Panel {
 pub struct SetPanelAnimation {
     pub src: Rectangle,
     pub dst: Rectangle,
+    #[expect(unused)]
     pub hidden_after_finished: bool,
 }
 

@@ -43,6 +43,7 @@ pub struct ButtonImage {
     pub bytes: Arc<DynamicImage>,
 }
 
+#[expect(unused)]
 pub struct ButtonDrag {
     pub from: PointerHit,
     pub here: PointerHit,

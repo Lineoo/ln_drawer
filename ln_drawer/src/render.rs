@@ -80,6 +80,7 @@ pub struct RenderInformation {
 #[non_exhaustive]
 pub struct RenderExtra<'a, 'b> {
     pub device: &'a Device,
+    #[expect(unused)]
     pub queue: &'a Queue,
     pub early_encoder: &'a mut CommandEncoder,
     pub surface_config: &'a SurfaceConfiguration,

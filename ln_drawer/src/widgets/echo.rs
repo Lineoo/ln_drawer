@@ -12,6 +12,7 @@ use crate::widgets::{
 /// correlated notification event immediately.
 pub struct Echo<'w>(&'w World, Handle);
 
+#[expect(unused)]
 pub struct EchoAll;
 pub struct EchoWidget;
 
@@ -36,18 +37,22 @@ impl Echo<'_> {
         self.build(|&SetWidgetVisible(val)| WidgetVisible(val))
     }
 
+    #[expect(unused)]
     pub fn slider_value(&self) -> &Self {
         self.build(|&SetSliderValue(val)| SliderValue(val))
     }
 
+    #[expect(unused)]
     pub fn tabs_active(&self) -> &Self {
         self.build(|&SetTabsActive(val)| TabsActive(val))
     }
 
+    #[expect(unused)]
     pub fn button_selected(&self) -> &Self {
         self.build(|&SetButtonSelected(val)| ButtonSelected(val))
     }
 
+    #[expect(unused)]
     pub fn all(&self) {
         self.widget_rectangle();
         self.widget_visible();
