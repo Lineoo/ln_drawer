@@ -14,7 +14,7 @@ use winit::{
 };
 
 use crate::{
-    layer::wrapper::LayerWrapper,
+    layer::{input::LayerInput, wrapper::LayerWrapper},
     measures::{FI64Ext, Rectangle},
     render::{
         Render,
@@ -33,7 +33,7 @@ use crate::{
             hsl::HslPanelMaterial,
             oklab::{OklabBarMaterial, OklabPolarMaterial},
         },
-        panel::side_docker::SideDocker,
+        panel::side_docker::side_docker,
         renderer::{
             canvas::CanvasPipeline, quad::QuadMeshPipeline, rrect::RRectMaterial,
             text::TextPipeline,
@@ -183,6 +183,7 @@ impl Element for Lnwindow {
             world.enter(camera1, || {
                 world.queue(|world| {
                     world.insert(LayerWrapper::new(world));
+                    world.insert(LayerInput::default());
                     let camera = world.single_fetch::<Camera>().unwrap();
                     world.insert(CameraUtils::new(&camera));
                     let lnwindow = world.single::<Lnwindow>().unwrap();
@@ -198,8 +199,9 @@ impl Element for Lnwindow {
             world.flush();
             world.enter(camera2, || {
                 let stroke = world.enter(camera1, || world.single::<LayerWrapper>().unwrap());
+                let input = world.enter(camera1, || world.single::<LayerInput>().unwrap());
                 world.option(ViewOptions {
-                    refs: vec![here, stroke.untyped()],
+                    refs: vec![here, stroke.untyped(), input.untyped()],
                 });
                 world.queue(move |world| {
                     let camera = world.single_fetch::<Camera>().unwrap();
@@ -229,7 +231,7 @@ impl Element for Lnwindow {
                     });
                 });
 
-                world.queue(|world| world.build(SideDocker));
+                world.queue(|world| side_docker(world));
             });
         });
     }

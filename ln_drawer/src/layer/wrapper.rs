@@ -25,7 +25,6 @@ use crate::{
     layer::{
         DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_ENABLED, Layer, LayerPipeline,
         brush::{DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush},
-        input::LayerInput,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
         traveler::Traveler,
     },
@@ -415,8 +414,6 @@ impl Element for LayerWrapper {
                 ))
                 .unwrap();
         });
-
-        world.insert(LayerInput::default());
 
         let control = world.insert(RenderControl {
             prepare: Some(Box::new(move |world| {

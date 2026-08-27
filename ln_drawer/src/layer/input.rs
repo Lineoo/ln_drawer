@@ -30,8 +30,9 @@ const ERASE_TIMER: f64 = 0.4;
 
 #[derive(Default)]
 pub struct LayerInput {
-    space: bool,
-    ctrl: bool,
+    pub touch_draw: bool,
+    pub space: bool,
+    pub ctrl: bool,
 }
 
 enum LayerInputState {
@@ -142,7 +143,9 @@ impl LayerInput {
             let prev = std::mem::replace(&mut state, LayerInputState::None);
             state = match (prev, event.active.status) {
                 (LayerInputState::None, MultiTouchStatus::Press)
-                    if matches!(event.active.pointer, PointerKind::Touch(_)) || this.space =>
+                    if (!this.touch_draw
+                        && matches!(event.active.pointer, PointerKind::Touch(_)))
+                        || this.space =>
                 {
                     camera_utils.camera_cursor_by_anchor_center(center);
                     if let Some(distance) = pinch {
@@ -257,18 +260,23 @@ impl LayerInput {
                     start_position: event.active.screen,
                     start_instant: Instant::now(),
                 },
-                (LayerInputState::Paint { .. }, MultiTouchStatus::Press) => {
-                    let draw = Draw {
-                        position: event.active.position,
-                        force: event.active.data.force.unwrap_or(1.0),
-                    };
+                (
+                    LayerInputState::Paint { .. }
+                    | LayerInputState::PaintErase
+                    | LayerInputState::PaintNoErase,
+                    MultiTouchStatus::Press,
+                ) => {
+                    wrapper.brush.discard();
 
-                    draw_wrapper(wrapper, draw);
+                    camera_utils.camera_cursor_by_anchor_center(center);
+                    if let Some(distance) = pinch {
+                        camera_utils.camera_distance_by_anchor_zoom_cursor(distance);
+                    }
 
-                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                    lnwindow.window.request_redraw();
-
-                    LayerInputState::PaintNoErase
+                    LayerInputState::Grab {
+                        start_position: center,
+                        start_pinch: pinch,
+                    }
                 }
                 (
                     LayerInputState::Paint {
@@ -299,10 +307,7 @@ impl LayerInput {
                         }
                     }
                 }
-                (
-                    LayerInputState::PaintNoErase,
-                    MultiTouchStatus::Press | MultiTouchStatus::Holding,
-                ) => {
+                (LayerInputState::PaintNoErase, MultiTouchStatus::Holding) => {
                     let draw = Draw {
                         position: event.active.position,
                         force: event.active.data.force.unwrap_or(1.0),
@@ -315,10 +320,7 @@ impl LayerInput {
 
                     LayerInputState::PaintNoErase
                 }
-                (
-                    LayerInputState::PaintErase,
-                    MultiTouchStatus::Press | MultiTouchStatus::Holding,
-                ) => {
+                (LayerInputState::PaintErase, MultiTouchStatus::Holding) => {
                     let draw = Draw {
                         position: event.active.position,
                         force: event.active.data.force.unwrap_or(1.0),

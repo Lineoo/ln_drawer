@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use glam::{IVec2, UVec2, Vec2};
-use ln_world::{Descriptor, Handle, World};
+use ln_world::{Handle, World};
 use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
 use crate::{
@@ -22,152 +22,146 @@ use crate::{
     },
 };
 
-pub struct ColorPicker(pub Handle<ToggleButton>);
-impl Descriptor for ColorPicker {
-    type Target = ();
-    fn when_build(self, world: &World) -> Self::Target {
-        let toggle_button = self.0;
+pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
+    let toggle_button_color_icon = world.build(RoundedRectDescriptor {
+        order: 21,
+        color: Srgba::new(0.9, 0.7, 0.7, 1.0),
+        value: 10.0,
+        shrink: 10.0,
+        shadow_offset: Vec2::ZERO,
+        vertex_extend: 20,
+        ..Default::default()
+    });
 
-        let toggle_button_color_icon = world.build(RoundedRectDescriptor {
-            order: 21,
-            color: Srgba::new(0.9, 0.7, 0.7, 1.0),
-            value: 10.0,
-            shrink: 10.0,
-            shadow_offset: Vec2::ZERO,
-            vertex_extend: 20,
-            ..Default::default()
-        });
+    world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
+        let transform = Transform {
+            value: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+            ),
+            source: toggle_button.untyped(),
+            target: toggle_button_color_icon.untyped(),
+        };
 
-        world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
-            let transform = Transform {
-                value: TransformValue::anchor(
-                    (0.5, 0.5),
-                    Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
-                ),
-                source: toggle_button.untyped(),
-                target: toggle_button_color_icon.untyped(),
-            };
+        let target = transform.value.compute(rect);
 
-            let target = transform.value.compute(rect);
+        world.queue_trigger(toggle_button_color_icon, SetWidgetRectangle(target));
+    });
 
-            world.queue_trigger(toggle_button_color_icon, SetWidgetRectangle(target));
-        });
+    let tab_palette_hsl = world.insert(Panel {
+        rect: Rectangle::default(),
+        visible: true,
+        shadow: false,
+    });
 
-        let tab_palette_hsl = world.insert(Panel {
-            rect: Rectangle::default(),
-            visible: true,
-            shadow: false,
-        });
+    palette_hsl(world, tab_palette_hsl);
 
-        palette_hsl(world, tab_palette_hsl);
+    let tab_palette_oklch = world.insert(Panel {
+        rect: Rectangle::default(),
+        visible: true,
+        shadow: false,
+    });
 
-        let tab_palette_oklch = world.insert(Panel {
-            rect: Rectangle::default(),
-            visible: true,
-            shadow: false,
-        });
+    palette_oklab(world, tab_palette_oklch);
 
-        palette_oklab(world, tab_palette_oklch);
+    let tab_settings = world.insert(Panel {
+        rect: Rectangle::default(),
+        visible: true,
+        shadow: false,
+    });
 
-        let tab_settings = world.insert(Panel {
-            rect: Rectangle::default(),
-            visible: true,
-            shadow: false,
-        });
+    super::settings::panel_settings(world, tab_settings);
 
-        super::settings::panel_settings(world, tab_settings);
+    let tab_debug = world.insert(Panel {
+        rect: Rectangle::default(),
+        visible: true,
+        shadow: false,
+    });
 
-        let tab_debug = world.insert(Panel {
-            rect: Rectangle::default(),
-            visible: true,
-            shadow: false,
-        });
+    super::debug_panel::debug_panel(world, tab_debug);
 
-        super::debug_panel::debug_panel(world, tab_debug);
+    let tabs = world.insert(Tabs {
+        active: 0,
+        rect: Rectangle::default(),
+        visible: false,
+        tabs: vec![
+            (
+                ButtonImage {
+                    transform: TransformValue::anchor(
+                        (0.5, 0.5),
+                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                    ),
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(
+                        include_bytes!("../../../res/interface/palette.svg"),
+                        1.0,
+                    ))),
+                },
+                tab_palette_hsl.untyped(),
+            ),
+            (
+                ButtonImage {
+                    transform: TransformValue::anchor(
+                        (0.5, 0.5),
+                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                    ),
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(
+                        include_bytes!("../../../res/interface/palette.svg"),
+                        1.0,
+                    ))),
+                },
+                tab_palette_oklch.untyped(),
+            ),
+            (
+                ButtonImage {
+                    transform: TransformValue::anchor(
+                        (0.5, 0.5),
+                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                    ),
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(
+                        include_bytes!("../../../res/interface/settings.svg"),
+                        1.0,
+                    ))),
+                },
+                tab_settings.untyped(),
+            ),
+            (
+                ButtonImage {
+                    transform: TransformValue::anchor(
+                        (0.5, 0.5),
+                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                    ),
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(
+                        include_bytes!("../../../res/interface/bug.svg"),
+                        1.0,
+                    ))),
+                },
+                tab_debug.untyped(),
+            ),
+        ],
+    });
 
-        let tabs = world.insert(Tabs {
-            active: 0,
-            rect: Rectangle::default(),
-            visible: false,
-            tabs: vec![
-                (
-                    ButtonImage {
-                        transform: TransformValue::anchor(
-                            (0.5, 0.5),
-                            Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                        ),
-                        bytes: Arc::new(image::DynamicImage::from(svg_render(
-                            include_bytes!("../../../res/interface/palette.svg"),
-                            1.0,
-                        ))),
-                    },
-                    tab_palette_hsl.untyped(),
-                ),
-                (
-                    ButtonImage {
-                        transform: TransformValue::anchor(
-                            (0.5, 0.5),
-                            Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                        ),
-                        bytes: Arc::new(image::DynamicImage::from(svg_render(
-                            include_bytes!("../../../res/interface/palette.svg"),
-                            1.0,
-                        ))),
-                    },
-                    tab_palette_oklch.untyped(),
-                ),
-                (
-                    ButtonImage {
-                        transform: TransformValue::anchor(
-                            (0.5, 0.5),
-                            Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                        ),
-                        bytes: Arc::new(image::DynamicImage::from(svg_render(
-                            include_bytes!("../../../res/interface/settings.svg"),
-                            1.0,
-                        ))),
-                    },
-                    tab_settings.untyped(),
-                ),
-                (
-                    ButtonImage {
-                        transform: TransformValue::anchor(
-                            (0.5, 0.5),
-                            Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                        ),
-                        bytes: Arc::new(image::DynamicImage::from(svg_render(
-                            include_bytes!("../../../res/interface/bug.svg"),
-                            1.0,
-                        ))),
-                    },
-                    tab_debug.untyped(),
-                ),
-            ],
-        });
+    let layer = world.single::<LayerWrapper>().unwrap();
+    world.observer(layer, move |&BrushConfigurationChanged, world| {
+        let layer = world.fetch(layer).unwrap();
+        let mut toggle_button_color_icon = world.fetch_mut(toggle_button_color_icon).unwrap();
+        let color = layer.round_brush.color;
+        toggle_button_color_icon.desc.color = color.into_color();
+        // trigger palette_hsl SetPaletteHsl
+    });
 
-        let layer = world.single::<LayerWrapper>().unwrap();
-        world.observer(layer, move |&BrushConfigurationChanged, world| {
-            let layer = world.fetch(layer).unwrap();
-            let mut toggle_button_color_icon = world.fetch_mut(toggle_button_color_icon).unwrap();
-            let color = layer.round_brush.color;
-            toggle_button_color_icon.desc.color = color.into_color();
-            // trigger palette_hsl SetPaletteHsl
-        });
+    world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
+        let transform = TransformValue::anchor(
+            (1.0, 0.5),
+            Rectangle::new_half(IVec2::new(192 + 20, 0), UVec2::new(192, 144)),
+        );
+        let rect = transform.compute(rect);
+        world.queue_trigger(tabs, SetWidgetRectangle(rect));
+    });
 
-        world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
-            let transform = TransformValue::anchor(
-                (1.0, 0.5),
-                Rectangle::new_half(IVec2::new(192 + 20, 0), UVec2::new(192, 144)),
-            );
-            let rect = transform.compute(rect);
-            world.queue_trigger(tabs, SetWidgetRectangle(rect));
-        });
-
-        world.observer(toggle_button, move |&ButtonSelected(selected), world| {
-            world.queue_trigger(toggle_button, SetButtonSelected(selected));
-            world.queue_trigger(tabs, SetWidgetVisible(selected));
-        });
-    }
+    world.observer(toggle_button, move |&ButtonSelected(selected), world| {
+        world.queue_trigger(toggle_button, SetButtonSelected(selected));
+        world.queue_trigger(tabs, SetWidgetVisible(selected));
+    });
 }
 
 fn palette_hsl(world: &World, bg: Handle<Panel>) {
