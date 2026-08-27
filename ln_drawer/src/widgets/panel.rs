@@ -1,6 +1,7 @@
 pub mod color_picker;
 pub mod debug_panel;
 pub mod side_docker;
+pub mod settings;
 
 use glam::Vec2;
 use ln_world::{Element, Handle, World};

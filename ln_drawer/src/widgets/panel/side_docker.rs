@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use glam::{I64Vec2, IVec2, UVec2};
+use glam::{IVec2, UVec2};
 use ln_world::{Descriptor, World};
 
 use crate::{
@@ -14,15 +14,13 @@ use crate::{
     },
     lnwin::Lnwindow,
     measures::{Axis, Rectangle},
-    render::camera::{CameraUtils, MainCamera},
-    save::SaveDatabase,
     theme::Theme,
     widgets::{
         button::{
             ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton,
             ToggleButtonTheme,
         },
-        panel::{Panel, color_picker::ColorPicker, debug_panel::DebugPanel},
+        panel::{Panel, color_picker::ColorPicker},
         renderer::{svg::svg_render, text::SetText},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
@@ -191,28 +189,6 @@ impl Descriptor for SideDocker {
             world.queue_trigger(slider_label, SetText(format!("{value:.2} px")));
         });
 
-        let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
-
-        world.observer(compass, move |&ButtonClick, world| {
-            let main_camera = world.single_fetch::<MainCamera>().unwrap();
-            let mut camera = world
-                .enter_single_fetch_mut::<CameraUtils>(main_camera.0)
-                .unwrap();
-            camera.force_clear();
-            camera.force_camera_center(I64Vec2::ZERO);
-            camera.force_camera_zoom(0);
-        });
-
-        let debug = docker_button(include_bytes!("../../../res/interface/bug.svg"));
-        world.build(DebugPanel(debug));
-
-        let compact = docker_button(include_bytes!("../../../res/interface/database-zap.svg"));
-        world.observer(compact, move |&ButtonClick, world| {
-            let db = world.single_fetch::<SaveDatabase>().unwrap();
-            log::debug!("on next startup database will be compacted");
-            SaveDatabase::write_compact(&db.0).unwrap();
-        });
-
         world.insert(Transform {
             value: TransformValue {
                 left: TransformEdge {
@@ -263,8 +239,6 @@ impl Descriptor for SideDocker {
                 (eraser.untyped(), LuniChild::default()),
                 (blur.untyped(), LuniChild::default()),
                 (color_picker.untyped(), LuniChild::default()),
-                (undo.untyped(), LuniChild::default()),
-                (redo.untyped(), LuniChild::default()),
                 (
                     elastic_blank.untyped(),
                     LuniChild {
@@ -287,9 +261,8 @@ impl Descriptor for SideDocker {
                         ..Default::default()
                     },
                 ),
-                (compass.untyped(), LuniChild::default()),
-                (debug.untyped(), LuniChild::default()),
-                (compact.untyped(), LuniChild::default()),
+                (undo.untyped(), LuniChild::default()),
+                (redo.untyped(), LuniChild::default()),
             ],
         });
 

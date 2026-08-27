@@ -204,13 +204,16 @@ pub fn loading_thread(
         };
 
         output_tx.send(ThreadOutput::ThreadDebugMessage(format!(
-            "Loading Queue: length {} - pending {} \n\
-            Texture Index: real {} total {} \n\
-            Debug Counter: \n    \
-                | load decode {} real {} total {} | \n    \
-                | unload encode {} real {} total {} clean {} | \n\
-            Camera Center: {:?} \n\
-            ",
+            "\
+Loading Queue: length {} - pending {}
+Texture Index: real {} total {}
+Load Counter:
+    decode {}
+    real {} total {}
+Unload Counter:
+    encode {} clean {}
+    real {} total {} 
+Camera Center: {:?}",
             queue.inner.len(),
             queue.inner.len() - queue.front,
             base.real_cnt,
@@ -219,9 +222,9 @@ pub fn loading_thread(
             debug.load_real,
             debug.load,
             debug.encode,
+            debug.clean,
             debug.unload_real,
             debug.unload,
-            debug.clean,
             camera.center
         )))?;
 
