@@ -16,7 +16,10 @@ use crate::{
     theme::Theme,
     widgets::{
         SetWidgetVisible,
-        button::{ButtonClick, ButtonImage, ToggleButton, ToggleButtonTheme},
+        button::{
+            ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton,
+            ToggleButtonTheme,
+        },
         panel::Panel,
         renderer::{svg::svg_render, text::Text},
     },
@@ -108,6 +111,13 @@ pub fn debug_panel(world: &World, submenu: Handle<Panel>) {
         });
     });
 
+    let render_profile = docker_button(include_bytes!("../../../res/interface/timer.svg"));
+    world.observer(render_profile, move |&ButtonSelected(val), world| {
+        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        render.timestamp_poll = val;
+        world.queue_trigger(render_profile, SetButtonSelected(val));
+    });
+
     let compact = docker_button(include_bytes!("../../../res/interface/database-zap.svg"));
     world.observer(compact, move |&ButtonClick, world| {
         let db = world.single_fetch::<SaveDatabase>().unwrap();
@@ -119,6 +129,11 @@ pub fn debug_panel(world: &World, submenu: Handle<Panel>) {
         value: TransformValue::anchor((0.0, 0.0), Rectangle::new(20, 20, 40, 40)),
         source: submenu.untyped(),
         target: compass.untyped(),
+    });
+    world.insert(Transform {
+        value: TransformValue::anchor((0.5, 0.0), Rectangle::new(-10, 20, 10, 40)),
+        source: submenu.untyped(),
+        target: render_profile.untyped(),
     });
 
     world.insert(Transform {
