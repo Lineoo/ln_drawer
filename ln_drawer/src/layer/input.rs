@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use glam::{DVec2, UVec2};
 use ln_world::{Element, Handle, World};
 use winit::{
+    cursor::{Cursor, CursorIcon},
     event::{ElementState, PointerKind, WindowEvent},
     keyboard::KeyCode,
 };
@@ -30,6 +31,7 @@ const ERASE_TIMER: f64 = 0.4;
 #[derive(Default)]
 pub struct LayerInput {
     space: bool,
+    ctrl: bool,
 }
 
 enum LayerInputState {
@@ -43,6 +45,9 @@ enum LayerInputState {
     Grab {
         start_position: DVec2,
         start_pinch: Option<f64>,
+    },
+    Scale {
+        start_position: DVec2,
     },
 }
 
@@ -94,6 +99,8 @@ impl LayerInput {
                 return;
             }
 
+            let mut this = world.fetch_mut(this).unwrap();
+            let lnwindow = world.fetch(lnwindow).unwrap();
             let modifier = world.single_fetch::<ModifiersTool>().unwrap();
             let ctrl = modifier.modifiers.state().control_key();
             let shift = modifier.modifiers.state().shift_key();
@@ -109,20 +116,24 @@ impl LayerInput {
                         wrapper.redo();
                     }
 
-                    let lnwindow = world.fetch(lnwindow).unwrap();
                     lnwindow.window.request_redraw();
                 }
                 KeyCode::Space => {
-                    let mut this = world.fetch_mut(this).unwrap();
                     this.space = press;
+                }
+                KeyCode::ControlLeft => {
+                    this.ctrl = press;
                 }
                 _ => (),
             }
+
+            update_icon(&this, &LayerInputState::None, &lnwindow);
         });
 
         let mut state = LayerInputState::None;
         world.observer(collider, move |event: &MultiTouchGroup, world| {
             let this = world.fetch(this).unwrap();
+            let lnwindow = world.fetch(lnwindow).unwrap();
             let camera_utils = &mut *world.single_fetch_mut::<CameraUtils>().unwrap();
             let wrapper = &mut *world.single_fetch_mut::<LayerWrapper>().unwrap();
             let center = touch_center(event);
@@ -130,7 +141,6 @@ impl LayerInput {
 
             let prev = std::mem::replace(&mut state, LayerInputState::None);
             state = match (prev, event.active.status) {
-                // Grab
                 (LayerInputState::None, MultiTouchStatus::Press)
                     if matches!(event.active.pointer, PointerKind::Touch(_)) || this.space =>
                 {
@@ -139,24 +149,25 @@ impl LayerInput {
                         camera_utils.camera_distance_by_anchor_zoom_cursor(distance);
                     }
 
-                    LayerInputState::Grab {
-                        start_position: center,
-                        start_pinch: pinch,
+                    if this.ctrl {
+                        camera_utils.camera_distance_by_anchor_zoom_cursor(1.0);
+                        LayerInputState::Scale {
+                            start_position: center,
+                        }
+                    } else {
+                        LayerInputState::Grab {
+                            start_position: center,
+                            start_pinch: pinch,
+                        }
                     }
                 }
-                (LayerInputState::Grab { .. }, MultiTouchStatus::Press) => {
-                    camera_utils.camera_cursor_by_anchor_center(center);
-                    if let Some(distance) = pinch {
-                        camera_utils.camera_distance_by_anchor_zoom_cursor(distance);
-                    }
 
-                    LayerInputState::Grab {
-                        start_position: center,
-                        start_pinch: pinch,
-                    }
-                }
-                (LayerInputState::Grab { .. }, MultiTouchStatus::Release) => {
-                    if event.members.len() > 1 {
+                // Grab
+                (
+                    LayerInputState::Grab { .. },
+                    MultiTouchStatus::Press | MultiTouchStatus::Release,
+                ) => {
+                    if event.members.len() > 0 {
                         camera_utils.camera_cursor_by_anchor_center(center);
                         if let Some(distance) = pinch {
                             camera_utils.camera_distance_by_anchor_zoom_cursor(distance);
@@ -183,9 +194,61 @@ impl LayerInput {
                     }
                     camera_utils.apply_to_camera(world);
 
-                    LayerInputState::Grab {
-                        start_position,
-                        start_pinch,
+                    if this.ctrl {
+                        camera_utils.camera_cursor_by_anchor_center(center);
+                        camera_utils.camera_distance_by_anchor_zoom_cursor(1.0);
+                        LayerInputState::Scale {
+                            start_position: center,
+                        }
+                    } else {
+                        LayerInputState::Grab {
+                            start_position,
+                            start_pinch,
+                        }
+                    }
+                }
+
+                // Scale
+                (
+                    LayerInputState::Scale { .. },
+                    MultiTouchStatus::Press | MultiTouchStatus::Release,
+                ) => {
+                    if event.members.len() > 0 {
+                        camera_utils.camera_cursor_by_anchor_center(center);
+                        if let Some(distance) = pinch {
+                            camera_utils.camera_distance_by_anchor_zoom_cursor(distance);
+                        } else {
+                            camera_utils.camera_distance_by_anchor_zoom_cursor(1.0);
+                        }
+
+                        LayerInputState::Scale {
+                            start_position: center,
+                        }
+                    } else {
+                        LayerInputState::None
+                    }
+                }
+                (LayerInputState::Scale { start_position }, MultiTouchStatus::Holding) => {
+                    if let Some(distance) = pinch {
+                        camera_utils.camera_distance_by_camera_zoom_center(distance);
+                    } else {
+                        camera_utils.camera_distance_by_camera_zoom_center(
+                            (center - start_position).element_sum().exp2(),
+                        );
+                    }
+                    camera_utils.apply_to_camera(world);
+
+                    if this.ctrl {
+                        LayerInputState::Scale { start_position }
+                    } else {
+                        camera_utils.camera_cursor_by_anchor_center(center);
+                        if let Some(distance) = pinch {
+                            camera_utils.camera_distance_by_anchor_zoom_cursor(distance);
+                        }
+                        LayerInputState::Grab {
+                            start_position: center,
+                            start_pinch: pinch,
+                        }
                     }
                 }
 
@@ -287,7 +350,33 @@ impl LayerInput {
                 (LayerInputState::None, MultiTouchStatus::Holding) => LayerInputState::None,
                 (LayerInputState::None, MultiTouchStatus::Release) => LayerInputState::None,
             };
+
+            update_icon(&this, &state, &lnwindow);
         });
+    }
+}
+
+fn update_icon(this: &LayerInput, state: &LayerInputState, lnwindow: &Lnwindow) {
+    match (this.space, this.ctrl, state) {
+        (true, true, LayerInputState::None) => {
+            lnwindow.window.set_cursor(Cursor::Icon(CursorIcon::ZoomIn));
+        }
+        (true, false, LayerInputState::None) => {
+            lnwindow.window.set_cursor(Cursor::Icon(CursorIcon::Grab));
+        }
+        (_, _, LayerInputState::Grab { .. }) => {
+            lnwindow
+                .window
+                .set_cursor(Cursor::Icon(CursorIcon::Grabbing));
+        }
+        (_, _, LayerInputState::Scale { .. }) => {
+            lnwindow.window.set_cursor(Cursor::Icon(CursorIcon::ZoomIn));
+        }
+        _ => {
+            lnwindow
+                .window
+                .set_cursor(Cursor::Icon(CursorIcon::Default));
+        }
     }
 }
 
