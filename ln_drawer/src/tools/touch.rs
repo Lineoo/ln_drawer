@@ -1,4 +1,4 @@
-use glam::I64Vec2;
+use glam::{DVec2, I64Vec2};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
 use winit::event::{
@@ -23,7 +23,7 @@ impl Element for MultiTouchTool {
 #[derive(Debug, Clone, Copy)]
 pub struct MultiTouch {
     pub position: I64Vec2,
-    pub screen: [f64; 2],
+    pub screen: DVec2,
     pub view: Handle<Camera>,
     pub status: MultiTouchStatus,
     pub data: MultiTouchData,
@@ -204,7 +204,7 @@ impl MultiTouchTool {
                     camera.screen_to_world_absolute(screen)
                 });
 
-                *touch = MultiTouch {
+                let active = MultiTouch {
                     position,
                     screen,
                     view: touch.view,
@@ -213,18 +213,17 @@ impl MultiTouchTool {
                     pointer: kind,
                 };
 
-                let mut group = MultiTouchGroup {
-                    active: *touch,
-                    members: std::mem::take(list),
-                };
+                let mut members = std::mem::take(list);
+
+                members.swap_remove(idx);
+                tool.touches.remove(&kind);
+
+                let mut group = MultiTouchGroup { active, members };
 
                 world.trigger(target, &group.active);
                 world.trigger(target, &group);
 
                 std::mem::swap(list, &mut group.members);
-
-                list.swap_remove(idx);
-                tool.touches.remove(&kind);
             }
 
             _ => {}

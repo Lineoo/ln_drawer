@@ -4,10 +4,9 @@ use std::{
         mpsc::{Receiver, Sender, channel},
     },
     thread::JoinHandle,
-    time::{Duration, Instant},
 };
 
-use glam::{DVec2, IVec2, UVec2, Vec2};
+use glam::{IVec2, UVec2, Vec2};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -21,33 +20,24 @@ use wgpu::{
     TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
     TextureViewDimension, VertexState,
 };
-use winit::{
-    event::{ElementState, PointerKind, WindowEvent},
-    keyboard::KeyCode,
-};
 
 use crate::{
     layer::{
         DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_ENABLED, Layer, LayerPipeline,
-        brush::{Brush, Draw, DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush},
+        brush::{DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush},
+        input::LayerInput,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
         traveler::Traveler,
     },
     lnwin::Lnwindow,
-    measures::{FI64Ext, Rectangle},
+    measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderControl, RenderExtra, RenderInformation,
-        camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils, UICamera},
+        camera::{Camera, CameraBind, CameraUpdated, UICamera},
         rounded::{RoundedRect, RoundedRectDescriptor},
     },
     save::{Autosave, SaveDatabase},
-    tools::{
-        collider::ToolCollider,
-        modifiers::ModifiersTool,
-        pointer::{PointerHover, PointerHoverStatus},
-        touch::{MultiTouchGroup, MultiTouchStatus},
-    },
-    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_COLORSPACE},
+    widgets::shaders::LIB_COLORSPACE,
 };
 
 pub struct LayerDebugMessage(pub String);
@@ -65,18 +55,18 @@ pub struct LayerWrapper {
 
     pub debug: bool,
 
-    temp_erase: RoundBrush,
+    pub temp_erase: RoundBrush,
 
-    brush_preview: Handle<RoundedRect>,
-    compositing_texture: Texture,
-    compositing_config: SurfaceConfiguration,
-    compositing_render_bind: BindGroup,
+    pub brush_preview: Handle<RoundedRect>,
+    pub compositing_texture: Texture,
+    pub compositing_config: SurfaceConfiguration,
+    pub compositing_render_bind: BindGroup,
 
-    present_pipeline: RenderPipeline,
+    pub present_pipeline: RenderPipeline,
 
-    thread_tx: Sender<ThreadInput>,
-    thread_rx: Receiver<ThreadOutput>,
-    thread: Option<JoinHandle<()>>,
+    pub thread_tx: Sender<ThreadInput>,
+    pub thread_rx: Receiver<ThreadOutput>,
+    pub thread: Option<JoinHandle<()>>,
 }
 
 pub enum BrushMode {
@@ -192,171 +182,6 @@ impl LayerWrapper {
         }
     }
 
-    fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
-        let collider = world.insert(ToolCollider::fullscreen(-100));
-        world.dependency(collider, this);
-
-        world.observer(collider, move |event: &PointerHover, world| {
-            if let PointerKind::Touch(_) = event.pointer.kind {
-                return;
-            }
-
-            let this = world.fetch(this).unwrap();
-            let ui_camera = world.single_fetch::<UICamera>().unwrap();
-            world.enter(ui_camera.0, || {
-                let camera = world.single_fetch::<Camera>().unwrap();
-                let mut brush_preview = world.fetch_mut(this.brush_preview).unwrap();
-                brush_preview.desc.shadow_offset = event.pointer.tilt * 48.0;
-                world.queue_trigger(
-                    this.brush_preview,
-                    SetWidgetRectangle(Rectangle::new_half(
-                        camera
-                            .screen_to_world_absolute(event.pointer.screen)
-                            .q32_round(),
-                        UVec2::new(1, 1),
-                    )),
-                );
-
-                match event.status {
-                    PointerHoverStatus::Enter => {
-                        world.queue_trigger(this.brush_preview, SetWidgetVisible(true));
-                    }
-                    PointerHoverStatus::Moving => {}
-                    PointerHoverStatus::Leave => {
-                        world.queue_trigger(this.brush_preview, SetWidgetVisible(false));
-                    }
-                }
-            });
-        });
-
-        let lnwindow = world.single::<Lnwindow>().unwrap();
-        world.observer(lnwindow, move |event: &WindowEvent, world| {
-            let WindowEvent::KeyboardInput { event, .. } = event else {
-                return;
-            };
-
-            if event.physical_key == KeyCode::KeyZ
-                && !event.repeat
-                && event.state == ElementState::Pressed
-            {
-                let mut this = world.fetch_mut(this).unwrap();
-                let modifier = world.single_fetch::<ModifiersTool>().unwrap();
-                let ctrl = modifier.modifiers.state().control_key();
-                let shift = modifier.modifiers.state().shift_key();
-                if ctrl {
-                    if !shift {
-                        this.undo();
-                    } else {
-                        this.redo();
-                    }
-
-                    let lnwindow = world.fetch(lnwindow).unwrap();
-                    lnwindow.window.request_redraw();
-                }
-            }
-        });
-
-        let mut pinch_distance = None;
-        let mut drag_start = None;
-        let mut temp_erase_mode = false;
-        world.observer(collider, move |event: &MultiTouchGroup, world| {
-            let primary = event.members.first().unwrap();
-
-            if matches!(event.active.pointer, PointerKind::Touch(_)) || event.members.len() != 1 {
-                let mut sum = [0f64; 2];
-                for member in &event.members {
-                    sum[0] += member.screen[0];
-                    sum[1] += member.screen[1];
-                }
-
-                let cnt = event.members.len() as f64;
-                let center = [sum[0] / cnt, sum[1] / cnt];
-
-                let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-
-                match event.active.status {
-                    MultiTouchStatus::Press => {
-                        camera_utils.locked(false);
-                        camera_utils.cursor(world, center);
-                        camera_utils.anchor_on_screen(world, center);
-                        camera_utils.locked(true);
-                    }
-                    MultiTouchStatus::Holding => {
-                        camera_utils.cursor(world, center);
-                        camera_utils.locked(true);
-                    }
-                    MultiTouchStatus::Release => {
-                        camera_utils.cursor(world, center);
-                        camera_utils.locked(false);
-                    }
-                }
-
-                if event.members.len() == 2 {
-                    let first = event.members.first().unwrap().screen;
-                    let last = event.members.last().unwrap().screen;
-
-                    let (x, y) = (first[0] - last[0], first[1] - last[1]);
-                    let cur = (x * x + y * y).sqrt();
-                    let prev = pinch_distance.get_or_insert(cur);
-                    camera_utils.zoom_delta(world, i64::q32_from_f64((cur - *prev) * 2.0));
-                    *prev = cur;
-                } else {
-                    pinch_distance = None;
-                }
-            } else if let MultiTouchStatus::Holding | MultiTouchStatus::Press = primary.status {
-                let this = &mut *world.fetch_mut(this).unwrap();
-
-                if let MultiTouchStatus::Press = primary.status
-                    && !this.round_brush.erase
-                {
-                    drag_start = Some((primary.screen, Instant::now()));
-                }
-
-                if let Some((start, timer)) = drag_start {
-                    const DRAG_DISTANCE: f64 = 0.005;
-                    const ERASE_TIMER: f64 = 0.8;
-
-                    if DVec2::from_array(primary.screen).distance(DVec2::from_array(start))
-                        > DRAG_DISTANCE
-                    {
-                        drag_start = None;
-                    } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
-                        this.undo_stock();
-                        this.brush.discard();
-                        temp_erase_mode = true;
-                        drag_start = None;
-                    }
-                }
-
-                let brush: &dyn Brush = match (temp_erase_mode, &this.brush_mode) {
-                    (true, _) => &this.temp_erase,
-                    (_, BrushMode::Round) => &this.round_brush,
-                    (_, BrushMode::Blur) => &this.blur_brush,
-                };
-
-                brush.draw(
-                    &this.main,
-                    &mut this.brush,
-                    Draw {
-                        position: primary.position,
-                        force: primary.data.force.unwrap_or(1.0),
-                    },
-                );
-
-                this.brush.request_stream(&this.main, &this.thread_tx);
-
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                lnwindow.window.request_redraw();
-            } else {
-                let this = &mut *world.fetch_mut(this).unwrap();
-
-                this.undo_stock();
-                this.brush.submit(&mut this.main, Some(&this.thread_tx));
-                temp_erase_mode = false;
-            }
-        });
-    }
-
     fn process_stream(&mut self, world: &World) {
         while let Ok(output) = self.thread_rx.try_recv() {
             match output {
@@ -440,7 +265,7 @@ impl LayerWrapper {
         extra.diagnosis.write(rpass, end);
     }
 
-    fn undo_stock(&mut self) {
+    pub fn stock(&mut self) {
         let Some(stroke) = &self.brush.stroke else {
             return;
         };
@@ -578,7 +403,7 @@ impl Element for LayerWrapper {
         world.dependency(save, this);
 
         let camera = world.single::<Camera>().unwrap();
-        world.observer(camera, move |_: &CameraPositionChanged, world| {
+        world.observer(camera, move |&CameraUpdated, world| {
             let this = world.single_fetch::<LayerWrapper>().unwrap();
             let camera = world.single_fetch::<Camera>().unwrap();
 
@@ -591,7 +416,7 @@ impl Element for LayerWrapper {
                 .unwrap();
         });
 
-        self.attach_touch(world, this);
+        world.insert(LayerInput::default());
 
         let control = world.insert(RenderControl {
             prepare: Some(Box::new(move |world| {

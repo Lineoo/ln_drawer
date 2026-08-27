@@ -14,7 +14,7 @@ use crate::{
     },
     lnwin::Lnwindow,
     measures::{Axis, Rectangle},
-    render::camera::{Camera, MainCamera},
+    render::camera::{CameraUtils, MainCamera},
     save::SaveDatabase,
     theme::Theme,
     widgets::{
@@ -196,9 +196,11 @@ impl Descriptor for SideDocker {
         world.observer(compass, move |&ButtonClick, world| {
             let main_camera = world.single_fetch::<MainCamera>().unwrap();
             let mut camera = world
-                .enter_single_fetch_mut::<Camera>(main_camera.0)
+                .enter_single_fetch_mut::<CameraUtils>(main_camera.0)
                 .unwrap();
-            camera.center = I64Vec2::ZERO;
+            camera.force_clear();
+            camera.force_camera_center(I64Vec2::ZERO);
+            camera.force_camera_zoom(0);
         });
 
         let debug = docker_button(include_bytes!("../../../res/interface/bug.svg"));

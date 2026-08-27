@@ -1,4 +1,4 @@
-use glam::{I8Vec2, I64Vec2, Vec2};
+use glam::{DVec2, I8Vec2, I64Vec2, Vec2};
 use ln_world::{Element, Handle, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
@@ -50,7 +50,7 @@ pub enum PointerHoverStatus {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerData {
-    pub screen: [f64; 2],
+    pub screen: DVec2,
     pub kind: PointerKind,
     pub tilt: Vec2,
 }
@@ -270,7 +270,7 @@ impl Element for PointerTool {
 }
 
 impl Pointer {
-    fn update_position(&mut self, world: &World, screen: [f64; 2]) {
+    fn update_position(&mut self, world: &World, screen: DVec2) {
         self.data.screen = screen;
 
         self.recalculate_hovering(world);

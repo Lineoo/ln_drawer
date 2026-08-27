@@ -1,4 +1,4 @@
-use glam::IVec2;
+use glam::{DVec2, IVec2};
 use ln_world::{Element, Handle, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, MouseScrollDelta, PointerSource, WindowEvent,
@@ -24,7 +24,9 @@ impl Element for MouseTool {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
 
-        world.observer(lnwindow, |event: &WindowEvent, world| match event {
+        let mut middle = false;
+        let mut prev = DVec2::ZERO;
+        world.observer(lnwindow, move |event: &WindowEvent, world| match event {
             // right-click //
             WindowEvent::PointerButton {
                 position,
@@ -58,12 +60,12 @@ impl Element for MouseTool {
                 let main = world.single_fetch::<MainCamera>().unwrap();
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let cursor = lnwindow.cursor_to_screen(*position);
+                middle = true;
 
                 world.enter(main.0, || {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-                    camera_utils.cursor(world, cursor);
-                    camera_utils.anchor_on_screen(world, cursor);
-                    camera_utils.locked(true);
+                    camera_utils.anchor_cursor(DVec2::ZERO);
+                    camera_utils.camera_cursor_by_anchor_center(cursor);
                 });
             }
 
@@ -75,29 +77,23 @@ impl Element for MouseTool {
                 let main = world.single_fetch::<MainCamera>().unwrap();
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let cursor = lnwindow.cursor_to_screen(*position);
+                prev = cursor;
 
                 world.enter(main.0, || {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-                    camera_utils.cursor(world, cursor);
+                    if middle {
+                        camera_utils.camera_cursor_by_camera_center(cursor);
+                        camera_utils.apply_to_camera(world);
+                    }
                 });
             }
 
             WindowEvent::PointerButton {
-                position,
                 state: ElementState::Released,
                 button: ButtonSource::Mouse(MouseButton::Middle),
                 ..
             } => {
-                let main = world.single_fetch::<MainCamera>().unwrap();
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let cursor = lnwindow.cursor_to_screen(*position);
-
-                world.enter(main.0, || {
-                    let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-
-                    camera_utils.cursor(world, cursor);
-                    camera_utils.locked(false);
-                });
+                middle = false;
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
@@ -106,13 +102,16 @@ impl Element for MouseTool {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
 
                     let zoom_delta = match delta {
-                        MouseScrollDelta::LineDelta(_rows, lines) => {
-                            i64::q32_from_f64(*lines as f64 / 4.0)
-                        }
-                        MouseScrollDelta::PixelDelta(delta) => i64::q32_from_f64(delta.y / 16.0),
+                        MouseScrollDelta::LineDelta(_rows, lines) => *lines as f64 / 4.0,
+                        MouseScrollDelta::PixelDelta(delta) => delta.y / 16.0,
                     };
 
-                    camera_utils.zoom_delta(world, zoom_delta);
+                    camera_utils.anchor_cursor(DVec2::ZERO);
+                    camera_utils.camera_cursor_by_anchor_center(prev);
+                    camera_utils.anchor_distance(1.0);
+                    camera_utils.camera_distance_by_camera_zoom_center(1.0 + zoom_delta);
+                    camera_utils.camera_distance_by_anchor_zoom_cursor(1.0);
+                    camera_utils.apply_to_camera(world);
                 });
             }
 

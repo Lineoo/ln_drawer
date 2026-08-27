@@ -4,11 +4,11 @@ use winit::event::{KeyEvent, WindowEvent};
 use crate::lnwin::Lnwindow;
 
 #[derive(Default)]
-pub struct Focus {
+pub struct FocusTool {
     focus: Option<Handle>,
 }
 
-impl Element for Focus {
+impl Element for FocusTool {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
 

@@ -1,4 +1,5 @@
 pub mod brush;
+pub mod input;
 pub mod stream;
 pub mod traveler;
 pub mod wrapper;

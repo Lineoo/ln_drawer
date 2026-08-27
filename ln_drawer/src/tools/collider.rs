@@ -1,4 +1,4 @@
-use glam::{IVec2, UVec2};
+use glam::{DVec2, IVec2, UVec2};
 use ln_world::{Element, Handle, World};
 
 use crate::{
@@ -30,10 +30,7 @@ impl ToolCollider {
         }
     }
 
-    pub fn intersect(
-        world: &World,
-        screen: [f64; 2],
-    ) -> Vec<(Handle<ToolCollider>, Handle<Camera>)> {
+    pub fn intersect(world: &World, screen: DVec2) -> Vec<(Handle<ToolCollider>, Handle<Camera>)> {
         let mut buf = Vec::new();
         world.foreach_enter::<Camera>(|camera| {
             let camera = world.fetch(camera).unwrap();

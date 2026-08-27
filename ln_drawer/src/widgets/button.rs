@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use glam::{DVec2, Vec2};
+use glam::Vec2;
 use image::DynamicImage;
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -177,9 +177,7 @@ impl ToggleButton {
                 }
                 PointerHitStatus::Moving => {
                     if let Some(start) = drag_start {
-                        if DVec2::from_array(event.pointer.screen)
-                            .distance(DVec2::from_array(start.pointer.screen))
-                            > DRAG_DISTANCE
+                        if event.pointer.screen.distance(start.pointer.screen) > DRAG_DISTANCE
                             && !dragging
                         {
                             dragging = true;

@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use glam::{IVec2, UVec2};
+use glam::{DVec2, IVec2, UVec2};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, ViewOptions, World};
 #[cfg(target_os = "android")]
@@ -24,8 +24,8 @@ use crate::{
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     theme::Theme,
     tools::{
-        collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
-        pointer::PointerTool, touch::MultiTouchTool,
+        collider::ToolColliderDispatcher, focus::FocusTool, modifiers::ModifiersTool,
+        mouse::MouseTool, pointer::PointerTool, touch::MultiTouchTool,
     },
     widgets::{
         WidgetRectangle,
@@ -150,7 +150,7 @@ impl Element for Lnwindow {
             world.insert(PointerTool::default());
             world.insert(MouseTool::default());
             world.insert(MultiTouchTool::default());
-            world.insert(Focus::default());
+            world.insert(FocusTool::default());
             world.insert(ModifiersTool::default());
         });
 
@@ -183,7 +183,15 @@ impl Element for Lnwindow {
             world.enter(camera1, || {
                 world.queue(|world| {
                     world.insert(LayerWrapper::new(world));
-                    world.insert(CameraUtils::default());
+                    let camera = world.single_fetch::<Camera>().unwrap();
+                    world.insert(CameraUtils::new(&camera));
+                    let lnwindow = world.single::<Lnwindow>().unwrap();
+                    world.observer(lnwindow, move |event: &WindowEvent, world| {
+                        if let WindowEvent::SurfaceResized(size) = event {
+                            let mut camera = world.single_fetch_mut::<CameraUtils>().unwrap();
+                            camera.camera_size(UVec2::new(size.width, size.height));
+                        }
+                    });
                 });
             });
 
@@ -194,8 +202,15 @@ impl Element for Lnwindow {
                     refs: vec![here, stroke.untyped()],
                 });
                 world.queue(move |world| {
-                    world.insert(CameraUtils::default());
+                    let camera = world.single_fetch::<Camera>().unwrap();
+                    world.insert(CameraUtils::new(&camera));
                     let lnwindow = world.single::<Lnwindow>().unwrap();
+                    world.observer(lnwindow, move |event: &WindowEvent, world| {
+                        if let WindowEvent::SurfaceResized(size) = event {
+                            let mut camera = world.single_fetch_mut::<CameraUtils>().unwrap();
+                            camera.camera_size(UVec2::new(size.width, size.height));
+                        }
+                    });
                     world.observer(lnwindow, move |event: &WindowEvent, world| {
                         if let WindowEvent::SurfaceResized(size) = event {
                             let lnwindow = world.fetch(lnwindow).unwrap();
@@ -236,11 +251,11 @@ impl Lnwindow {
         Lnwindow { window }
     }
 
-    pub fn cursor_to_screen(&self, position: PhysicalPosition<f64>) -> [f64; 2] {
+    pub fn cursor_to_screen(&self, position: PhysicalPosition<f64>) -> DVec2 {
         let size = self.window.surface_size();
         let x = (position.x * 2.0) / size.width as f64 - 1.0;
         let y = 1.0 - (position.y * 2.0) / size.height as f64;
-        [x, y]
+        DVec2::new(x, y)
     }
 }
 

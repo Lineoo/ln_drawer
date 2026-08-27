@@ -4,8 +4,8 @@ use palette::Srgba;
 
 use crate::{
     layer::{
-        Layer, LayerPipeline,
-        brush::{Brush, BrushInner, Draw, DrawPipeline, param::BrushParam},
+        LayerPipeline,
+        brush::{Brush, Draw, param::BrushParam},
     },
     measures::{FI64Ext, Rectangle},
 };
@@ -31,7 +31,7 @@ pub struct RoundDraw {
     pub _pad: u32,
 }
 
-impl BrushInner for RoundBrush {
+impl Brush for RoundBrush {
     type Draw = RoundDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
@@ -67,12 +67,6 @@ impl BrushInner for RoundBrush {
             true => cpass.set_pipeline(&pipeline.brush_pipelines.round_erase),
             false => cpass.set_pipeline(&pipeline.brush_pipelines.round_over),
         }
-    }
-}
-
-impl Brush for RoundBrush {
-    fn draw(&self, dst: &Layer, pipeline: &mut DrawPipeline, target: Draw) {
-        pipeline.draw(dst, self, target);
     }
 }
 

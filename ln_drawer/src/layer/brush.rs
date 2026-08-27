@@ -52,10 +52,6 @@ pub struct Stroke {
 }
 
 pub trait Brush {
-    fn draw(&self, dst: &Layer, pipeline: &mut DrawPipeline, target: Draw);
-}
-
-pub trait BrushInner {
     type Draw: Clone + Copy + Pod + Zeroable;
 
     fn process(&self, draw: Draw) -> Self::Draw;
@@ -123,7 +119,7 @@ impl DrawPipeline {
     }
 
     /// CPU-end draw process
-    pub fn draw<T: BrushInner>(&mut self, dst: &Layer, brush: &T, target: Draw) {
+    pub fn draw<T: Brush>(&mut self, dst: &Layer, brush: &T, target: Draw) {
         let mut draws = Vec::new();
 
         let prev = self.prev.unwrap_or_else(|| {
@@ -196,7 +192,7 @@ impl DrawPipeline {
         }
     }
 
-    fn draw_upload_swap<T: BrushInner>(
+    fn draw_upload_swap<T: Brush>(
         &mut self,
         dst: &Layer,
         brush: &T,
@@ -301,7 +297,7 @@ impl DrawPipeline {
         self.layer.queue.submit([encoder.finish()]);
     }
 
-    fn draw_upload_read_write<T: BrushInner>(
+    fn draw_upload_read_write<T: Brush>(
         &mut self,
         dst: &Layer,
         brush: &T,
