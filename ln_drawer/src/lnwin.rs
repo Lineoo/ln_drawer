@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use glam::{DVec2, IVec2, UVec2};
 use hashbrown::HashMap;
-use ln_world::{Element, Handle, ViewOptions, World};
+use ln_world::{ElemRef, Element, Handle, ViewRef, World};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 use winit::{
@@ -56,7 +56,7 @@ impl ApplicationHandler for Lnwin {
             let lnwindow = self.world.insert(lnwindow);
             self.windows.insert(window_id, lnwindow.untyped());
             self.world.enter(lnwindow, || {
-                self.world.option(ViewOptions { refs: vec![root] });
+                self.world.insert(ViewRef(root));
             });
         } else {
             for &view in self.windows.values() {
@@ -156,7 +156,6 @@ impl Element for Lnwindow {
 
         world.queue(|world| {
             let here = world.here();
-
             let camera1 = Camera::build_from_save(world, "camera1");
             world.insert(MainCamera(camera1));
 
@@ -173,10 +172,10 @@ impl Element for Lnwindow {
             world.flush();
 
             world.enter(camera1, || {
-                world.option(ViewOptions { refs: vec![here] });
+                world.insert(ViewRef(here));
             });
             world.enter(camera2, || {
-                world.option(ViewOptions { refs: vec![here] });
+                world.insert(ViewRef(here));
             });
 
             world.flush();
@@ -200,9 +199,8 @@ impl Element for Lnwindow {
             world.enter(camera2, || {
                 let stroke = world.enter(camera1, || world.single::<LayerWrapper>().unwrap());
                 let input = world.enter(camera1, || world.single::<LayerInput>().unwrap());
-                world.option(ViewOptions {
-                    refs: vec![here, stroke.untyped(), input.untyped()],
-                });
+                world.insert(ElemRef(stroke.untyped()));
+                world.insert(ElemRef(input.untyped()));
                 world.queue(move |world| {
                     let camera = world.single_fetch::<Camera>().unwrap();
                     world.insert(CameraUtils::new(&camera));

@@ -117,10 +117,8 @@ impl<T: ?Sized> From<Handle<T>> for HandleInfo {
 pub struct World {
     elem_idx: RefCell<Handle>,
 
-    typetable: HashMap<Handle, TypeId>,
-    viewtable: HashMap<Handle, Handle>,
+    indices: HashMap<Handle, HandleIndex>,
     storages: HashMap<TypeId, Box<dyn StorageGeneral>>,
-    options: HashMap<Handle, ViewOptions>,
 
     occupied: RefCell<HashMap<Handle, isize>>,
     inserted: RefCell<HashSet<Handle>>,
@@ -131,6 +129,13 @@ pub struct World {
 
     queue: Receiver<WorldCommand>,
     commander: Sender<WorldCommand>,
+}
+
+struct HandleIndex {
+    tid: TypeId,
+    view: Handle,
+    elemrefs: Vec<Handle>,
+    viewrefs: Vec<Handle>,
 }
 
 struct Storage<T: Element>(HashMap<Handle, T>);
@@ -196,12 +201,22 @@ pub enum WorldError {
 impl World {
     pub fn new() -> Self {
         let (commander, queue) = channel();
+
+        let initelem = Handle(0, PhantomData);
+        let initelem_index = HandleIndex {
+            tid: TypeId::of::<()>(),
+            view: initelem,
+            elemrefs: Vec::new(),
+            viewrefs: Vec::new(),
+        };
+
+        let mut indices = HashMap::new();
+        indices.insert(initelem, initelem_index);
+
         World {
             elem_idx: RefCell::new(Handle(1, PhantomData)),
-            typetable: HashMap::new(),
-            viewtable: HashMap::new(),
+            indices,
             storages: HashMap::new(),
-            options: HashMap::new(),
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
@@ -245,8 +260,15 @@ impl World {
             storage.0.insert(handle.cast(), element);
 
             // update typetable
-            world.typetable.insert(handle.cast(), TypeId::of::<T>());
-            world.viewtable.insert(handle.cast(), location);
+            world.indices.insert(
+                handle.cast(),
+                HandleIndex {
+                    tid: TypeId::of::<T>(),
+                    view: location,
+                    elemrefs: Vec::new(),
+                    viewrefs: Vec::new(),
+                },
+            );
             world.inserted.get_mut().remove(&handle.cast());
 
             // when_insert
@@ -264,8 +286,8 @@ impl World {
 
         // when_remove
         // SAFETY: we have checked the mutability
-        let type_id = *self.typetable.get(&handle.cast()).unwrap();
-        let storage = self.storages.get(&type_id).unwrap().as_ref() as *const _;
+        let tid = self.indices.get(&handle.cast()).unwrap().tid;
+        let storage = self.storages.get(&tid).unwrap().as_ref() as *const _;
         let storage = storage as *mut dyn StorageGeneral;
         unsafe { (*storage).when_remove(self, handle.cast()) };
 
@@ -297,7 +319,7 @@ impl World {
             };
 
             drop(dependencies);
-            let child_view = *self.viewtable.get(&child).unwrap();
+            let child_view = self.indices.get(&child).unwrap().view;
             cnt += self.enter(child_view, || self.remove(child))?;
         }
 
@@ -308,14 +330,10 @@ impl World {
 
         self.queue(move |world| {
             // update typetable
-            world.typetable.remove(&handle.cast());
-            world.viewtable.remove(&handle.cast());
-
-            // remove view options
-            world.options.remove(&handle.cast());
+            world.indices.remove(&handle.cast());
 
             // pop out storage
-            let storage = world.storages.get_mut(&type_id).unwrap();
+            let storage = world.storages.get_mut(&tid).unwrap();
             storage.remove(handle.cast());
         });
 
@@ -326,14 +344,6 @@ impl World {
 
     pub fn here(&self) -> Handle {
         self.location.get()
-    }
-
-    /// Assign options for current location. Need flush.
-    pub fn option(&self, opt: ViewOptions) {
-        let view = self.location.get();
-        self.queue(move |world| {
-            world.options.insert(view, opt);
-        });
     }
 
     /// Enter view.
@@ -374,8 +384,8 @@ impl World {
     /// mutable limitations.
     pub fn clear(&self) -> usize {
         let mut cnt = 0;
-        for (&handle, &view) in self.viewtable.iter() {
-            if view != self.location.get() {
+        for (&handle, index) in self.indices.iter() {
+            if index.view != self.location.get() {
                 continue;
             }
 
@@ -428,53 +438,56 @@ impl World {
         }
 
         if self.removed.borrow().contains(&handle.cast()) {
-            if self.typetable.contains_key(&handle.cast()) {
+            if self.indices.contains_key(&handle.cast()) {
                 return Err(WorldError::JustRemoved(handle.into()));
             }
 
             return Err(WorldError::Removed(handle.into()));
         }
 
-        if !self.typetable.contains_key(&handle.cast()) {
+        let Some(index) = self.indices.get(&handle.cast()) else {
             if self.inserted.borrow().contains(&handle.cast()) {
                 return Err(WorldError::JustInserted(handle.into()));
             }
 
             return Err(WorldError::InvalidHandle(handle.into()));
+        };
+
+        let here = self.location.get();
+
+        // 1. plain
+        if index.view == here {
+            return Ok(());
         }
 
-        if let Some(&handle_view) = self.viewtable.get(&handle.cast()) {
-            let here = self.location.get();
+        // 2. elemref
+        if index.elemrefs.contains(&here) {
+            return Ok(());
+        }
 
-            if handle_view != here && handle.cast() != here {
-                // visited elems, preventing dead-loop
-                let mut refs = HashSet::new();
-                // scanning elems, scheduled to visit
-                let mut stack = vec![here];
-                let mut found = false;
+        // 3. viewref
+        let mut visible = vec![index.view];
+        visible.append(&mut index.elemrefs.clone());
+        let mut frnt = 0;
+        while let Some(&view) = visible.get(frnt) {
+            let Some(view_index) = self.indices.get(&view) else {
+                return Err(WorldError::InvalidHandle(view.into()));
+            };
 
-                'r: while let Some(opt) = stack.pop().and_then(|view| self.options.get(&view)) {
-                    for &view in &opt.refs {
-                        if !refs.insert(view) {
-                            // skip visited one
-                            continue;
-                        }
-
-                        stack.push(view);
-                        if handle_view == view || handle.cast() == view {
-                            found = true;
-                            break 'r;
-                        }
-                    }
-                }
-
-                if !found {
-                    return Err(WorldError::Invisible(handle.into(), handle_view, here));
+            for &viewref in &view_index.viewrefs {
+                if !visible.contains(&viewref) {
+                    visible.push(viewref);
                 }
             }
+
+            if view == here {
+                return Ok(());
+            }
+
+            frnt += 1;
         }
 
-        Ok(())
+        Err(WorldError::Invisible(handle.into(), index.view, here))
     }
 
     /// Check whether target element can be borrowed immutably, insertion without
@@ -556,8 +569,8 @@ impl World {
     // singleton //
 
     pub fn single<T: Element>(&self) -> Result<Handle<T>, WorldError> {
-        // view-root preference shortcut
-        if self.typetable.get(&self.location.get()) == Some(&TypeId::of::<T>()) {
+        // TODO view-root preference shortcut
+        if self.indices.get(&self.location.get()).map(|x| x.tid) == Some(TypeId::of::<T>()) {
             return Ok(self.location.get().cast());
         }
 
@@ -813,9 +826,86 @@ impl<T: Element> RefMut<'_, T> {
 
 const INITELEM: Handle = Handle(0, PhantomData);
 
-pub struct ViewOptions {
-    /// Will be also included in validation.
-    pub refs: Vec<Handle>,
+/// refer another element in other views
+pub struct ElemRef(pub Handle);
+
+// refer all elements from other views
+pub struct ViewRef(pub Handle);
+
+impl Element for ElemRef {
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+        let target = self.0;
+        let here = world.location.get();
+        world.queue(move |world| {
+            let Some(index) = world.indices.get_mut(&target) else {
+                log::error!("Fatal error: ElemRef cannot find content handle");
+                return;
+            };
+
+            index.elemrefs.push(here);
+        });
+    }
+
+    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
+        let target = self.0;
+        let here = world.location.get();
+        world.queue(move |world| {
+            let Some(index) = world.indices.get_mut(&target) else {
+                // silent skip removed node
+                return;
+            };
+
+            let mut t = None;
+            for (i, &p) in index.elemrefs.iter().enumerate() {
+                if p == here {
+                    t.replace(i);
+                }
+            }
+            if let Some(i) = t {
+                index.elemrefs.swap_remove(i);
+            } else {
+                log::error!("Fail to retrieve elemref")
+            }
+        });
+    }
+}
+
+impl Element for ViewRef {
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+        let target = self.0;
+        let here = world.location.get();
+        world.queue(move |world| {
+            let Some(index) = world.indices.get_mut(&target) else {
+                log::error!("Fatal error: ElemRef cannot find content handle");
+                return;
+            };
+
+            index.viewrefs.push(here);
+        });
+    }
+
+    fn when_remove(&mut self, world: &World, _this: Handle<Self>) {
+        let target = self.0;
+        let here = world.location.get();
+        world.queue(move |world| {
+            let Some(index) = world.indices.get_mut(&target) else {
+                // silent skip removed node
+                return;
+            };
+
+            let mut t = None;
+            for (i, &p) in index.viewrefs.iter().enumerate() {
+                if p == here {
+                    t.replace(i);
+                }
+            }
+            if let Some(i) = t {
+                index.viewrefs.swap_remove(i);
+            } else {
+                log::error!("Fail to retrieve viewref")
+            }
+        });
+    }
 }
 
 impl Element for () {}
@@ -1093,10 +1183,8 @@ mod test {
 
         world.enter(view3, || world.dependency(node3, node1));
 
-        let refs2 = vec![view1.untyped()];
-        let refs3 = vec![view2.untyped()];
-        world.enter(view2, || world.option(ViewOptions { refs: refs2 }));
-        world.enter(view3, || world.option(ViewOptions { refs: refs3 }));
+        world.enter(view2, || world.insert(ViewRef(view1.untyped())));
+        world.enter(view3, || world.insert(ViewRef(view2.untyped())));
 
         world.flush();
 
@@ -1121,10 +1209,9 @@ mod test {
         let node2 = world.enter(view2, || world.insert(TestInserter(2)));
         let node3 = world.enter(view3, || world.insert(TestInserter(3)));
 
-        let refs2 = vec![view1.untyped(), view3.untyped()];
-        let refs3 = vec![view2.untyped()];
-        world.enter(view2, || world.option(ViewOptions { refs: refs2 }));
-        world.enter(view3, || world.option(ViewOptions { refs: refs3 }));
+        world.enter(view2, || world.insert(ViewRef(view1.untyped())));
+        world.enter(view2, || world.insert(ViewRef(view3.untyped())));
+        world.enter(view3, || world.insert(ViewRef(view2.untyped())));
 
         world.flush();
 
@@ -1139,6 +1226,42 @@ mod test {
         assert!(world.enter(view3, || world.validate(node3).is_ok()));
         assert!(world.enter(view2, || world.validate(node3).is_ok()));
         assert!(world.enter(view1, || world.validate(node3).is_err()));
+    }
+
+    #[test]
+    fn elem_refs_chain() {
+        let mut world = World::default();
+
+        let view1 = world.insert(TestBlanker);
+        let view2 = world.insert(TestBlanker);
+        let view3 = world.insert(TestBlanker);
+
+        let node1a = world.enter(view1, || world.insert(TestInserter(11)));
+        let node1b = world.enter(view1, || world.insert(TestInserter(12)));
+        let node2 = world.enter(view2, || world.insert(TestInserter(2)));
+        let node3 = world.enter(view3, || world.insert(TestInserter(3)));
+
+        world.enter(view1, || world.insert(ViewRef(view2.untyped())));
+        world.enter(view2, || world.insert(ElemRef(node1a.untyped())));
+        world.enter(view2, || world.insert(ViewRef(view3.untyped())));
+        world.enter(view3, || world.insert(ElemRef(node1b.untyped())));
+
+        world.flush();
+
+        assert!(world.enter(view1, || world.validate(node1a).is_ok()));
+        assert!(world.enter(view1, || world.validate(node1b).is_ok()));
+        assert!(world.enter(view1, || world.validate(node2).is_ok()));
+        assert!(world.enter(view1, || world.validate(node3).is_ok()));
+
+        assert!(world.enter(view2, || world.validate(node1a).is_ok()));
+        assert!(world.enter(view2, || world.validate(node1b).is_ok()));
+        assert!(world.enter(view2, || world.validate(node2).is_ok()));
+        assert!(world.enter(view2, || world.validate(node3).is_ok()));
+
+        assert!(world.enter(view3, || world.validate(node1a).is_err()));
+        assert!(world.enter(view3, || world.validate(node1b).is_ok()));
+        assert!(world.enter(view3, || world.validate(node2).is_err()));
+        assert!(world.enter(view3, || world.validate(node3).is_ok()));
     }
 
     #[test]
