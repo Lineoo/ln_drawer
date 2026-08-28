@@ -1582,6 +1582,7 @@ name = "ln_world"
 version = "0.2.0"
 dependencies = [
  "hashbrown 0.17.1",
+ "indexmap",
  "log",
  "smallvec",
  "thiserror 2.0.20",

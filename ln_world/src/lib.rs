@@ -9,6 +9,7 @@ use std::{
 };
 
 use hashbrown::{HashMap, HashSet};
+use indexmap::IndexMap;
 use smallvec::SmallVec;
 
 // Definition //
@@ -119,6 +120,7 @@ pub struct World {
 
     indices: HashMap<Handle, HandleIndex>,
     storages: HashMap<TypeId, Box<dyn StorageGeneral>>,
+    cache: HashMap<(TypeId, Handle), SmallVec<[usize; 1]>>,
 
     occupied: RefCell<HashMap<Handle, isize>>,
     inserted: RefCell<HashSet<Handle>>,
@@ -138,7 +140,7 @@ struct HandleIndex {
     viewrefs: Vec<Handle>,
 }
 
-struct Storage<T: Element>(HashMap<Handle, T>);
+struct Storage<T: Element>(IndexMap<Handle, T>);
 
 trait StorageGeneral: Any {
     fn remove(&mut self, handle: Handle);
@@ -147,7 +149,7 @@ trait StorageGeneral: Any {
 
 impl<T: Element> StorageGeneral for Storage<T> {
     fn remove(&mut self, handle: Handle) {
-        self.0.remove(&handle);
+        self.0.swap_remove(&handle);
     }
 
     fn when_remove(&mut self, world: &World, handle: Handle) {
@@ -202,21 +204,21 @@ impl World {
     pub fn new() -> Self {
         let (commander, queue) = channel();
 
-        let initelem = Handle(0, PhantomData);
         let initelem_index = HandleIndex {
             tid: TypeId::of::<()>(),
-            view: initelem,
+            view: INITELEM,
             elemrefs: Vec::new(),
             viewrefs: Vec::new(),
         };
 
         let mut indices = HashMap::new();
-        indices.insert(initelem, initelem_index);
+        indices.insert(INITELEM, initelem_index);
 
         World {
             elem_idx: RefCell::new(Handle(1, PhantomData)),
             indices,
             storages: HashMap::new(),
+            cache: HashMap::new(),
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
@@ -250,7 +252,7 @@ impl World {
             // get type table ready
             let storage = world.storages.entry(TypeId::of::<T>()).or_insert_with(|| {
                 log::trace!("register elements: {}", type_name::<T>());
-                Box::new(Storage::<T>(HashMap::new()))
+                Box::new(Storage::<T>(IndexMap::new()))
             });
 
             // push into storage
@@ -332,6 +334,10 @@ impl World {
             // update typetable
             world.indices.remove(&handle.cast());
 
+            // junk cache
+            let here = world.location.get();
+            world.cache.remove(&(tid, here));
+
             // pop out storage
             let storage = world.storages.get_mut(&tid).unwrap();
             storage.remove(handle.cast());
@@ -403,6 +409,48 @@ impl World {
         cnt
     }
 
+    // cache //
+
+    pub fn queue_cache<T: Element>(&self) -> bool {
+        let tid = TypeId::of::<T>();
+        let here = self.location.get();
+        self.queue(|world| {
+            world.cache::<T>();
+        });
+        !self.cache.contains_key(&(tid, here))
+    }
+
+    // return if a new cache is established
+    pub fn cache<T: Element>(&mut self) -> bool {
+        let tid = TypeId::of::<T>();
+        let here = self.location.get();
+
+        if self.cache.contains_key(&(tid, here)) {
+            return false;
+        }
+
+        let Some(storage) = self.storages.get(&tid) else {
+            return false;
+        };
+
+        let storage = (storage.as_ref() as &dyn Any)
+            .downcast_ref::<Storage<T>>()
+            .unwrap();
+
+        let mut cache = SmallVec::new();
+        for (i, &handle) in storage.0.keys().enumerate() {
+            if self.validate(handle).is_err() {
+                continue;
+            }
+
+            cache.push(i);
+        }
+
+        self.cache.insert((tid, here), cache);
+
+        return true;
+    }
+
     // commands //
 
     pub fn commander(&self) -> Commander {
@@ -433,9 +481,34 @@ impl World {
         self.location.set(origin);
     }
 
+    fn get_storage<T: Element>(&self, tid: TypeId) -> Option<&Storage<T>> {
+        let Some(storage) = self.storages.get(&tid) else {
+            return None;
+        };
+
+        let storage = (storage.as_ref() as &dyn Any)
+            .downcast_ref::<Storage<T>>()
+            .unwrap();
+
+        Some(storage)
+    }
+
     // validation //
 
     /// Check whether target element exists, insertion without `flush` will *NOT* be included.
+    ///
+    /// Validated handles are:
+    /// - Not Initelem handle
+    /// - Not an element just insert
+    /// - Not pointing to removed/invalid element
+    /// - Visible in current view node
+    ///
+    /// Validated handles are possible to be:
+    /// - With wrong type signature
+    /// - Unsafe to Immutably/mutably borrow
+    ///
+    /// Functions with `_unchecked` means they skip the validation part, since view visibility
+    /// evaluating costs time, which is sensitive in some cases.
     pub fn validate(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         if handle.0 == 0 {
             return Err(WorldError::Initelem(handle.into()));
@@ -498,7 +571,12 @@ impl World {
     /// `flush` will *NOT* be included.
     pub fn available(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         self.validate(handle)?;
+        self.available_unchecked(handle)
+    }
 
+    /// Check whether target element can be borrowed immutably, insertion without
+    /// `flush` will *NOT* be included.
+    pub fn available_unchecked(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         let occupied = self.occupied.borrow();
         if occupied.get(&handle.cast()).is_some_and(|cnt| *cnt < 0) {
             panic!("{}", WorldError::Unavailable(handle.into()));
@@ -511,7 +589,12 @@ impl World {
     /// `flush` will *NOT* be included.
     pub fn available_mut(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         self.validate(handle)?;
+        self.available_mut_unchecked(handle)
+    }
 
+    /// Check whether target element can be borrowed mutably, insertion without
+    /// `flush` will *NOT* be included.
+    pub fn available_mut_unchecked(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         let occupied = self.occupied.borrow();
         if occupied.get(&handle.cast()).is_some_and(|cnt| *cnt != 0) {
             panic!("{}", WorldError::UnavailableMut(handle.into()));
@@ -523,7 +606,12 @@ impl World {
     // fetch //
 
     pub fn fetch<T: Element>(&self, handle: Handle<T>) -> Result<Ref<'_, T>, WorldError> {
-        self.available(handle)?;
+        self.validate(handle)?;
+        self.fetch_unchecked(handle)
+    }
+
+    fn fetch_unchecked<T: Element>(&self, handle: Handle<T>) -> Result<Ref<'_, T>, WorldError> {
+        self.available_unchecked(handle)?;
 
         let mut occupied = self.occupied.borrow_mut();
         *occupied.entry(handle.cast()).or_default() += 1;
@@ -546,7 +634,15 @@ impl World {
     }
 
     pub fn fetch_mut<T: Element>(&self, handle: Handle<T>) -> Result<RefMut<'_, T>, WorldError> {
-        self.available_mut(handle)?;
+        self.validate(handle)?;
+        self.fetch_mut_unchecked(handle)
+    }
+
+    fn fetch_mut_unchecked<T: Element>(
+        &self,
+        handle: Handle<T>,
+    ) -> Result<RefMut<'_, T>, WorldError> {
+        self.available_mut_unchecked(handle)?;
 
         let mut occupied = self.occupied.borrow_mut();
         *occupied.entry(handle.cast()).or_default() -= 1;
@@ -573,26 +669,38 @@ impl World {
     // singleton //
 
     pub fn single<T: Element>(&self) -> Result<Handle<T>, WorldError> {
-        let storage = (self.storages)
-            .get(&TypeId::of::<T>())
-            .ok_or(WorldError::SingletonNoSuch(type_name::<T>()))?;
-        let storage = (storage.as_ref() as &dyn Any)
-            .downcast_ref::<Storage<T>>()
-            .unwrap();
+        let tid = TypeId::of::<T>();
+        let here = self.location.get();
+
+        let Some(storage) = self.get_storage::<T>(tid) else {
+            return Err(WorldError::SingletonNoSuch(type_name::<T>()));
+        };
 
         let mut ret = None;
         let mut cnt = 0;
         let mut corrupted = 0;
-        for &handle in storage.0.keys() {
-            match self.validate(handle) {
-                Ok(_) => {
-                    cnt += 1;
-                    ret.replace(handle);
+        if let Some(cached) = self.cache.get(&(tid, here)) {
+            for &cache in cached {
+                let Some((&handle, _)) = storage.0.get_index(cache) else {
+                    log::warn!("cache failed");
+                    continue;
+                };
+
+                cnt += 1;
+                ret.replace(handle);
+            }
+        } else {
+            for &handle in storage.0.keys() {
+                match self.validate(handle) {
+                    Ok(_) => {
+                        cnt += 1;
+                        ret.replace(handle);
+                    }
+                    Err(WorldError::JustRemoved(_) | WorldError::JustInserted(_)) => {
+                        corrupted += 1;
+                    }
+                    Err(_) => continue,
                 }
-                Err(WorldError::JustRemoved(_) | WorldError::JustInserted(_)) => {
-                    corrupted += 1;
-                }
-                Err(_) => continue,
             }
         }
 
@@ -612,11 +720,11 @@ impl World {
     }
 
     pub fn single_fetch<T: Element>(&self) -> Result<Ref<'_, T>, WorldError> {
-        self.fetch(self.single::<T>()?)
+        self.fetch_unchecked(self.single::<T>()?)
     }
 
     pub fn single_fetch_mut<T: Element>(&self) -> Result<RefMut<'_, T>, WorldError> {
-        self.fetch_mut(self.single::<T>()?)
+        self.fetch_mut_unchecked(self.single::<T>()?)
     }
 
     pub fn single_remove<T: Element>(&self) -> Result<usize, WorldError> {
@@ -639,20 +747,31 @@ impl World {
     }
 
     pub fn foreach<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {
-        let Some(storage) = self.storages.get(&TypeId::of::<T>()) else {
+        let tid = TypeId::of::<T>();
+        let here = self.location.get();
+
+        let Some(storage) = self.get_storage::<T>(tid) else {
             return;
         };
 
-        let storage = (storage.as_ref() as &dyn Any)
-            .downcast_ref::<Storage<T>>()
-            .unwrap();
+        // cache hit optimization
+        if let Some(cached) = self.cache.get(&(tid, here)) {
+            for &cache in cached {
+                let Some((handle, _)) = storage.0.get_index(cache) else {
+                    log::warn!("cache failed");
+                    continue;
+                };
 
-        for &handle in storage.0.keys() {
-            if self.validate(handle).is_err() {
-                continue;
+                f(handle.cast());
             }
+        } else {
+            for &handle in storage.0.keys() {
+                if self.validate(handle).is_err() {
+                    continue;
+                }
 
-            f(handle.cast());
+                f(handle.cast());
+            }
         }
     }
 
@@ -661,11 +780,11 @@ impl World {
     }
 
     pub fn foreach_fetch<T: Element>(&self, mut f: impl FnMut(Ref<T>)) {
-        self.foreach::<T>(|handle| f(self.fetch(handle).unwrap()))
+        self.foreach::<T>(|handle| f(self.fetch_unchecked(handle).unwrap()))
     }
 
     pub fn foreach_fetch_mut<T: Element>(&self, mut f: impl FnMut(RefMut<T>)) {
-        self.foreach::<T>(|handle| f(self.fetch_mut(handle).unwrap()))
+        self.foreach::<T>(|handle| f(self.fetch_mut_unchecked(handle).unwrap()))
     }
 
     // observer & trigger //
