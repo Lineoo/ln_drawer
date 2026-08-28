@@ -334,9 +334,10 @@ impl World {
             // update typetable
             world.indices.remove(&handle.cast());
 
-            // junk cache
-            let here = world.location.get();
-            world.cache.remove(&(tid, here));
+            // junk cache:
+            // swap_remove shifts the storage indices the cache points to, so drop every
+            // cache entry of this type, not just the one at the current location
+            world.cache.retain(|(t, _), _| *t != tid);
 
             // pop out storage
             let storage = world.storages.get_mut(&tid).unwrap();
@@ -735,15 +736,22 @@ impl World {
 
     /// The actual number of element would be equal or less than this number.
     pub fn size_hint<T: Element>(&self) -> usize {
-        (self.storages)
-            .get(&TypeId::of::<T>())
-            .map(|storage| {
-                let storage = (storage.as_ref() as &dyn Any)
-                    .downcast_ref::<Storage<T>>()
-                    .unwrap();
-                storage.0.len()
-            })
-            .unwrap_or_default()
+        let tid = TypeId::of::<T>();
+        let here = self.location.get();
+
+        if let Some(cached) = self.cache.get(&(tid, here)) {
+            cached.len()
+        } else {
+            (self.storages)
+                .get(&tid)
+                .map(|storage| {
+                    let storage = (storage.as_ref() as &dyn Any)
+                        .downcast_ref::<Storage<T>>()
+                        .unwrap();
+                    storage.0.len()
+                })
+                .unwrap_or_default()
+        }
     }
 
     pub fn foreach<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {

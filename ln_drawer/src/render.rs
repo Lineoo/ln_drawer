@@ -284,6 +284,9 @@ impl Render {
                     refreshing |= info.keep_redrawing;
                 };
             });
+            if world.queue_cache::<RenderControl>() {
+                log::debug!("control cached");
+            }
         });
 
         world.flush();
