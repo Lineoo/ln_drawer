@@ -11,7 +11,7 @@ use crate::{
     measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderControl,
-        camera::{Camera, CameraBind},
+        camera::{CameraBind, CurrentCamera},
     },
     widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_CAMERA},
 };
@@ -97,7 +97,8 @@ impl<M: QuadMaterial> QuadMesh<M> {
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
                 let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(current_camera.0).unwrap();
 
                 let key = format!("main > common > {}", M::label());
                 let (start, end) = extra.diagnosis.assign_string(key);

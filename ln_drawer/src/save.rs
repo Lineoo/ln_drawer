@@ -59,7 +59,7 @@ pub struct SaveMetadata1 {
 }
 
 impl SaveDatabase {
-    pub fn init(world: &mut World) {
+    pub fn init(world: &World) {
         let Err(WorldError::SingletonNoSuch(_)) = world.single::<SaveDatabase>() else {
             log::warn!("duplicated database initialization!");
             return;
@@ -78,8 +78,6 @@ impl SaveDatabase {
             world.insert(SaveDatabase(Arc::new(db)));
             log::debug!("database created");
         }
-
-        world.flush();
     }
 
     /// Format a fresh, empty database, this contains initializing minimum

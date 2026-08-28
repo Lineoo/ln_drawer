@@ -5,7 +5,11 @@ use winit::event::{
     ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
 };
 
-use crate::{lnwin::Lnwindow, render::camera::Camera, tools::collider::ToolCollider};
+use crate::{
+    lnwin::Lnwindow,
+    render::camera::{Camera, CurrentCamera},
+    tools::collider::ToolCollider,
+};
 
 /// Multi touch actions that allow inputs with more points than [`PointerTool`] but no hovering
 #[derive(Default)]
@@ -71,7 +75,8 @@ impl MultiTouchTool {
                 };
 
                 let position = world.enter(view, || {
-                    let camera = world.single_fetch::<Camera>().unwrap();
+                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                    let camera = world.fetch(current_camera.0).unwrap();
                     camera.screen_to_world_absolute(screen)
                 });
 
@@ -149,7 +154,8 @@ impl MultiTouchTool {
                 drop(lnwindow);
 
                 let position = world.enter(touch.view, || {
-                    let camera = world.single_fetch::<Camera>().unwrap();
+                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                    let camera = world.fetch(current_camera.0).unwrap();
                     camera.screen_to_world_absolute(screen)
                 });
 
@@ -200,7 +206,8 @@ impl MultiTouchTool {
                 drop(lnwindow);
 
                 let position = world.enter(touch.view, || {
-                    let camera = world.single_fetch::<Camera>().unwrap();
+                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                    let camera = world.fetch(current_camera.0).unwrap();
                     camera.screen_to_world_absolute(screen)
                 });
 

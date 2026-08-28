@@ -15,7 +15,7 @@ use crate::{
     },
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
-    render::camera::{Camera, CameraUtils, UICamera},
+    render::camera::{CameraUtils, UICamera},
     tools::{
         collider::ToolCollider,
         modifiers::ModifiersTool,
@@ -64,7 +64,7 @@ impl LayerInput {
 
             let ui_camera = world.single_fetch::<UICamera>().unwrap();
             world.enter(ui_camera.0, || {
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let camera = world.fetch(ui_camera.0).unwrap();
                 let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
                 let mut brush_preview = world.fetch_mut(wrapper.brush_preview).unwrap();
                 brush_preview.desc.shadow_offset = event.pointer.tilt * 48.0;

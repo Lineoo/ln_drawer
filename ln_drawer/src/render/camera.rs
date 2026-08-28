@@ -31,6 +31,8 @@ pub struct CameraBind {
     pub layout: BindGroupLayout,
 }
 
+pub struct CurrentCamera(pub Handle<Camera>);
+
 pub struct MainCamera(pub Handle<Camera>);
 
 pub struct UICamera(pub Handle<Camera>);
@@ -164,7 +166,7 @@ impl Camera {
         Rectangle::new_half(center.q32_round(), view_size.ceil().as_uvec2())
     }
 
-    pub fn init(world: &mut World) {
+    pub fn init(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
         let device = &render.device;
 
@@ -374,7 +376,8 @@ impl CameraUtils {
     }
 
     pub fn apply_to_camera(&self, world: &World) {
-        let mut camera = world.single_fetch_mut::<Camera>().unwrap();
+        let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+        let mut camera = world.fetch_mut(current_camera.0).unwrap();
         camera.zoom = self.camera_zoom;
         camera.center = self.camera_center;
         world.queue_trigger(camera.handle(), CameraUpdated);
@@ -423,6 +426,7 @@ impl CameraUtils {
     }
 }
 
+impl Element for CurrentCamera {}
 impl Element for MainCamera {}
 impl Element for UICamera {}
 impl Element for CameraUtils {}

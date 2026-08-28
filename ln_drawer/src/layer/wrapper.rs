@@ -32,7 +32,7 @@ use crate::{
     measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderControl, RenderExtra, RenderInformation,
-        camera::{Camera, CameraBind, CameraUpdated, UICamera},
+        camera::{Camera, CameraBind, CameraUpdated, MainCamera, UICamera},
         rounded::{RoundedRect, RoundedRectDescriptor},
     },
     save::{Autosave, SaveDatabase},
@@ -105,7 +105,8 @@ impl LayerWrapper {
             window,
         };
 
-        let camera = world.single_fetch::<Camera>().unwrap();
+        let main_camera = world.single_fetch::<MainCamera>().unwrap();
+        let camera = world.fetch(main_camera.0).unwrap();
         input_tx
             .send(ThreadInput::SetStreamCamera(
                 camera.zoom,
@@ -401,10 +402,10 @@ impl Element for LayerWrapper {
 
         world.dependency(save, this);
 
-        let camera = world.single::<Camera>().unwrap();
-        world.observer(camera, move |&CameraUpdated, world| {
+        let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
+        world.observer(main_camera, move |&CameraUpdated, world| {
             let this = world.single_fetch::<LayerWrapper>().unwrap();
-            let camera = world.single_fetch::<Camera>().unwrap();
+            let camera = world.fetch(main_camera).unwrap();
 
             this.thread_tx
                 .send(ThreadInput::SetStreamCamera(
@@ -426,7 +427,7 @@ impl Element for LayerWrapper {
             })),
             draw: Some(Box::new(move |world, rpass, extra| {
                 let mut this = world.single_fetch_mut::<LayerWrapper>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let camera = world.fetch(main_camera).unwrap();
                 this.render(&camera, rpass, extra);
             })),
         });

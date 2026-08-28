@@ -19,7 +19,7 @@ use crate::{
     measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderControl,
-        camera::{Camera, CameraBind},
+        camera::{CameraBind, CurrentCamera},
     },
     widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_CAMERA},
 };
@@ -76,7 +76,8 @@ impl Canvas {
             draw: Some(Box::new(move |world, rpass, extra| {
                 let instance = world.fetch(instance).unwrap();
                 let pipeline = world.single_fetch::<CanvasPipeline>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(current_camera.0).unwrap();
 
                 let (start, end) = extra.diagnosis.assign("main > canvas");
                 extra.diagnosis.write(rpass, start);

@@ -380,6 +380,10 @@ impl World {
         self.enter(view, || self.single_remove::<T>())
     }
 
+    pub fn enter_queue(&self, view: Handle<impl ?Sized>, f: impl FnOnce(&mut World) + 'static) {
+        self.enter(view, || self.queue(f))
+    }
+
     /// Clear all elements from current view. Action is queued so no removal marks or
     /// mutable limitations.
     pub fn clear(&self) -> usize {
@@ -569,11 +573,6 @@ impl World {
     // singleton //
 
     pub fn single<T: Element>(&self) -> Result<Handle<T>, WorldError> {
-        // TODO view-root preference shortcut
-        if self.indices.get(&self.location.get()).map(|x| x.tid) == Some(TypeId::of::<T>()) {
-            return Ok(self.location.get().cast());
-        }
-
         let storage = (self.storages)
             .get(&TypeId::of::<T>())
             .ok_or(WorldError::SingletonNoSuch(type_name::<T>()))?;

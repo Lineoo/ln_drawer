@@ -6,7 +6,7 @@ use winit::event::{
 
 use crate::{
     lnwin::Lnwindow,
-    render::camera::Camera,
+    render::camera::{Camera, CurrentCamera},
     tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
 };
 
@@ -373,7 +373,8 @@ impl Pointer {
         if self.pressed.is_some() {
             let hovering = self.hovering.unwrap();
             let position = world.enter(hovering.view, || {
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(current_camera.0).unwrap();
                 camera.screen_to_world_absolute(self.data.screen)
             });
 
@@ -388,7 +389,8 @@ impl Pointer {
         } else if let Some(&(each, view)) = ToolCollider::intersect(world, self.data.screen).first()
         {
             let position = world.enter(view, || {
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(current_camera.0).unwrap();
                 camera.screen_to_world_absolute(self.data.screen)
             });
 

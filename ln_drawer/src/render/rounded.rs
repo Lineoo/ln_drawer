@@ -6,7 +6,7 @@ use crate::{
     measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderControl, RenderExtra,
-        camera::{Camera, CameraBind},
+        camera::{Camera, CameraBind, CurrentCamera},
     },
     widgets::{SetWidgetRectangle, SetWidgetVisible},
 };
@@ -161,7 +161,8 @@ impl RoundedRect {
             prepare: None,
             draw: Some(Box::new(move |world, rpass, mut extra| {
                 let pipeline = world.single_fetch::<RoundedRectPipeline>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(current_camera.0).unwrap();
 
                 Self::render(&bind, rpass, &mut extra, &pipeline, &camera);
             })),

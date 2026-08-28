@@ -7,7 +7,7 @@ use winit::event::{
 use crate::{
     lnwin::Lnwindow,
     measures::FI64Ext,
-    render::camera::{Camera, CameraUtils, MainCamera},
+    render::camera::{CameraUtils, CurrentCamera, MainCamera},
     tools::collider::ToolCollider,
 };
 
@@ -43,7 +43,8 @@ impl Element for MouseTool {
                 };
 
                 let position = world.enter(view, || {
-                    let camera = world.single_fetch::<Camera>().unwrap();
+                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                    let camera = world.fetch(current_camera.0).unwrap();
                     camera.screen_to_world_absolute(screen).q32_floor()
                 });
 
