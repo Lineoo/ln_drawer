@@ -10,7 +10,8 @@ use winit::{
     dpi::PhysicalPosition,
     event::WindowEvent,
     event_loop::ActiveEventLoop,
-    window::{Window, WindowAttributes, WindowId},
+    platform::wayland::Anchor,
+    window::{Window, WindowAttributes, WindowId, WindowLevel},
 };
 
 use crate::{
@@ -232,8 +233,14 @@ impl Element for Lnwindow {
 impl Lnwindow {
     fn new(event_loop: &dyn ActiveEventLoop) -> Lnwindow {
         let win_attr = WindowAttributes::default()
+            .with_window_level(WindowLevel::AlwaysOnTop)
             .with_transparent(true)
-            .with_title("LnDrawer");
+            .with_title("LnDrawer")
+            .with_platform_attributes(Box::new(
+                winit::platform::wayland::WindowAttributesWayland::default()
+                    .with_layer_shell()
+                    .with_anchor(Anchor::TOP),
+            ));
 
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::from(window);

@@ -6,8 +6,8 @@ resolver = "3"
 edition = "2024"
 
 [patch.crates-io.winit]
-git = "https://github.com/Lineoo/winit/"
-branch = "ln_drawer"
+git = "https://github.com/SergioRibera/winit"
+branch = "layer_shell"
 
 [profile.dev]
 debug = "line-tables-only"

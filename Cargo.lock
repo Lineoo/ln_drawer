@@ -25,19 +25,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "ahash"
-version = "0.8.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
-dependencies = [
- "cfg-if",
- "getrandom 0.3.4",
- "once_cell",
- "version_check",
- "zerocopy",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -780,7 +767,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpi"
 version = "0.1.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 
 [[package]]
 name = "either"
@@ -2570,6 +2557,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_event"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5018d583d6d2f5499352aea8d177e9067d1eb03ab17c78169d5ba7a30001b15"
+dependencies = [
+ "bitflags 2.13.1",
+ "libredox",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4023,15 +4020,6 @@ dependencies = [
 
 [[package]]
 name = "windows-sys"
-version = "0.59.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
-dependencies = [
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-sys"
 version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
@@ -4172,7 +4160,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "winit"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
  "bitflags 2.13.1",
  "cfg_aliases",
@@ -4198,7 +4186,7 @@ dependencies = [
 [[package]]
 name = "winit-android"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
  "android-activity",
  "bitflags 2.13.1",
@@ -4213,7 +4201,7 @@ dependencies = [
 [[package]]
 name = "winit-appkit"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
  "bitflags 2.13.1",
  "block2",
@@ -4235,11 +4223,13 @@ dependencies = [
 [[package]]
 name = "winit-common"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
+ "block2",
  "memmap2",
  "objc2",
  "objc2-core-foundation",
+ "objc2-foundation",
  "smol_str",
  "tracing",
  "winit-core",
@@ -4250,7 +4240,7 @@ dependencies = [
 [[package]]
 name = "winit-core"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
  "bitflags 2.13.1",
  "cursor-icon",
@@ -4264,13 +4254,14 @@ dependencies = [
 [[package]]
 name = "winit-orbital"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
  "bitflags 2.13.1",
  "dpi",
+ "libredox",
  "orbclient",
  "raw-window-handle",
- "redox_syscall 0.5.18",
+ "redox_event",
  "smol_str",
  "tracing",
  "winit-core",
@@ -4279,7 +4270,7 @@ dependencies = [
 [[package]]
 name = "winit-uikit"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
  "bitflags 2.13.1",
  "block2",
@@ -4299,13 +4290,13 @@ dependencies = [
 [[package]]
 name = "winit-wayland"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
- "ahash",
  "bitflags 2.13.1",
  "calloop",
  "cursor-icon",
  "dpi",
+ "foldhash",
  "libc",
  "memmap2",
  "raw-window-handle",
@@ -4325,7 +4316,7 @@ dependencies = [
 [[package]]
 name = "winit-web"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
  "atomic-waker",
  "bitflags 2.13.1",
@@ -4347,7 +4338,7 @@ dependencies = [
 [[package]]
 name = "winit-win32"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
  "bitflags 2.13.1",
  "cursor-icon",
@@ -4356,14 +4347,14 @@ dependencies = [
  "smol_str",
  "tracing",
  "unicode-segmentation",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
  "winit-core",
 ]
 
 [[package]]
 name = "winit-x11"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/SergioRibera/winit?branch=layer_shell#44fb590327ceb6226a8c677f99441115a1d36176"
 dependencies = [
  "bitflags 2.13.1",
  "bytemuck",
