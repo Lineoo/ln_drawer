@@ -200,6 +200,54 @@ that.trigger(that, ElementUpdate);
 |-----------------------|-----------------------|
 ```
 
+## 管理保证 ##
+
+world 世界模型会严格限制视图之间的可见性，以提供良好的并发安全和内存安全。
+
+1. 所有节点都有一个视图节点
+2. 在当前位置**可见**的节点来自：
+    - 视图节点下的所有节点
+    - 视图节点下的 `ElemRef` 节点指向的节点
+        - `ElemRef -> T`
+        - **未实现** `ElemRef -> ElemRef -> T` 单节点双跳
+        - **未实现** `ElemRef -> ViewRef -> T` 视图跳跃
+    - 视图节点下的 `ViewRef` 节点指向的视图节点下的所有节点
+        - `ViewRef -> T`
+        - `ViewRef -> ElemRef -> T` 视图节点双跳
+        - `ViewRef -> .. -> ViewRef -> T` 嵌套跳跃
+        - **未实现** `ViewRef -> ElemRef -> ElemRef -> T` 同上
+        - **未实现** `ViewRef -> ElemRef -> ViewRef -> T` 同上
+3. 输入非法句柄时绝对不应当被执行
+    - fetch, foreach, single 家族运行良好
+    - **未实现** 目前 dependency(child), observer 均选择无报错返回
+    - **未实现** 目前 dependency(parent) 会返回 `ToxicDependency`
+    - **未实现** 目前 trigger 做了初步拦截，会输出 log 并拒绝执行
+4. 不可见的节点会被直接视作非法句柄（句柄指向无效数据）处理，在任何细节上都与非法节点无差（除了报错信息）
+    - fetch, foreach, single 家族一致性良好
+    - 目前 dependency(child), observer, trigger 和非法句柄处理一致（但行为不合理，见上）
+    - **未实现** 目前 dependency(parent) 被 bypass，与非法句柄不一致
+5. 任意节点内容同一时刻只能被一个线程看见
+    - 目前是单线程，当然满足（笑）
+    - 随着后续调整可能会允许多线程不可变地占用同一个节点
+    - 这个保证允许了所有调用都无锁，只做一次运行时可变检查
+6. 不调用 enter 操作视图绝对不变
+    - observer, queue 包含闭包，其运行时视图节点仍然是上下文节点，不会变成别的视图节点
+7. 任何时候 dependency 绝对不失效
+    - 跨视图 dependency 仍然会正常执行
+    - 在 when_remove 的时候所有依赖依旧保证可以访问
+8. 缓存绝对有效，只有丢失缓存，没有错误缓存
+    - 不会看见多余的元素
+    - 不会看见错误的元素
+
+尽可能解决世界模型内部的内存泄漏问题：
+
+1. 没有失去视图节点导致不可访问的元素
+2. **未实现** 没有失去目标的无效 observer
+3. 没有失去父节点的无效 dependency
+4. 没有失去子节点的无效 dependency
+5. **未实现** 没有目标被移除的无效 ElemRef/ViewRef
+6. **未实现** 节点索引没有记录无效的 elemrefs/viewrefs 缓存
+
 ## 任意位置命令 Commander ##
 
 允许获取世界的命令队列，然后**从任何地方直接发送命令**到世界。

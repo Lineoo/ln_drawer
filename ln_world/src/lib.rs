@@ -273,6 +273,9 @@ impl World {
             );
             world.inserted.get_mut().remove(&handle.cast());
 
+            // junk cache
+            world.cache.retain(|(t, _), _| *t != TypeId::of::<T>());
+
             // when_insert
             let mut element = world.fetch_mut(handle).unwrap();
             element.when_insert(world, handle);
@@ -548,18 +551,19 @@ impl World {
         visible.append(&mut index.elemrefs.clone());
         let mut frnt = 0;
         while let Some(&view) = visible.get(frnt) {
+            if view == here {
+                return Ok(());
+            }
+
             let Some(view_index) = self.indices.get(&view) else {
-                return Err(WorldError::InvalidHandle(view.into()));
+                frnt += 1;
+                continue;
             };
 
             for &viewref in &view_index.viewrefs {
                 if !visible.contains(&viewref) {
                     visible.push(viewref);
                 }
-            }
-
-            if view == here {
-                return Ok(());
             }
 
             frnt += 1;
@@ -816,6 +820,11 @@ impl World {
 
     /// Will immediately triggered and acquire mutable access to `target`.
     pub fn trigger<E: 'static>(&self, target: Handle<impl ?Sized + 'static>, event: &E) -> usize {
+        if let Err(e) = self.validate(target) {
+            log::error!("trigger on invisible target: {e:?}");
+            return 0;
+        }
+
         let mut cnt = 0;
         self.enter(INITELEM, || {
             if let Ok(observers) = self.single_fetch::<Observers<E>>()
@@ -963,6 +972,8 @@ impl Element for ElemRef {
         let target = self.0;
         let here = world.location.get();
         world.queue(move |world| {
+            world.cache.retain(|(_, view), _| view != &here);
+
             let Some(index) = world.indices.get_mut(&target) else {
                 log::error!("Fatal error: ElemRef cannot find content handle");
                 return;
@@ -976,6 +987,8 @@ impl Element for ElemRef {
         let target = self.0;
         let here = world.location.get();
         world.queue(move |world| {
+            world.cache.retain(|(_, view), _| view != &here);
+
             let Some(index) = world.indices.get_mut(&target) else {
                 // silent skip removed node
                 return;
@@ -1001,6 +1014,8 @@ impl Element for ViewRef {
         let target = self.0;
         let here = world.location.get();
         world.queue(move |world| {
+            world.cache.retain(|(_, view), _| view != &here);
+
             let Some(index) = world.indices.get_mut(&target) else {
                 log::error!("Fatal error: ElemRef cannot find content handle");
                 return;
@@ -1014,6 +1029,8 @@ impl Element for ViewRef {
         let target = self.0;
         let here = world.location.get();
         world.queue(move |world| {
+            world.cache.retain(|(_, view), _| view != &here);
+
             let Some(index) = world.indices.get_mut(&target) else {
                 // silent skip removed node
                 return;
