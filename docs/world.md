@@ -219,23 +219,28 @@ world 世界模型会严格限制视图之间的可见性，以提供良好的�
         - **未实现** `ViewRef -> ElemRef -> ViewRef -> T` 同上
 3. 输入非法句柄时绝对不应当被执行
     - fetch, foreach, single 家族运行良好
+    - **未实现** 目前 enter 会导致进入一个虚空视图
     - **未实现** 目前 dependency(child), observer 均选择无报错返回
     - **未实现** 目前 dependency(parent) 会返回 `ToxicDependency`
     - **未实现** 目前 trigger 做了初步拦截，会输出 log 并拒绝执行
 4. 不可见的节点会被直接视作非法句柄（句柄指向无效数据）处理，在任何细节上都与非法节点无差（除了报错信息）
+    - enter 指令也遵循这一点，也就是说你只有看得见一个节点，你才能跳到这个节点上
     - fetch, foreach, single 家族一致性良好
-    - 目前 dependency(child), observer, trigger 和非法句柄处理一致（但行为不合理，见上）
+    - 目前 enter, dependency(child), observer, trigger 和非法句柄处理一致（但行为不合理，见上）
     - **未实现** 目前 dependency(parent) 被 bypass，与非法句柄不一致
-5. 任意节点内容同一时刻只能被一个线程看见
+5. INITELEM 也和不可见节点一样，总是被当作非法句柄
+    - fetch, foreach, single 家族一致性良好
+    - 目前 enter, dependency, observer, trigger 和非法句柄处理一致（但行为不合理，见上）
+6. 任意节点内容同一时刻只能被一个线程看见
     - 目前是单线程，当然满足（笑）
     - 随着后续调整可能会允许多线程不可变地占用同一个节点
     - 这个保证允许了所有调用都无锁，只做一次运行时可变检查
-6. 不调用 enter 操作视图绝对不变
+7. 不调用 enter 操作视图绝对不变
     - observer, queue 包含闭包，其运行时视图节点仍然是上下文节点，不会变成别的视图节点
-7. 任何时候 dependency 绝对不失效
+8. 任何时候 dependency 绝对不失效
     - 跨视图 dependency 仍然会正常执行
     - 在 when_remove 的时候所有依赖依旧保证可以访问
-8. 缓存绝对有效，只有丢失缓存，没有错误缓存
+9. 缓存绝对有效，只有丢失缓存，没有错误缓存
     - 不会看见多余的元素
     - 不会看见错误的元素
 

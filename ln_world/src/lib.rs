@@ -337,6 +337,8 @@ impl World {
             // update typetable
             world.indices.remove(&handle.cast());
 
+            // FIXME cache remain issue
+
             // junk cache:
             // swap_remove shifts the storage indices the cache points to, so drop every
             // cache entry of this type, not just the one at the current location
@@ -394,8 +396,7 @@ impl World {
         self.enter(view, || self.queue(f))
     }
 
-    /// Clear all elements from current view. Action is queued so no removal marks or
-    /// mutable limitations.
+    /// Clear all elements from current view.
     pub fn clear(&self) -> usize {
         let mut cnt = 0;
         for (&handle, index) in self.indices.iter() {
