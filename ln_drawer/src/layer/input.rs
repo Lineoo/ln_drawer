@@ -13,7 +13,7 @@ use crate::{
         brush::Draw,
         wrapper::{BrushMode, LayerWrapper},
     },
-    lnwin::Lnwindow,
+    lnwin::{CloseWindow, Lnwindow},
     measures::{FI64Ext, Rectangle},
     render::camera::{CameraUtils, UICamera},
     tools::{
@@ -124,6 +124,9 @@ impl LayerInput {
                 }
                 KeyCode::ControlLeft => {
                     this.ctrl = press;
+                }
+                KeyCode::Escape => {
+                    world.queue_trigger(lnwindow.handle(), CloseWindow);
                 }
                 _ => (),
             }

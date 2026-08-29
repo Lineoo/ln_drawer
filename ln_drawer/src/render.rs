@@ -159,7 +159,7 @@ impl Render {
             device,
             queue,
             msaa_texture: None,
-            clear_color: Color::WHITE,
+            clear_color: Color::TRANSPARENT,
             preparing: false,
             seq_dirty: Vec::new(),
             seq_remove: Vec::new(),

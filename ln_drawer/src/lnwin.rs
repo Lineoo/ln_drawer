@@ -10,7 +10,7 @@ use winit::{
     dpi::PhysicalPosition,
     event::WindowEvent,
     event_loop::ActiveEventLoop,
-    platform::wayland::Anchor,
+    platform::wayland::{Anchor, KeyboardInteractivity},
     window::{Window, WindowAttributes, WindowId, WindowLevel},
 };
 
@@ -105,17 +105,23 @@ pub struct Lnwindow {
     pub window: Arc<dyn Window>,
 }
 
+pub struct CloseWindow;
+
 impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.enter(this, || world.insert(ElemRef(this.untyped())));
         world.enter_queue(this, move |world| {
             world.observer(this, move |event: &WindowEvent, world| {
                 if let WindowEvent::CloseRequested = event {
-                    Autosave::autosave_all(world);
-                    world.queue(|world| {
-                        world.clear();
-                    });
+                    world.queue_trigger(this, CloseWindow);
                 }
+            });
+
+            world.observer(this, move |CloseWindow, world| {
+                Autosave::autosave_all(world);
+                world.queue(|world| {
+                    world.clear();
+                });
             });
 
             let lnwindow = world.fetch(this).unwrap();
@@ -232,14 +238,20 @@ impl Element for Lnwindow {
 
 impl Lnwindow {
     fn new(event_loop: &dyn ActiveEventLoop) -> Lnwindow {
+        let monitor = event_loop.available_monitors().next().unwrap();
+        let video_mode = monitor.0.current_video_mode().unwrap();
+        let size = video_mode.size();
+
         let win_attr = WindowAttributes::default()
             .with_window_level(WindowLevel::AlwaysOnTop)
             .with_transparent(true)
             .with_title("LnDrawer")
+            .with_surface_size(size)
             .with_platform_attributes(Box::new(
                 winit::platform::wayland::WindowAttributesWayland::default()
                     .with_layer_shell()
-                    .with_anchor(Anchor::TOP),
+                    .with_anchor(Anchor::TOP)
+                    .with_keyboard_interactivity(KeyboardInteractivity::OnDemand),
             ));
 
         let window = event_loop.create_window(win_attr).unwrap();
@@ -253,6 +265,13 @@ impl Lnwindow {
         let x = (position.x * 2.0) / size.width as f64 - 1.0;
         let y = 1.0 - (position.y * 2.0) / size.height as f64;
         DVec2::new(x, y)
+    }
+
+    pub fn screen_to_cursor(&self, ndc: DVec2) -> PhysicalPosition<f64> {
+        let size = self.window.surface_size();
+        let x = (ndc.x + 1.0) * size.width as f64 / 2.0;
+        let y = (1.0 - ndc.y) * size.height as f64 / 2.0;
+        PhysicalPosition::new(x, y)
     }
 }
 

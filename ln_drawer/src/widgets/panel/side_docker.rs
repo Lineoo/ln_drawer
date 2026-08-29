@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use glam::{IVec2, UVec2};
-use ln_world::World;
+use glam::{I64Vec2, IVec2, UVec2};
+use ln_world::{Element, Handle, World};
+use winit::window::Window;
 
 use crate::{
     layer::{
@@ -14,7 +15,8 @@ use crate::{
         transform::{Transform, TransformEdge, TransformValue},
     },
     lnwin::Lnwindow,
-    measures::{Axis, Rectangle},
+    measures::{Axis, FI64Ext, Rectangle},
+    render::camera::UICamera,
     theme::Theme,
     widgets::{
         button::{
@@ -27,6 +29,8 @@ use crate::{
     },
 };
 
+pub struct SideDocker(pub Handle<Panel>);
+
 pub fn side_docker(world: &World) {
     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
     let theme = world.single_fetch::<Theme>().unwrap();
@@ -37,6 +41,8 @@ pub fn side_docker(world: &World) {
         visible: true,
         shadow: true,
     });
+
+    world.insert(SideDocker(side_panel));
 
     let docker_button = |image_bytes| {
         world.insert(ToggleButton {
@@ -152,6 +158,36 @@ pub fn side_docker(world: &World) {
     world.observer(touch, move |&ButtonSelected(val), world| {
         let mut input = world.single_fetch_mut::<LayerInput>().unwrap();
         input.touch_draw = val;
+
+        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        let wayland_window = lnwindow
+            .window
+            .cast_ref::<winit::platform::wayland::Window>()
+            .unwrap();
+        let ui_camera = world.single_fetch::<UICamera>().unwrap();
+        let camera = world.fetch(ui_camera.0).unwrap();
+        let side_docker = world.enter_single_fetch::<SideDocker>(ui_camera.0).unwrap();
+        let side_docker = world.enter(ui_camera.0, || world.fetch(side_docker.0).unwrap());
+        match val {
+            true => {
+                let region = wayland_window.create_region().unwrap();
+                let xy = lnwindow
+                    .screen_to_cursor(camera.world_to_screen_absolute(I64Vec2::q32_from_i32(
+                        side_docker.rect.left_up(),
+                    )))
+                    .to_logical::<i32>(wayland_window.scale_factor());
+                let wh = lnwindow
+                    .screen_to_cursor(camera.world_to_screen_absolute(I64Vec2::q32_from_i32(
+                        side_docker.rect.right_down(),
+                    )))
+                    .to_logical::<i32>(wayland_window.scale_factor());
+                region.add(xy.x, xy.y, wh.x - xy.x, wh.y - xy.y);
+                wayland_window.set_region(Some(&region));
+            }
+            false => {
+                lnwindow.window.set_cursor_hittest(true).unwrap();
+            }
+        }
         world.queue_trigger(touch, SetButtonSelected(val));
     });
 
@@ -274,3 +310,5 @@ pub fn side_docker(world: &World) {
 
     world.queue_trigger(layer, BrushConfigurationChanged);
 }
+
+impl Element for SideDocker {}
