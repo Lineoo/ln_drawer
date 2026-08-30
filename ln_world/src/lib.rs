@@ -842,9 +842,9 @@ impl World {
 
     /// Will immediately triggered and acquire mutable access to `target`.
     pub fn trigger<E: 'static>(&self, target: Handle<impl ?Sized + 'static>, event: &E) -> usize {
-        if let Err(e) = self.validate(target) {
-            log::error!("trigger on invalidated target: {e:?}");
-        }
+        // if let Err(e) = self.validate(target) {
+        //     log::error!("trigger on invalidated target: {e:?}");
+        // }
 
         let mut cnt = 0;
         self.enter(INITELEM, || {
