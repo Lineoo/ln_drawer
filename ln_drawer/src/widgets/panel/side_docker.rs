@@ -243,8 +243,9 @@ pub fn side_docker(world: &World) {
             (brush.untyped(), LuniChild::default()),
             (eraser.untyped(), LuniChild::default()),
             (blur.untyped(), LuniChild::default()),
-            (touch.untyped(), LuniChild::default()),
             (color_picker.untyped(), LuniChild::default()),
+            (undo.untyped(), LuniChild::default()),
+            (redo.untyped(), LuniChild::default()),
             (
                 elastic_blank.untyped(),
                 LuniChild {
@@ -267,8 +268,7 @@ pub fn side_docker(world: &World) {
                     ..Default::default()
                 },
             ),
-            (undo.untyped(), LuniChild::default()),
-            (redo.untyped(), LuniChild::default()),
+            (touch.untyped(), LuniChild::default()),
         ],
     });
 
