@@ -143,11 +143,16 @@ struct HandleIndex {
 struct Storage<T: Element>(IndexMap<Handle, T>);
 
 trait StorageGeneral: Any {
+    fn name(&self) -> &'static str;
     fn remove(&mut self, handle: Handle);
     fn when_remove(&mut self, world: &World, handle: Handle);
 }
 
 impl<T: Element> StorageGeneral for Storage<T> {
+    fn name(&self) -> &'static str {
+        type_name::<T>()
+    }
+
     fn remove(&mut self, handle: Handle) {
         self.0.swap_remove(&handle);
     }
@@ -173,7 +178,7 @@ pub enum WorldError {
     InvalidHandle(HandleInfo),
 
     #[error("{0:?} is invisible in {1:?} from here {2:?}")]
-    Invisible(HandleInfo, Handle, Handle),
+    Invisible(HandleInfo, HandleInfo, HandleInfo),
 
     #[error("{0:?} serves as root view element")]
     Initelem(HandleInfo),
@@ -326,8 +331,12 @@ impl World {
             };
 
             drop(dependencies);
+
             let child_view = self.indices.get(&child).unwrap().view;
             cnt += self.enter(child_view, || self.remove(child))?;
+
+            // TODO proper ops
+            // cnt += self.remove(child)?;
         }
 
         // write immediate record
@@ -521,23 +530,23 @@ impl World {
     /// evaluating costs time, which is sensitive in some cases.
     pub fn validate(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         if handle.0 == 0 {
-            return Err(WorldError::Initelem(handle.into()));
+            return Err(WorldError::Initelem(self.info(handle)));
         }
 
         if self.removed.borrow().contains(&handle.cast()) {
             if self.indices.contains_key(&handle.cast()) {
-                return Err(WorldError::JustRemoved(handle.into()));
+                return Err(WorldError::JustRemoved(self.info(handle)));
             }
 
-            return Err(WorldError::Removed(handle.into()));
+            return Err(WorldError::Removed(self.info(handle)));
         }
 
         let Some(index) = self.indices.get(&handle.cast()) else {
             if self.inserted.borrow().contains(&handle.cast()) {
-                return Err(WorldError::JustInserted(handle.into()));
+                return Err(WorldError::JustInserted(self.info(handle)));
             }
 
-            return Err(WorldError::InvalidHandle(handle.into()));
+            return Err(WorldError::InvalidHandle(self.info(handle)));
         };
 
         let here = self.location.get();
@@ -575,7 +584,11 @@ impl World {
             frnt += 1;
         }
 
-        Err(WorldError::Invisible(handle.into(), index.view, here))
+        Err(WorldError::Invisible(
+            self.info(handle),
+            self.info(index.view),
+            self.info(here),
+        ))
     }
 
     /// Check whether target element can be borrowed immutably, insertion without
@@ -587,10 +600,10 @@ impl World {
 
     /// Check whether target element can be borrowed immutably, insertion without
     /// `flush` will *NOT* be included.
-    pub fn available_unchecked(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
+    fn available_unchecked(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         let occupied = self.occupied.borrow();
         if occupied.get(&handle.cast()).is_some_and(|cnt| *cnt < 0) {
-            panic!("{}", WorldError::Unavailable(handle.into()));
+            panic!("{}", WorldError::Unavailable(self.info(handle)));
         }
 
         Ok(())
@@ -605,10 +618,10 @@ impl World {
 
     /// Check whether target element can be borrowed mutably, insertion without
     /// `flush` will *NOT* be included.
-    pub fn available_mut_unchecked(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
+    fn available_mut_unchecked(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
         let occupied = self.occupied.borrow();
         if occupied.get(&handle.cast()).is_some_and(|cnt| *cnt != 0) {
-            panic!("{}", WorldError::UnavailableMut(handle.into()));
+            panic!("{}", WorldError::UnavailableMut(self.info(handle)));
         }
 
         Ok(())
@@ -629,13 +642,13 @@ impl World {
 
         let storage = (self.storages)
             .get(&TypeId::of::<T>())
-            .ok_or(WorldError::UnmatchedType(handle.into()))?;
+            .ok_or(WorldError::UnmatchedType(self.info(handle)))?;
         let storage = (storage.as_ref() as &dyn Any)
             .downcast_ref::<Storage<T>>()
             .unwrap();
         let element = (storage.0)
             .get(&handle.cast())
-            .ok_or(WorldError::InvalidHandle(handle.into()))? as *const _;
+            .ok_or(WorldError::InvalidHandle(self.info(handle)))? as *const _;
 
         Ok(Ref {
             ptr: element,
@@ -660,13 +673,13 @@ impl World {
 
         let storage = (self.storages)
             .get(&TypeId::of::<T>())
-            .ok_or(WorldError::UnmatchedType(handle.into()))?;
+            .ok_or(WorldError::UnmatchedType(self.info(handle)))?;
         let storage = (storage.as_ref() as &dyn Any)
             .downcast_ref::<Storage<T>>()
             .unwrap();
         let element = (storage.0)
             .get(&handle.cast())
-            .ok_or(WorldError::InvalidHandle(handle.into()))? as *const _;
+            .ok_or(WorldError::InvalidHandle(self.info(handle)))? as *const _;
         let element = element as *mut T;
 
         Ok(RefMut {
@@ -830,8 +843,7 @@ impl World {
     /// Will immediately triggered and acquire mutable access to `target`.
     pub fn trigger<E: 'static>(&self, target: Handle<impl ?Sized + 'static>, event: &E) -> usize {
         if let Err(e) = self.validate(target) {
-            log::error!("trigger on invisible target: {e:?}");
-            return 0;
+            log::error!("trigger on invalidated target: {e:?}");
         }
 
         let mut cnt = 0;
@@ -863,7 +875,7 @@ impl World {
         if let Err(e) = self.validate(parent)
             && !matches!(e, WorldError::JustInserted(_) | WorldError::Invisible(..))
         {
-            let err = WorldError::ToxicDependency(child.into(), parent.into());
+            let err = WorldError::ToxicDependency(self.info(child), self.info(parent));
             log::error!("failed to attach dependency: {err:?}");
             return;
         }
@@ -876,6 +888,17 @@ impl World {
         parent_deps.children.push(child);
         let child_deps = dependencies.0.entry(child).or_default();
         child_deps.parents.push(parent);
+    }
+
+    fn info<T: ?Sized>(&self, value: Handle<T>) -> HandleInfo {
+        HandleInfo(
+            value.cast(),
+            self.indices
+                .get(&value.cast())
+                .and_then(|x| self.storages.get(&x.tid))
+                .map(|x| x.name())
+                .unwrap_or("invalid"),
+        )
     }
 }
 
@@ -977,7 +1000,7 @@ pub struct ElemRef(pub Handle);
 pub struct ViewRef(pub Handle);
 
 impl Element for ElemRef {
-    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let target = self.0;
         let here = world.location.get();
         world.queue(move |world| {
@@ -990,6 +1013,8 @@ impl Element for ElemRef {
             };
 
             index.elemrefs.push(here);
+
+            world.dependency(this, target);
         });
     }
 
@@ -1021,7 +1046,7 @@ impl Element for ElemRef {
 }
 
 impl Element for ViewRef {
-    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let target = self.0;
         let here = world.location.get();
         world.queue(move |world| {
@@ -1034,6 +1059,8 @@ impl Element for ViewRef {
             };
 
             index.viewrefs.push(here);
+
+            world.dependency(this, target);
         });
     }
 
