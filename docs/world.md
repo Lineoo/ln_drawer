@@ -227,6 +227,7 @@ world 世界模型会严格限制视图之间的可见性，以提供良好的�
     - enter 指令也遵循这一点，也就是说你只有看得见一个节点，你才能跳到这个节点上
     - fetch, foreach, single 家族一致性良好
     - 目前 enter, dependency(child), observer, trigger 和非法句柄处理一致（但行为不合理，见上）
+    - **未实现** 目前 remove `ElemRef/ViewRef` 导致变为非法句柄时和 remove 原生节点后的行为不一致
     - **未实现** 目前 dependency(parent) 被 bypass，与非法句柄不一致
 5. INITELEM 也和不可见节点一样，总是被当作非法句柄
     - fetch, foreach, single 家族一致性良好

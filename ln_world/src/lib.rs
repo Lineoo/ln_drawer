@@ -120,7 +120,7 @@ pub struct World {
 
     indices: HashMap<Handle, HandleIndex>,
     storages: HashMap<TypeId, Box<dyn StorageGeneral>>,
-    cache: HashMap<(TypeId, Handle), SmallVec<[usize; 1]>>,
+    cache: RefCell<HashMap<(TypeId, Handle), SmallVec<[usize; 1]>>>,
 
     occupied: RefCell<HashMap<Handle, isize>>,
     inserted: RefCell<HashSet<Handle>>,
@@ -218,7 +218,7 @@ impl World {
             elem_idx: RefCell::new(Handle(1, PhantomData)),
             indices,
             storages: HashMap::new(),
-            cache: HashMap::new(),
+            cache: RefCell::default(),
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
@@ -274,7 +274,9 @@ impl World {
             world.inserted.get_mut().remove(&handle.cast());
 
             // junk cache
-            world.cache.retain(|(t, _), _| *t != TypeId::of::<T>());
+            let mut cache = world.cache.borrow_mut();
+            cache.retain(|(t, _), _| *t != TypeId::of::<T>());
+            drop(cache);
 
             // when_insert
             let mut element = world.fetch_mut(handle).unwrap();
@@ -333,16 +335,16 @@ impl World {
         removed.insert(handle.cast());
         drop(removed);
 
+        // junk cache:
+        // swap_remove shifts the storage indices the cache points to, so drop every
+        // cache entry of this type, not just the one at the current location
+        let mut cache = self.cache.borrow_mut();
+        cache.retain(|(t, _), _| *t != tid);
+        drop(cache);
+
         self.queue(move |world| {
             // update typetable
             world.indices.remove(&handle.cast());
-
-            // FIXME cache remain issue
-
-            // junk cache:
-            // swap_remove shifts the storage indices the cache points to, so drop every
-            // cache entry of this type, not just the one at the current location
-            world.cache.retain(|(t, _), _| *t != tid);
 
             // pop out storage
             let storage = world.storages.get_mut(&tid).unwrap();
@@ -422,7 +424,8 @@ impl World {
         self.queue(|world| {
             world.cache::<T>();
         });
-        !self.cache.contains_key(&(tid, here))
+        let cache = self.cache.borrow();
+        !cache.contains_key(&(tid, here))
     }
 
     // return if a new cache is established
@@ -430,7 +433,8 @@ impl World {
         let tid = TypeId::of::<T>();
         let here = self.location.get();
 
-        if self.cache.contains_key(&(tid, here)) {
+        let cache = self.cache.get_mut();
+        if cache.contains_key(&(tid, here)) {
             return false;
         }
 
@@ -442,16 +446,17 @@ impl World {
             .downcast_ref::<Storage<T>>()
             .unwrap();
 
-        let mut cache = SmallVec::new();
+        let mut cached = SmallVec::new();
         for (i, &handle) in storage.0.keys().enumerate() {
             if self.validate(handle).is_err() {
                 continue;
             }
 
-            cache.push(i);
+            cached.push(i);
         }
 
-        self.cache.insert((tid, here), cache);
+        let cache = self.cache.get_mut();
+        cache.insert((tid, here), cached);
 
         return true;
     }
@@ -685,7 +690,8 @@ impl World {
         let mut ret = None;
         let mut cnt = 0;
         let mut corrupted = 0;
-        if let Some(cached) = self.cache.get(&(tid, here)) {
+        let cache = self.cache.borrow();
+        if let Some(cached) = cache.get(&(tid, here)) {
             for &cache in cached {
                 let Some((&handle, _)) = storage.0.get_index(cache) else {
                     log::warn!("cache failed");
@@ -744,7 +750,8 @@ impl World {
         let tid = TypeId::of::<T>();
         let here = self.location.get();
 
-        if let Some(cached) = self.cache.get(&(tid, here)) {
+        let cache = self.cache.borrow();
+        if let Some(cached) = cache.get(&(tid, here)) {
             cached.len()
         } else {
             (self.storages)
@@ -768,7 +775,8 @@ impl World {
         };
 
         // cache hit optimization
-        if let Some(cached) = self.cache.get(&(tid, here)) {
+        let cache = self.cache.borrow();
+        if let Some(cached) = cache.get(&(tid, here)) {
             for &cache in cached {
                 let Some((handle, _)) = storage.0.get_index(cache) else {
                     log::warn!("cache failed");
@@ -973,7 +981,8 @@ impl Element for ElemRef {
         let target = self.0;
         let here = world.location.get();
         world.queue(move |world| {
-            world.cache.retain(|(_, view), _| view != &here);
+            let mut cache = world.cache.borrow_mut();
+            cache.retain(|(_, view), _| view != &here);
 
             let Some(index) = world.indices.get_mut(&target) else {
                 log::error!("Fatal error: ElemRef cannot find content handle");
@@ -988,7 +997,8 @@ impl Element for ElemRef {
         let target = self.0;
         let here = world.location.get();
         world.queue(move |world| {
-            world.cache.retain(|(_, view), _| view != &here);
+            let mut cache = world.cache.borrow_mut();
+            cache.retain(|(_, view), _| view != &here);
 
             let Some(index) = world.indices.get_mut(&target) else {
                 // silent skip removed node
@@ -1015,7 +1025,8 @@ impl Element for ViewRef {
         let target = self.0;
         let here = world.location.get();
         world.queue(move |world| {
-            world.cache.retain(|(_, view), _| view != &here);
+            let mut cache = world.cache.borrow_mut();
+            cache.retain(|(_, view), _| view != &here);
 
             let Some(index) = world.indices.get_mut(&target) else {
                 log::error!("Fatal error: ElemRef cannot find content handle");
@@ -1030,7 +1041,8 @@ impl Element for ViewRef {
         let target = self.0;
         let here = world.location.get();
         world.queue(move |world| {
-            world.cache.retain(|(_, view), _| view != &here);
+            let mut cache = world.cache.borrow_mut();
+            cache.retain(|(_, view), _| view != &here);
 
             let Some(index) = world.indices.get_mut(&target) else {
                 // silent skip removed node
