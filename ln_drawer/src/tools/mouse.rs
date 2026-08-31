@@ -110,8 +110,8 @@ impl Element for MouseTool {
                     camera_utils.anchor_cursor(DVec2::ZERO);
                     camera_utils.camera_cursor_by_anchor_center(prev);
                     camera_utils.anchor_distance(1.0);
-                    camera_utils.camera_distance_by_camera_zoom_center(1.0 + zoom_delta);
                     camera_utils.camera_distance_by_anchor_zoom_cursor(1.0);
+                    camera_utils.camera_distance_by_camera_zoom_center(1.0 + zoom_delta);
                     camera_utils.apply_to_camera(world);
                 });
             }
