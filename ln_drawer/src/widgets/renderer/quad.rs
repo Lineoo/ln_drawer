@@ -16,7 +16,7 @@ use crate::{
     widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_CAMERA},
 };
 
-pub trait QuadMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {
+pub trait QuadMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable + Send {
     fn label() -> &'static str;
 
     fn shader() -> ShaderSource<'static>;

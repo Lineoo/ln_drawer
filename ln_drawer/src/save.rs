@@ -261,7 +261,7 @@ impl SaveMetadata1 {
     }
 }
 
-pub struct Autosave(pub Box<dyn FnMut(&World, &WriteTransaction)>);
+pub struct Autosave(pub Box<dyn FnMut(&World, &WriteTransaction) + Send>);
 
 pub struct AutosaveScheduler {
     pub autosave_duration: Duration,

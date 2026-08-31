@@ -447,11 +447,11 @@ impl LayerPipeline {
         drop(cpass);
         self.queue.submit([encoder.finish()]);
 
-        let readback_sample = self.readback_sample.clone();
-        self.readback_sample
+        let readback_share = self.readback_share.clone();
+        self.readback_share
             .map_async(MapMode::Read, .., move |state| {
                 state.unwrap();
-                let bytes = readback_sample.get_mapped_range(..).unwrap();
+                let bytes = readback_share.get_mapped_range(..).unwrap();
                 let color = Srgba::from(*bytes.as_array::<4>().unwrap());
                 f(color.into_format());
             });

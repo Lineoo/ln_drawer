@@ -362,11 +362,10 @@ impl LayerInput {
                         &wrapper.main,
                         event.active.position.q32_round(),
                         move |color| {
-                            // FIXME
-                            // cmd.queue(|world| {
-                            //     let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
-                            //     wrapper.round_brush.color = color.into_color();
-                            // });
+                            cmd.queue(move |world| {
+                                let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
+                                wrapper.round_brush.color = color.into_color();
+                            });
                         },
                     );
                     LayerInputState::PickColor

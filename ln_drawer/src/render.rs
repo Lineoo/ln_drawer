@@ -65,8 +65,8 @@ pub struct RenderPhase {
     sequence: Vec<(Handle<RenderControl>, HandleAny, isize)>,
 }
 
-type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;
-type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, RenderExtra<'_, '_>)>;
+type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation> + Send>;
+type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, RenderExtra<'_, '_>) + Send>;
 
 /// Need to call `RenderControl::reorder` before it can render normally.
 pub struct RenderControl {

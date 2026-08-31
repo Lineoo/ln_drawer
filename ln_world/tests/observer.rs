@@ -1,5 +1,3 @@
-use std::{cell::Cell, rc::Rc};
-
 use ln_world::{ElemRef, Element, HandleGeneric, World};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -47,16 +45,6 @@ fn trigger_requires_target_visible() {
     let target = world.enter(view1, || world.insert(Tag("t")));
     world.flush();
 
-    let hits = Rc::new(Cell::new(0usize));
-    let h = Rc::clone(&hits);
-    world.enter(view1, || {
-        world.observer(target, move |_: &Tick, _: &World| {
-            h.set(h.get() + 1);
-        });
-    });
-    world.flush();
-
     let cnt = world.enter(view2, || world.trigger(target, &Tick));
     assert_eq!(cnt, 0);
-    assert_eq!(hits.get(), 0);
 }

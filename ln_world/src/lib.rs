@@ -15,7 +15,7 @@ use smallvec::SmallVec;
 // Definition //
 
 /// A shared form of objects in the [`World`].
-pub trait Element: Any + Sized {
+pub trait Element: Any + Sized + Send {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let _ = (world, this);
     }
@@ -458,7 +458,11 @@ impl World {
         self.enter(view, || self.single_remove::<T>())
     }
 
-    pub fn enter_queue(&self, view: impl HandleGeneric, f: impl FnOnce(&mut World) + 'static) {
+    pub fn enter_queue(
+        &self,
+        view: impl HandleGeneric,
+        f: impl FnOnce(&mut World) + Send + 'static,
+    ) {
         self.enter(view, || self.queue(f))
     }
 
@@ -534,7 +538,7 @@ impl World {
         }
     }
 
-    pub fn queue(&self, f: impl FnOnce(&mut World) + 'static) {
+    pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
         let result = self.commander.send(WorldCommand {
             location: self.location.get(),
             action: Box::new(f),
@@ -880,10 +884,10 @@ impl World {
 
     // observer & trigger //
 
-    pub fn observer<E: 'static>(
+    pub fn observer<E: Send + 'static>(
         &self,
         target: impl HandleGeneric,
-        action: impl FnMut(&E, &World) + 'static,
+        action: impl FnMut(&E, &World) + Send + 'static,
     ) -> HandleAny {
         let here = self.location.get();
         let handle = self.enter(INITELEM, || {
@@ -898,7 +902,7 @@ impl World {
     }
 
     /// Will immediately triggered and acquire mutable access to `target`.
-    pub fn trigger<E: 'static>(&self, target: impl HandleGeneric, event: &E) -> usize {
+    pub fn trigger<E: Send + 'static>(&self, target: impl HandleGeneric, event: &E) -> usize {
         if let Err(_) = self.validate(target) {
             // TODO silent return
             // log::error!("trigger on invalidated target: {e:?}");
@@ -920,7 +924,7 @@ impl World {
         cnt
     }
 
-    pub fn queue_trigger<E: 'static>(&self, target: impl HandleGeneric, event: E) {
+    pub fn queue_trigger<E: Send + 'static>(&self, target: impl HandleGeneric, event: E) {
         self.queue(move |world| {
             world.trigger(target, &event);
         });
@@ -1156,7 +1160,7 @@ impl Element for () {}
 
 struct WorldCommand {
     location: HandleAny,
-    action: Box<dyn FnOnce(&mut World)>,
+    action: Box<dyn FnOnce(&mut World) + Send>,
 }
 
 /// A flexible command access to world.
@@ -1167,7 +1171,7 @@ pub struct Commander {
 }
 
 impl Commander {
-    pub fn queue(&self, f: impl FnOnce(&mut World) + 'static) {
+    pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
         let result = self.inner.send(WorldCommand {
             location: self.location,
             action: Box::new(f),
@@ -1182,20 +1186,20 @@ impl Commander {
 // Observer & Trigger //
 
 #[derive(Default)]
-struct Observers<E: 'static> {
+struct Observers<E: Send + 'static> {
     members: HashMap<HandleAny, SmallVec<[Handle<Observer<E>>; 1]>>,
 }
 
 #[expect(clippy::type_complexity)]
-struct Observer<E: 'static> {
-    action: Box<dyn FnMut(&E, &World)>,
+struct Observer<E: Send + 'static> {
+    action: Box<dyn FnMut(&E, &World) + Send>,
     view: HandleAny,
     target: HandleAny,
 }
 
-impl<E: 'static> Element for Observers<E> {}
+impl<E: Send + 'static> Element for Observers<E> {}
 
-impl<E: 'static> Element for Observer<E> {
+impl<E: Send + 'static> Element for Observer<E> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         match world.single_fetch_mut::<Observers<E>>() {
             Ok(mut observers) => {

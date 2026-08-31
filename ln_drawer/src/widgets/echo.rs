@@ -21,7 +21,10 @@ impl Echo<'_> {
         Echo(world, this.untyped())
     }
 
-    pub fn build<I: 'static, O: 'static>(&self, f: impl Fn(&I) -> O + 'static) -> &Self {
+    pub fn build<I: Send + 'static, O: Send + 'static>(
+        &self,
+        f: impl Fn(&I) -> O + Send + 'static,
+    ) -> &Self {
         let &Echo(world, handle) = self;
         world.observer(handle, move |i: &I, world| {
             world.trigger(handle, &f(i));
