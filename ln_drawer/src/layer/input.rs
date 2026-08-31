@@ -262,10 +262,22 @@ impl LayerInput {
                 }
 
                 // Paint
-                (LayerInputState::None, MultiTouchStatus::Press) => LayerInputState::Paint {
-                    start_position: event.active.screen,
-                    start_instant: Instant::now(),
-                },
+                (LayerInputState::None, MultiTouchStatus::Press) => {
+                    let draw = Draw {
+                        position: event.active.position,
+                        force: event.active.data.force.unwrap_or(1.0),
+                    };
+
+                    draw_wrapper(wrapper, draw);
+
+                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                    lnwindow.window.request_redraw();
+
+                    LayerInputState::Paint {
+                        start_position: event.active.screen,
+                        start_instant: Instant::now(),
+                    }
+                }
                 (
                     LayerInputState::Paint { .. }
                     | LayerInputState::PaintErase
