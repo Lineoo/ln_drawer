@@ -38,7 +38,7 @@ pub trait Descriptor {
 // Handle //
 
 /// Represent an element in the [`World`]. It may not be valid.
-pub struct Handle<T: Element>(usize, PhantomData<T>);
+pub struct Handle<T: Element>(usize, PhantomData<fn() -> T>);
 
 impl<T: Element> Clone for Handle<T> {
     fn clone(&self) -> Self {
@@ -61,12 +61,6 @@ impl<T: Element> Hash for Handle<T> {
         self.0.hash(state);
     }
 }
-
-// SAFETY: Introduce by PhantomData, which is totally safe for handle
-unsafe impl<T: Element> Send for Handle<T> {}
-
-// SAFETY: Introduce by PhantomData, which is totally safe for handle
-unsafe impl<T: Element> Sync for Handle<T> {}
 
 impl<T: Element> fmt::Debug for Handle<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -295,7 +289,7 @@ impl World {
     pub fn insert<T: Element>(&self, element: T) -> Handle<T> {
         // assign estimate handle
         let mut elem_idx = self.elem_idx.borrow_mut();
-        let handle = Handle(*elem_idx, PhantomData::<T>);
+        let handle = Handle::<T>(*elem_idx, PhantomData);
         *elem_idx += 1;
 
         // write immediate record
