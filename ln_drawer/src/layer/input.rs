@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use glam::{DVec2, UVec2};
+use glam::{DVec2, I64Vec2, UVec2};
 use ln_world::{Element, Handle, World};
 use palette::IntoColor;
 use winit::{
@@ -34,6 +34,8 @@ pub struct LayerInput {
     pub touch_draw: bool,
     pub space: bool,
     pub ctrl: bool,
+    pub pick: bool,
+    pub hold_pick: bool,
 }
 
 enum LayerInputState {
@@ -135,7 +137,7 @@ impl LayerInput {
 
         let mut state = LayerInputState::None;
         world.observer(collider, move |event: &MultiTouchGroup, world| {
-            let this = world.fetch(this).unwrap();
+            let mut this = world.fetch_mut(this).unwrap();
             let lnwindow = world.fetch(lnwindow).unwrap();
             let camera_utils = &mut *world.single_fetch_mut::<CameraUtils>().unwrap();
             let wrapper = &mut *world.single_fetch_mut::<LayerWrapper>().unwrap();
@@ -166,8 +168,8 @@ impl LayerInput {
                         }
                     }
                 }
-                (LayerInputState::None, MultiTouchStatus::Press) if this.ctrl => {
-                    pick_color(event, world, wrapper);
+                (LayerInputState::None, MultiTouchStatus::Press) if this.ctrl || this.pick => {
+                    pick_color(event.active.position, world, wrapper);
                     LayerInputState::PickColor
                 }
 
@@ -317,7 +319,11 @@ impl LayerInput {
                         LayerInputState::PaintNoErase
                     } else if start_instant.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         wrapper.brush.discard();
-                        LayerInputState::PaintErase
+                        if this.hold_pick {
+                            LayerInputState::PickColor
+                        } else {
+                            LayerInputState::PaintErase
+                        }
                     } else {
                         LayerInputState::Paint {
                             start_position,
@@ -370,10 +376,18 @@ impl LayerInput {
                     LayerInputState::PickColor,
                     MultiTouchStatus::Press | MultiTouchStatus::Holding,
                 ) => {
-                    pick_color(event, world, wrapper);
+                    pick_color(event.active.position, world, wrapper);
                     LayerInputState::PickColor
                 }
-                (LayerInputState::PickColor, MultiTouchStatus::Release) => LayerInputState::None,
+                (LayerInputState::PickColor, MultiTouchStatus::Release) => {
+                    pick_color(event.active.position, world, wrapper);
+                    this.pick = false;
+                    world.queue_trigger(
+                        world.single::<LayerWrapper>().unwrap(),
+                        BrushConfigurationChanged,
+                    );
+                    LayerInputState::None
+                }
 
                 // Edge cases
                 (LayerInputState::None, MultiTouchStatus::Holding) => LayerInputState::None,
@@ -385,46 +399,50 @@ impl LayerInput {
     }
 }
 
-fn pick_color(event: &MultiTouchGroup, world: &World, wrapper: &mut LayerWrapper) {
+fn pick_color(point: I64Vec2, world: &World, wrapper: &mut LayerWrapper) {
     let cmd = world.commander();
-    wrapper.brush.layer.pick_color(
-        &wrapper.main,
-        event.active.position.q32_round(),
-        move |color| {
+    wrapper
+        .brush
+        .layer
+        .pick_color(&wrapper.main, point.q32_round(), move |color| {
             cmd.queue(move |world| {
                 let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
                 wrapper.round_brush.color = color.into_color();
                 wrapper.tint_brush.color = color.into_color();
                 world.queue_trigger(wrapper.handle(), BrushConfigurationChanged);
             });
-        },
-    );
+        });
 }
 
 fn update_icon(this: &LayerInput, state: &LayerInputState, lnwindow: &Lnwindow) {
-    match (this.space, this.ctrl, state) {
-        (true, true, LayerInputState::None) => {
+    match (this.space, this.ctrl, this.pick, state) {
+        (true, true, _, LayerInputState::None) => {
             lnwindow.window.set_cursor(Cursor::Icon(CursorIcon::ZoomIn));
         }
-        (true, false, LayerInputState::None) => {
+        (true, false, _, LayerInputState::None) => {
             lnwindow.window.set_cursor(Cursor::Icon(CursorIcon::Grab));
         }
-        (false, true, LayerInputState::None) => {
+        (false, true, _, LayerInputState::None) => {
             lnwindow
                 .window
                 .set_cursor(Cursor::Icon(CursorIcon::Crosshair));
         }
-        (_, _, LayerInputState::PickColor) => {
+        (false, _, true, LayerInputState::None) => {
             lnwindow
                 .window
                 .set_cursor(Cursor::Icon(CursorIcon::Crosshair));
         }
-        (_, _, LayerInputState::Grab { .. }) => {
+        (.., LayerInputState::PickColor) => {
+            lnwindow
+                .window
+                .set_cursor(Cursor::Icon(CursorIcon::Crosshair));
+        }
+        (.., LayerInputState::Grab { .. }) => {
             lnwindow
                 .window
                 .set_cursor(Cursor::Icon(CursorIcon::Grabbing));
         }
-        (_, _, LayerInputState::Scale { .. }) => {
+        (.., LayerInputState::Scale { .. }) => {
             lnwindow.window.set_cursor(Cursor::Icon(CursorIcon::ZoomIn));
         }
         _ => {

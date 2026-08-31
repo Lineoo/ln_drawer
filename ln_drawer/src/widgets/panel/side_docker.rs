@@ -68,6 +68,7 @@ pub fn side_docker(world: &World) {
     let undo = docker_button(include_bytes!("../../../res/interface/undo-2.svg"));
     let redo = docker_button(include_bytes!("../../../res/interface/redo-2.svg"));
     let touch = docker_button(include_bytes!("../../../res/interface/pointer.svg"));
+    let pipette = docker_button(include_bytes!("../../../res/interface/pipette.svg"));
 
     let color_picker = world.insert(ToggleButton {
         rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
@@ -106,7 +107,7 @@ pub fn side_docker(world: &World) {
         world.trigger(pen, &SetButtonSelected(true));
         world.trigger(brush, &SetButtonSelected(false));
         world.trigger(tint, &SetButtonSelected(false));
-        let mut layer = world.fetch_mut::<LayerWrapper>(layer).unwrap();
+        let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Round;
         layer.round_brush = RoundBrush {
             size: BrushParam::force_index(0.0, 6.0, 1.0),
@@ -123,7 +124,7 @@ pub fn side_docker(world: &World) {
         world.trigger(pen, &SetButtonSelected(false));
         world.trigger(brush, &SetButtonSelected(true));
         world.trigger(tint, &SetButtonSelected(false));
-        let mut layer = world.fetch_mut::<LayerWrapper>(layer).unwrap();
+        let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Round;
         layer.round_brush = RoundBrush {
             size: BrushParam::force_index(1.0, 25.0, 1.0),
@@ -140,7 +141,7 @@ pub fn side_docker(world: &World) {
         world.trigger(pen, &SetButtonSelected(false));
         world.trigger(brush, &SetButtonSelected(false));
         world.trigger(tint, &SetButtonSelected(true));
-        let mut layer = world.fetch_mut::<LayerWrapper>(layer).unwrap();
+        let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Tint;
         layer.tint_brush = TintBrush {
             size: BrushParam::force_index(10.0, 30.0, 1.0),
@@ -153,19 +154,25 @@ pub fn side_docker(world: &World) {
     });
 
     world.observer(eraser, move |&ButtonSelected(val), world| {
-        let mut layer = world.fetch_mut::<LayerWrapper>(layer).unwrap();
+        let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Round;
         layer.round_brush.erase = val;
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
     world.observer(blur, move |&ButtonSelected(val), world| {
-        let mut layer = world.fetch_mut::<LayerWrapper>(layer).unwrap();
+        let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = match val {
             true => BrushMode::Blur,
             false => BrushMode::Round,
         };
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    });
+
+    world.observer(pipette, move |&ButtonSelected(val), world| {
+        let mut input = world.single_fetch_mut::<LayerInput>().unwrap();
+        input.hold_pick = val;
+        world.queue_trigger(pipette, SetButtonSelected(val));
     });
 
     world.observer(touch, move |&ButtonSelected(val), world| {
@@ -176,10 +183,12 @@ pub fn side_docker(world: &World) {
 
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
+        let input = world.single_fetch::<LayerInput>().unwrap();
         let is_eraser = matches!(layer.brush_mode, BrushMode::Round) && layer.round_brush.erase;
         world.trigger(eraser, &SetButtonSelected(is_eraser));
         let is_blur = matches!(layer.brush_mode, BrushMode::Blur);
         world.trigger(blur, &SetButtonSelected(is_blur));
+        world.trigger(pipette, &SetButtonSelected(input.hold_pick));
     });
 
     world.observer(undo, move |&ButtonClick, world| {
@@ -291,6 +300,7 @@ pub fn side_docker(world: &World) {
                 },
             ),
             (touch.untyped(), LuniChild::default()),
+            (pipette.untyped(), LuniChild::default()),
         ],
     });
 

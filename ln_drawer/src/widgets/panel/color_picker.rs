@@ -5,10 +5,14 @@ use ln_world::{Handle, HandleGeneric, World};
 use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
 use crate::{
-    layer::wrapper::{BrushConfigurationChanged, LayerWrapper},
+    layer::{
+        input::LayerInput,
+        wrapper::{BrushConfigurationChanged, LayerWrapper},
+    },
     layout::transform::{Transform, TransformValue},
     measures::Rectangle,
     render::rounded::RoundedRectDescriptor,
+    theme::Theme,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
@@ -16,7 +20,7 @@ use crate::{
             hsl::{ColorHsla, HslPanel, SetColorHsla},
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
-        panel::Panel,
+        panel::{Panel, debug_panel::docker_button},
         renderer::svg::svg_render,
         tabs::Tabs,
     },
@@ -62,7 +66,7 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         shadow: false,
     });
 
-    palette_oklab(world, tab_palette_oklch);
+    palette_oklab(world, tab_palette_oklch, toggle_button);
 
     let tab_settings = world.insert(Panel {
         rect: Rectangle::default(),
@@ -194,7 +198,7 @@ fn palette_hsl(world: &World, bg: Handle<Panel>) {
     });
 }
 
-fn palette_oklab(world: &World, bg: Handle<Panel>) {
+fn palette_oklab(world: &World, bg: Handle<Panel>, toggle_button: Handle<ToggleButton>) {
     let polar = world.insert(OklabPolar {
         rect: Rectangle::default(),
         color: Oklab::default(),
@@ -205,6 +209,10 @@ fn palette_oklab(world: &World, bg: Handle<Panel>) {
         color: Oklab::default(),
         enabled: true,
     });
+
+    let theme = world.single_fetch::<Theme>().unwrap();
+    let docker_button = docker_button(world, &theme);
+    let pick = docker_button(include_bytes!("../../../res/interface/pipette.svg"));
 
     world.insert(Transform {
         value: TransformValue::anchor(
@@ -221,6 +229,20 @@ fn palette_oklab(world: &World, bg: Handle<Panel>) {
         ),
         source: bg.untyped(),
         target: bar.untyped(),
+    });
+    world.insert(Transform {
+        value: TransformValue::anchor(
+            (1.0, 1.0),
+            Rectangle::new_half(IVec2::new(-30, -30), UVec2::new(10, 10)),
+        ),
+        source: bg.untyped(),
+        target: pick.untyped(),
+    });
+
+    world.observer(pick, move |&ButtonSelected(_), world| {
+        let mut input = world.single_fetch_mut::<LayerInput>().unwrap();
+        input.pick = true;
+        world.queue_trigger(toggle_button, ButtonSelected(false));
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();

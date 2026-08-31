@@ -75,27 +75,7 @@ pub fn debug_panel(world: &World, submenu: Handle<Panel>) {
     );
 
     let theme = world.single_fetch::<Theme>().unwrap();
-    let docker_button = |image_bytes| {
-        world.insert(ToggleButton {
-            rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
-            theme: ToggleButtonTheme {
-                idle_color: theme.primary_color,
-                hover_color: theme.secondary_color,
-                press_color: theme.highlight_color,
-                selected_color: theme.highlight_color,
-            },
-            image: Some(ButtonImage {
-                transform: TransformValue::anchor(
-                    (0.5, 0.5),
-                    Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
-                ),
-                bytes: Arc::new(image::DynamicImage::from(svg_render(image_bytes, 1.0))),
-            }),
-            selected: false,
-            visible: true,
-            hovering: false,
-        })
-    };
+    let docker_button = docker_button(world, &theme);
 
     let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
     world.observer(compass, move |&ButtonClick, world| {
@@ -141,4 +121,28 @@ pub fn debug_panel(world: &World, submenu: Handle<Panel>) {
         source: submenu.untyped(),
         target: compact.untyped(),
     });
+}
+
+pub fn docker_button(world: &World, theme: &Theme) -> impl Fn(&[u8]) -> Handle<ToggleButton> {
+    |image_bytes| {
+        world.insert(ToggleButton {
+            rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(16)),
+            theme: ToggleButtonTheme {
+                idle_color: theme.primary_color,
+                hover_color: theme.secondary_color,
+                press_color: theme.highlight_color,
+                selected_color: theme.highlight_color,
+            },
+            image: Some(ButtonImage {
+                transform: TransformValue::anchor(
+                    (0.5, 0.5),
+                    Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
+                ),
+                bytes: Arc::new(image::DynamicImage::from(svg_render(image_bytes, 1.0))),
+            }),
+            selected: false,
+            visible: true,
+            hovering: false,
+        })
+    }
 }
