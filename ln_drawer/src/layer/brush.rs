@@ -1,6 +1,7 @@
 pub mod blur;
 pub mod param;
 pub mod round;
+pub mod tint;
 
 use std::{
     mem::size_of,
@@ -27,8 +28,7 @@ const BRIDGE_CHUNK_SIZE: u32 = 1024;
 pub struct DrawPipeline {
     pub layer: Arc<LayerPipeline>,
 
-    // TODO currently unintendedly public for undo/redo system
-    pub scratch_dst: Layer,
+    scratch_dst: Layer,
     scratch_swp: Layer,
     scratch_pool: ChunkPool,
 

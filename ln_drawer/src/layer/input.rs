@@ -384,12 +384,9 @@ fn update_icon(this: &LayerInput, state: &LayerInputState, lnwindow: &Lnwindow) 
 
 fn draw_wrapper(wrapper: &mut LayerWrapper, draw: Draw) {
     match &wrapper.brush_mode {
-        BrushMode::Round => {
-            (wrapper.brush).draw(&wrapper.main, &wrapper.round_brush, draw);
-        }
-        BrushMode::Blur => {
-            (wrapper.brush).draw(&wrapper.main, &wrapper.blur_brush, draw);
-        }
+        BrushMode::Round => (wrapper.brush).draw(&wrapper.main, &wrapper.round_brush, draw),
+        BrushMode::Blur => (wrapper.brush).draw(&wrapper.main, &wrapper.blur_brush, draw),
+        BrushMode::Tint => (wrapper.brush).draw(&wrapper.main, &wrapper.tint_brush, draw),
     };
 
     (wrapper.brush).request_stream(&wrapper.main, &wrapper.thread_tx);

@@ -51,6 +51,7 @@ pub fn panel_settings(world: &World, panel: Handle<Panel>) {
         match layer.brush_mode {
             BrushMode::Round => layer.round_brush.flow.scale = value,
             BrushMode::Blur => layer.blur_brush.sigma.scale = value * 3.0,
+            BrushMode::Tint => layer.tint_brush.flow.w = value,
         };
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
@@ -64,6 +65,7 @@ pub fn panel_settings(world: &World, panel: Handle<Panel>) {
         match layer.brush_mode {
             BrushMode::Round => layer.round_brush.softness.scale = 1. - value,
             BrushMode::Blur => layer.blur_brush.softness.scale = 1. - value,
+            BrushMode::Tint => layer.tint_brush.softness.scale = 1. - value,
         };
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
@@ -77,13 +79,14 @@ pub fn panel_settings(world: &World, panel: Handle<Panel>) {
         let value = match layer.brush_mode {
             BrushMode::Round => layer.round_brush.flow.scale,
             BrushMode::Blur => layer.blur_brush.sigma.scale / 3.0,
+            BrushMode::Tint => layer.tint_brush.flow.w,
         };
 
         world.queue_trigger(flow_slider, SetSliderValue(value));
         world.queue_trigger(flow_slider_label, SetText(format!("{value:.2}")));
 
         let (label, desc) = match layer.brush_mode {
-            BrushMode::Round => ("流量", "笔刷每步流量（范围：[0, 1]）"),
+            BrushMode::Round | BrushMode::Tint => ("流量", "笔刷每步流量（范围：[0, 1]）"),
             BrushMode::Blur => ("模糊标准差", "卷积核应用半径：r = σ * 3（范围：[0, 1]）"),
         };
 
@@ -103,6 +106,7 @@ pub fn panel_settings(world: &World, panel: Handle<Panel>) {
         let value = match layer.brush_mode {
             BrushMode::Round => 1. - layer.round_brush.softness.scale,
             BrushMode::Blur => 1. - layer.blur_brush.softness.scale,
+            BrushMode::Tint => 1. - layer.tint_brush.softness.scale,
         };
 
         world.queue_trigger(softness_slider, SetSliderValue(value));

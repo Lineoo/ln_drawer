@@ -6,7 +6,7 @@ use std::{
     thread::JoinHandle,
 };
 
-use glam::{IVec2, UVec2, Vec2};
+use glam::{IVec2, UVec2, Vec2, Vec4};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -24,7 +24,9 @@ use wgpu::{
 use crate::{
     layer::{
         DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_ENABLED, Layer, LayerPipeline,
-        brush::{DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush},
+        brush::{
+            DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush, tint::TintBrush,
+        },
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
         traveler::Traveler,
     },
@@ -51,6 +53,7 @@ pub struct LayerWrapper {
     pub brush_mode: BrushMode,
     pub round_brush: RoundBrush,
     pub blur_brush: BlurBrush,
+    pub tint_brush: TintBrush,
 
     pub debug: bool,
 
@@ -71,6 +74,7 @@ pub struct LayerWrapper {
 pub enum BrushMode {
     Round,
     Blur,
+    Tint,
 }
 
 impl LayerWrapper {
@@ -162,6 +166,12 @@ impl LayerWrapper {
                 size: BrushParam::constant(20.0),
                 sigma: BrushParam::constant(2.0),
                 softness: BrushParam::constant(0.3),
+            },
+            tint_brush: TintBrush {
+                size: BrushParam::force_index(0.0, 6.0, 1.0),
+                flow: Vec4::new(0.1, 0.6, 0.6, 0.5),
+                softness: BrushParam::constant(0.2),
+                color: Srgba::new(0.0, 0.0, 0.0, 1.0),
             },
             debug: false,
             temp_erase: RoundBrush {
