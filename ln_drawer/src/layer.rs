@@ -4,10 +4,16 @@ pub mod stream;
 pub mod traveler;
 pub mod wrapper;
 
-use std::mem::size_of;
+use std::{
+    mem::size_of,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use bytemuck::bytes_of;
-use glam::{IVec2, UVec2};
+use glam::{IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
 use palette::Srgba;
 use wgpu::{
@@ -63,8 +69,10 @@ pub struct LayerPipeline {
     draws_dispatch_group: BindGroup,
 
     readback_sample: Buffer,
+    readback_storage: Buffer,
     readback_share: Buffer,
     readback_group: BindGroup,
+    readback_mapped: Arc<AtomicBool>,
 
     render_pipelines: RenderPipelines,
     merge_pipelines: MergePipelines,
@@ -167,7 +175,7 @@ impl LayerPipeline {
             draws_dispatch_group(&device, &draw_dispatch_layout);
 
         let color_readback_layout = device.create_bind_group_layout(&LAYOUT_COLOR_READBACK);
-        let (readback_sample, readback_share, readback_group) =
+        let (readback_sample, readback_storage, readback_share, readback_group) =
             color_readback_group(&device, &color_readback_layout);
 
         let chunk_layout = ChunkLayout {
@@ -198,7 +206,7 @@ impl LayerPipeline {
         let merge_pipelines = merge_pipelines(&device, support_read_write, &chunk_layout);
         let mipmap_pipeline = mipmap_pipeline(&device, &chunk_layout);
         let copy_pipeline = copy_pipeline(&device, &chunk_layout);
-        let readback_pipeline = readback_pipeline(&device, &chunk_layout);
+        let readback_pipeline = readback_pipeline(&device, &color_readback_layout, &chunk_layout);
         let clear_pipeline = clear_pipeline(&device, &chunk_layout);
 
         LayerPipeline {
@@ -215,8 +223,10 @@ impl LayerPipeline {
             draws_array,
             draws_dispatch_group,
             readback_sample,
+            readback_storage,
             readback_share,
             readback_group,
+            readback_mapped: Arc::new(AtomicBool::new(false)),
             render_pipelines,
             merge_pipelines,
             mipmap_pipeline,
@@ -420,6 +430,11 @@ impl LayerPipeline {
         point: IVec2,
         f: impl FnOnce(Srgba) + WasmNotSend + 'static,
     ) {
+        let mapped = self.readback_mapped.load(Ordering::Acquire);
+        if mapped {
+            return;
+        }
+
         self.queue
             .write_buffer(&self.readback_sample, 0, bytes_of(&point));
 
@@ -445,15 +460,35 @@ impl LayerPipeline {
         cpass.dispatch_workgroups(1, 1, 1);
 
         drop(cpass);
+
+        encoder.copy_buffer_to_buffer(
+            &self.readback_storage,
+            0,
+            &self.readback_share,
+            0,
+            size_of::<Vec4>() as u64,
+        );
+
         self.queue.submit([encoder.finish()]);
 
         let readback_share = self.readback_share.clone();
+        let readback_mapped = self.readback_mapped.clone();
+        self.readback_mapped.store(true, Ordering::Release);
         self.readback_share
             .map_async(MapMode::Read, .., move |state| {
-                state.unwrap();
-                let bytes = readback_share.get_mapped_range(..).unwrap();
-                let color = Srgba::from(*bytes.as_array::<4>().unwrap());
+                if state.is_err() {
+                    return;
+                }
+                let view = readback_share.get_mapped_range(..).unwrap();
+                let color = Srgba::from(
+                    *bytemuck::cast_slice::<_, f32>(&view[..])
+                        .as_array::<4>()
+                        .unwrap(),
+                );
                 f(color.into_format());
+                drop(view);
+                readback_mapped.store(false, Ordering::Release);
+                readback_share.unmap();
             });
     }
 }
@@ -862,7 +897,7 @@ fn draws_dispatch_group(
 fn color_readback_group(
     device: &Device,
     color_readback_layout: &BindGroupLayout,
-) -> (Buffer, Buffer, BindGroup) {
+) -> (Buffer, Buffer, Buffer, BindGroup) {
     let sample_position = device.create_buffer(&BufferDescriptor {
         label: Some("color_readback_sample_position"),
         size: size_of::<IVec2>() as u64,
@@ -870,10 +905,17 @@ fn color_readback_group(
         mapped_at_creation: false,
     });
 
+    let storage_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("color_readback_storage_buffer"),
+        size: size_of::<Vec4>() as u64,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
     let share_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("color_readback_share_buffer"),
-        size: DRAWS_ARRAY_CAPACITY,
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        size: size_of::<Vec4>() as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
 
@@ -892,7 +934,7 @@ fn color_readback_group(
             BindGroupEntry {
                 binding: 1,
                 resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &share_buffer,
+                    buffer: &storage_buffer,
                     offset: 0,
                     size: None,
                 }),
@@ -900,7 +942,12 @@ fn color_readback_group(
         ],
     });
 
-    (sample_position, share_buffer, readback_group)
+    (
+        sample_position,
+        storage_buffer,
+        share_buffer,
+        readback_group,
+    )
 }
 
 // --- Chunks --- //
@@ -1269,7 +1316,11 @@ fn copy_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline
     })
 }
 
-fn readback_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
+fn readback_pipeline(
+    device: &Device,
+    color_readback_layout: &BindGroupLayout,
+    chunk_layout: &ChunkLayout,
+) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("color_readback"),
         source: ShaderSource::Wgsl(shader_compile(include_str!("layer/readback.wgsl"), &[]).into()),
@@ -1277,11 +1328,7 @@ fn readback_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipe
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("color_readback"),
-        bind_group_layouts: &[
-            Some(&chunk_layout.dispatch),
-            Some(&chunk_layout.write),
-            Some(&chunk_layout.read),
-        ],
+        bind_group_layouts: &[Some(color_readback_layout), Some(&chunk_layout.read)],
         immediate_size: 0,
     });
 

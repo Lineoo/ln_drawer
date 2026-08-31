@@ -1,7 +1,7 @@
 #lib_rectangle
 
 @group(0) @binding(0) var<uniform> sample: vec2i;
-@group(0) @binding(1) var<storage> result: vec4f;
+@group(0) @binding(1) var<storage, read_write> result: vec4f;
 
 @group(1) @binding(0) var source_texture: texture_storage_2d<rgba8unorm, read>;
 @group(1) @binding(1) var<uniform> source: Rectangle;

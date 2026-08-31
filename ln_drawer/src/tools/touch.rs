@@ -114,8 +114,10 @@ impl MultiTouchTool {
                         members: std::mem::take(list),
                     };
 
-                    world.trigger(target, &group.active);
-                    world.trigger(target, &group);
+                    world.enter(view, || {
+                        world.trigger(target, &group.active);
+                        world.trigger(target, &group);
+                    });
 
                     std::mem::swap(list, &mut group.members);
 
@@ -130,8 +132,10 @@ impl MultiTouchTool {
                     members: std::mem::take(list),
                 };
 
-                world.trigger(target, &group.active);
-                world.trigger(target, &group);
+                world.enter(view, || {
+                    world.trigger(target, &group.active);
+                    world.trigger(target, &group);
+                });
 
                 std::mem::swap(list, &mut group.members);
             }
@@ -168,13 +172,16 @@ impl MultiTouchTool {
                     pointer: kind,
                 };
 
+                let view = touch.view;
                 let mut group = MultiTouchGroup {
                     active: *touch,
                     members: std::mem::take(list),
                 };
 
-                world.trigger(target, &group.active);
-                world.trigger(target, &group);
+                world.enter(view, || {
+                    world.trigger(target, &group.active);
+                    world.trigger(target, &group);
+                });
 
                 std::mem::swap(list, &mut group.members);
             }
@@ -220,6 +227,7 @@ impl MultiTouchTool {
                     pointer: kind,
                 };
 
+                let view = touch.view;
                 let mut members = std::mem::take(list);
 
                 members.swap_remove(idx);
@@ -227,8 +235,10 @@ impl MultiTouchTool {
 
                 let mut group = MultiTouchGroup { active, members };
 
-                world.trigger(target, &group.active);
-                world.trigger(target, &group);
+                world.enter(view, || {
+                    world.trigger(target, &group.active);
+                    world.trigger(target, &group);
+                });
 
                 std::mem::swap(list, &mut group.members);
             }

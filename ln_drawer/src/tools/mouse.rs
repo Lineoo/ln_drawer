@@ -42,13 +42,12 @@ impl Element for MouseTool {
                     return;
                 };
 
-                let position = world.enter(view, || {
+                world.enter(view, || {
                     let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
                     let camera = world.fetch(current_camera.0).unwrap();
-                    camera.screen_to_world_absolute(screen).q32_floor()
+                    let position = camera.screen_to_world_absolute(screen).q32_floor();
+                    world.queue_trigger(target, MouseMenu(position));
                 });
-
-                world.queue_trigger(target, MouseMenu(position));
             }
 
             // middle-click //

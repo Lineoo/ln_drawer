@@ -12,7 +12,7 @@ use winit::{
 use crate::{
     layer::{
         brush::Draw,
-        wrapper::{BrushMode, LayerWrapper},
+        wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
     },
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
@@ -167,6 +167,7 @@ impl LayerInput {
                     }
                 }
                 (LayerInputState::None, MultiTouchStatus::Press) if this.ctrl => {
+                    pick_color(event, world, wrapper);
                     LayerInputState::PickColor
                 }
 
@@ -357,17 +358,7 @@ impl LayerInput {
                     LayerInputState::PickColor,
                     MultiTouchStatus::Press | MultiTouchStatus::Holding,
                 ) => {
-                    let cmd = world.commander();
-                    wrapper.brush.layer.pick_color(
-                        &wrapper.main,
-                        event.active.position.q32_round(),
-                        move |color| {
-                            cmd.queue(move |world| {
-                                let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
-                                wrapper.round_brush.color = color.into_color();
-                            });
-                        },
-                    );
+                    pick_color(event, world, wrapper);
                     LayerInputState::PickColor
                 }
                 (LayerInputState::PickColor, MultiTouchStatus::Release) => LayerInputState::None,
@@ -382,6 +373,22 @@ impl LayerInput {
     }
 }
 
+fn pick_color(event: &MultiTouchGroup, world: &World, wrapper: &mut LayerWrapper) {
+    let cmd = world.commander();
+    wrapper.brush.layer.pick_color(
+        &wrapper.main,
+        event.active.position.q32_round(),
+        move |color| {
+            cmd.queue(move |world| {
+                let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
+                wrapper.round_brush.color = color.into_color();
+                wrapper.tint_brush.color = color.into_color();
+                world.queue_trigger(wrapper.handle(), BrushConfigurationChanged);
+            });
+        },
+    );
+}
+
 fn update_icon(this: &LayerInput, state: &LayerInputState, lnwindow: &Lnwindow) {
     match (this.space, this.ctrl, state) {
         (true, true, LayerInputState::None) => {
@@ -389,6 +396,16 @@ fn update_icon(this: &LayerInput, state: &LayerInputState, lnwindow: &Lnwindow) 
         }
         (true, false, LayerInputState::None) => {
             lnwindow.window.set_cursor(Cursor::Icon(CursorIcon::Grab));
+        }
+        (false, true, LayerInputState::None) => {
+            lnwindow
+                .window
+                .set_cursor(Cursor::Icon(CursorIcon::Crosshair));
+        }
+        (_, _, LayerInputState::PickColor) => {
+            lnwindow
+                .window
+                .set_cursor(Cursor::Icon(CursorIcon::Crosshair));
         }
         (_, _, LayerInputState::Grab { .. }) => {
             lnwindow
