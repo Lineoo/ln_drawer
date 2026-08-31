@@ -60,6 +60,12 @@ impl<T: ?Sized> Hash for Handle<T> {
     }
 }
 
+// SAFETY: Introduce by PhantomData, which is totally safe for handle
+unsafe impl<T: ?Sized> Send for Handle<T> {}
+
+// SAFETY: Introduce by PhantomData, which is totally safe for handle
+unsafe impl<T: ?Sized> Sync for Handle<T> {}
+
 impl<T: ?Sized> fmt::Debug for Handle<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Handle<{}>({})", type_name::<T>(), self.0)

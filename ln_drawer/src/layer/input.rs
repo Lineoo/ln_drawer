@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use glam::{DVec2, UVec2};
 use ln_world::{Element, Handle, World};
+use palette::IntoColor;
 use winit::{
     cursor::{Cursor, CursorIcon},
     event::{ElementState, PointerKind, WindowEvent},
@@ -50,6 +51,7 @@ enum LayerInputState {
     Scale {
         start_position: DVec2,
     },
+    PickColor,
 }
 
 impl LayerInput {
@@ -163,6 +165,9 @@ impl LayerInput {
                             start_pinch: pinch,
                         }
                     }
+                }
+                (LayerInputState::None, MultiTouchStatus::Press) if this.ctrl => {
+                    LayerInputState::PickColor
                 }
 
                 // Grab
@@ -347,6 +352,26 @@ impl LayerInput {
                         LayerInputState::None
                     }
                 }
+
+                (
+                    LayerInputState::PickColor,
+                    MultiTouchStatus::Press | MultiTouchStatus::Holding,
+                ) => {
+                    let cmd = world.commander();
+                    wrapper.brush.layer.pick_color(
+                        &wrapper.main,
+                        event.active.position.q32_round(),
+                        move |color| {
+                            // FIXME
+                            // cmd.queue(|world| {
+                            //     let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
+                            //     wrapper.round_brush.color = color.into_color();
+                            // });
+                        },
+                    );
+                    LayerInputState::PickColor
+                }
+                (LayerInputState::PickColor, MultiTouchStatus::Release) => LayerInputState::None,
 
                 // Edge cases
                 (LayerInputState::None, MultiTouchStatus::Holding) => LayerInputState::None,
