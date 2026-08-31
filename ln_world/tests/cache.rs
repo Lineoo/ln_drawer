@@ -1,4 +1,4 @@
-use ln_world::{Element, Handle, ViewRef, World, WorldError};
+use ln_world::{Element, HandleGeneric, ViewRef, World, WorldError};
 
 #[derive(Debug, PartialEq, Eq)]
 struct Tag(&'static str);
@@ -114,13 +114,13 @@ fn cache_invalidated_on_insert_cross_view() {
     assert_eq!(tags(&world, view2), vec!["first", "second"]);
 }
 
-fn tags(world: &World, view: Handle<impl ?Sized>) -> Vec<&str> {
+fn tags(world: &World, view: impl HandleGeneric) -> Vec<&str> {
     let mut got = Vec::new();
     world.enter(view, || world.foreach_fetch::<Tag>(|h| got.push(h.0)));
     got.sort();
     got
 }
 
-fn stags(world: &World, view: Handle<impl ?Sized>) -> Result<&str, WorldError> {
+fn stags(world: &World, view: impl HandleGeneric) -> Result<&str, WorldError> {
     Ok(world.enter(view, || world.single_fetch::<Tag>())?.0)
 }

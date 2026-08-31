@@ -15,7 +15,7 @@ use smallvec::SmallVec;
 // Definition //
 
 /// A shared form of objects in the [`World`].
-pub trait Element: Any {
+pub trait Element: Any + Sized {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let _ = (world, this);
     }
@@ -35,70 +35,115 @@ pub trait Descriptor {
     fn when_build(self, world: &World) -> Self::Target;
 }
 
-/// Represent an element in the [`World`]. It may not be valid.
-pub struct Handle<T: ?Sized = dyn Any>(usize, PhantomData<T>);
+// Handle //
 
-impl<T: ?Sized> Clone for Handle<T> {
+/// Represent an element in the [`World`]. It may not be valid.
+pub struct Handle<T: Element>(usize, PhantomData<T>);
+
+impl<T: Element> Clone for Handle<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: ?Sized> Copy for Handle<T> {}
+impl<T: Element> Copy for Handle<T> {}
 
-impl<T: ?Sized> PartialEq for Handle<T> {
+impl<T: Element> PartialEq for Handle<T> {
     fn eq(&self, other: &Self) -> bool {
         self.0.eq(&other.0)
     }
 }
 
-impl<T: ?Sized> Eq for Handle<T> {}
+impl<T: Element> Eq for Handle<T> {}
 
-impl<T: ?Sized> Hash for Handle<T> {
+impl<T: Element> Hash for Handle<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state);
     }
 }
 
 // SAFETY: Introduce by PhantomData, which is totally safe for handle
-unsafe impl<T: ?Sized> Send for Handle<T> {}
+unsafe impl<T: Element> Send for Handle<T> {}
 
 // SAFETY: Introduce by PhantomData, which is totally safe for handle
-unsafe impl<T: ?Sized> Sync for Handle<T> {}
+unsafe impl<T: Element> Sync for Handle<T> {}
 
-impl<T: ?Sized> fmt::Debug for Handle<T> {
+impl<T: Element> fmt::Debug for Handle<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Handle<{}>({})", type_name::<T>(), self.0)
     }
 }
 
-impl<T: ?Sized> fmt::Display for Handle<T> {
+impl<T: Element> fmt::Display for Handle<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "#{}", self.0)
     }
 }
 
-impl<T: Element> From<Handle<T>> for Handle<dyn Any> {
-    fn from(value: Handle<T>) -> Self {
-        Handle(value.0, PhantomData)
+/// Represent an untyped element in the [`World`]. It may not be valid.
+pub struct HandleAny(usize);
+
+impl fmt::Debug for HandleAny {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Handle({})", self.0)
     }
 }
 
-impl<T: Element> Handle<T> {
-    pub const fn untyped(self) -> Handle<dyn Any> {
-        self.cast()
+impl fmt::Display for HandleAny {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.0)
     }
 }
 
-impl<T: ?Sized> Handle<T> {
-    const fn cast<U: ?Sized>(self) -> Handle<U> {
+impl Clone for HandleAny {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl Copy for HandleAny {}
+
+impl PartialEq for HandleAny {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl Eq for HandleAny {}
+
+impl Hash for HandleAny {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl HandleAny {
+    const fn cast<U: Element>(self) -> Handle<U> {
         Handle(self.0, PhantomData)
+    }
+}
+
+pub trait HandleGeneric:
+    Send + Sync + Clone + Copy + PartialEq + Eq + fmt::Debug + fmt::Display + 'static
+{
+    fn untyped(self) -> HandleAny;
+}
+
+impl<T: Element> HandleGeneric for Handle<T> {
+    fn untyped(self) -> HandleAny {
+        HandleAny(self.0)
+    }
+}
+
+impl HandleGeneric for HandleAny {
+    fn untyped(self) -> HandleAny {
+        HandleAny(self.0)
     }
 }
 
 /// Handle with debug information.
 #[derive(Clone, Copy)]
-pub struct HandleInfo(Handle, &'static str);
+pub struct HandleInfo(HandleAny, &'static str);
 
 impl fmt::Debug for HandleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -112,9 +157,9 @@ impl fmt::Display for HandleInfo {
     }
 }
 
-impl<T: ?Sized> From<Handle<T>> for HandleInfo {
+impl<T: Element> From<Handle<T>> for HandleInfo {
     fn from(value: Handle<T>) -> Self {
-        HandleInfo(value.cast(), type_name::<T>())
+        HandleInfo(value.untyped(), type_name::<T>())
     }
 }
 
@@ -122,17 +167,17 @@ impl<T: ?Sized> From<Handle<T>> for HandleInfo {
 
 // Center of multiple accesses in world, which also prevents constructional changes
 pub struct World {
-    elem_idx: RefCell<Handle>,
+    elem_idx: RefCell<usize>,
 
-    indices: HashMap<Handle, HandleIndex>,
+    indices: HashMap<HandleAny, HandleIndex>,
     storages: HashMap<TypeId, Box<dyn StorageGeneral>>,
-    cache: RefCell<HashMap<(TypeId, Handle), SmallVec<[usize; 1]>>>,
+    cache: RefCell<HashMap<(TypeId, HandleAny), SmallVec<[usize; 1]>>>,
 
-    occupied: RefCell<HashMap<Handle, isize>>,
-    inserted: RefCell<HashSet<Handle>>,
-    removed: RefCell<HashSet<Handle>>,
+    occupied: RefCell<HashMap<HandleAny, isize>>,
+    inserted: RefCell<HashSet<HandleAny>>,
+    removed: RefCell<HashSet<HandleAny>>,
 
-    location: Cell<Handle>,
+    location: Cell<HandleAny>,
     dependencies: RefCell<Dependencies>,
 
     queue: Receiver<WorldCommand>,
@@ -141,17 +186,17 @@ pub struct World {
 
 struct HandleIndex {
     tid: TypeId,
-    view: Handle,
-    elemrefs: Vec<Handle>,
-    viewrefs: Vec<Handle>,
+    view: HandleAny,
+    elemrefs: Vec<HandleAny>,
+    viewrefs: Vec<HandleAny>,
 }
 
-struct Storage<T: Element>(IndexMap<Handle, T>);
+struct Storage<T: Element>(IndexMap<HandleAny, T>);
 
 trait StorageGeneral: Any {
     fn name(&self) -> &'static str;
-    fn remove(&mut self, handle: Handle);
-    fn when_remove(&mut self, world: &World, handle: Handle);
+    fn remove(&mut self, handle: HandleAny);
+    fn when_remove(&mut self, world: &World, handle: HandleAny);
 }
 
 impl<T: Element> StorageGeneral for Storage<T> {
@@ -159,11 +204,11 @@ impl<T: Element> StorageGeneral for Storage<T> {
         type_name::<T>()
     }
 
-    fn remove(&mut self, handle: Handle) {
+    fn remove(&mut self, handle: HandleAny) {
         self.0.swap_remove(&handle);
     }
 
-    fn when_remove(&mut self, world: &World, handle: Handle) {
+    fn when_remove(&mut self, world: &World, handle: HandleAny) {
         let elem = self.0.get_mut(&handle).unwrap();
         T::when_remove(elem, world, handle.cast());
     }
@@ -226,7 +271,7 @@ impl World {
         indices.insert(INITELEM, initelem_index);
 
         World {
-            elem_idx: RefCell::new(Handle(1, PhantomData)),
+            elem_idx: RefCell::new(1),
             indices,
             storages: HashMap::new(),
             cache: RefCell::default(),
@@ -250,12 +295,12 @@ impl World {
     pub fn insert<T: Element>(&self, element: T) -> Handle<T> {
         // assign estimate handle
         let mut elem_idx = self.elem_idx.borrow_mut();
-        let handle = elem_idx.cast::<T>();
-        elem_idx.0 += 1;
+        let handle = Handle(*elem_idx, PhantomData::<T>);
+        *elem_idx += 1;
 
         // write immediate record
         let mut inserted = self.inserted.borrow_mut();
-        inserted.insert(handle.cast());
+        inserted.insert(handle.untyped());
 
         // delay execution
         let location = self.location.get();
@@ -270,11 +315,11 @@ impl World {
             let storage = (storage.as_mut() as &mut dyn Any)
                 .downcast_mut::<Storage<T>>()
                 .unwrap();
-            storage.0.insert(handle.cast(), element);
+            storage.0.insert(handle.untyped(), element);
 
             // update typetable
             world.indices.insert(
-                handle.cast(),
+                handle.untyped(),
                 HandleIndex {
                     tid: TypeId::of::<T>(),
                     view: location,
@@ -282,7 +327,7 @@ impl World {
                     viewrefs: Vec::new(),
                 },
             );
-            world.inserted.get_mut().remove(&handle.cast());
+            world.inserted.get_mut().remove(&handle.untyped());
 
             // junk cache
             let mut cache = world.cache.borrow_mut();
@@ -298,16 +343,18 @@ impl World {
     }
 
     /// Cell-mode removal cannot access the element immediately so we can't return the owned value of removed element.
-    pub fn remove(&self, handle: Handle<impl ?Sized + 'static>) -> Result<usize, WorldError> {
+    pub fn remove(&self, handle: impl HandleGeneric) -> Result<usize, WorldError> {
+        let handle = handle.untyped();
+
         self.available_mut(handle)?;
         let mut cnt = 1;
 
         // when_remove
         // SAFETY: we have checked the mutability
-        let tid = self.indices.get(&handle.cast()).unwrap().tid;
+        let tid = self.indices.get(&handle).unwrap().tid;
         let storage = self.storages.get(&tid).unwrap().as_ref() as *const _;
         let storage = storage as *mut dyn StorageGeneral;
-        unsafe { (*storage).when_remove(self, handle.cast()) };
+        unsafe { (*storage).when_remove(self, handle) };
 
         // clear view
         self.enter(handle, || {
@@ -316,10 +363,12 @@ impl World {
 
         // cleanup parents' dependencies
         let mut dependencies = self.dependencies.borrow_mut();
-        if let Some(deps) = dependencies.0.get_mut(&handle.cast()) {
+        if let Some(deps) = dependencies.0.get_mut(&handle.untyped()) {
             for parent in std::mem::take(&mut deps.parents) {
                 let parent_deps = dependencies.0.get_mut(&parent).unwrap();
-                parent_deps.children.retain(|child| *child != handle.cast());
+                parent_deps
+                    .children
+                    .retain(|child| *child != handle.untyped());
             }
         }
         drop(dependencies);
@@ -327,12 +376,12 @@ impl World {
         // remove children
         loop {
             let mut dependencies = self.dependencies.borrow_mut();
-            let Some(dep) = dependencies.0.get(&handle.cast()) else {
+            let Some(dep) = dependencies.0.get(&handle.untyped()) else {
                 break;
             };
 
             let Some(&child) = dep.children.last() else {
-                dependencies.0.remove(&handle.cast());
+                dependencies.0.remove(&handle.untyped());
                 break;
             };
 
@@ -347,7 +396,7 @@ impl World {
 
         // write immediate record
         let mut removed = self.removed.borrow_mut();
-        removed.insert(handle.cast());
+        removed.insert(handle.untyped());
         drop(removed);
 
         // junk cache:
@@ -359,11 +408,11 @@ impl World {
 
         self.queue(move |world| {
             // update typetable
-            world.indices.remove(&handle.cast());
+            world.indices.remove(&handle.untyped());
 
             // pop out storage
             let storage = world.storages.get_mut(&tid).unwrap();
-            storage.remove(handle.cast());
+            storage.remove(handle.untyped());
         });
 
         Ok(cnt)
@@ -371,45 +420,45 @@ impl World {
 
     // views //
 
-    pub fn here(&self) -> Handle {
+    pub fn here(&self) -> HandleAny {
         self.location.get()
     }
 
     /// Enter view.
-    pub fn enter<R>(&self, view: Handle<impl ?Sized>, f: impl FnOnce() -> R) -> R {
+    pub fn enter<R>(&self, view: impl HandleGeneric, f: impl FnOnce() -> R) -> R {
         let origin = self.location.get();
-        self.location.set(view.cast());
+        self.location.set(view.untyped());
         let ret = f();
         self.location.set(origin);
         ret
     }
 
-    pub fn enter_insert<T: Element>(&self, view: Handle<impl ?Sized>, element: T) -> Handle<T> {
+    pub fn enter_insert<T: Element>(&self, view: impl HandleGeneric, element: T) -> Handle<T> {
         self.enter(view, || self.insert(element))
     }
 
     pub fn enter_single_fetch<T: Element>(
         &self,
-        view: Handle<impl ?Sized>,
+        view: impl HandleGeneric,
     ) -> Result<Ref<'_, T>, WorldError> {
         self.enter(view, || self.single_fetch())
     }
 
     pub fn enter_single_fetch_mut<T: Element>(
         &self,
-        view: Handle<impl ?Sized>,
+        view: impl HandleGeneric,
     ) -> Result<RefMut<'_, T>, WorldError> {
         self.enter(view, || self.single_fetch_mut())
     }
 
     pub fn enter_single_remove<T: Element>(
         &self,
-        view: Handle<impl ?Sized>,
+        view: impl HandleGeneric,
     ) -> Result<usize, WorldError> {
         self.enter(view, || self.single_remove::<T>())
     }
 
-    pub fn enter_queue(&self, view: Handle<impl ?Sized>, f: impl FnOnce(&mut World) + 'static) {
+    pub fn enter_queue(&self, view: impl HandleGeneric, f: impl FnOnce(&mut World) + 'static) {
         self.enter(view, || self.queue(f))
     }
 
@@ -534,21 +583,23 @@ impl World {
     ///
     /// Functions with `_unchecked` means they skip the validation part, since view visibility
     /// evaluating costs time, which is sensitive in some cases.
-    pub fn validate(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
+    pub fn validate(&self, handle: impl HandleGeneric) -> Result<(), WorldError> {
+        let handle = handle.untyped();
+
         if handle.0 == 0 {
             return Err(WorldError::Initelem(self.info(handle)));
         }
 
-        if self.removed.borrow().contains(&handle.cast()) {
-            if self.indices.contains_key(&handle.cast()) {
+        if self.removed.borrow().contains(&handle.untyped()) {
+            if self.indices.contains_key(&handle.untyped()) {
                 return Err(WorldError::JustRemoved(self.info(handle)));
             }
 
             return Err(WorldError::Removed(self.info(handle)));
         }
 
-        let Some(index) = self.indices.get(&handle.cast()) else {
-            if self.inserted.borrow().contains(&handle.cast()) {
+        let Some(index) = self.indices.get(&handle.untyped()) else {
+            if self.inserted.borrow().contains(&handle.untyped()) {
                 return Err(WorldError::JustInserted(self.info(handle)));
             }
 
@@ -599,16 +650,16 @@ impl World {
 
     /// Check whether target element can be borrowed immutably, insertion without
     /// `flush` will *NOT* be included.
-    pub fn available(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
+    pub fn available(&self, handle: impl HandleGeneric) -> Result<(), WorldError> {
         self.validate(handle)?;
         self.available_unchecked(handle)
     }
 
     /// Check whether target element can be borrowed immutably, insertion without
     /// `flush` will *NOT* be included.
-    fn available_unchecked(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
+    fn available_unchecked(&self, handle: impl HandleGeneric) -> Result<(), WorldError> {
         let occupied = self.occupied.borrow();
-        if occupied.get(&handle.cast()).is_some_and(|cnt| *cnt < 0) {
+        if occupied.get(&handle.untyped()).is_some_and(|cnt| *cnt < 0) {
             panic!("{}", WorldError::Unavailable(self.info(handle)));
         }
 
@@ -617,16 +668,16 @@ impl World {
 
     /// Check whether target element can be borrowed mutably, insertion without
     /// `flush` will *NOT* be included.
-    pub fn available_mut(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
+    pub fn available_mut(&self, handle: impl HandleGeneric) -> Result<(), WorldError> {
         self.validate(handle)?;
         self.available_mut_unchecked(handle)
     }
 
     /// Check whether target element can be borrowed mutably, insertion without
     /// `flush` will *NOT* be included.
-    fn available_mut_unchecked(&self, handle: Handle<impl ?Sized>) -> Result<(), WorldError> {
+    fn available_mut_unchecked(&self, handle: impl HandleGeneric) -> Result<(), WorldError> {
         let occupied = self.occupied.borrow();
-        if occupied.get(&handle.cast()).is_some_and(|cnt| *cnt != 0) {
+        if occupied.get(&handle.untyped()).is_some_and(|cnt| *cnt != 0) {
             panic!("{}", WorldError::UnavailableMut(self.info(handle)));
         }
 
@@ -644,7 +695,7 @@ impl World {
         self.available_unchecked(handle)?;
 
         let mut occupied = self.occupied.borrow_mut();
-        *occupied.entry(handle.cast()).or_default() += 1;
+        *occupied.entry(handle.untyped()).or_default() += 1;
 
         let storage = (self.storages)
             .get(&TypeId::of::<T>())
@@ -653,7 +704,7 @@ impl World {
             .downcast_ref::<Storage<T>>()
             .unwrap();
         let element = (storage.0)
-            .get(&handle.cast())
+            .get(&handle.untyped())
             .ok_or(WorldError::InvalidHandle(self.info(handle)))? as *const _;
 
         Ok(Ref {
@@ -675,7 +726,7 @@ impl World {
         self.available_mut_unchecked(handle)?;
 
         let mut occupied = self.occupied.borrow_mut();
-        *occupied.entry(handle.cast()).or_default() -= 1;
+        *occupied.entry(handle.untyped()).or_default() -= 1;
 
         let storage = (self.storages)
             .get(&TypeId::of::<T>())
@@ -684,7 +735,7 @@ impl World {
             .downcast_ref::<Storage<T>>()
             .unwrap();
         let element = (storage.0)
-            .get(&handle.cast())
+            .get(&handle.untyped())
             .ok_or(WorldError::InvalidHandle(self.info(handle)))? as *const _;
         let element = element as *mut T;
 
@@ -831,23 +882,23 @@ impl World {
 
     pub fn observer<E: 'static>(
         &self,
-        target: Handle<impl ?Sized + 'static>,
+        target: impl HandleGeneric,
         action: impl FnMut(&E, &World) + 'static,
-    ) -> Handle {
+    ) -> HandleAny {
         let here = self.location.get();
         let handle = self.enter(INITELEM, || {
             self.insert(Observer {
                 action: Box::new(action),
                 view: here,
-                target: target.cast(),
+                target: target.untyped(),
             })
         });
 
-        handle.cast()
+        handle.untyped()
     }
 
     /// Will immediately triggered and acquire mutable access to `target`.
-    pub fn trigger<E: 'static>(&self, target: Handle<impl ?Sized + 'static>, event: &E) -> usize {
+    pub fn trigger<E: 'static>(&self, target: impl HandleGeneric, event: &E) -> usize {
         // if let Err(e) = self.validate(target) {
         //     log::error!("trigger on invalidated target: {e:?}");
         // }
@@ -855,7 +906,7 @@ impl World {
         let mut cnt = 0;
         self.enter(INITELEM, || {
             if let Ok(observers) = self.single_fetch::<Observers<E>>()
-                && let Some(observers) = observers.members.get(&target.cast())
+                && let Some(observers) = observers.members.get(&target.untyped())
             {
                 for mut observer in observers.iter().filter_map(|x| self.fetch_mut(*x).ok()) {
                     self.enter(observer.view, || (observer.action)(event, self));
@@ -867,7 +918,7 @@ impl World {
         cnt
     }
 
-    pub fn queue_trigger<E: 'static>(&self, target: Handle<impl ?Sized + 'static>, event: E) {
+    pub fn queue_trigger<E: 'static>(&self, target: impl HandleGeneric, event: E) {
         self.queue(move |world| {
             world.trigger(target, &event);
         });
@@ -877,7 +928,7 @@ impl World {
 
     /// Declare a dependency relationship. When the `other` Element is removed, this element
     /// will be removed as well. Useful for keeping handle valid.
-    pub fn dependency(&self, child: Handle<impl ?Sized>, parent: Handle<impl ?Sized>) {
+    pub fn dependency(&self, child: impl HandleGeneric, parent: impl HandleGeneric) {
         if let Err(e) = self.validate(parent)
             && !matches!(e, WorldError::JustInserted(_) | WorldError::Invisible(..))
         {
@@ -886,8 +937,8 @@ impl World {
             return;
         }
 
-        let child = child.cast();
-        let parent = parent.cast();
+        let child = child.untyped();
+        let parent = parent.untyped();
 
         let mut dependencies = self.dependencies.borrow_mut();
         let parent_deps = dependencies.0.entry(parent).or_default();
@@ -896,11 +947,11 @@ impl World {
         child_deps.parents.push(parent);
     }
 
-    fn info<T: ?Sized>(&self, value: Handle<T>) -> HandleInfo {
+    fn info(&self, value: impl HandleGeneric) -> HandleInfo {
         HandleInfo(
-            value.cast(),
+            value.untyped(),
             self.indices
-                .get(&value.cast())
+                .get(&value.untyped())
                 .and_then(|x| self.storages.get(&x.tid))
                 .map(|x| x.name())
                 .unwrap_or("invalid"),
@@ -957,7 +1008,7 @@ impl<T: Element> DerefMut for RefMut<'_, T> {
 impl<T: Element> Drop for Ref<'_, T> {
     fn drop(&mut self) {
         let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied.get_mut(&self.handle.cast()).unwrap();
+        let cnt = occupied.get_mut(&self.handle.untyped()).unwrap();
         *cnt -= 1;
     }
 }
@@ -974,7 +1025,7 @@ impl<T: Element> Drop for RefMut<'_, T> {
         }
 
         let mut occupied = self.world.occupied.borrow_mut();
-        let cnt = occupied.get_mut(&self.handle.cast()).unwrap();
+        let cnt = occupied.get_mut(&self.handle.untyped()).unwrap();
         *cnt += 1;
     }
 }
@@ -997,13 +1048,13 @@ impl<T: Element> RefMut<'_, T> {
 
 // View //
 
-const INITELEM: Handle = Handle(0, PhantomData);
+const INITELEM: HandleAny = HandleAny(0);
 
 /// refer another element in other views
-pub struct ElemRef(pub Handle);
+pub struct ElemRef(pub HandleAny);
 
 // refer all elements from other views
-pub struct ViewRef(pub Handle);
+pub struct ViewRef(pub HandleAny);
 
 impl Element for ElemRef {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
@@ -1102,14 +1153,14 @@ impl Element for () {}
 // Commander //
 
 struct WorldCommand {
-    location: Handle,
+    location: HandleAny,
     action: Box<dyn FnOnce(&mut World)>,
 }
 
 /// A flexible command access to world.
 #[derive(Debug, Clone)]
 pub struct Commander {
-    location: Handle,
+    location: HandleAny,
     inner: Sender<WorldCommand>,
 }
 
@@ -1129,15 +1180,15 @@ impl Commander {
 // Observer & Trigger //
 
 #[derive(Default)]
-struct Observers<E> {
-    members: HashMap<Handle, SmallVec<[Handle<Observer<E>>; 1]>>,
+struct Observers<E: 'static> {
+    members: HashMap<HandleAny, SmallVec<[Handle<Observer<E>>; 1]>>,
 }
 
 #[expect(clippy::type_complexity)]
-struct Observer<E> {
+struct Observer<E: 'static> {
     action: Box<dyn FnMut(&E, &World)>,
-    view: Handle,
-    target: Handle,
+    view: HandleAny,
+    target: HandleAny,
 }
 
 impl<E: 'static> Element for Observers<E> {}
@@ -1172,12 +1223,12 @@ impl<E: 'static> Element for Observer<E> {
 // Dependency //
 
 #[derive(Default)]
-struct Dependencies(HashMap<Handle, Dependency>);
+struct Dependencies(HashMap<HandleAny, Dependency>);
 
 #[derive(Default, Clone)]
 struct Dependency {
-    parents: SmallVec<[Handle; 1]>,
-    children: SmallVec<[Handle; 4]>,
+    parents: SmallVec<[HandleAny; 1]>,
+    children: SmallVec<[HandleAny; 4]>,
 }
 
 #[cfg(test)]

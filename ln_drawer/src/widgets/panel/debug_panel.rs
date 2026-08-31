@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cosmic_text::{Attrs, Family, Metrics};
 use glam::{I64Vec2, IVec2, UVec2};
-use ln_world::{Handle, World};
+use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
     layer::wrapper::{LayerDebugMessage, LayerWrapper},

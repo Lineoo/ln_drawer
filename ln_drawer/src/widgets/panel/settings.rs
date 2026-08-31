@@ -1,5 +1,5 @@
 use cosmic_text::{Attrs, Metrics, Weight};
-use ln_world::{Handle, World};
+use ln_world::{Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
     layer::wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
@@ -167,7 +167,7 @@ pub fn panel_settings(world: &World, panel: Handle<Panel>) {
     });
 }
 
-fn option_label(world: &World, text: String, option1_frame: Handle) -> Handle<Text> {
+fn option_label(world: &World, text: String, option1_frame: HandleAny) -> Handle<Text> {
     let theme = world.single_fetch::<Theme>().unwrap();
 
     let label = world.insert(Text {
@@ -206,7 +206,7 @@ fn option_label(world: &World, text: String, option1_frame: Handle) -> Handle<Te
     label
 }
 
-fn option_desc(world: &World, text: String, option1_frame: Handle) -> Handle<Text> {
+fn option_desc(world: &World, text: String, option1_frame: HandleAny) -> Handle<Text> {
     let theme = world.single_fetch::<Theme>().unwrap();
 
     let label = world.insert(Text {
@@ -245,7 +245,7 @@ fn option_desc(world: &World, text: String, option1_frame: Handle) -> Handle<Tex
     label
 }
 
-fn option_slider(world: &World, option1_frame: Handle) -> (Handle<Slider>, Handle<SliderLabel>) {
+fn option_slider(world: &World, option1_frame: HandleAny) -> (Handle<Slider>, Handle<SliderLabel>) {
     let slider = world.insert(Slider {
         value: 0.5,
         axis: Axis::Right,

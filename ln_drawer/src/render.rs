@@ -3,7 +3,7 @@ pub mod rounded;
 
 use std::time::{Duration, Instant};
 
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, World};
 use wgpu::{
     Adapter, Buffer, BufferDescriptor, BufferUsages, Color, CommandEncoder,
     CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device, DeviceDescriptor,
@@ -60,9 +60,9 @@ pub struct Render {
 
 #[derive(Default)]
 pub struct RenderPhase {
-    seq_dirty: Vec<(Handle<RenderControl>, Handle, isize)>,
+    seq_dirty: Vec<(Handle<RenderControl>, HandleAny, isize)>,
     seq_remove: Vec<Handle<RenderControl>>,
-    sequence: Vec<(Handle<RenderControl>, Handle, isize)>,
+    sequence: Vec<(Handle<RenderControl>, HandleAny, isize)>,
 }
 
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use glam::{IVec2, UVec2, Vec2};
-use ln_world::{Handle, World};
+use ln_world::{Handle, HandleGeneric, World};
 use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
 use crate::{

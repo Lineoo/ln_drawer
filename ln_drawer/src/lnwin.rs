@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use glam::{DVec2, IVec2, UVec2};
 use hashbrown::HashMap;
-use ln_world::{ElemRef, Element, Handle, ViewRef, World};
+use ln_world::{ElemRef, Element, Handle, HandleGeneric, ViewRef, World};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 use winit::{
@@ -44,7 +44,7 @@ use crate::{
 #[derive(Default)]
 pub struct Lnwin {
     pub world: World,
-    pub windows: HashMap<WindowId, Handle>,
+    pub windows: HashMap<WindowId, Handle<Lnwindow>>,
 }
 
 impl ApplicationHandler for Lnwin {
@@ -53,7 +53,7 @@ impl ApplicationHandler for Lnwin {
             let lnwindow = Lnwindow::new(event_loop);
             let window_id = lnwindow.window.id();
             let lnwindow = self.world.insert(lnwindow);
-            self.windows.insert(window_id, lnwindow.untyped());
+            self.windows.insert(window_id, lnwindow);
         } else {
             for &view in self.windows.values() {
                 self.world.enter(view, || {

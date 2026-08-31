@@ -1,4 +1,4 @@
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
 
 use crate::widgets::{
     SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
@@ -10,14 +10,14 @@ use crate::widgets::{
 /// Utility to build certain mysterious echo over specific element,
 /// who receive all kinds of command event and emit out
 /// correlated notification event immediately.
-pub struct Echo<'w>(&'w World, Handle);
+pub struct Echo<'w>(&'w World, HandleAny);
 
 #[expect(unused)]
 pub struct EchoAll;
 pub struct EchoWidget;
 
 impl Echo<'_> {
-    pub fn new(world: &World, this: Handle<impl Element>) -> Echo<'_> {
+    pub fn new(world: &World, this: impl HandleGeneric) -> Echo<'_> {
         Echo(world, this.untyped())
     }
 

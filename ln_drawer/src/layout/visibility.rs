@@ -1,10 +1,10 @@
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, World};
 
 use crate::widgets::{SetWidgetVisible, WidgetVisible};
 
 pub struct VisibilityInherit {
-    pub source: Handle,
-    pub target: Handle,
+    pub source: HandleAny,
+    pub target: HandleAny,
 }
 
 impl Element for VisibilityInherit {

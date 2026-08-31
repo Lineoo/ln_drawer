@@ -1,6 +1,6 @@
 use std::{cell::Cell, rc::Rc};
 
-use ln_world::{ElemRef, Element, World};
+use ln_world::{ElemRef, Element, HandleGeneric, World};
 
 #[derive(Debug, PartialEq, Eq)]
 struct Tag(&'static str);

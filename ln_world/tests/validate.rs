@@ -1,4 +1,4 @@
-use ln_world::{ElemRef, Element, Handle, ViewRef, World};
+use ln_world::{ElemRef, Element, HandleGeneric, ViewRef, World};
 
 #[derive(Debug, PartialEq, Eq)]
 struct Tag(&'static str);
@@ -82,7 +82,7 @@ fn single_fetch_returns_just_removed_before_flush() {
     assert!(world.enter(view, || world.single_fetch::<Tag>()).is_err());
 }
 
-fn tags(world: &World, view: Handle<impl ?Sized>) -> Vec<&str> {
+fn tags(world: &World, view: impl HandleGeneric) -> Vec<&str> {
     let mut got = Vec::new();
     world.enter(view, || world.foreach_fetch::<Tag>(|h| got.push(h.0)));
     got.sort();

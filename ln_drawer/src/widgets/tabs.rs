@@ -1,4 +1,4 @@
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
     layout::luni::{
@@ -25,7 +25,7 @@ pub struct SetTabsActive(pub usize);
 pub struct Tabs {
     pub rect: Rectangle,
     pub visible: bool,
-    pub tabs: Vec<(ButtonImage, Handle)>,
+    pub tabs: Vec<(ButtonImage, HandleAny)>,
     pub active: usize,
 }
 

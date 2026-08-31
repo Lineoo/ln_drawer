@@ -1,11 +1,11 @@
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, World};
 use winit::event::{KeyEvent, WindowEvent};
 
 use crate::lnwin::Lnwindow;
 
 #[derive(Default)]
 pub struct FocusTool {
-    focus: Option<Handle>,
+    focus: Option<HandleAny>,
 }
 
 impl Element for FocusTool {
@@ -43,7 +43,7 @@ impl Element for FocusTool {
     }
 }
 
-pub struct RequestFocus(pub Option<Handle>);
+pub struct RequestFocus(pub Option<HandleAny>);
 
 pub struct FocusEnter;
 

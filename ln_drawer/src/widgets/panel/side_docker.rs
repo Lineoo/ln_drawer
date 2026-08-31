@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use glam::{IVec2, UVec2, Vec4};
-use ln_world::World;
+use ln_world::{HandleGeneric, World};
 
 use crate::{
     layer::{

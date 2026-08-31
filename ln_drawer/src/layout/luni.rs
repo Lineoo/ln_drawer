@@ -1,4 +1,4 @@
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, World};
 
 use crate::{
     layout::visibility::VisibilityInherit,
@@ -7,8 +7,8 @@ use crate::{
 };
 
 pub struct LuniFlex {
-    pub parent: (Handle, LuniParent),
-    pub children: Vec<(Handle, LuniChild)>,
+    pub parent: (HandleAny, LuniParent),
+    pub children: Vec<(HandleAny, LuniChild)>,
 }
 
 #[derive(Default)]
@@ -90,7 +90,7 @@ pub enum LuniAlign {
 pub struct LuniHug;
 
 impl LuniFlex {
-    fn compute(&self, rect: Rectangle) -> Vec<(Handle, Rectangle)> {
+    fn compute(&self, rect: Rectangle) -> Vec<(HandleAny, Rectangle)> {
         let mut result = Vec::with_capacity(self.children.len());
         let mut lengths = Vec::with_capacity(self.children.len());
 
