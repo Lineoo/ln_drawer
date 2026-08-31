@@ -47,9 +47,6 @@ pub struct Render {
 
     // render control
     preparing: bool,
-    seq_dirty: Vec<(Handle<RenderControl>, Handle, isize)>,
-    seq_remove: Vec<Handle<RenderControl>>,
-    sequence: Vec<(Handle<RenderControl>, Handle, isize)>,
 
     // time tracing
     last_redraw: Option<Instant>,
@@ -59,6 +56,13 @@ pub struct Render {
     pub timestamp_resolver: Buffer,
     pub timestamp_mapper: Buffer,
     pub timestamp_query: QuerySet,
+}
+
+#[derive(Default)]
+pub struct RenderPhase {
+    seq_dirty: Vec<(Handle<RenderControl>, Handle, isize)>,
+    seq_remove: Vec<Handle<RenderControl>>,
+    sequence: Vec<(Handle<RenderControl>, Handle, isize)>,
 }
 
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;
@@ -161,9 +165,6 @@ impl Render {
             msaa_texture: None,
             clear_color: Color::WHITE,
             preparing: false,
-            seq_dirty: Vec::new(),
-            seq_remove: Vec::new(),
-            sequence: Vec::new(),
             last_redraw: None,
             timestamp_poll: false,
             timestamp_mapper,
@@ -291,16 +292,20 @@ impl Render {
 
         world.flush();
 
+        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        render.preparing = false;
+        drop(render);
+
         // start redrawing
 
+        let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
         let render = &mut *world.single_fetch_mut::<Render>().unwrap();
-        render.preparing = false;
         let now = Instant::now();
 
         // order redraw sequence
 
-        'r: for (dirty, view, ord) in render.seq_dirty.drain(..) {
-            for (control, old_view, old_ord) in &mut render.sequence {
+        'r: for (dirty, view, ord) in phase.seq_dirty.drain(..) {
+            for (control, old_view, old_ord) in &mut phase.sequence {
                 if *control == dirty {
                     *old_view = view;
                     *old_ord = ord;
@@ -309,13 +314,13 @@ impl Render {
             }
 
             // if new
-            render.sequence.push((dirty, view, ord));
+            phase.sequence.push((dirty, view, ord));
         }
 
-        (render.sequence).retain(|(control, ..)| !render.seq_remove.contains(control));
-        render.seq_remove.clear();
+        (phase.sequence).retain(|(control, ..)| !phase.seq_remove.contains(control));
+        phase.seq_remove.clear();
 
-        render.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
+        phase.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
 
         // setup render pass
 
@@ -362,7 +367,7 @@ impl Render {
 
         // draw
 
-        for &(control, view, _) in &render.sequence {
+        for &(control, view, _) in &phase.sequence {
             world.enter(view, || {
                 let mut control = world.fetch_mut(control).unwrap();
                 if let Some(draw) = &mut control.draw {
@@ -539,13 +544,13 @@ impl RenderControl {
     }
 
     pub fn reorder(order: Option<isize>, world: &World, handle: Handle<Self>) {
-        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        let mut phase = world.single_fetch_mut::<RenderPhase>().unwrap();
 
         if let Some(order) = order {
-            render.seq_dirty.push((handle, world.here(), order));
-            render.seq_remove.retain(|&x| x != handle);
+            phase.seq_dirty.push((handle, world.here(), order));
+            phase.seq_remove.retain(|&x| x != handle);
         } else {
-            render.seq_remove.push(handle);
+            phase.seq_remove.push(handle);
         }
     }
 }
@@ -575,6 +580,8 @@ impl RenderDiagnosis<'_> {
 impl Element for Render {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
+        let phase = world.insert(RenderPhase::default());
+        world.dependency(this, phase);
         world.observer(lnwindow, move |event: &WindowEvent, world| match event {
             WindowEvent::SurfaceResized(size) => {
                 let mut render = world.fetch_mut(this).unwrap();
@@ -592,10 +599,12 @@ impl Element for Render {
     }
 }
 
+impl Element for RenderPhase {}
+
 impl Element for RenderControl {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let render = world.single::<Render>().unwrap();
-        world.dependency(this, render);
+        let phase = world.single::<RenderPhase>().unwrap();
+        world.dependency(this, phase);
     }
 
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {
