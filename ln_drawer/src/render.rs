@@ -269,9 +269,7 @@ impl Render {
         config
     }
 
-    fn redraw(world: &mut World) {
-        // prepare controls
-
+    fn prepare(world: &World) {
         let mut render = world.single_fetch_mut::<Render>().unwrap();
         render.preparing = true;
         drop(render);
@@ -290,37 +288,21 @@ impl Render {
             }
         });
 
-        world.flush();
-
         let mut render = world.single_fetch_mut::<Render>().unwrap();
         render.preparing = false;
         drop(render);
 
+        if refreshing {
+            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            lnwindow.window.request_redraw();
+        }
+    }
+
+    fn redraw(world: &World) {
         // start redrawing
 
-        let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
         let render = &mut *world.single_fetch_mut::<Render>().unwrap();
         let now = Instant::now();
-
-        // order redraw sequence
-
-        'r: for (dirty, view, ord) in phase.seq_dirty.drain(..) {
-            for (control, old_view, old_ord) in &mut phase.sequence {
-                if *control == dirty {
-                    *old_view = view;
-                    *old_ord = ord;
-                    continue 'r;
-                }
-            }
-
-            // if new
-            phase.sequence.push((dirty, view, ord));
-        }
-
-        (phase.sequence).retain(|(control, ..)| !phase.seq_remove.contains(control));
-        phase.seq_remove.clear();
-
-        phase.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
 
         // setup render pass
 
@@ -365,26 +347,19 @@ impl Render {
             front: 2,
         };
 
-        // draw
+        // redraw
 
-        for &(control, view, _) in &phase.sequence {
-            world.enter(view, || {
-                let mut control = world.fetch_mut(control).unwrap();
-                if let Some(draw) = &mut control.draw {
-                    draw(
-                        world,
-                        &mut rpass,
-                        RenderExtra {
-                            device: &render.device,
-                            queue: &render.queue,
-                            early_encoder: &mut early_encoder,
-                            surface_config: &render.config,
-                            diagnosis: &mut diagnosis,
-                        },
-                    );
-                }
-            });
-        }
+        world.foreach_enter::<Camera>(|_| {
+            let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
+            phase.reorder();
+            phase.draw(
+                world,
+                render,
+                &mut early_encoder,
+                &mut rpass,
+                &mut diagnosis,
+            );
+        });
 
         drop(rpass);
 
@@ -405,11 +380,6 @@ impl Render {
         );
 
         // active refreshing
-
-        if refreshing {
-            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-            lnwindow.window.request_redraw();
-        }
 
         // tasks submission
 
@@ -448,14 +418,7 @@ impl Render {
             );
 
             if let Some(last) = render.last_redraw {
-                output += &format!(
-                    "CPU frame time: {:.3?} | {}\n",
-                    (now - last),
-                    match refreshing {
-                        true => "ACTIVE",
-                        false => "INACTIVE",
-                    },
-                )
+                output += &format!("CPU frame time: {:.3?}\n", (now - last),)
             };
 
             output += &format!("GPU timestamp period: {} ns\n", period);
@@ -471,6 +434,56 @@ impl Render {
         // CPU time tracing
 
         render.last_redraw = Some(now);
+    }
+}
+
+impl RenderPhase {
+    fn reorder(&mut self) {
+        'r: for (dirty, view, ord) in self.seq_dirty.drain(..) {
+            for (control, old_view, old_ord) in &mut self.sequence {
+                if *control == dirty {
+                    *old_view = view;
+                    *old_ord = ord;
+                    continue 'r;
+                }
+            }
+
+            // if new
+            self.sequence.push((dirty, view, ord));
+        }
+
+        (self.sequence).retain(|(control, ..)| !self.seq_remove.contains(control));
+        self.seq_remove.clear();
+
+        self.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
+    }
+
+    fn draw(
+        &mut self,
+        world: &World,
+        render: &Render,
+        early_encoder: &mut CommandEncoder,
+        rpass: &mut RenderPass<'_>,
+        diagnosis: &mut RenderDiagnosis<'_>,
+    ) {
+        for &(control, view, _) in &self.sequence {
+            world.enter(view, || {
+                let mut control = world.fetch_mut(control).unwrap();
+                if let Some(draw) = &mut control.draw {
+                    draw(
+                        world,
+                        rpass,
+                        RenderExtra {
+                            device: &render.device,
+                            queue: &render.queue,
+                            early_encoder: early_encoder,
+                            surface_config: &render.config,
+                            diagnosis: diagnosis,
+                        },
+                    );
+                }
+            });
+        }
     }
 }
 
@@ -580,8 +593,6 @@ impl RenderDiagnosis<'_> {
 impl Element for Render {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
-        let phase = world.insert(RenderPhase::default());
-        world.dependency(this, phase);
         world.observer(lnwindow, move |event: &WindowEvent, world| match event {
             WindowEvent::SurfaceResized(size) => {
                 let mut render = world.fetch_mut(this).unwrap();
@@ -590,6 +601,8 @@ impl Element for Render {
 
             WindowEvent::RedrawRequested => {
                 world.queue(|world| {
+                    Render::prepare(world);
+                    world.flush();
                     Render::redraw(world);
                 });
             }

@@ -6,7 +6,7 @@
 
 渲染分为多个部分：
 
-1. **渲染总控 Render** - 包含所有渲染资源，负责重绘所有渲染控制逻辑
+1. **渲染总控 Render RenderPhase** - 包含所有渲染资源，负责重绘所有渲染控制逻辑
 2. **渲染控制 RenderControl** - 控制渲染组件的排序、剔除、可见性，包含用于重绘闭包
 3. **渲染管线 ComponentPipeline** - 包含绑定组布局，管线布局，Shader 等，用于创建实例
 4. **渲染实例 Component** - 包含绑定组和缓冲区
@@ -66,3 +66,26 @@ world.insert(world.insert(Panel {
 
 - 若渲染实现需要**实时动画**，应在自己的 `RenderControl` 在 `prepare` 调用中返回积极重绘为 `true`。
 - 不应在上一帧的渲染过程中触发下一帧的重绘，这会导致渲染不受控制无限进行下去。
+
+## 6. 分组绘制
+
+- 一个 Render 只持有一个主 Render Pass
+- 一个 RenerPhase 对应一组 Draw Calls
+
+这个是为了方便设置矩形裁切等进行分组绘制而设置的。
+
+- Redraw 直接发生在 Lnwindow 窗口层
+- 被自定义节点分发到下属节点
+
+对应的世界架构在 `world.md` 可供参考
+
+控制流：
+
+1. winit 负责处理 OS 重绘事件
+2. 由 Lnwindow 转发到 Render
+3. Render 开始处理 prepare 遍历自己视图下的所有 Camera
+    - 调用 RenderControl 的 prepare
+    - RenderControl 逐级下发 prepare 指示
+    - 为 RenderControl 排序
+4. 开始重绘，由 Render 创建 RenderPass 和 RenderExtra
+    - 逐级下发

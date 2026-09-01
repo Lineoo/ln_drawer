@@ -947,7 +947,7 @@ impl World {
         child_deps.parents.push(parent);
     }
 
-    fn info(&self, value: impl HandleGeneric) -> HandleInfo {
+    pub fn info(&self, value: impl HandleGeneric) -> HandleInfo {
         HandleInfo(
             value.untyped(),
             self.indices

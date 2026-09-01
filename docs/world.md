@@ -185,19 +185,23 @@ that.trigger(that, ElementUpdate);
 ### 典型用法
 
 ```
-|-----------------------------------------------|
 |                  INITELEM                     |
-|---------------vvvvvvvvvvvvvvv-----------------|
+|-----------------------------------------------|
+|            LnAndroid (on Mobile)              |
 |               Lnwindow (Main)                 |
+|---------------vvvvvvvvvvvvvvv-----------------|
 |              Render, PointerTool              |
-|---vvvvvvvvvvvvv-------|---vvvvvvvvvvvvv-------|
-|   Camera (Paint)      |   Camera (UI)         |
-|                       |                       |
-|   RenderControl       |   RenderControl       |
-|   RenderControl       |   ToolCollider        |
-|   ToolCollider        |                       |
-|                       |                       |
-|-----------------------|-----------------------|
+|                                               |
+|   Camera (Paint)          Camera (UI)         |
+|---vvvvvvvvvvvvv----|------vvvvvvvvvvvvv-------|
+|   RenderPhase      |      RenderPhase         |
+|                    |                          |
+|   RenderControl    |      RenderControl       |
+|   RenderControl    |      ToolCollider        |
+|   ToolCollider     |--------------------------|
+|                    | RenderPhase |RenderPhase |
+|                    | SubUI       |SubUI       |
+|--------------------|--------------------------|
 ```
 
 ## 管理保证 ##

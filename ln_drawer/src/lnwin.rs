@@ -17,7 +17,7 @@ use crate::{
     layer::{input::LayerInput, wrapper::LayerWrapper},
     measures::{FI64Ext, Rectangle},
     render::{
-        Render,
+        Render, RenderPhase,
         camera::{Camera, CameraDescriptor, CameraUtils, CurrentCamera, MainCamera, UICamera},
         rounded::RoundedRect,
     },
@@ -178,8 +178,7 @@ impl Element for Lnwindow {
             world.enter(main_camera, || {
                 let camera = world.fetch(main_camera).unwrap();
 
-                world.insert(LayerWrapper::new(world));
-                world.insert(LayerInput::default());
+                world.insert(RenderPhase::default());
                 world.insert(CameraUtils::new(&camera));
 
                 world.observer(this, move |event: &WindowEvent, world| {
@@ -195,11 +194,7 @@ impl Element for Lnwindow {
             world.enter(ui_camera, || {
                 let camera = world.fetch(ui_camera).unwrap();
 
-                let stroke = world.enter(main_camera, || world.single::<LayerWrapper>().unwrap());
-                let input = world.enter(main_camera, || world.single::<LayerInput>().unwrap());
-
-                world.insert(ElemRef(stroke.untyped()));
-                world.insert(ElemRef(input.untyped()));
+                world.insert(RenderPhase::default());
                 world.insert(CameraUtils::new(&camera));
 
                 world.observer(this, move |event: &WindowEvent, world| {
@@ -223,9 +218,28 @@ impl Element for Lnwindow {
                         camera.update_from(&camera2);
                     }
                 });
-
-                world.queue(|world| side_docker(world));
             });
+
+            world.flush();
+
+            world.enter_queue(main_camera, |world| {
+                world.insert(LayerWrapper::new(world));
+                world.insert(LayerInput::default());
+            });
+
+            world.enter_queue(ui_camera, move |world| {
+                let stroke = world.enter(main_camera, || world.single::<LayerWrapper>().unwrap());
+                let input = world.enter(main_camera, || world.single::<LayerInput>().unwrap());
+
+                world.insert(ElemRef(stroke.untyped()));
+                world.insert(ElemRef(input.untyped()));
+
+                world.flush();
+
+                side_docker(world);
+            });
+
+            world.flush();
         });
     }
 }
