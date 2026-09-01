@@ -125,6 +125,14 @@ pub fn panel_settings(world: &World, panel: Handle<Panel>) {
         }
     });
 
+    let test_frame = world.insert(EchoWidget);
+    let test_label = option_label(world, String::new(), test_frame.untyped());
+    let test_desc = option_desc(world, String::new(), test_frame.untyped());
+    let (_test_slider, test_slider_label) = option_slider(world, test_frame.untyped());
+    world.queue_trigger(test_label, SetText(format!("测试标签")));
+    world.queue_trigger(test_desc, SetText(format!("测试描述")));
+    world.queue_trigger(test_slider_label, SetText(format!("NaN")));
+
     world.insert(LuniFlex {
         parent: (
             panel.untyped(),
@@ -158,6 +166,13 @@ pub fn panel_settings(world: &World, panel: Handle<Panel>) {
             ),
             (
                 softness_frame.untyped(),
+                LuniChild {
+                    basis: Some(108),
+                    ..Default::default()
+                },
+            ),
+            (
+                test_frame.untyped(),
                 LuniChild {
                     basis: Some(108),
                     ..Default::default()

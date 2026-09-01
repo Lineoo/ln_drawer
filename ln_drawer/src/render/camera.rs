@@ -145,7 +145,6 @@ impl Camera {
         I64Vec2::q32_from_f64(pf)
     }
 
-    #[expect(unused)]
     pub fn world_to_screen_absolute(&self, point: I64Vec2) -> DVec2 {
         self.world_to_screen_relative(point - self.center)
     }

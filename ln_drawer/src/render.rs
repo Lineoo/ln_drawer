@@ -444,7 +444,7 @@ impl Render {
 }
 
 impl RenderPhase {
-    fn reorder(&mut self) {
+    pub fn reorder(&mut self) {
         'r: for (dirty, view, ord) in self.seq_dirty.drain(..) {
             for (control, old_view, old_ord) in &mut self.sequence {
                 if *control == dirty {
@@ -464,7 +464,7 @@ impl RenderPhase {
         self.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
     }
 
-    fn draw(&mut self, world: &World, rpass: &mut RenderPass, extra: RenderExtra) {
+    pub fn draw(&mut self, world: &World, rpass: &mut RenderPass, extra: RenderExtra) {
         for &(control, view, _) in &self.sequence {
             let extra = RenderExtra {
                 device: extra.device,
@@ -567,6 +567,34 @@ impl RenderControl {
                     phase.reorder();
                     phase.draw(world, rpass, extra);
                 });
+            })),
+        }
+    }
+
+    pub fn phase_with_draw(
+        view: impl HandleGeneric,
+        mut f: impl FnMut(&World, &mut RenderPass, RenderExtra) + Send + 'static,
+    ) -> Self {
+        let view = view.untyped();
+        RenderControl {
+            prepare: Some(Box::new(move |world| {
+                world.enter(view, || {
+                    let mut keep_redrawing = false;
+                    world.foreach_fetch_mut::<RenderControl>(|mut control| {
+                        if let Some(prepare) = &mut control.prepare
+                            && let Some(info) = prepare(world)
+                        {
+                            keep_redrawing |= info.keep_redrawing;
+                        };
+                    });
+                    if world.queue_cache::<RenderControl>() {
+                        log::debug!("control cached");
+                    }
+                    Some(RenderInformation { keep_redrawing })
+                })
+            })),
+            draw: Some(Box::new(move |world, rpass, extra| {
+                world.enter(view, || f(world, rpass, extra));
             })),
         }
     }

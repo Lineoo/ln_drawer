@@ -266,6 +266,13 @@ impl Lnwindow {
         let y = 1.0 - (position.y * 2.0) / size.height as f64;
         DVec2::new(x, y)
     }
+
+    pub fn screen_to_cursor(&self, ndc: DVec2) -> PhysicalPosition<f64> {
+        let size = self.window.surface_size();
+        let x = (ndc.x + 1.0) * size.width as f64 / 2.0;
+        let y = (1.0 - ndc.y) * size.height as f64 / 2.0;
+        PhysicalPosition::new(x, y)
+    }
 }
 
 #[cfg(target_os = "android")]

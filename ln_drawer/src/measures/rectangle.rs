@@ -132,14 +132,14 @@ impl Rectangle {
     pub const fn left_up(self) -> IVec2 {
         IVec2::new(
             self.origin.x,
-            self.origin.y.wrapping_add_unsigned(self.extend.x),
+            self.origin.y.wrapping_add_unsigned(self.extend.y),
         )
     }
 
     #[inline]
     pub const fn right_down(self) -> IVec2 {
         IVec2::new(
-            self.origin.x.wrapping_add_unsigned(self.extend.y),
+            self.origin.x.wrapping_add_unsigned(self.extend.x),
             self.origin.y,
         )
     }
