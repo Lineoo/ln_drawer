@@ -588,14 +588,6 @@ impl World {
             return Err(WorldError::Initelem(self.info(handle)));
         }
 
-        if self.removed.borrow().contains(&handle.untyped()) {
-            if self.indices.contains_key(&handle.untyped()) {
-                return Err(WorldError::JustRemoved(self.info(handle)));
-            }
-
-            return Err(WorldError::Removed(self.info(handle)));
-        }
-
         let Some(index) = self.indices.get(&handle.untyped()) else {
             if self.inserted.borrow().contains(&handle.untyped()) {
                 return Err(WorldError::JustInserted(self.info(handle)));
@@ -606,23 +598,13 @@ impl World {
 
         let here = self.location.get();
 
-        // 1. plain
-        if index.view == here {
-            return Ok(());
-        }
-
-        // 2. elemref
-        if index.elemrefs.contains(&here) {
-            return Ok(());
-        }
-
-        // 3. viewref
         let mut visible = vec![index.view];
         visible.append(&mut index.elemrefs.clone());
         let mut frnt = 0;
         while let Some(&view) = visible.get(frnt) {
             if view == here {
-                return Ok(());
+                visible.clear();
+                break;
             }
 
             let Some(view_index) = self.indices.get(&view) else {
@@ -639,11 +621,24 @@ impl World {
             frnt += 1;
         }
 
-        Err(WorldError::Invisible(
-            self.info(handle),
-            self.info(index.view),
-            self.info(here),
-        ))
+        // visible.clear() in loop above if is confirmed visible
+        if !visible.is_empty() {
+            return Err(WorldError::Invisible(
+                self.info(handle),
+                self.info(index.view),
+                self.info(here),
+            ));
+        }
+
+        if self.removed.borrow().contains(&handle.untyped()) {
+            if self.indices.contains_key(&handle.untyped()) {
+                return Err(WorldError::JustRemoved(self.info(handle)));
+            }
+
+            return Err(WorldError::Removed(self.info(handle)));
+        }
+
+        Ok(())
     }
 
     /// Check whether target element can be borrowed immutably, insertion without

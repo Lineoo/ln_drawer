@@ -35,11 +35,6 @@ fn dangling_ref_does_not_break_alternative_visibility() {
 
 /// Guard: cached iteration must not observe elements that were removed but not
 /// yet flushed.
-///
-/// Currently FAILS: the cache-hit paths skip validation and `remove` only
-/// invalidates the cache from the queued command, so between `remove` and
-/// `flush` the just-removed element is still yielded. This asserts the desired
-/// behaviour and turns green once the cache becomes strictly valid.
 #[test]
 fn cache_does_not_see_just_removed_before_flush() {
     let mut world = World::default();
@@ -62,10 +57,6 @@ fn cache_does_not_see_just_removed_before_flush() {
 }
 
 /// Guard: `single_fetch` must not hand out a live reference to a removed element.
-///
-/// Currently FAILS: `single` trusts the stale cache and `single_fetch` goes
-/// through `fetch_unchecked` (which skips validation and the `removed` set), so
-/// it returns a `Ref` into the just-removed element instead of an error.
 #[test]
 fn single_fetch_returns_just_removed_before_flush() {
     let mut world = World::default();

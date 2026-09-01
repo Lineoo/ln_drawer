@@ -5,14 +5,15 @@ use std::time::{Duration, Instant};
 
 use ln_world::{Element, Handle, HandleAny, World};
 use wgpu::{
-    Adapter, Buffer, BufferDescriptor, BufferUsages, Color, CommandEncoder,
-    CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device, DeviceDescriptor,
-    ExperimentalFeatures, Extent3d, Features, Instance, Limits, LoadOp, MapMode, MemoryHints,
-    MultisampleState, Operations, PollType, PowerPreference, PresentMode, QuerySet,
-    QuerySetDescriptor, QueryType, Queue, RenderPass, RenderPassColorAttachment,
-    RenderPassDescriptor, RenderPassTimestampWrites, RequestAdapterOptions, StoreOp, Surface,
-    SurfaceColorSpace, SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, Trace,
+    Adapter, BackendOptions, Backends, Buffer, BufferDescriptor, BufferUsages, Color,
+    CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device,
+    DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, Instance, InstanceDescriptor,
+    InstanceFlags, Limits, LoadOp, MapMode, MemoryBudgetThresholds, MemoryHints, MultisampleState,
+    Operations, PollType, PowerPreference, PresentMode, QuerySet, QuerySetDescriptor, QueryType,
+    Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites,
+    RequestAdapterOptions, StoreOp, Surface, SurfaceColorSpace, SurfaceConfiguration, Texture,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
+    TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -99,7 +100,13 @@ pub struct RenderDiagnosis<'a> {
 
 impl Render {
     pub async fn new(lnwindow: &Lnwindow) -> Render {
-        let instance = Instance::default();
+        let instance = Instance::new(InstanceDescriptor {
+            backends: Backends::all(),
+            flags: InstanceFlags::default(),
+            memory_budget_thresholds: MemoryBudgetThresholds::default(),
+            backend_options: BackendOptions::default(),
+            display: None,
+        });
 
         let surface = instance.create_surface(lnwindow.window.clone()).unwrap();
 

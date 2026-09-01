@@ -232,9 +232,10 @@ world 世界模型会严格限制视图之间的可见性，以提供良好的�
         - fetch, trigger 返回 `JustInserted`
         - single 返回 `SingletonCorrupted` 指示单例初始化忙
         - foreach 会静默跳过
+    - validate 优先返回 `Invisible` 而不是 `JustRemoved`
+        -  **未实现**  `JustInserted` 仍优先返回，索引不可得，需要底层修改
+        - 返回 `JustRemoved` 则说明句柄是可见的
     - **未实现** dependency, observer 允许执行
-    - **未实现** validate 优先返回 `Invisible` 而不是 `JustInserted`
-        - 返回 `JustInserted` 则说明句柄是可见的
 5. 不可见的节点会被直接视作非法句柄（句柄指向无效数据）处理，在任何细节上都与非法节点无差（除了报错信息）
     - enter 指令也遵循这一点，也就是说你只有看得见一个节点，你才能跳到这个节点上
     - fetch, foreach, single 家族一致性良好
