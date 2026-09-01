@@ -892,9 +892,9 @@ impl World {
 
     /// Will immediately triggered and acquire mutable access to `target`.
     pub fn trigger<E: Send + 'static>(&self, target: impl HandleGeneric, event: &E) -> usize {
-        if let Err(_) = self.validate(target) {
+        if let Err(e) = self.validate(target) {
             // TODO silent return
-            // log::error!("{e}");
+            log::warn!("{e}");
             return 0;
         }
 

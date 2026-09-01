@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use glam::{IVec2, UVec2, Vec2};
-use ln_world::{Handle, HandleGeneric, World};
+use ln_world::{ElemRef, Handle, HandleGeneric, ViewRef, World};
 use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
 use crate::{
@@ -10,8 +10,9 @@ use crate::{
         wrapper::{BrushConfigurationChanged, LayerWrapper},
     },
     layout::transform::{Transform, TransformValue},
+    lnwin::Lnwindow,
     measures::Rectangle,
-    render::rounded::RoundedRectDescriptor,
+    render::{RenderControl, RenderPhase, camera::CurrentCamera, rounded::RoundedRectDescriptor},
     theme::Theme,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
@@ -58,15 +59,11 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         shadow: false,
     });
 
-    palette_hsl(world, tab_palette_hsl);
-
     let tab_palette_oklch = world.insert(Panel {
         rect: Rectangle::default(),
         visible: true,
         shadow: false,
     });
-
-    palette_oklab(world, tab_palette_oklch, toggle_button);
 
     let tab_settings = world.insert(Panel {
         rect: Rectangle::default(),
@@ -74,15 +71,11 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         shadow: false,
     });
 
-    super::settings::panel_settings(world, tab_settings);
-
     let tab_debug = world.insert(Panel {
         rect: Rectangle::default(),
         visible: true,
         shadow: false,
     });
-
-    super::debug_panel::debug_panel(world, tab_debug);
 
     let tabs = world.insert(Tabs {
         active: 0,
@@ -142,6 +135,35 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
                 tab_debug.untyped(),
             ),
         ],
+    });
+
+    let lnwindow = world.single::<Lnwindow>().unwrap();
+    let input = world.single::<LayerInput>().unwrap();
+    let wrapper = world.single::<LayerWrapper>().unwrap();
+    let camera = world.single::<CurrentCamera>().unwrap();
+    for panel in [tab_palette_hsl, tab_palette_oklch, tab_settings, tab_debug] {
+        let control = world.insert(RenderControl::phase(panel));
+        RenderControl::reorder(Some(isize::MAX), world, control);
+        world.enter(panel, || {
+            world.insert(ViewRef(lnwindow.untyped()));
+            world.insert(ElemRef(input.untyped()));
+            world.insert(ElemRef(wrapper.untyped()));
+            world.insert(ElemRef(camera.untyped()));
+            world.insert(RenderPhase::default());
+        });
+    }
+
+    world.enter_queue(tab_palette_hsl, move |world| {
+        palette_hsl(world, tab_palette_hsl)
+    });
+    world.enter_queue(tab_palette_oklch, move |world| {
+        palette_oklab(world, tab_palette_oklch, toggle_button)
+    });
+    world.enter_queue(tab_settings, move |world| {
+        super::settings::panel_settings(world, tab_settings)
+    });
+    world.enter_queue(tab_debug, move |world| {
+        super::debug_panel::debug_panel(world, tab_debug)
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();
