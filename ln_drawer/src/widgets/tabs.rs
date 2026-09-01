@@ -1,9 +1,13 @@
+use glam::{IVec2, UVec2};
 use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
-    layout::luni::{
-        LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
-        LuniRect,
+    layout::{
+        luni::{
+            LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
+            LuniParent, LuniRect,
+        },
+        transform::{Transform, TransformValue},
     },
     measures::Rectangle,
     theme::Theme,
@@ -14,6 +18,7 @@ use crate::{
             ButtonAction, ButtonImage, SetButtonIconColor, SetButtonSelected, ToggleButton,
             ToggleButtonTheme,
         },
+        echo::Echo,
         renderer::rrect::RRect,
     },
 };
@@ -27,6 +32,12 @@ pub struct Tabs {
     pub visible: bool,
     pub tabs: Vec<(ButtonImage, HandleAny)>,
     pub active: usize,
+}
+
+#[derive(Clone)]
+struct TabButton {
+    button: Handle<ToggleButton>,
+    edge: Handle<RRect>,
 }
 
 impl Tabs {
@@ -72,7 +83,28 @@ impl Tabs {
                 hovering: false,
             });
 
-            children.push(button);
+            Echo::new(world, button).widget_rectangle();
+
+            let edge = world.insert(RRect {
+                rect: Rectangle::default(),
+                order: 100,
+                color: theme.theme_color,
+                radius: 0.0,
+                width: 0.0,
+                enabled: false,
+            });
+
+            world.insert(Transform {
+                value: TransformValue::anchor(
+                    (0.0, 0.5),
+                    Rectangle::new_half(IVec2::ZERO, UVec2::new(1, 16)),
+                ),
+                source: button.untyped(),
+                target: edge.untyped(),
+            });
+
+            children.push(TabButton { button, edge });
+
             luni_children.push((button.untyped(), LuniChild::default()));
         }
 
@@ -117,8 +149,8 @@ impl Tabs {
             children: luni_children,
         });
 
-        for (i, &child) in children.iter().enumerate() {
-            world.observer(child, move |action: &ButtonAction, world| {
+        for (i, tab) in children.iter().enumerate() {
+            world.observer(tab.button, move |action: &ButtonAction, world| {
                 if let ButtonAction::Press = action {
                     world.queue_trigger(handle, SetTabsActive(i));
                 }
@@ -142,6 +174,7 @@ impl Tabs {
             }
         });
 
+        let children2 = children.clone();
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(handle).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
@@ -150,6 +183,10 @@ impl Tabs {
             world.queue_trigger(back, SetWidgetVisible(visible));
             world.queue_trigger(back_shadow, SetWidgetVisible(visible));
             collider.enabled = visible;
+
+            for (i, tab) in children2.iter().enumerate() {
+                world.queue_trigger(tab.edge, SetWidgetVisible(visible && i == this.active));
+            }
 
             world.queue_trigger(handle, WidgetVisible(visible));
             world.queue_trigger(side, WidgetVisible(visible));
@@ -164,10 +201,11 @@ impl Tabs {
             let theme = world.single_fetch::<Theme>().unwrap();
             this.active = active;
 
-            for (i, &child) in children.iter().enumerate() {
-                world.queue_trigger(child, SetButtonSelected(i == active));
+            for (i, tab) in children.iter().enumerate() {
+                world.queue_trigger(tab.button, SetButtonSelected(i == active));
+                world.queue_trigger(tab.edge, SetWidgetVisible(this.visible && i == active));
                 world.queue_trigger(
-                    child,
+                    tab.button,
                     SetButtonIconColor(match i == active {
                         true => theme.symbolic_color,
                         false => theme.significant_color,
