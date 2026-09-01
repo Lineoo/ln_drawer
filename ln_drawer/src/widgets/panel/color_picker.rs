@@ -14,6 +14,7 @@ use crate::{
     measures::Rectangle,
     render::{RenderControl, RenderPhase, camera::CurrentCamera, rounded::RoundedRectDescriptor},
     theme::Theme,
+    tools::collider::ToolColliderPortal,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
@@ -23,7 +24,7 @@ use crate::{
         },
         panel::{Panel, debug_panel::docker_button},
         renderer::svg::svg_render,
-        tabs::Tabs,
+        tabs::{SetTabsActive, Tabs},
     },
 };
 
@@ -55,25 +56,25 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
 
     let tab_palette_hsl = world.insert(Panel {
         rect: Rectangle::default(),
-        visible: true,
+        visible: false,
         shadow: false,
     });
 
     let tab_palette_oklch = world.insert(Panel {
         rect: Rectangle::default(),
-        visible: true,
+        visible: false,
         shadow: false,
     });
 
     let tab_settings = world.insert(Panel {
         rect: Rectangle::default(),
-        visible: true,
+        visible: false,
         shadow: false,
     });
 
     let tab_debug = world.insert(Panel {
         rect: Rectangle::default(),
-        visible: true,
+        visible: false,
         shadow: false,
     });
 
@@ -144,9 +145,13 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     for panel in [tab_palette_hsl, tab_palette_oklch, tab_settings, tab_debug] {
         let control = world.insert(RenderControl::phase(panel));
         RenderControl::reorder(Some(isize::MAX), world, control);
+        world.enter(lnwindow, || {
+            world.insert(ToolColliderPortal(panel.untyped()));
+        });
         world.enter(panel, || {
             world.insert(ViewRef(lnwindow.untyped()));
             world.insert(ElemRef(input.untyped()));
+            world.insert(ElemRef(toggle_button.untyped()));
             world.insert(ElemRef(wrapper.untyped()));
             world.insert(ElemRef(camera.untyped()));
             world.insert(RenderPhase::default());
@@ -164,6 +169,14 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     });
     world.enter_queue(tab_debug, move |world| {
         super::debug_panel::debug_panel(world, tab_debug)
+    });
+
+    // initialize layout
+    world.queue(move |world| {
+        let this = world.fetch(tabs).unwrap();
+        world.queue_trigger(tabs, SetWidgetRectangle(this.rect));
+        world.queue_trigger(tabs, SetWidgetVisible(this.visible));
+        world.queue_trigger(tabs, SetTabsActive(this.active));
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();

@@ -30,7 +30,7 @@ pub struct Tabs {
 }
 
 impl Tabs {
-    pub fn init(&self, world: &World, handle: Handle<Self>) -> Handle<Tabs> {
+    pub fn init(&self, world: &World, handle: Handle<Self>) {
         let theme = world.single_fetch::<Theme>().unwrap();
 
         let back = world.build(RoundedRectDescriptor {
@@ -170,16 +170,6 @@ impl Tabs {
                 world.queue_trigger(entry, SetWidgetVisible(this.visible && i == active));
             }
         });
-
-        // initialize layout
-        world.queue(move |world| {
-            let this = world.fetch(handle).unwrap();
-            world.queue_trigger(handle, SetWidgetRectangle(this.rect));
-            world.queue_trigger(handle, SetWidgetVisible(this.visible));
-            world.queue_trigger(handle, SetTabsActive(this.active));
-        });
-
-        handle
     }
 }
 

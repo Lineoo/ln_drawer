@@ -1,12 +1,12 @@
 use glam::{DVec2, I8Vec2, I64Vec2, Vec2};
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
 };
 
 use crate::{
     lnwin::Lnwindow,
-    render::camera::{Camera, CurrentCamera},
+    render::camera::CurrentCamera,
     tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
 };
 
@@ -70,7 +70,7 @@ struct Pointer {
 #[derive(Clone, Copy)]
 struct Hover {
     position: I64Vec2,
-    view: Handle<Camera>,
+    view: HandleAny,
     handle: Handle<ToolCollider>,
 }
 
