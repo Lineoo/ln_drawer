@@ -6,7 +6,7 @@ use std::{
     thread::JoinHandle,
 };
 
-use glam::{IVec2, UVec2, Vec2, Vec4};
+use glam::{IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
@@ -35,13 +35,14 @@ use crate::{
     render::{
         MSAA_STATE, Render, RenderControl, RenderExtra, RenderInformation,
         camera::{Camera, CameraBind, CameraUpdated, MainCamera, UICamera},
-        rounded::{RoundedRect, RoundedRectDescriptor},
     },
     save::{Autosave, SaveDatabase},
-    widgets::shaders::LIB_COLORSPACE,
+    widgets::{renderer::rrect::RRect, shaders::LIB_COLORSPACE},
 };
 
 pub struct LayerDebugMessage(pub String);
+
+pub const BRUSH_PREVIEW_SHADOW_BLUR: i32 = 30;
 
 pub struct BrushConfigurationChanged;
 
@@ -59,7 +60,8 @@ pub struct LayerWrapper {
 
     pub temp_erase: RoundBrush,
 
-    pub brush_preview: Handle<RoundedRect>,
+    pub brush_preview: Handle<RRect>,
+    pub brush_preview_shadow: Handle<RRect>,
     pub compositing_texture: Texture,
     pub compositing_config: SurfaceConfiguration,
     pub compositing_render_bind: BindGroup,
@@ -124,20 +126,24 @@ impl LayerWrapper {
         });
 
         let ui_camera = world.single_fetch::<UICamera>().unwrap();
-        let brush_preview = world.enter(ui_camera.0, || {
-            world.build(RoundedRectDescriptor {
+        let (brush_preview, brush_preview_shadow) = world.enter(ui_camera.0, || {
+            let preview = world.insert(RRect {
                 rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
-                color: Srgba::new(0.5, 0.5, 0.5, 0.4),
-                shrink: 0.5,
-                value: 0.5,
-                shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.3),
-                shadow_offset: Vec2::ZERO,
-                shadow_blur: 30.0,
-                visible: false,
-                vertex_extend: 80,
                 order: -10,
-                ..Default::default()
-            })
+                color: Srgba::new(0.5, 0.5, 0.5, 0.4),
+                radius: 0.5,
+                width: 0.0,
+                enabled: false,
+            });
+            let preview_shadow = world.insert(RRect {
+                rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
+                order: -11,
+                color: Srgba::new(0.0, 0.0, 0.0, 0.3),
+                radius: 0.5,
+                width: BRUSH_PREVIEW_SHADOW_BLUR as f32,
+                enabled: false,
+            });
+            (preview, preview_shadow)
         });
 
         let (compositing_texture, compositing_render_bind) =
@@ -182,6 +188,7 @@ impl LayerWrapper {
                 erase: true,
             },
             brush_preview,
+            brush_preview_shadow,
             compositing_texture,
             compositing_config: render.config.clone(),
             compositing_render_bind,

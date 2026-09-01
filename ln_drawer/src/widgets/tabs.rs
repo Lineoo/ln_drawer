@@ -6,7 +6,6 @@ use crate::{
         LuniRect,
     },
     measures::Rectangle,
-    render::rounded::RoundedRectDescriptor,
     theme::Theme,
     tools::collider::ToolCollider,
     widgets::{
@@ -15,6 +14,7 @@ use crate::{
             ButtonAction, ButtonImage, SetButtonIconColor, SetButtonSelected, ToggleButton,
             ToggleButtonTheme,
         },
+        renderer::rrect::RRect,
     },
 };
 
@@ -33,17 +33,26 @@ impl Tabs {
     pub fn init(&self, world: &World, handle: Handle<Self>) {
         let theme = world.single_fetch::<Theme>().unwrap();
 
-        let back = world.build(RoundedRectDescriptor {
+        let roundness = theme.roundness;
+        let shadow_offset = theme.shadow_offset.as_ivec2();
+        let shadow_blur = theme.shadow_blur;
+
+        let back = world.insert(RRect {
             rect: self.rect,
-            color: theme.secondary_color,
-            shadow_color: theme.shadow_color,
-            shadow_offset: theme.shadow_offset,
-            shadow_blur: theme.shadow_blur,
-            shrink: theme.roundness,
-            value: theme.roundness,
-            vertex_extend: 20,
-            visible: true,
             order: -10,
+            color: theme.secondary_color,
+            radius: roundness,
+            width: 0.0,
+            enabled: true,
+        });
+
+        let back_shadow = world.insert(RRect {
+            rect: self.rect + shadow_offset,
+            order: -11,
+            color: theme.shadow_color,
+            radius: roundness,
+            width: shadow_blur,
+            enabled: true,
         });
 
         let mut children = Vec::new();
@@ -118,11 +127,11 @@ impl Tabs {
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(handle).unwrap();
-            let mut back = world.fetch_mut(back).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
 
             this.rect = rect;
-            back.desc.rect = rect;
+            world.queue_trigger(back, SetWidgetRectangle(rect));
+            world.queue_trigger(back_shadow, SetWidgetRectangle(rect + shadow_offset));
             collider.rect = rect;
 
             world.queue_trigger(handle, WidgetRectangle(main_rect(rect)));
@@ -135,11 +144,11 @@ impl Tabs {
 
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(handle).unwrap();
-            let mut back = world.fetch_mut(back).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
 
             this.visible = visible;
-            back.desc.visible = visible;
+            world.queue_trigger(back, SetWidgetVisible(visible));
+            world.queue_trigger(back_shadow, SetWidgetVisible(visible));
             collider.enabled = visible;
 
             world.queue_trigger(handle, WidgetVisible(visible));

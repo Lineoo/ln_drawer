@@ -19,7 +19,6 @@ use crate::{
     render::{
         Render, RenderPhase,
         camera::{Camera, CameraDescriptor, CameraUtils, CurrentCamera, MainCamera, UICamera},
-        rounded::RoundedRect,
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     theme::Theme,
@@ -143,7 +142,6 @@ impl Element for Lnwindow {
             world.insert(QuadMeshPipeline::<OklabBarMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<RRectMaterial>::from_world(world));
             world.insert(TextPipeline::new());
-            RoundedRect::init(world);
             world.insert(Theme::default());
 
             world.flush();

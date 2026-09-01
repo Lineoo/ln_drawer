@@ -1,5 +1,4 @@
 pub mod camera;
-pub mod rounded;
 
 use std::time::{Duration, Instant};
 
@@ -573,7 +572,7 @@ impl RenderControl {
     }
 
     /// Safer functions to request redraw.
-    pub fn redraw(world: &World) {
+    pub fn request_redraw(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
 

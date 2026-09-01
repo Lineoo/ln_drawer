@@ -70,25 +70,28 @@ impl LayerInput {
             world.enter(ui_camera.0, || {
                 let camera = world.fetch(ui_camera.0).unwrap();
                 let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
-                let mut brush_preview = world.fetch_mut(wrapper.brush_preview).unwrap();
-                brush_preview.desc.shadow_offset = event.pointer.tilt * 48.0;
+                let brush_rect = Rectangle::new_half(
+                    camera
+                        .screen_to_world_absolute(event.pointer.screen)
+                        .q32_round(),
+                    UVec2::new(1, 1),
+                );
+                let shadow_rect = brush_rect + (event.pointer.tilt * 48.0).as_ivec2();
+                world.queue_trigger(wrapper.brush_preview, SetWidgetRectangle(brush_rect));
                 world.queue_trigger(
-                    wrapper.brush_preview,
-                    SetWidgetRectangle(Rectangle::new_half(
-                        camera
-                            .screen_to_world_absolute(event.pointer.screen)
-                            .q32_round(),
-                        UVec2::new(1, 1),
-                    )),
+                    wrapper.brush_preview_shadow,
+                    SetWidgetRectangle(shadow_rect),
                 );
 
                 match event.status {
                     PointerHoverStatus::Enter => {
                         world.queue_trigger(wrapper.brush_preview, SetWidgetVisible(true));
+                        world.queue_trigger(wrapper.brush_preview_shadow, SetWidgetVisible(true));
                     }
                     PointerHoverStatus::Moving => {}
                     PointerHoverStatus::Leave => {
                         world.queue_trigger(wrapper.brush_preview, SetWidgetVisible(false));
+                        world.queue_trigger(wrapper.brush_preview_shadow, SetWidgetVisible(false));
                     }
                 }
             });

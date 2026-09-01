@@ -47,7 +47,6 @@ impl<T: AnimationType> Descriptor for AnimationDescriptor<T> {
     }
 }
 
-#[expect(unused)]
 pub struct SimpleAnimationDescriptor<T, W, F>
 where
     T: AnimationType,
@@ -120,6 +119,7 @@ where
 
 pub struct SetAnimationDst<T: AnimationType>(pub T);
 
+#[expect(unused)]
 pub struct DirectAnimation<T, W>
 where
     T: AnimationType,
@@ -197,7 +197,7 @@ impl<T: AnimationType> Element for Animation<T> {
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         if self.src != self.dst || self.data_pushed != T::from_storage(self.src) {
             self.last_update = Instant::now();
-            RenderControl::redraw(world);
+            RenderControl::request_redraw(world);
         }
     }
 }

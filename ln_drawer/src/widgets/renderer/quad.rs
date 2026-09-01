@@ -113,6 +113,8 @@ impl<M: QuadMaterial> QuadMesh<M> {
             })),
         });
 
+        RenderControl::reorder(self.visible.then_some(self.order), world, control);
+
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             let render = world.single_fetch::<Render>().unwrap();
@@ -124,14 +126,15 @@ impl<M: QuadMaterial> QuadMesh<M> {
             };
 
             let bytes = bytemuck::bytes_of(&uniform);
-
             render.queue.write_buffer(&rectangle_buffer, 0, bytes);
+            RenderControl::request_redraw(world);
         });
 
         world.observer(this, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.visible = visible;
             RenderControl::reorder(visible.then_some(this.order), world, control);
+            RenderControl::request_redraw(world);
         });
 
         world.observer(this, move |&SetQuadMaterial(mat), world| {
@@ -142,6 +145,7 @@ impl<M: QuadMaterial> QuadMesh<M> {
             render
                 .queue
                 .write_buffer(&material_buffer, 0, bytemuck::bytes_of(&mat));
+            RenderControl::request_redraw(world);
         });
     }
 }

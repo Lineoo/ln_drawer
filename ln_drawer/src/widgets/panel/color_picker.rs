@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use glam::{IVec2, UVec2, Vec2};
+use glam::{IVec2, UVec2};
 use ln_world::{ElemRef, Handle, HandleGeneric, ViewRef, World};
 use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
@@ -12,7 +12,7 @@ use crate::{
     layout::transform::{Transform, TransformValue},
     lnwin::Lnwindow,
     measures::Rectangle,
-    render::{RenderControl, RenderPhase, camera::CurrentCamera, rounded::RoundedRectDescriptor},
+    render::{RenderControl, RenderPhase, camera::CurrentCamera},
     theme::Theme,
     tools::collider::ToolColliderPortal,
     widgets::{
@@ -23,20 +23,22 @@ use crate::{
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
         panel::{Panel, debug_panel::docker_button},
-        renderer::svg::svg_render,
+        renderer::{
+            rrect::{RRect, SetRRectColor},
+            svg::svg_render,
+        },
         tabs::{SetTabsActive, Tabs},
     },
 };
 
 pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
-    let toggle_button_color_icon = world.build(RoundedRectDescriptor {
+    let toggle_button_color_icon = world.insert(RRect {
+        rect: Rectangle::default(),
         order: 21,
         color: Srgba::new(0.9, 0.7, 0.7, 1.0),
-        value: 10.0,
-        shrink: 10.0,
-        shadow_offset: Vec2::ZERO,
-        vertex_extend: 20,
-        ..Default::default()
+        radius: 10.0,
+        width: 0.0,
+        enabled: true,
     });
 
     world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
@@ -182,9 +184,8 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     let layer = world.single::<LayerWrapper>().unwrap();
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
-        let mut toggle_button_color_icon = world.fetch_mut(toggle_button_color_icon).unwrap();
         let color = layer.round_brush.color;
-        toggle_button_color_icon.desc.color = color.into_color();
+        world.queue_trigger(toggle_button_color_icon, SetRRectColor(color.into_color()));
         // trigger palette_hsl SetPaletteHsl
     });
 
