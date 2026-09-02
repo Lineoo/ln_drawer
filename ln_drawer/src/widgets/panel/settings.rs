@@ -2,6 +2,7 @@ use cosmic_text::{Attrs, Metrics, Weight};
 use ln_world::{Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
+    i18n::tr,
     layer::wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
     layout::{
         luni::{
@@ -25,7 +26,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
 
     let label1_frame = world.insert(EchoWidget);
     let label1 = world.insert(Text {
-        text: String::from("选项标签"),
+        text: tr("settings.brush.title"),
         metrics: Metrics {
             font_size: 14.0,
             line_height: 18.0,
@@ -89,8 +90,8 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         let mut softness_desc = world.fetch_mut(softness_desc).unwrap();
 
         // Flow //
-        flow_label.set_text("流量");
-        flow_desc.set_text("笔刷每步流量");
+        flow_label.set_text(tr("settings.brush.flow.label"));
+        flow_desc.set_text(tr("settings.brush.flow.desc"));
         let flow = match layer.brush_mode {
             BrushMode::Round | BrushMode::Blur => layer.round_brush.flow.scale,
             BrushMode::Tint => layer.tint_brush.flow.w,
@@ -99,15 +100,15 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         world.queue_trigger(flow_slider_label, SetText(format!("{flow:.2}")));
 
         // Sigma //
-        sigma_label.set_text("模糊标准差");
-        sigma_desc.set_text("卷积核应用标准差 σ");
+        sigma_label.set_text(tr("settings.brush.sigma.label"));
+        sigma_desc.set_text(tr("settings.brush.sigma.desc"));
         let sigma = layer.blur_brush.sigma.scale;
         world.queue_trigger(sigma_slider, SetSliderValue(sigma / 3.0));
         world.queue_trigger(sigma_slider_label, SetText(format!("{sigma:.2}")));
 
         // Softness
-        softness_label.set_text("硬度");
-        softness_desc.set_text("三次多项式平滑");
+        softness_label.set_text(tr("settings.brush.softness.label"));
+        softness_desc.set_text(tr("settings.brush.softness.desc"));
         let softness = match layer.brush_mode {
             BrushMode::Round => 1. - layer.round_brush.softness.scale,
             BrushMode::Blur => 1. - layer.blur_brush.softness.scale,

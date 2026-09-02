@@ -1,0 +1,8 @@
+[settings.brush]
+title = "笔刷設定"
+flow.label = "流量"
+flow.desc = "筆刷每步流量"
+sigma.label = "ぼかしの標準偏差"
+sigma.desc = "畳み込みカーネルに適用する標準偏差 σ"
+softness.label = "硬さ"
+softness.desc = "三次多項式によるスムージング"

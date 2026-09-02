@@ -1,0 +1,8 @@
+[settings.brush]
+title = "Brush Configuration"
+flow.label = "Flow"
+flow.desc = "Flow per brush step"
+sigma.label = "Blur Standard Deviation"
+sigma.desc = "Standard deviation σ applied to the convolution kernel"
+softness.label = "Hardness"
+softness.desc = "Cubic polynomial smoothing"

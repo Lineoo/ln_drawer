@@ -1,0 +1,8 @@
+[settings.brush]
+title = "筆刷設定"
+flow.label = "流量"
+flow.desc = "筆刷每步流量"
+sigma.label = "模糊標準差"
+sigma.desc = "卷積核套用標準差 σ"
+softness.label = "硬度"
+softness.desc = "三次多項式平滑"
