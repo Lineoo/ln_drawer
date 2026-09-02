@@ -244,6 +244,36 @@ impl Rectangle {
         }
     }
 
+    pub fn adjust_clamp(self, rhs: Rectangle) -> Rectangle {
+        if self.width() > rhs.width() || self.height() > rhs.height() {
+            return self;
+        }
+
+        let new_left = self
+            .left()
+            .clamp(rhs.left(), rhs.right() - self.width() as i32);
+        let new_down = self
+            .down()
+            .clamp(rhs.down(), rhs.up() - self.height() as i32);
+
+        Rectangle::new_extend(new_left, new_down, self.width(), self.height())
+    }
+
+    pub fn adjust_contain(self, rhs: Rectangle) -> Rectangle {
+        if self.width() < rhs.width() || self.height() < rhs.height() {
+            return self;
+        }
+
+        let new_left = self
+            .left()
+            .clamp(rhs.right() - self.width() as i32, rhs.left());
+        let new_down = self
+            .down()
+            .clamp(rhs.up() - self.height() as i32, rhs.down());
+
+        Rectangle::new_extend(new_left, new_down, self.width(), self.height())
+    }
+
     pub fn contains(self, p: IVec2) -> bool {
         let delta = p.wrapping_sub(self.origin).as_uvec2();
         delta.x < self.extend.x && delta.y < self.extend.y

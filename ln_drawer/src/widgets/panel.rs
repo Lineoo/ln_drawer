@@ -22,13 +22,6 @@ pub struct Panel {
     pub shadow: bool,
 }
 
-pub struct SetPanelAnimation {
-    pub src: Rectangle,
-    pub dst: Rectangle,
-    #[expect(unused)]
-    pub hidden_after_finished: bool,
-}
-
 impl Panel {
     pub fn init(&mut self, world: &World, handle: Handle<Self>) {
         let theme = world.single_fetch::<Theme>().unwrap();
@@ -96,15 +89,6 @@ impl Panel {
             }
             collider.enabled = enabled;
             world.queue_trigger(handle, WidgetVisible(enabled));
-        });
-
-        world.observer(handle, move |anim: &SetPanelAnimation, world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let mut back_rect_anim = world.fetch_mut(back_rect_anim).unwrap();
-            this.rect = anim.dst;
-            back_rect_anim.dst = anim.dst.into_storage();
-            back_rect_anim.src = anim.src.into_storage();
-            world.queue_trigger(handle, WidgetRectangle(anim.dst));
         });
     }
 }

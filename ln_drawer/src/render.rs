@@ -542,35 +542,6 @@ fn plain_rpass<'encoder>(
 }
 
 impl RenderControl {
-    pub fn phase(view: impl HandleGeneric) -> Self {
-        let view = view.untyped();
-        RenderControl {
-            prepare: Some(Box::new(move |world| {
-                world.enter(view, || {
-                    let mut keep_redrawing = false;
-                    world.foreach_fetch_mut::<RenderControl>(|mut control| {
-                        if let Some(prepare) = &mut control.prepare
-                            && let Some(info) = prepare(world)
-                        {
-                            keep_redrawing |= info.keep_redrawing;
-                        };
-                    });
-                    if world.queue_cache::<RenderControl>() {
-                        log::debug!("control cached");
-                    }
-                    Some(RenderInformation { keep_redrawing })
-                })
-            })),
-            draw: Some(Box::new(move |world, rpass, extra| {
-                world.enter(view, || {
-                    let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
-                    phase.reorder();
-                    phase.draw(world, rpass, extra);
-                });
-            })),
-        }
-    }
-
     pub fn phase_with_draw(
         view: impl HandleGeneric,
         mut f: impl FnMut(&World, &mut RenderPass, RenderExtra) + Send + 'static,

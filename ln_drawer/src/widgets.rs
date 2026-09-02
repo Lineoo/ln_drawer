@@ -8,6 +8,7 @@ pub mod renderer;
 pub mod shaders;
 pub mod slider;
 pub mod tabs;
+pub mod container;
 
 pub enum WidgetHover {
     Enter,

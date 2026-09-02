@@ -13,6 +13,7 @@ use crate::{
     measures::{Axis, Rectangle},
     theme::Theme,
     widgets::{
+        container::Container,
         echo::EchoWidget,
         panel::Panel,
         renderer::text::{SetText, Text},
@@ -20,7 +21,7 @@ use crate::{
     },
 };
 
-pub fn panel_settings(world: &World, panel: Handle<Panel>) {
+pub fn panel_settings(world: &World, panel: Handle<Container>) {
     let theme = world.single_fetch::<Theme>().unwrap();
 
     let label1_frame = world.insert(EchoWidget);

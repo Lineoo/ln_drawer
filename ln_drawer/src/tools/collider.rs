@@ -14,6 +14,7 @@ pub struct ToolCollider {
     pub enabled: bool,
 }
 
+// TODO scissor rect
 pub struct ToolColliderPortal(pub HandleAny);
 
 /// Event node for [`ToolColliderChanged`]

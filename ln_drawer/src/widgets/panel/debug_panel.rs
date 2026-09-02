@@ -20,12 +20,13 @@ use crate::{
             ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton,
             ToggleButtonTheme,
         },
+        container::Container,
         panel::Panel,
         renderer::{svg::svg_render, text::Text},
     },
 };
 
-pub fn debug_panel(world: &World, submenu: Handle<Panel>) {
+pub fn debug_panel(world: &World, submenu: Handle<Container>) {
     let debug_text = world.insert(Text {
         text: "Hi there".into(),
         rect: Rectangle::new_half(IVec2::ZERO, UVec2::ONE),

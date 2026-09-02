@@ -18,6 +18,7 @@ use crate::{
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
+        container::Container,
         palette::{
             hsl::{ColorHsla, HslPanel, SetColorHsla},
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
@@ -56,28 +57,28 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         world.queue_trigger(toggle_button_color_icon, SetWidgetRectangle(target));
     });
 
-    let tab_palette_hsl = world.insert(Panel {
+    let tab_palette_hsl = world.insert(Container {
         rect: Rectangle::default(),
+        inner: Rectangle::new(0, 0, 400, 400),
         visible: false,
-        shadow: false,
     });
 
-    let tab_palette_oklch = world.insert(Panel {
+    let tab_palette_oklch = world.insert(Container {
         rect: Rectangle::default(),
+        inner: Rectangle::new(0, 0, 400, 400),
         visible: false,
-        shadow: false,
     });
 
-    let tab_settings = world.insert(Panel {
+    let tab_settings = world.insert(Container {
         rect: Rectangle::default(),
+        inner: Rectangle::new(0, 0, 400, 400),
         visible: false,
-        shadow: false,
     });
 
-    let tab_debug = world.insert(Panel {
+    let tab_debug = world.insert(Container {
         rect: Rectangle::default(),
+        inner: Rectangle::new(0, 0, 400, 400),
         visible: false,
-        shadow: false,
     });
 
     let tabs = world.insert(Tabs {
@@ -230,7 +231,7 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     });
 }
 
-fn palette_hsl(world: &World, bg: Handle<Panel>) {
+fn palette_hsl(world: &World, bg: Handle<Container>) {
     let panel = world.insert(HslPanel {
         rect: Rectangle::default(),
         color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
@@ -260,7 +261,7 @@ fn palette_hsl(world: &World, bg: Handle<Panel>) {
     });
 }
 
-fn palette_oklab(world: &World, bg: Handle<Panel>, toggle_button: Handle<ToggleButton>) {
+fn palette_oklab(world: &World, bg: Handle<Container>, toggle_button: Handle<ToggleButton>) {
     let polar = world.insert(OklabPolar {
         rect: Rectangle::default(),
         color: Oklab::default(),
