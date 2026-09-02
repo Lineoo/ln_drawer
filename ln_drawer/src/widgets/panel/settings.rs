@@ -42,31 +42,39 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
 
     let layer = world.single::<LayerWrapper>().unwrap();
 
+    // Flow //
     let flow_frame = world.insert(EchoWidget);
     let flow_label = option_label(world, String::new(), flow_frame.untyped());
     let flow_desc = option_desc(world, String::new(), flow_frame.untyped());
     let (flow_slider, flow_slider_label) = option_slider(world, flow_frame.untyped());
     world.observer(flow_slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        match layer.brush_mode {
-            BrushMode::Round => layer.round_brush.flow.scale = value,
-            BrushMode::Blur => layer.blur_brush.sigma.scale = value * 3.0,
-            BrushMode::Tint => layer.tint_brush.flow.w = value,
-        };
+        layer.round_brush.flow.scale = value;
+        layer.tint_brush.flow.w = value;
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
+    // Blur Kernel Sigma //
+    let sigma_frame = world.insert(EchoWidget);
+    let sigma_label = option_label(world, String::new(), sigma_frame.untyped());
+    let sigma_desc = option_desc(world, String::new(), sigma_frame.untyped());
+    let (sigma_slider, sigma_slider_label) = option_slider(world, sigma_frame.untyped());
+    world.observer(sigma_slider, move |&SliderValue(value), world| {
+        let mut layer = world.fetch_mut(layer).unwrap();
+        layer.blur_brush.sigma.scale = value * 3.0;
+        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    });
+
+    // Softness //
     let softness_frame = world.insert(EchoWidget);
     let softness_label = option_label(world, String::new(), softness_frame.untyped());
     let softness_desc = option_desc(world, String::new(), softness_frame.untyped());
     let (softness_slider, softness_slider_label) = option_slider(world, softness_frame.untyped());
     world.observer(softness_slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        match layer.brush_mode {
-            BrushMode::Round => layer.round_brush.softness.scale = 1. - value,
-            BrushMode::Blur => layer.blur_brush.softness.scale = 1. - value,
-            BrushMode::Tint => layer.tint_brush.softness.scale = 1. - value,
-        };
+        layer.round_brush.softness.scale = 1. - value;
+        layer.blur_brush.softness.scale = 1. - value;
+        layer.tint_brush.softness.scale = 1. - value;
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
@@ -75,63 +83,39 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
 
         let mut flow_label = world.fetch_mut(flow_label).unwrap();
         let mut flow_desc = world.fetch_mut(flow_desc).unwrap();
-
-        let value = match layer.brush_mode {
-            BrushMode::Round => layer.round_brush.flow.scale,
-            BrushMode::Blur => layer.blur_brush.sigma.scale / 3.0,
-            BrushMode::Tint => layer.tint_brush.flow.w,
-        };
-
-        world.queue_trigger(flow_slider, SetSliderValue(value));
-        world.queue_trigger(flow_slider_label, SetText(format!("{value:.2}")));
-
-        let (label, desc) = match layer.brush_mode {
-            BrushMode::Round | BrushMode::Tint => ("流量", "笔刷每步流量（范围：[0, 1]）"),
-            BrushMode::Blur => ("模糊标准差", "卷积核应用半径：r = σ * 3（范围：[0, 1]）"),
-        };
-
-        if flow_label.text != label {
-            flow_label.text = label.into();
-            flow_label.outdated = true;
-        }
-
-        if flow_desc.text != desc {
-            flow_desc.text = desc.into();
-            flow_desc.outdated = true;
-        }
-
+        let mut sigma_label = world.fetch_mut(sigma_label).unwrap();
+        let mut sigma_desc = world.fetch_mut(sigma_desc).unwrap();
         let mut softness_label = world.fetch_mut(softness_label).unwrap();
         let mut softness_desc = world.fetch_mut(softness_desc).unwrap();
 
-        let value = match layer.brush_mode {
+        // Flow //
+        flow_label.set_text("流量");
+        flow_desc.set_text("笔刷每步流量");
+        let flow = match layer.brush_mode {
+            BrushMode::Round | BrushMode::Blur => layer.round_brush.flow.scale,
+            BrushMode::Tint => layer.tint_brush.flow.w,
+        };
+        world.queue_trigger(flow_slider, SetSliderValue(flow));
+        world.queue_trigger(flow_slider_label, SetText(format!("{flow:.2}")));
+
+        // Sigma //
+        sigma_label.set_text("模糊标准差");
+        sigma_desc.set_text("卷积核应用标准差 σ");
+        let sigma = layer.blur_brush.sigma.scale;
+        world.queue_trigger(sigma_slider, SetSliderValue(sigma / 3.0));
+        world.queue_trigger(sigma_slider_label, SetText(format!("{sigma:.2}")));
+
+        // Softness
+        softness_label.set_text("硬度");
+        softness_desc.set_text("三次多项式平滑");
+        let softness = match layer.brush_mode {
             BrushMode::Round => 1. - layer.round_brush.softness.scale,
             BrushMode::Blur => 1. - layer.blur_brush.softness.scale,
             BrushMode::Tint => 1. - layer.tint_brush.softness.scale,
         };
-
-        world.queue_trigger(softness_slider, SetSliderValue(value));
-        world.queue_trigger(softness_slider_label, SetText(format!("{value:.2}")));
-
-        let (label, desc) = ("硬度", "三次多项式平滑（范围：[0, 1]）");
-
-        if softness_label.text != label {
-            softness_label.text = label.into();
-            softness_label.outdated = true;
-        }
-
-        if softness_desc.text != desc {
-            softness_desc.text = desc.into();
-            softness_desc.outdated = true;
-        }
+        world.queue_trigger(softness_slider, SetSliderValue(softness));
+        world.queue_trigger(softness_slider_label, SetText(format!("{softness:.2}")));
     });
-
-    let test_frame = world.insert(EchoWidget);
-    let test_label = option_label(world, String::new(), test_frame.untyped());
-    let test_desc = option_desc(world, String::new(), test_frame.untyped());
-    let (_test_slider, test_slider_label) = option_slider(world, test_frame.untyped());
-    world.queue_trigger(test_label, SetText(format!("测试标签")));
-    world.queue_trigger(test_desc, SetText(format!("测试描述")));
-    world.queue_trigger(test_slider_label, SetText(format!("NaN")));
 
     world.insert(LuniFlex {
         parent: (
@@ -165,14 +149,14 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
                 },
             ),
             (
-                softness_frame.untyped(),
+                sigma_frame.untyped(),
                 LuniChild {
                     basis: Some(108),
                     ..Default::default()
                 },
             ),
             (
-                test_frame.untyped(),
+                softness_frame.untyped(),
                 LuniChild {
                     basis: Some(108),
                     ..Default::default()

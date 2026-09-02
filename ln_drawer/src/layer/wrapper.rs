@@ -170,7 +170,7 @@ impl LayerWrapper {
             },
             blur_brush: BlurBrush {
                 size: BrushParam::constant(20.0),
-                sigma: BrushParam::constant(2.0),
+                sigma: BrushParam::constant(3.0),
                 softness: BrushParam::constant(0.3),
             },
             tint_brush: TintBrush {
