@@ -1,6 +1,7 @@
 use ln_world::{Element, Handle, World};
 
 use crate::{
+    layout::transform::TransformValue,
     measures::{FI64Ext, Rectangle},
     theme::Theme,
     tools::{
@@ -16,6 +17,7 @@ use crate::{
 pub struct Container {
     pub rect: Rectangle,
     pub inner: Rectangle,
+    pub inner_transform: TransformValue,
     pub visible: bool,
 }
 
@@ -65,6 +67,8 @@ impl Container {
             let this = &mut *world.fetch_mut(handle).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
             this.inner += rect.origin - this.rect.origin;
+            this.inner.extend = this.inner_transform.compute(rect).extend;
+            this.inner = this.inner.adjust_contain(rect);
             this.rect = rect;
             collider.rect = rect;
             world.queue_trigger(back, SetWidgetRectangle(rect));

@@ -9,7 +9,7 @@ use crate::{
         input::LayerInput,
         wrapper::{BrushConfigurationChanged, LayerWrapper},
     },
-    layout::transform::{Transform, TransformValue},
+    layout::transform::{Transform, TransformEdge, TransformValue},
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{RenderControl, RenderPhase, camera::CurrentCamera},
@@ -59,25 +59,46 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
 
     let tab_palette_hsl = world.insert(Container {
         rect: Rectangle::default(),
-        inner: Rectangle::new(0, 0, 400, 400),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue::copy(),
         visible: false,
     });
 
     let tab_palette_oklch = world.insert(Container {
         rect: Rectangle::default(),
-        inner: Rectangle::new(0, 0, 400, 400),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue::copy(),
         visible: false,
     });
 
     let tab_settings = world.insert(Container {
         rect: Rectangle::default(),
-        inner: Rectangle::new(0, 0, 400, 400),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue {
+            left: TransformEdge {
+                anchor: 0.0,
+                offset: 0,
+            },
+            down: TransformEdge {
+                anchor: 1.0,
+                offset: -400,
+            },
+            right: TransformEdge {
+                anchor: 1.0,
+                offset: 0,
+            },
+            up: TransformEdge {
+                anchor: 1.0,
+                offset: 0,
+            },
+        },
         visible: false,
     });
 
     let tab_debug = world.insert(Container {
         rect: Rectangle::default(),
-        inner: Rectangle::new(0, 0, 400, 400),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue::copy(),
         visible: false,
     });
 
