@@ -15,7 +15,6 @@ use crate::{
     widgets::{
         container::Container,
         echo::EchoWidget,
-        panel::Panel,
         renderer::text::{SetText, Text},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },

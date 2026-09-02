@@ -27,7 +27,6 @@ pub struct TransformEdge {
 }
 
 impl TransformValue {
-    #[expect(unused)]
     pub const fn copy() -> TransformValue {
         TransformValue {
             left: TransformEdge {

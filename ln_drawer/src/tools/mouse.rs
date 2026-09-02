@@ -1,8 +1,6 @@
 use glam::{DVec2, IVec2};
 use ln_world::{Element, Handle, World};
-use winit::event::{
-    ButtonSource, ElementState, MouseButton, MouseScrollDelta, PointerSource, WindowEvent,
-};
+use winit::event::{ButtonSource, ElementState, MouseButton, PointerSource, WindowEvent};
 
 use crate::{
     lnwin::Lnwindow,
@@ -25,7 +23,6 @@ impl Element for MouseTool {
         let lnwindow = world.single::<Lnwindow>().unwrap();
 
         let mut middle = false;
-        let mut prev = DVec2::ZERO;
         world.observer(lnwindow, move |event: &WindowEvent, world| match event {
             // right-click //
             WindowEvent::PointerButton {
@@ -77,7 +74,6 @@ impl Element for MouseTool {
                 let main = world.single_fetch::<MainCamera>().unwrap();
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let cursor = lnwindow.cursor_to_screen(*position);
-                prev = cursor;
 
                 world.enter(main.0, || {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
@@ -94,25 +90,6 @@ impl Element for MouseTool {
                 ..
             } => {
                 middle = false;
-            }
-
-            WindowEvent::MouseWheel { delta, .. } => {
-                let main = world.single_fetch::<MainCamera>().unwrap();
-                world.enter(main.0, || {
-                    let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-
-                    let zoom_delta = match delta {
-                        MouseScrollDelta::LineDelta(_rows, lines) => *lines as f64 / 4.0,
-                        MouseScrollDelta::PixelDelta(delta) => delta.y / 16.0,
-                    };
-
-                    camera_utils.anchor_cursor(DVec2::ZERO);
-                    camera_utils.camera_cursor_by_anchor_center(prev);
-                    camera_utils.anchor_distance(1.0);
-                    camera_utils.camera_distance_by_anchor_zoom_cursor(1.0);
-                    camera_utils.camera_distance_by_camera_zoom_center(1.0 + zoom_delta);
-                    camera_utils.apply_to_camera(world);
-                });
             }
 
             _ => {}

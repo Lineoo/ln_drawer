@@ -16,11 +16,11 @@ use crate::{
     },
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
-    render::camera::{CameraUtils, UICamera},
+    render::camera::{CameraUtils, MainCamera, UICamera},
     tools::{
         collider::ToolCollider,
         modifiers::ModifiersTool,
-        pointer::{PointerHover, PointerHoverStatus},
+        pointer::{PointerHover, PointerHoverStatus, PointerScroll},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
     widgets::{SetWidgetRectangle, SetWidgetVisible},
@@ -136,6 +136,26 @@ impl LayerInput {
             }
 
             update_icon(&this, &LayerInputState::None, &lnwindow);
+        });
+
+        world.observer(collider, move |event: &PointerScroll, world| {
+            let main = world.single_fetch::<MainCamera>().unwrap();
+            world.enter(main.0, || {
+                let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+
+                let zoom_delta = -event.delta.y;
+                camera_utils.anchor_cursor(DVec2::ZERO);
+                camera_utils.camera_cursor_by_anchor_center(event.pointer.screen);
+                camera_utils.anchor_distance(200.0);
+                if zoom_delta > 0.0 {
+                    camera_utils.camera_distance_by_anchor_zoom_cursor(200.0);
+                    camera_utils.camera_distance_by_camera_zoom_center(200.0 + zoom_delta);
+                } else {
+                    camera_utils.camera_distance_by_anchor_zoom_cursor(200.0 - zoom_delta);
+                    camera_utils.camera_distance_by_camera_zoom_center(200.0);
+                }
+                camera_utils.apply_to_camera(world);
+            });
         });
 
         let mut state = LayerInputState::None;

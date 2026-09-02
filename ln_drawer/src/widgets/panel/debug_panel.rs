@@ -21,7 +21,6 @@ use crate::{
             ToggleButtonTheme,
         },
         container::Container,
-        panel::Panel,
         renderer::{svg::svg_render, text::Text},
     },
 };

@@ -1,7 +1,8 @@
 use glam::{DVec2, I8Vec2, I64Vec2, Vec2};
 use ln_world::{Element, Handle, HandleAny, World};
 use winit::event::{
-    ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
+    ButtonSource, ElementState, MouseButton, MouseScrollDelta, PointerKind, PointerSource,
+    WindowEvent,
 };
 
 use crate::{
@@ -24,6 +25,14 @@ pub struct PointerHit {
     pub status: PointerHitStatus,
     #[expect(unused)]
     pub data: PointerHitData,
+}
+
+#[derive(Clone, Copy)]
+pub struct PointerScroll {
+    pub delta: DVec2,
+    #[expect(unused)]
+    pub position: I64Vec2,
+    pub pointer: PointerData,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -219,6 +228,34 @@ impl Element for PointerTool {
                             ElementState::Released => None,
                         },
                     );
+                }
+
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let Some(pointer) = this.pointer.as_ref() else {
+                        return;
+                    };
+
+                    let Some(hover) = pointer.hovering else {
+                        return;
+                    };
+
+                    let delta = match delta {
+                        MouseScrollDelta::LineDelta(rows, lines) => {
+                            DVec2::new(*rows as f64, -*lines as f64) * 20.0
+                        }
+                        MouseScrollDelta::PixelDelta(delta) => DVec2::new(delta.x, -delta.y),
+                    };
+
+                    world.enter(hover.view, || {
+                        world.queue_trigger(
+                            hover.handle,
+                            PointerScroll {
+                                delta,
+                                position: hover.position,
+                                pointer: pointer.data,
+                            },
+                        )
+                    })
                 }
 
                 WindowEvent::PointerEntered { position, kind, .. } => {

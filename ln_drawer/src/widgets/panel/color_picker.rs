@@ -23,7 +23,7 @@ use crate::{
             hsl::{ColorHsla, HslPanel, SetColorHsla},
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
-        panel::{Panel, debug_panel::docker_button},
+        panel::debug_panel::docker_button,
         renderer::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,

@@ -6,7 +6,7 @@ use crate::{
     theme::Theme,
     tools::{
         collider::ToolCollider,
-        pointer::{PointerHit, PointerHitStatus},
+        pointer::{PointerHit, PointerHitStatus, PointerScroll},
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
@@ -61,6 +61,13 @@ impl Container {
                     None
                 }
             }
+        });
+
+        world.observer(collider, move |event: &PointerScroll, world| {
+            let mut this = world.fetch_mut(handle).unwrap();
+            this.inner += event.delta.round().as_ivec2();
+            this.inner = this.inner.adjust_contain(this.rect);
+            world.queue_trigger(handle, WidgetRectangle(this.inner));
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
