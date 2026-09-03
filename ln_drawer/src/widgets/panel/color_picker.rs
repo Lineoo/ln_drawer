@@ -71,6 +71,13 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         visible: false,
     });
 
+    let tab_layer_selection = world.insert(Container {
+        rect: Rectangle::default(),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue::copy(),
+        visible: false,
+    });
+
     let tab_settings = world.insert(Container {
         rect: Rectangle::default(),
         inner: Rectangle::default(),
@@ -140,6 +147,19 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
                         Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
                     ),
                     bytes: Arc::new(image::DynamicImage::from(svg_render(
+                        include_bytes!("../../../res/interface/layers.svg"),
+                        1.0,
+                    ))),
+                },
+                tab_layer_selection.untyped(),
+            ),
+            (
+                ButtonImage {
+                    transform: TransformValue::anchor(
+                        (0.5, 0.5),
+                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                    ),
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(
                         include_bytes!("../../../res/interface/settings.svg"),
                         1.0,
                     ))),
@@ -166,7 +186,13 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     let input = world.single::<LayerInput>().unwrap();
     let wrapper = world.single::<LayerWrapper>().unwrap();
     let camera = world.single::<CurrentCamera>().unwrap();
-    for panel in [tab_palette_hsl, tab_palette_oklch, tab_settings, tab_debug] {
+    for panel in [
+        tab_palette_hsl,
+        tab_palette_oklch,
+        tab_layer_selection,
+        tab_settings,
+        tab_debug,
+    ] {
         let control = world.insert(RenderControl::phase_with_draw(
             panel,
             move |world, rpass, extra| {
@@ -213,6 +239,9 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     });
     world.enter_queue(tab_palette_oklch, move |world| {
         palette_oklab(world, tab_palette_oklch, toggle_button)
+    });
+    world.enter_queue(tab_layer_selection, move |world| {
+        super::layer_selection::layer_selection(world, tab_layer_selection)
     });
     world.enter_queue(tab_settings, move |world| {
         super::settings::panel_settings(world, tab_settings)

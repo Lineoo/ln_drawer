@@ -26,7 +26,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
 
     let label1_frame = world.insert(EchoWidget);
     let label1 = world.insert(Text {
-        text: tr("settings.brush.title"),
+        text: tr("settings.brush.title").into(),
         metrics: Metrics {
             font_size: 14.0,
             line_height: 18.0,

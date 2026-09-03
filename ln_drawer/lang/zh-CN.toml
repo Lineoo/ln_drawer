@@ -6,3 +6,8 @@ sigma.label = "模糊标准差"
 sigma.desc = "卷积核应用标准差 σ"
 softness.label = "硬度"
 softness.desc = "三次多项式平滑"
+
+[settings.layer_selection]
+doc_label = "文档"
+layer_label = "分页"
+layer_name = "图层 {index}"

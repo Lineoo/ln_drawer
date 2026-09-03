@@ -2,6 +2,7 @@ pub mod color_picker;
 pub mod debug_panel;
 pub mod settings;
 pub mod side_docker;
+pub mod layer_selection;
 
 use ln_world::{Element, Handle, World};
 

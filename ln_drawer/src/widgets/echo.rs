@@ -12,8 +12,6 @@ use crate::widgets::{
 /// correlated notification event immediately.
 pub struct Echo<'w>(&'w World, HandleAny);
 
-#[expect(unused)]
-pub struct EchoAll;
 pub struct EchoWidget;
 
 impl Echo<'_> {
@@ -53,21 +51,6 @@ impl Echo<'_> {
     #[expect(unused)]
     pub fn button_selected(&self) -> &Self {
         self.build(|&SetButtonSelected(val)| ButtonSelected(val))
-    }
-
-    #[expect(unused)]
-    pub fn all(&self) {
-        self.widget_rectangle();
-        self.widget_visible();
-        self.slider_value();
-        self.tabs_active();
-        self.button_selected();
-    }
-}
-
-impl Element for EchoAll {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        Echo::new(world, this).all();
     }
 }
 
