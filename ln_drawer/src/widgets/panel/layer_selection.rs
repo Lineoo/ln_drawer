@@ -3,16 +3,19 @@ use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
     i18n::{tr, trp},
+    layer::{stream::ThreadInput, wrapper::LayerWrapper},
     layout::transform::{Transform, TransformEdge, TransformValue},
     measures::Rectangle,
     theme::Theme,
     widgets::{
-        button::{ToggleButton, ToggleButtonTheme},
+        button::{ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         container::Container,
         echo::Echo,
         renderer::{rrect::RRect, text::Text},
     },
 };
+
+struct LayerChosen(u64);
 
 pub fn layer_selection(world: &World, panel: Handle<Container>) {
     let theme = world.single_fetch::<Theme>().unwrap();
@@ -83,7 +86,8 @@ pub fn layer_selection(world: &World, panel: Handle<Container>) {
         target: layer_label.untyped(),
     });
 
-    for i in 0..3 {
+    let layers_node = world.insert(());
+    for i in 0..3i32 {
         let layer0_button = world.insert(ToggleButton {
             rect: Rectangle::default(),
             theme: ToggleButtonTheme {
@@ -110,6 +114,21 @@ pub fn layer_selection(world: &World, panel: Handle<Container>) {
             attrs: Attrs::new(),
             color: theme.symbolic_color,
             ..Default::default()
+        });
+
+        world.observer(layer0_button, move |&ButtonSelected(val), world| {
+            if val {
+                let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
+                wrapper
+                    .thread_tx
+                    .send(ThreadInput::SetPage(i as u64))
+                    .unwrap();
+                world.queue_trigger(layers_node, LayerChosen(i as u64));
+            }
+        });
+
+        world.observer(layers_node, move |&LayerChosen(j), world| {
+            world.queue_trigger(layer0_button, SetButtonSelected(i as u64 == j));
         });
 
         world.insert(Transform {

@@ -105,6 +105,7 @@ impl LayerWrapper {
             database,
             device: render.device.clone(),
             queue: render.queue.clone(),
+            page: 0,
             chunk_size: DEFAULT_CHUNK_SIZE,
             mipmap_levels: DEFAULT_MIPMAP_ENABLED,
             layer_pipeline: layer.clone(),

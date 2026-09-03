@@ -36,6 +36,7 @@ const TABLE_LAYER_CHUNK_META: TableDefinition<((u64, ChunkKey), u32), &[u8]> =
     TableDefinition::new("stroke_chunk_meta");
 
 pub enum ThreadInput {
+    SetPage(u64),
     SetStreamCamera(i64, UVec2, I64Vec2),
     MarkUnsaved(ChunkKey),
     RequestReal(ChunkKey),
@@ -69,6 +70,7 @@ pub struct StreamConfig {
     pub database: SaveDatabase,
     pub device: Device,
     pub queue: Queue,
+    pub page: u64,
     pub chunk_size: u32,
     pub mipmap_levels: u8,
     pub layer_pipeline: Arc<LayerPipeline>,
@@ -117,7 +119,7 @@ pub struct DebugInfo {
 }
 
 pub fn loading_thread(
-    config: StreamConfig,
+    mut config: StreamConfig,
     input_rx: Receiver<ThreadInput>,
     output_tx: Sender<ThreadOutput>,
 ) -> Result<(), Box<dyn Error>> {
@@ -158,6 +160,11 @@ pub fn loading_thread(
         };
 
         match input {
+            Some(ThreadInput::SetPage(page)) => {
+                unload_all(&config, &output_tx, &mut base, &mut debug)?;
+                config.page = page;
+                camera.outdated = true;
+            }
             Some(ThreadInput::SetStreamCamera(zoom, size, center)) => {
                 camera.rect = Camera::manual_view_rect(zoom, size, center);
                 let stream_center_new = chunk_of(center.q32_round(), zoom, config.chunk_size);
@@ -307,12 +314,12 @@ fn load(
     let table_chunk = read.open_table(TABLE_LAYER_CHUNK)?;
     let table_meta = read.open_table(TABLE_LAYER_CHUNK_META)?;
     for key in staging.active.drain(..) {
-        if let Some(data) = table_chunk.get((0, key))? {
+        if let Some(data) = table_chunk.get((config.page, key))? {
             let mut bytes = zstd::decode_all(data.value())?;
             let (texture, chunk) = chunk_prepare(config, key)?;
             debug.decode += 1;
 
-            if let Some(meta) = table_meta.get(((0, key), 0))?
+            if let Some(meta) = table_meta.get(((config.page, key), 0))?
                 && let Ok(meta0) = postcard::from_bytes::<ChunkMeta0>(meta.value())
             {
                 if meta0.format > CHUNK_META0_FORMAT {
@@ -381,7 +388,63 @@ fn unload(
             let rx = chunk_readback(texture, &config.device, &config.queue, config.chunk_size);
             config.device.poll(PollType::wait_indefinitely()).unwrap();
             let bytes = rx.recv().unwrap();
-            write_chunk_data(base, debug, &mut table_chunk, &mut table_meta, key, bytes).unwrap();
+            write_chunk_data(
+                base,
+                debug,
+                &mut table_chunk,
+                &mut table_meta,
+                config.page,
+                key,
+                bytes,
+            )
+            .unwrap();
+        }
+
+        if texture.is_some() {
+            base.real_cnt -= 1;
+            debug.unload_real += 1;
+        }
+
+        debug.unload += 1;
+    }
+
+    drop(table_chunk);
+    drop(table_meta);
+
+    write.commit()?;
+
+    Ok(())
+}
+
+fn unload_all(
+    config: &StreamConfig,
+    output_tx: &Sender<ThreadOutput>,
+    base: &mut StreamBase,
+    debug: &mut DebugInfo,
+) -> Result<(), Box<dyn Error + 'static>> {
+    let write = config.database.0.begin_write()?;
+    let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
+    let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
+    while !base.active.is_empty() {
+        let (key, texture) = base.active.pop().unwrap();
+        output_tx.send(ThreadOutput::Remove(key))?;
+
+        if let Some(texture) = &texture
+            && base.unsaved.contains(&key)
+        {
+            let rx = chunk_readback(texture, &config.device, &config.queue, config.chunk_size);
+            config.device.poll(PollType::wait_indefinitely()).unwrap();
+            let bytes = rx.recv().unwrap();
+            write_chunk_data(
+                base,
+                debug,
+                &mut table_chunk,
+                &mut table_meta,
+                config.page,
+                key,
+                bytes,
+            )
+            .unwrap();
         }
 
         if texture.is_some() {
@@ -428,7 +491,15 @@ fn autosave(
 
     for (key, rx) in tasks {
         let bytes = rx.recv().unwrap();
-        write_chunk_data(base, debug, &mut table_chunk, &mut table_meta, key, bytes)?;
+        write_chunk_data(
+            base,
+            debug,
+            &mut table_chunk,
+            &mut table_meta,
+            config.page,
+            key,
+            bytes,
+        )?;
     }
     drop(table_chunk);
     drop(table_meta);
@@ -448,6 +519,7 @@ fn write_chunk_data(
     debug: &mut DebugInfo,
     table_chunk: &mut redb::Table<(u64, ChunkKey), &[u8]>,
     table_meta: &mut redb::Table<((u64, ChunkKey), u32), &[u8]>,
+    page: u64,
     key: ChunkKey,
     bytes: Vec<u8>,
 ) -> Result<(), Box<dyn Error + 'static>> {
@@ -460,12 +532,12 @@ fn write_chunk_data(
     }
 
     if transparent {
-        table_chunk.remove((0, key))?;
-        table_meta.remove(((0, key), 0))?;
+        table_chunk.remove((page, key))?;
+        table_meta.remove(((page, key), 0))?;
         debug.clean += 1;
     } else {
         let compressed = zstd::encode_all(&bytes[..], 0)?;
-        table_chunk.insert((0, key), &compressed[..])?;
+        table_chunk.insert((page, key), &compressed[..])?;
         debug.encode += 1;
 
         let meta0 = ChunkMeta0 {
@@ -475,7 +547,7 @@ fn write_chunk_data(
 
         let mut meta_bytes = [0u8; 16];
         postcard::to_slice(&meta0, &mut meta_bytes).unwrap();
-        table_meta.insert(((0, key), 0), &meta_bytes[..])?;
+        table_meta.insert(((page, key), 0), &meta_bytes[..])?;
     }
 
     texel.unsaved.remove(&key);
@@ -614,7 +686,7 @@ fn touch_chunk_meta(
     let write = config.database.0.begin_write()?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
     let bytes = postcard::to_stdvec(&meta0)?;
-    table_meta.insert(((0, chunk_id), 0), &bytes[..])?;
+    table_meta.insert(((config.page, chunk_id), 0), &bytes[..])?;
     drop(table_meta);
     write.commit()?;
 
