@@ -3,7 +3,7 @@ use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
     i18n::{tr, trp},
-    layer::{stream::ThreadInput, wrapper::LayerWrapper},
+    layer::wrapper::LayerWrapper,
     layout::transform::{Transform, TransformEdge, TransformValue},
     measures::Rectangle,
     theme::Theme,

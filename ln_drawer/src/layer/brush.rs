@@ -122,6 +122,12 @@ impl DrawPipeline {
     pub fn draw<T: Brush>(&mut self, dst: &Layer, brush: &T, target: Draw) {
         let mut draws = Vec::new();
 
+        // draw preprocess
+        let target = Draw {
+            position: target.position,
+            force: target.force.clamp(0.0, 1.0),
+        };
+
         let prev = self.prev.unwrap_or_else(|| {
             draws.push(brush.process(target));
             target
