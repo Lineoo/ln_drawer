@@ -4,7 +4,18 @@ use glam::{IVec2, UVec2};
 
 use crate::measures::Axis;
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[repr(C)]
+#[derive(
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
 pub struct Rectangle {
     pub origin: IVec2,
     pub extend: UVec2,

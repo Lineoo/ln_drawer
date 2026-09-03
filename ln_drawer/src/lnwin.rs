@@ -38,8 +38,11 @@ use crate::{
         },
         panel::side_docker::side_docker,
         renderer::{
-            canvas::CanvasPipeline, quad::QuadMeshPipeline, rrect::RRectMaterial,
+            canvas::CanvasPipeline,
+            quad::QuadMeshPipeline,
+            rrect::RRectMaterial,
             text::TextPipeline,
+            vtor::{Vtor, VtorPipeline},
         },
     },
 };
@@ -121,6 +124,8 @@ impl Element for Lnwindow {
                 }
             });
 
+            // Setup render
+
             let lnwindow = world.fetch(this).unwrap();
             world.insert(pollster::block_on(Render::new(&lnwindow)));
             drop(lnwindow);
@@ -141,6 +146,7 @@ impl Element for Lnwindow {
             world.insert(QuadMeshPipeline::<OklabPolarMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<OklabBarMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<RRectMaterial>::from_world(world));
+            world.insert(VtorPipeline::from_world(world));
             world.insert(TextPipeline::new());
             world.insert(Theme::default());
 
@@ -154,6 +160,8 @@ impl Element for Lnwindow {
             world.insert(ModifiersTool::default());
 
             world.flush();
+
+            // Setup cameras
 
             let lnwindow = world.fetch(this).unwrap();
             let size = lnwindow.window.surface_size();
@@ -226,9 +234,16 @@ impl Element for Lnwindow {
 
             world.flush();
 
+            // Setup interface components
+
             world.enter_queue(main_camera, |world| {
                 world.insert(LayerWrapper::new(world));
                 world.insert(LayerInput::default());
+                world.insert(Vtor {
+                    rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(20)),
+                    visible: true,
+                    order: 100,
+                });
             });
 
             world.enter_queue(ui_camera, move |world| {

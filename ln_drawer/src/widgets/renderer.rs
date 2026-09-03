@@ -3,3 +3,4 @@ pub mod quad;
 pub mod rrect;
 pub mod svg;
 pub mod text;
+pub mod vtor;

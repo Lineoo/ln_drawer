@@ -100,7 +100,7 @@ impl<M: QuadMaterial> QuadMesh<M> {
                 let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
                 let camera = world.fetch(current_camera.0).unwrap();
 
-                let key = format!("main > common > {}", M::label());
+                let key = format!("main > quad > {}", M::label());
                 let (start, end) = extra.diagnosis.assign_string(key);
                 extra.diagnosis.write(rpass, start);
 
