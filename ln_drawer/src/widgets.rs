@@ -1,6 +1,7 @@
 use crate::measures::Rectangle;
 
 pub mod button;
+pub mod container;
 pub mod echo;
 pub mod palette;
 pub mod panel;
@@ -8,7 +9,6 @@ pub mod renderer;
 pub mod shaders;
 pub mod slider;
 pub mod tabs;
-pub mod container;
 
 pub enum WidgetHover {
     Enter,
