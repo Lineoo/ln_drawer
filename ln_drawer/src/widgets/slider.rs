@@ -1,12 +1,12 @@
 use cosmic_text::{Align, Metrics};
-use glam::{IVec2, UVec2, Vec2};
+use glam::{IVec2, UVec2};
 use ln_world::{Element, Handle, World};
-use palette::Srgba;
 
 use crate::{
-    animation::{Animation, AnimationType, DirectAnimation, SetAnimationDst},
+    animation::{
+        Animation, AnimationDescriptor, AnimationType, SetAnimationDst, SimpleAnimationDescriptor,
+    },
     measures::{Axis, FI64Ext, Rectangle},
-    render::rounded::{RoundedRect, RoundedRectDescriptor},
     theme::Theme,
     tools::{
         collider::ToolCollider,
@@ -14,7 +14,10 @@ use crate::{
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetHover,
-        renderer::text::{SetText, Text},
+        renderer::{
+            rrect::{RRect, SetRRectColor},
+            text::{SetText, Text},
+        },
     },
 };
 
@@ -40,79 +43,66 @@ impl Slider {
     pub fn init(&self, world: &World, handle: Handle<Self>) {
         let theme = world.single_fetch::<Theme>().unwrap();
 
-        let back = world.build(RoundedRectDescriptor {
+        let back = world.insert(RRect {
             rect: back_rect(self.rect, self.axis),
-            color: theme.secondary_color,
-            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-            shadow_offset: Vec2::ZERO,
-            shadow_blur: 0.0,
-            shrink: theme.roundness,
-            value: theme.roundness,
-            vertex_extend: 0,
-            visible: true,
             order: 20,
+            color: theme.secondary_color,
+            radius: theme.roundness,
+            width: 0.0,
+            enabled: true,
         });
 
         let position = into_position(self.rect, self.axis, self.value);
 
-        let front = world.build(RoundedRectDescriptor {
+        let front = world.insert(RRect {
             rect: front_rect(self.rect, self.axis, position),
-            color: theme.theme_color,
-            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-            shadow_offset: Vec2::ZERO,
-            shadow_blur: 0.0,
-            shrink: theme.roundness,
-            value: theme.roundness,
-            vertex_extend: 0,
-            visible: true,
             order: 21,
+            color: theme.theme_color,
+            radius: theme.roundness,
+            width: 0.0,
+            enabled: true,
         });
 
-        let knob = world.build(RoundedRectDescriptor {
+        let knob = world.insert(RRect {
             rect: knob_rect(self.rect, self.axis, position),
-            color: theme.blank_color,
-            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-            shadow_offset: Vec2::ZERO,
-            shadow_blur: theme.shadow_blur,
-            shrink: theme.roundness,
-            value: theme.roundness,
-            vertex_extend: 0,
-            visible: true,
             order: 22,
+            color: theme.blank_color,
+            radius: theme.roundness,
+            width: 0.0,
+            enabled: true,
         });
 
-        let knob_split = world.build(RoundedRectDescriptor {
+        let knob_split = world.insert(RRect {
             rect: knob_split_rect(self.rect, self.axis, position),
-            color: theme.primary_color,
-            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-            shadow_offset: Vec2::ZERO,
-            shadow_blur: 0.0,
-            shrink: 2.0,
-            value: 2.0,
-            vertex_extend: 0,
-            visible: true,
             order: 23,
+            color: theme.primary_color,
+            radius: 2.0,
+            width: 0.0,
+            enabled: true,
         });
 
-        let back_rect_anim = world.build(DirectAnimation {
-            init: back_rect(self.rect, self.axis),
-            factor: theme.anim_factor,
+        let back_rect_anim = world.build(SimpleAnimationDescriptor {
+            animation: AnimationDescriptor::new(back_rect(self.rect, self.axis), theme.anim_factor),
             widget: back,
-            access: |back| &mut back.desc.rect,
+            action: move |_, world, rect| {
+                world.queue_trigger(back, SetWidgetRectangle(rect));
+            },
         });
 
-        let knob_color_anim = world.build(DirectAnimation {
-            init: theme.primary_color,
-            factor: theme.anim_factor,
+        let knob_color_anim = world.build(SimpleAnimationDescriptor {
+            animation: AnimationDescriptor::new(theme.primary_color, theme.anim_factor),
             widget: knob,
-            access: |knob| &mut knob.desc.color,
+            action: move |_, world, color| {
+                world.queue_trigger(knob, SetRRectColor(color));
+            },
         });
 
-        let knob_split_color_anim = world.build(DirectAnimation {
-            init: theme.primary_color,
-            factor: theme.anim_factor,
+        let knob_split_color_anim = world.build(SimpleAnimationDescriptor {
+            animation: AnimationDescriptor::new(theme.primary_color, theme.anim_factor),
             widget: knob_split,
-            access: |split| &mut split.desc.color,
+            action: move |_, world, color| {
+                world.queue_trigger(knob_split, SetRRectColor(color));
+            },
         });
 
         let collider = world.insert(ToolCollider {
@@ -123,39 +113,30 @@ impl Slider {
 
         world.observer(handle, move |&SetSliderValue(value), world| {
             let mut this = world.fetch_mut(handle).unwrap();
-            let mut front = world.fetch_mut(front).unwrap();
-            let mut knob = world.fetch_mut(knob).unwrap();
-            let mut knob_split = world.fetch_mut(knob_split).unwrap();
-            this.set_value(value, &mut front, &mut knob, &mut knob_split);
+            this.set_value(world, value, front, knob, knob_split);
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(handle).unwrap();
             let mut back_rect_anim = world.fetch_mut(back_rect_anim).unwrap();
-            let mut front = world.fetch_mut(front).unwrap();
-            let mut knob = world.fetch_mut(knob).unwrap();
-            let mut knob_split = world.fetch_mut(knob_split).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
             this.set_rect(
+                world,
                 rect,
                 &mut back_rect_anim,
-                &mut front,
-                &mut knob,
-                &mut knob_split,
+                front,
+                knob,
+                knob_split,
                 &mut collider,
             );
         });
 
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
-            let mut back = world.fetch_mut(back).unwrap();
-            let mut front = world.fetch_mut(front).unwrap();
-            let mut knob = world.fetch_mut(knob).unwrap();
-            let mut knob_split = world.fetch_mut(knob_split).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
-            back.desc.visible = visible;
-            front.desc.visible = visible;
-            knob.desc.visible = visible;
-            knob_split.desc.visible = visible;
+            world.queue_trigger(back, SetWidgetVisible(visible));
+            world.queue_trigger(front, SetWidgetVisible(visible));
+            world.queue_trigger(knob, SetWidgetVisible(visible));
+            world.queue_trigger(knob_split, SetWidgetVisible(visible));
             collider.enabled = visible;
         });
 
@@ -197,10 +178,11 @@ impl Slider {
 
     fn set_value(
         &mut self,
+        world: &World,
         value: f32,
-        front: &mut RoundedRect,
-        knob: &mut RoundedRect,
-        knob_split: &mut RoundedRect,
+        front: Handle<RRect>,
+        knob: Handle<RRect>,
+        knob_split: Handle<RRect>,
     ) {
         self.value = value;
 
@@ -209,23 +191,35 @@ impl Slider {
             false => into_position(self.rect, self.axis, self.value),
         };
 
-        front.desc.rect = front_rect(self.rect, self.axis, position);
-        knob.desc.rect = knob_rect(self.rect, self.axis, position);
-        knob_split.desc.rect = knob_split_rect(self.rect, self.axis, position);
+        world.queue_trigger(
+            front,
+            SetWidgetRectangle(front_rect(self.rect, self.axis, position)),
+        );
+        world.queue_trigger(
+            knob_split,
+            SetWidgetRectangle(knob_split_rect(self.rect, self.axis, position)),
+        );
 
         match self.pressed {
-            true => knob.desc.rect = knob_rect_pressed(self.rect, self.axis, position),
-            false => knob.desc.rect = knob_rect(self.rect, self.axis, position),
+            true => world.queue_trigger(
+                knob,
+                SetWidgetRectangle(knob_rect_pressed(self.rect, self.axis, position)),
+            ),
+            false => world.queue_trigger(
+                knob,
+                SetWidgetRectangle(knob_rect(self.rect, self.axis, position)),
+            ),
         }
     }
 
     fn set_rect(
         &mut self,
+        world: &World,
         rect: Rectangle,
         back_rect_anim: &mut Animation<Rectangle>,
-        front: &mut RoundedRect,
-        knob: &mut RoundedRect,
-        knob_split: &mut RoundedRect,
+        front: Handle<RRect>,
+        knob: Handle<RRect>,
+        knob_split: Handle<RRect>,
         collider: &mut ToolCollider,
     ) {
         self.rect = rect;
@@ -236,12 +230,24 @@ impl Slider {
         back_rect_anim.src = back_rect.into_storage();
 
         let position = into_position(self.rect, self.axis, self.value);
-        front.desc.rect = front_rect(self.rect, self.axis, position);
-        knob_split.desc.rect = knob_split_rect(self.rect, self.axis, position);
+        world.queue_trigger(
+            front,
+            SetWidgetRectangle(front_rect(self.rect, self.axis, position)),
+        );
+        world.queue_trigger(
+            knob_split,
+            SetWidgetRectangle(knob_split_rect(self.rect, self.axis, position)),
+        );
 
         match self.pressed {
-            true => knob.desc.rect = knob_rect_pressed(self.rect, self.axis, position),
-            false => knob.desc.rect = knob_rect(self.rect, self.axis, position),
+            true => world.queue_trigger(
+                knob,
+                SetWidgetRectangle(knob_rect_pressed(self.rect, self.axis, position)),
+            ),
+            false => world.queue_trigger(
+                knob,
+                SetWidgetRectangle(knob_rect(self.rect, self.axis, position)),
+            ),
         }
     }
 }
@@ -253,17 +259,13 @@ impl SliderLabel {
 
         let position = into_position(slider.rect, slider.axis, slider.value);
 
-        let back = world.build(RoundedRectDescriptor {
+        let back = world.insert(RRect {
             rect: label_back_rect(slider.rect, slider.axis, self.clockwise, position),
-            color: theme.blank_color,
-            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-            shadow_offset: Vec2::ZERO,
-            shadow_blur: 0.0,
-            shrink: LABEL_HALF.y as f32,
-            value: LABEL_HALF.y as f32,
-            vertex_extend: 0,
-            visible: self.visible && self.hover,
             order: 100,
+            color: theme.blank_color,
+            radius: LABEL_HALF.y as f32,
+            width: 0.0,
+            enabled: self.visible && self.hover,
         });
 
         let label = world.insert(Text {
@@ -321,7 +323,7 @@ impl SliderLabel {
 const BAR_EX: i32 = 5;
 const BAR_HW: i32 = 6;
 const KNOB_SIZE: UVec2 = UVec2::new(8, 16);
-const KNOB_SIZE_PRESSED: UVec2 = UVec2::new(8, 14);
+const KNOB_SIZE_PRESSED: UVec2 = UVec2::new(7, 16);
 const KNOB_SPLIT_SIZE: UVec2 = UVec2::new(5, 2);
 const LABEL_GAP: i32 = 2;
 const LABEL_HALF: UVec2 = UVec2::new(30, 12);

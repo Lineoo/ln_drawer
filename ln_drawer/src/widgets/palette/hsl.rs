@@ -10,7 +10,7 @@ use crate::{
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
-        renderer::rectangle::{RectangleMeshDescriptor, RectangleMeshMaterial},
+        renderer::quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
         shaders::{LIB_COLORSPACE, LIB_CONSTANT},
     },
 };
@@ -21,7 +21,7 @@ const BAND_WIDTH: f32 = 0.1;
 /// whose x axis stands for saturation and y axis stands for lightness.
 ///
 /// Corresponding material is [`PaletteHslMaterial`].
-pub struct PaletteHsl {
+pub struct HslPanel {
     pub rect: Rectangle,
     pub color: Hsla,
     pub enabled: bool,
@@ -29,7 +29,7 @@ pub struct PaletteHsl {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct PaletteHslMaterial {
+pub struct HslPanelMaterial {
     band_width: f32,
     main_knob_size: f32,
     hue_knob_size: f32,
@@ -38,15 +38,16 @@ pub struct PaletteHslMaterial {
     lightness: f32,
 }
 
-pub struct PaletteHsla(pub Hsla);
+pub struct ColorHsla(pub Hsla);
+pub struct SetColorHsla(pub Hsla);
 
-impl PaletteHsl {
+impl HslPanel {
     fn init(&mut self, world: &World, this: Handle<Self>) {
-        let rectangle = world.build(RectangleMeshDescriptor {
+        let quad = world.insert(QuadMesh {
             rect: self.rect,
             visible: self.enabled,
             order: 60,
-            material: PaletteHslMaterial {
+            material: HslPanelMaterial {
                 band_width: BAND_WIDTH,
                 main_knob_size: 0.015,
                 hue_knob_size: 0.005,
@@ -81,11 +82,11 @@ impl PaletteHsl {
                 lock = 1;
                 this.color.saturation = (suv.x).clamp(0.0, 1.0);
                 this.color.lightness = (suv.y).clamp(0.0, 1.0);
-                world.queue_trigger(this.handle(), PaletteHsla(this.color));
+                world.queue_trigger(this.handle(), ColorHsla(this.color));
             } else if lock == 2 || (lock == 0 && radius > 0.5 - BAND_WIDTH && radius < 0.5) {
                 lock = 2;
                 this.color.hue = RgbHue::from_radians(angle);
-                world.queue_trigger(this.handle(), PaletteHsla(this.color));
+                world.queue_trigger(this.handle(), ColorHsla(this.color));
             } else {
                 lock = 3;
             }
@@ -96,33 +97,41 @@ impl PaletteHsl {
         });
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
+            let mut this = world.fetch_mut(this).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
-            rectangle.desc.visible = enabled;
+            this.enabled = enabled;
             collider.enabled = enabled;
+            world.queue_trigger(quad, SetWidgetVisible(enabled));
         });
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
             this.rect = rect;
-            rectangle.desc.rect = rect;
             collider.rect = rect;
+            world.queue_trigger(quad, SetWidgetRectangle(rect));
         });
 
-        world.observer(this, move |&PaletteHsla(hsla), world| {
-            let mut rectangle = world.fetch_mut(rectangle).unwrap();
-            rectangle.desc.material.hue = hsla.hue.into_positive_degrees() / 360.0;
-            rectangle.desc.material.saturation = hsla.saturation;
-            rectangle.desc.material.lightness = hsla.lightness;
+        world.observer(this, move |&SetColorHsla(color), world| {
+            let mut this = world.fetch_mut(this).unwrap();
+            let quad = world.fetch(quad).unwrap();
+            this.color = color;
+            world.queue_trigger(
+                quad.handle(),
+                SetQuadMaterial(HslPanelMaterial {
+                    hue: color.hue.into_positive_degrees() / 360.0,
+                    saturation: color.saturation,
+                    lightness: color.lightness,
+                    ..quad.material
+                }),
+            );
         });
 
-        world.dependency(rectangle, this);
+        world.dependency(quad, this);
     }
 }
 
-impl RectangleMeshMaterial for PaletteHslMaterial {
+impl QuadMaterial for HslPanelMaterial {
     fn label() -> &'static str {
         "palette_hsl"
     }
@@ -144,7 +153,7 @@ impl RectangleMeshMaterial for PaletteHslMaterial {
     }
 }
 
-impl Element for PaletteHsl {
+impl Element for HslPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.init(world, this);
     }

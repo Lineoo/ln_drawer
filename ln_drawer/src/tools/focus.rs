@@ -1,14 +1,14 @@
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, World};
 use winit::event::{KeyEvent, WindowEvent};
 
 use crate::lnwin::Lnwindow;
 
 #[derive(Default)]
-pub struct Focus {
-    focus: Option<Handle>,
+pub struct FocusTool {
+    focus: Option<HandleAny>,
 }
 
-impl Element for Focus {
+impl Element for FocusTool {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
 
@@ -43,10 +43,11 @@ impl Element for Focus {
     }
 }
 
-pub struct RequestFocus(pub Option<Handle>);
+pub struct RequestFocus(pub Option<HandleAny>);
 
 pub struct FocusEnter;
 
 pub struct FocusLeave;
 
+#[expect(unused)]
 pub struct FocusInput(pub KeyEvent);

@@ -1,4 +1,4 @@
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, World};
 
 use crate::{
     layout::visibility::VisibilityInherit,
@@ -7,11 +7,12 @@ use crate::{
 };
 
 pub struct LuniFlex {
-    pub parent: (Handle, LuniParent),
-    pub children: Vec<(Handle, LuniChild)>,
+    pub parent: (HandleAny, LuniParent),
+    pub children: Vec<(HandleAny, LuniChild)>,
 }
 
 #[derive(Default)]
+#[expect(unused)]
 pub struct LuniParent {
     pub axis: LuniAxis,
     pub distribution: LuniDistribution,
@@ -45,6 +46,7 @@ pub struct LuniChild {
 }
 
 #[derive(Default, Clone, Copy)]
+#[expect(unused)]
 pub enum LuniAxis {
     #[default]
     Row,
@@ -54,6 +56,7 @@ pub enum LuniAxis {
 }
 
 #[derive(Default, Clone, Copy)]
+#[expect(unused)]
 pub enum LuniDistribution {
     #[default]
     FlexStart,
@@ -73,6 +76,7 @@ pub struct LuniRect {
 }
 
 #[derive(Default, Clone, Copy)]
+#[expect(unused)]
 pub enum LuniAlign {
     #[default]
     Stretch,
@@ -82,10 +86,11 @@ pub enum LuniAlign {
 }
 
 /// TODO specific certain data for parent to adjust itself based on its children
+#[expect(unused)]
 pub struct LuniHug;
 
 impl LuniFlex {
-    fn compute(&self, rect: Rectangle) -> Vec<(Handle, Rectangle)> {
+    fn compute(&self, rect: Rectangle) -> Vec<(HandleAny, Rectangle)> {
         let mut result = Vec::with_capacity(self.children.len());
         let mut lengths = Vec::with_capacity(self.children.len());
 

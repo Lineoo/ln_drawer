@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 //! This module is about the measures used in this app.
 
 mod axis;

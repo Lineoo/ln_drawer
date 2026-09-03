@@ -1,43 +1,57 @@
 pub mod brush;
+pub mod input;
 pub mod stream;
+pub mod traveler;
 pub mod wrapper;
 
-use std::mem::size_of;
+use std::{
+    mem::size_of,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use bytemuck::bytes_of;
-use glam::{IVec2, UVec2};
+use glam::{IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
+use palette::Srgba;
 use wgpu::{
-    AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+    Adapter, AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
     Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
-    ColorWrites, CommandEncoder, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor,
-    ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState,
-    Origin3d, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState,
-    PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
-    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
-    TextureViewDimension, VertexState,
+    ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
+    ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState, MapMode,
+    PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
+    RenderPass, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureFormatFeatureFlags,
+    TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
+    WasmNotSend,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    widgets::shaders::{LIB_CAMERA, LIB_COLORSPACE, LIB_RECTANGLE},
+    widgets::shaders::{LIB_CAMERA, LIB_COLORSPACE, LIB_CONSTANT, LIB_RECTANGLE, shader_compile},
 };
 
 pub type ChunkKey = (i32, i32, u8);
 
-pub const DEFAULT_MIPMAP_DISABLED: u32 = 1;
-pub const DEFAULT_MIPMAP_ENABLED: u32 = 8;
+pub const DEFAULT_MIPMAP_DISABLED: u8 = 1;
+pub const DEFAULT_MIPMAP_ENABLED: u8 = 8;
 pub const DEFAULT_CHUNK_SIZE: u32 = 512;
 
+pub const CHUNK_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
+
+const DISPATCH_CAPACITY: u64 = 4;
+const DRAWS_ARRAY_CAPACITY: u64 = 0x2000;
 const WORKGROUP_SIZE: UVec2 = UVec2::new(16, 16);
 
 // function: render, merge, mipmap, clear & chunk recycle
 pub struct LayerPipeline {
+    _adapter: Adapter,
     device: Device,
     queue: Queue,
 
@@ -45,14 +59,30 @@ pub struct LayerPipeline {
 
     dispatch: Buffer,
     dispatch_group: BindGroup,
+
     sampler_group_unfiltered: BindGroup,
     sampler_group_filtered: BindGroup,
+
+    draws_dispatch: Buffer,
+    draws_length: Buffer,
+    draws_array: Buffer,
+    draws_dispatch_group: BindGroup,
+
+    readback_sample: Buffer,
+    readback_storage: Buffer,
+    readback_share: Buffer,
+    readback_group: BindGroup,
+    readback_mapped: Arc<AtomicBool>,
 
     render_pipelines: RenderPipelines,
     merge_pipelines: MergePipelines,
     mipmap_pipeline: ComputePipeline,
     copy_pipeline: ComputePipeline,
+    readback_pipeline: ComputePipeline,
     clear_pipeline: ComputePipeline,
+    brush_pipelines: BrushPipelines,
+
+    support_read_write: bool,
 }
 
 pub struct Layer {
@@ -75,6 +105,8 @@ pub struct Chunk {
     pub render: BindGroup,
     pub read: BindGroup,
     pub write: BindGroup,
+    /// Same to `read` if not supported.
+    pub read_write: BindGroup,
 }
 
 #[derive(Clone)]
@@ -83,6 +115,7 @@ pub struct ChunkLayout {
     render: BindGroupLayout,
     read: BindGroupLayout,
     write: BindGroupLayout,
+    read_write: BindGroupLayout,
 }
 
 struct RenderPipelines {
@@ -102,6 +135,13 @@ struct MergePipelines {
     erase: ComputePipeline,
 }
 
+struct BrushPipelines {
+    blur: ComputePipeline,
+    tint: ComputePipeline,
+    round_over: ComputePipeline,
+    round_erase: ComputePipeline,
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct DispatchUniform {
@@ -111,11 +151,18 @@ struct DispatchUniform {
 
 impl LayerPipeline {
     pub fn new(
+        _adapter: Adapter,
         device: Device,
         queue: Queue,
         surface_format: TextureFormat,
         camera_bind_layout: &BindGroupLayout,
     ) -> Self {
+        let texture_features = _adapter.get_texture_format_features(CHUNK_TEXTURE_FORMAT);
+        let support_read_write =
+            (texture_features.flags).contains(TextureFormatFeatureFlags::STORAGE_READ_WRITE);
+
+        log::debug!("texture read write: {support_read_write}");
+
         let dispatch_layout = device.create_bind_group_layout(&LAYOUT_DISPATCH);
         let (dispatch, dispatch_group) = dispatch_group(&device, &dispatch_layout);
 
@@ -123,14 +170,23 @@ impl LayerPipeline {
         let (sampler_group_unfiltered, sampler_group_filtered) =
             sampler_groups(&device, &sampler_layout);
 
-        let chunk_render_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_RENDER);
-        let chunk_read_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_READ);
-        let chunk_write_layout = device.create_bind_group_layout(&LAYOUT_CHUNK_WRITE);
+        let draw_dispatch_layout = device.create_bind_group_layout(&LAYOUT_DRAW_DISPATCH);
+        let (draws_dispatch, draws_length, draws_array, draws_dispatch_group) =
+            draws_dispatch_group(&device, &draw_dispatch_layout);
+
+        let color_readback_layout = device.create_bind_group_layout(&LAYOUT_COLOR_READBACK);
+        let (readback_sample, readback_storage, readback_share, readback_group) =
+            color_readback_group(&device, &color_readback_layout);
+
         let chunk_layout = ChunkLayout {
             dispatch: dispatch_layout,
-            render: chunk_render_layout,
-            read: chunk_read_layout,
-            write: chunk_write_layout,
+            render: device.create_bind_group_layout(&LAYOUT_CHUNK_RENDER),
+            read: device.create_bind_group_layout(&LAYOUT_CHUNK_READ),
+            write: device.create_bind_group_layout(&LAYOUT_CHUNK_WRITE),
+            read_write: match support_read_write {
+                true => device.create_bind_group_layout(&LAYOUT_CHUNK_READ_WRITE),
+                false => device.create_bind_group_layout(&LAYOUT_CHUNK_READ),
+            },
         };
 
         let render_pipelines = render_pipelines(
@@ -141,12 +197,20 @@ impl LayerPipeline {
             &chunk_layout.render,
         );
 
-        let merge_pipelines = merge_pipelines(&device, &chunk_layout);
+        let brush_pipelines = brush_pipelines(
+            &device,
+            support_read_write,
+            &draw_dispatch_layout,
+            &chunk_layout,
+        );
+        let merge_pipelines = merge_pipelines(&device, support_read_write, &chunk_layout);
         let mipmap_pipeline = mipmap_pipeline(&device, &chunk_layout);
         let copy_pipeline = copy_pipeline(&device, &chunk_layout);
+        let readback_pipeline = readback_pipeline(&device, &color_readback_layout, &chunk_layout);
         let clear_pipeline = clear_pipeline(&device, &chunk_layout);
 
         LayerPipeline {
+            _adapter,
             device,
             queue,
             chunk_layout,
@@ -154,15 +218,27 @@ impl LayerPipeline {
             dispatch_group,
             sampler_group_unfiltered,
             sampler_group_filtered,
+            draws_dispatch,
+            draws_length,
+            draws_array,
+            draws_dispatch_group,
+            readback_sample,
+            readback_storage,
+            readback_share,
+            readback_group,
+            readback_mapped: Arc::new(AtomicBool::new(false)),
             render_pipelines,
             merge_pipelines,
             mipmap_pipeline,
             copy_pipeline,
+            readback_pipeline,
             clear_pipeline,
+            brush_pipelines,
+            support_read_write,
         }
     }
 
-    pub fn validate_chunks(&mut self, dst: &mut Layer, rect: Rectangle) -> bool {
+    pub fn validate_chunks(&self, dst: &mut Layer, rect: Rectangle) -> bool {
         for mipmap in 0..dst.mipmap_levels {
             let (start, end) = rect_to_chunks(rect, mipmap, dst.chunk_size);
             for chunk_x in start.0..end.0 {
@@ -181,12 +257,12 @@ impl LayerPipeline {
     /// Assume `self.controlled` is false. if `origin` is `None`, create transparent chunk, otherwise
     /// clone data from the `origin` layer
     pub fn prepare_chunks(
-        &mut self,
+        &self,
         dst: &mut Layer,
         src: Option<&Layer>,
         pool: &mut ChunkPool,
         rect: Rectangle,
-        encoder: &mut CommandEncoder,
+        cpass: &mut ComputePass,
     ) {
         debug_assert!(!dst.controlled, "controlled layer cannot prepare chunks");
         debug_assert_eq!(
@@ -219,27 +295,13 @@ impl LayerPipeline {
                 let src_chunk = src.chunks.get(&dst_key);
                 let dst_chunk = self.recycle_chunk(dst_key, dst.chunk_size, pool);
 
-                // TODO Use unified approach to copy and prevent manual encoder creation
                 if let Some(src_chunk) = src_chunk {
-                    encoder.copy_texture_to_texture(
-                        TexelCopyTextureInfo {
-                            texture: &src_chunk.texture,
-                            mip_level: 0,
-                            origin: Origin3d::ZERO,
-                            aspect: TextureAspect::All,
-                        },
-                        TexelCopyTextureInfo {
-                            texture: &dst_chunk.texture,
-                            mip_level: 0,
-                            origin: Origin3d::ZERO,
-                            aspect: TextureAspect::All,
-                        },
-                        Extent3d {
-                            width: src.chunk_size,
-                            height: src.chunk_size,
-                            depth_or_array_layers: 1,
-                        },
-                    );
+                    cpass.set_pipeline(&self.copy_pipeline);
+                    cpass.set_bind_group(0, &dst_chunk.dispatch, &[0]);
+                    cpass.set_bind_group(1, &dst_chunk.write, &[]);
+                    cpass.set_bind_group(2, &src_chunk.read, &[]);
+                    let chunk_rect = chunk_to_rect(dst_key, dst.chunk_size);
+                    dispatch_workgroups(cpass, &[chunk_rect]);
                 }
 
                 dst.chunks.insert(dst_key, dst_chunk);
@@ -257,7 +319,7 @@ impl LayerPipeline {
             return;
         }
 
-        write_dispatch(&self.queue, &self.dispatch, dirty);
+        write_dispatch(&self.queue, &self.dispatch, 0, dirty);
 
         let mut encoder = self
             .device
@@ -270,7 +332,7 @@ impl LayerPipeline {
         });
 
         cpass.set_pipeline(&self.mipmap_pipeline);
-        cpass.set_bind_group(0, Some(&self.dispatch_group), &[]);
+        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
 
         for src_level in 0..layer.mipmap_levels - 1 {
             let (src, dst) = rect_to_chunks(dirty, src_level, layer.chunk_size);
@@ -341,11 +403,12 @@ impl LayerPipeline {
     }
 
     /// return `true` if the chunk is guaranteed to be empty
-    fn recycle_chunk(&mut self, key: ChunkKey, chunk_size: u32, pool: &mut ChunkPool) -> Chunk {
+    fn recycle_chunk(&self, key: ChunkKey, chunk_size: u32, pool: &mut ChunkPool) -> Chunk {
         if let Some(chunk) = pool.list.pop() {
             write_dispatch(
                 &self.queue,
                 &chunk.rectangle,
+                0,
                 chunk_to_rect(key, chunk_size),
             );
             chunk
@@ -359,6 +422,74 @@ impl LayerPipeline {
             );
             chunk
         }
+    }
+
+    pub fn pick_color(
+        &self,
+        layer: &Layer,
+        point: IVec2,
+        f: impl FnOnce(Srgba) + WasmNotSend + 'static,
+    ) {
+        let mapped = self.readback_mapped.load(Ordering::Acquire);
+        if mapped {
+            return;
+        }
+
+        self.queue
+            .write_buffer(&self.readback_sample, 0, bytes_of(&point));
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("layer_color_readback"),
+            });
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_color_readback"),
+            timestamp_writes: None,
+        });
+
+        let chunk_key = point_to_chunks(point, 0, layer.chunk_size);
+
+        let Some(chunk) = layer.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
+            return;
+        };
+
+        cpass.set_pipeline(&self.readback_pipeline);
+        cpass.set_bind_group(0, Some(&self.readback_group), &[]);
+        cpass.set_bind_group(1, Some(&chunk.read), &[]);
+        cpass.dispatch_workgroups(1, 1, 1);
+
+        drop(cpass);
+
+        encoder.copy_buffer_to_buffer(
+            &self.readback_storage,
+            0,
+            &self.readback_share,
+            0,
+            size_of::<Vec4>() as u64,
+        );
+
+        self.queue.submit([encoder.finish()]);
+
+        let readback_share = self.readback_share.clone();
+        let readback_mapped = self.readback_mapped.clone();
+        self.readback_mapped.store(true, Ordering::Release);
+        self.readback_share
+            .map_async(MapMode::Read, .., move |state| {
+                if state.is_err() {
+                    return;
+                }
+                let view = readback_share.get_mapped_range(..).unwrap();
+                let color = Srgba::from(
+                    *bytemuck::cast_slice::<_, f32>(&view[..])
+                        .as_array::<4>()
+                        .unwrap(),
+                );
+                f(color.into_format());
+                drop(view);
+                readback_mapped.store(false, Ordering::Release);
+                readback_share.unmap();
+            });
     }
 }
 
@@ -391,12 +522,16 @@ fn dispatch_workgroups(cpass: &mut ComputePass, rects: &[Rectangle]) {
     dispatch_workgroups_divide(cpass, rects, 1);
 }
 
-fn write_dispatch(queue: &Queue, buffer: &Buffer, rect: Rectangle) {
+fn write_dispatch(queue: &Queue, buffer: &Buffer, index: u64, rect: Rectangle) {
     let uniform = DispatchUniform {
         coords: rect.origin.into(),
         size: rect.extend.into(),
     };
-    queue.write_buffer(buffer, 0, bytes_of(&uniform));
+    queue.write_buffer(
+        buffer,
+        size_of::<DispatchUniform>() as u64 * index,
+        bytes_of(&uniform),
+    );
 }
 
 fn chunk_to_rect((x, y, z): ChunkKey, chunk_size: u32) -> Rectangle {
@@ -405,6 +540,12 @@ fn chunk_to_rect((x, y, z): ChunkKey, chunk_size: u32) -> Rectangle {
         origin: IVec2::new(x, y) * size as i32,
         extend: UVec2::splat(size),
     }
+}
+
+fn point_to_chunks(point: IVec2, mipmap: u8, chunk_size: u32) -> (i32, i32) {
+    let size = (chunk_size << mipmap) as i32;
+    let chunk_src = (point.x.div_euclid(size), point.y.div_euclid(size));
+    chunk_src
 }
 
 fn rect_to_chunks(rect: Rectangle, mipmap: u8, chunk_size: u32) -> ((i32, i32), (i32, i32)) {
@@ -430,137 +571,6 @@ fn lower_chunk_of(chunk: ChunkKey) -> [ChunkKey; 4] {
     ]
 }
 
-// --- Chunks --- //
-
-fn create_chunk_texture(device: &Device, chunk_size: u32) -> Texture {
-    device.create_texture(&TextureDescriptor {
-        label: Some("layer_chunk_texture"),
-        size: Extent3d {
-            width: chunk_size,
-            height: chunk_size,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: TextureDimension::D2,
-        format: TextureFormat::Rgba8Unorm,
-        usage: TextureUsages::COPY_SRC
-            | TextureUsages::COPY_DST
-            | TextureUsages::TEXTURE_BINDING
-            | TextureUsages::STORAGE_BINDING,
-        view_formats: &[],
-    })
-}
-
-fn create_chunk(
-    device: &Device,
-    chunk_layout: &ChunkLayout,
-    texture: Texture,
-    rect: Rectangle,
-) -> Chunk {
-    let rectangle = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("layer_chunk_buffer"),
-        contents: bytes_of(&DispatchUniform {
-            coords: rect.origin.into(),
-            size: rect.extend.into(),
-        }),
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-    });
-
-    let texture_fragment_view = texture.create_view(&TextureViewDescriptor {
-        label: Some("layer_chunk_texture_view"),
-        format: Some(TextureFormat::Rgba8Unorm),
-        usage: Some(TextureUsages::TEXTURE_BINDING),
-        ..Default::default()
-    });
-
-    let texture_compute_view = texture.create_view(&TextureViewDescriptor {
-        label: Some("layer_chunk_texture_view"),
-        format: Some(TextureFormat::Rgba8Unorm),
-        usage: Some(TextureUsages::STORAGE_BINDING),
-        ..Default::default()
-    });
-
-    let dispatch = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_chunk_dispatch"),
-        layout: &chunk_layout.dispatch,
-        entries: &[BindGroupEntry {
-            binding: 0,
-            resource: BindingResource::Buffer(BufferBinding {
-                buffer: &rectangle,
-                offset: 0,
-                size: None,
-            }),
-        }],
-    });
-
-    let render = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_chunk_render"),
-        layout: &chunk_layout.render,
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(&texture_fragment_view),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &rectangle,
-                    offset: 0,
-                    size: None,
-                }),
-            },
-        ],
-    });
-
-    let read = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_chunk_read"),
-        layout: &chunk_layout.read,
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(&texture_compute_view),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &rectangle,
-                    offset: 0,
-                    size: None,
-                }),
-            },
-        ],
-    });
-
-    let write = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("layer_chunk_write"),
-        layout: &chunk_layout.write,
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(&texture_compute_view),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &rectangle,
-                    offset: 0,
-                    size: None,
-                }),
-            },
-        ],
-    });
-
-    Chunk {
-        rectangle,
-        dispatch,
-        texture,
-        render,
-        read,
-        write,
-    }
-}
-
 // --- Layouts --- //
 
 const LAYOUT_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
@@ -570,7 +580,7 @@ const LAYOUT_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor
         visibility: ShaderStages::COMPUTE,
         ty: BindingType::Buffer {
             ty: BufferBindingType::Uniform,
-            has_dynamic_offset: false,
+            has_dynamic_offset: true,
             min_binding_size: None,
         },
         count: None,
@@ -587,6 +597,42 @@ const LAYOUT_SAMPLER: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor 
     }],
 };
 
+const LAYOUT_DRAW_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("layer_brush_dispatch_draw"),
+    entries: &[
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 2,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+    ],
+};
+
 /// Contains read storage texture of chunk in format `Rgba8Unorm` and chunk key in vec3
 const LAYOUT_CHUNK_READ: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
     label: Some("layer_chunk_read"),
@@ -596,7 +642,7 @@ const LAYOUT_CHUNK_READ: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescript
             visibility: ShaderStages::COMPUTE,
             ty: BindingType::StorageTexture {
                 access: StorageTextureAccess::ReadOnly,
-                format: TextureFormat::Rgba8Unorm,
+                format: CHUNK_TEXTURE_FORMAT,
                 view_dimension: TextureViewDimension::D2,
             },
             count: None,
@@ -623,7 +669,34 @@ const LAYOUT_CHUNK_WRITE: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescrip
             visibility: ShaderStages::COMPUTE,
             ty: BindingType::StorageTexture {
                 access: StorageTextureAccess::WriteOnly,
-                format: TextureFormat::Rgba8Unorm,
+                format: CHUNK_TEXTURE_FORMAT,
+                view_dimension: TextureViewDimension::D2,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+    ],
+};
+
+/// Contains write storage texture of chunk in format `Rgba8Unorm` and chunk key in vec3
+const LAYOUT_CHUNK_READ_WRITE: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("layer_chunk_write"),
+    entries: &[
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::StorageTexture {
+                access: StorageTextureAccess::ReadWrite,
+                format: CHUNK_TEXTURE_FORMAT,
                 view_dimension: TextureViewDimension::D2,
             },
             count: None,
@@ -660,6 +733,32 @@ const LAYOUT_CHUNK_RENDER: BindGroupLayoutDescriptor = BindGroupLayoutDescriptor
             visibility: ShaderStages::VERTEX_FRAGMENT,
             ty: BindingType::Buffer {
                 ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+    ],
+};
+
+const LAYOUT_COLOR_READBACK: BindGroupLayoutDescriptor = BindGroupLayoutDescriptor {
+    label: Some("color_readback"),
+    entries: &[
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Storage { read_only: false },
                 has_dynamic_offset: false,
                 min_binding_size: None,
             },
@@ -734,6 +833,272 @@ fn sampler_groups(device: &Device, sampler_layout: &BindGroupLayout) -> (BindGro
     });
 
     (sampler_group_unfiltered, sampler_group_filtered)
+}
+
+fn draws_dispatch_group(
+    device: &Device,
+    dispatch_draw_layout: &BindGroupLayout,
+) -> (Buffer, Buffer, Buffer, BindGroup) {
+    let dispatch = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_brush_dispatch"),
+        size: size_of::<DispatchUniform>() as u64 * DISPATCH_CAPACITY,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let draws_length = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_brush_draws_length"),
+        size: size_of::<u32>() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let draws_array = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_brush_draws_array"),
+        size: DRAWS_ARRAY_CAPACITY,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let dispatch_group_draw = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_brush_dispatch_draw"),
+        layout: dispatch_draw_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &dispatch,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &draws_length,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &draws_array,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    (dispatch, draws_length, draws_array, dispatch_group_draw)
+}
+
+fn color_readback_group(
+    device: &Device,
+    color_readback_layout: &BindGroupLayout,
+) -> (Buffer, Buffer, Buffer, BindGroup) {
+    let sample_position = device.create_buffer(&BufferDescriptor {
+        label: Some("color_readback_sample_position"),
+        size: size_of::<IVec2>() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let storage_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("color_readback_storage_buffer"),
+        size: size_of::<Vec4>() as u64,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    let share_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("color_readback_share_buffer"),
+        size: size_of::<Vec4>() as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let readback_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("color_readback"),
+        layout: color_readback_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &sample_position,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &storage_buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    (
+        sample_position,
+        storage_buffer,
+        share_buffer,
+        readback_group,
+    )
+}
+
+// --- Chunks --- //
+
+fn create_chunk_texture(device: &Device, chunk_size: u32) -> Texture {
+    device.create_texture(&TextureDescriptor {
+        label: Some("layer_chunk_texture"),
+        size: Extent3d {
+            width: chunk_size,
+            height: chunk_size,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: CHUNK_TEXTURE_FORMAT,
+        usage: TextureUsages::COPY_SRC
+            | TextureUsages::COPY_DST
+            | TextureUsages::TEXTURE_BINDING
+            | TextureUsages::STORAGE_BINDING,
+        view_formats: &[],
+    })
+}
+
+fn create_chunk(
+    device: &Device,
+    chunk_layout: &ChunkLayout,
+    texture: Texture,
+    rect: Rectangle,
+) -> Chunk {
+    let rectangle = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("layer_chunk_buffer"),
+        contents: bytes_of(&DispatchUniform {
+            coords: rect.origin.into(),
+            size: rect.extend.into(),
+        }),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    let texture_fragment_view = texture.create_view(&TextureViewDescriptor {
+        label: Some("layer_chunk_texture_view"),
+        format: Some(CHUNK_TEXTURE_FORMAT),
+        usage: Some(TextureUsages::TEXTURE_BINDING),
+        ..Default::default()
+    });
+
+    let texture_compute_view = texture.create_view(&TextureViewDescriptor {
+        label: Some("layer_chunk_texture_view"),
+        format: Some(CHUNK_TEXTURE_FORMAT),
+        usage: Some(TextureUsages::STORAGE_BINDING),
+        ..Default::default()
+    });
+
+    let dispatch = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_dispatch"),
+        layout: &chunk_layout.dispatch,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &rectangle,
+                offset: 0,
+                size: None,
+            }),
+        }],
+    });
+
+    let render = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_render"),
+        layout: &chunk_layout.render,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&texture_fragment_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &rectangle,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    let read = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_read"),
+        layout: &chunk_layout.read,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&texture_compute_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &rectangle,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    let write = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_write"),
+        layout: &chunk_layout.write,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&texture_compute_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &rectangle,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    let read_write = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("layer_chunk_read_write"),
+        layout: &chunk_layout.read_write,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&texture_compute_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &rectangle,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
+    });
+
+    Chunk {
+        rectangle,
+        dispatch,
+        texture,
+        render,
+        read,
+        write,
+        read_write,
+    }
 }
 
 // --- Pipelines --- //
@@ -859,31 +1224,53 @@ fn mipmap_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeli
     })
 }
 
-fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipelines {
+fn merge_pipelines(
+    device: &Device,
+    read_write: bool,
+    chunk_layout: &ChunkLayout,
+) -> MergePipelines {
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_merge"),
-        bind_group_layouts: &[
-            Some(&chunk_layout.dispatch),
-            Some(&chunk_layout.read),
-            Some(&chunk_layout.read),
-            Some(&chunk_layout.write),
-        ],
+        bind_group_layouts: &match read_write {
+            true => [
+                Some(&chunk_layout.dispatch),
+                Some(&chunk_layout.read_write),
+                Some(&chunk_layout.read),
+                Some(&chunk_layout.read_write),
+            ],
+            false => [
+                Some(&chunk_layout.dispatch),
+                Some(&chunk_layout.read),
+                Some(&chunk_layout.read),
+                Some(&chunk_layout.write),
+            ],
+        },
         immediate_size: 0,
     });
 
     let new_pipeline = |label, formula| {
+        let constants = match read_write {
+            true => [
+                ("read", "read_write"),
+                ("write", "read_write"),
+                ("rectangle", LIB_RECTANGLE),
+                ("composite", formula),
+            ],
+            false => [
+                ("read", "read"),
+                ("write", "write"),
+                ("rectangle", LIB_RECTANGLE),
+                ("composite", formula),
+            ],
+        };
+
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(label),
             source: ShaderSource::Wgsl(
-                format!(
-                    "{}{} fn composite(src: vec4f, dst: vec4f) -> vec4f {{ return {}; }}",
-                    LIB_RECTANGLE,
-                    include_str!("layer/merge.wgsl"),
-                    formula,
-                )
-                .into(),
+                shader_compile(include_str!("layer/merge.wgsl"), &constants[..]).into(),
             ),
         });
+
         device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: Some(label),
             layout: Some(&layout),
@@ -929,6 +1316,32 @@ fn copy_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline
     })
 }
 
+fn readback_pipeline(
+    device: &Device,
+    color_readback_layout: &BindGroupLayout,
+    chunk_layout: &ChunkLayout,
+) -> ComputePipeline {
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("color_readback"),
+        source: ShaderSource::Wgsl(shader_compile(include_str!("layer/readback.wgsl"), &[]).into()),
+    });
+
+    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("color_readback"),
+        bind_group_layouts: &[Some(color_readback_layout), Some(&chunk_layout.read)],
+        immediate_size: 0,
+    });
+
+    device.create_compute_pipeline(&ComputePipelineDescriptor {
+        label: Some("color_readback"),
+        layout: Some(&layout),
+        module: &shader,
+        entry_point: Some("cs_main"),
+        compilation_options: PipelineCompilationOptions::default(),
+        cache: None,
+    })
+}
+
 fn clear_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_clear"),
@@ -951,4 +1364,124 @@ fn clear_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipelin
         compilation_options: PipelineCompilationOptions::default(),
         cache: None,
     })
+}
+
+fn brush_pipelines(
+    device: &Device,
+    read_write: bool,
+    dispatch_draw_layout: &BindGroupLayout,
+    chunk_layout: &ChunkLayout,
+) -> BrushPipelines {
+    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_brush"),
+        bind_group_layouts: &match read_write {
+            true => [
+                Some(dispatch_draw_layout),
+                Some(&chunk_layout.read_write),
+                Some(&chunk_layout.read_write),
+            ],
+            false => [
+                Some(dispatch_draw_layout),
+                Some(&chunk_layout.read),
+                Some(&chunk_layout.write),
+            ],
+        },
+        immediate_size: 0,
+    });
+
+    let bridge_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_brush"),
+        bind_group_layouts: &[
+            Some(dispatch_draw_layout),
+            Some(&chunk_layout.read),
+            Some(&chunk_layout.write),
+        ],
+        immediate_size: 0,
+    });
+
+    let round_pipeline = |label, formula| {
+        let constants = match read_write {
+            true => [
+                ("read", "read_write"),
+                ("write", "read_write"),
+                ("rectangle", LIB_RECTANGLE),
+                ("composite", formula),
+            ],
+            false => [
+                ("read", "read"),
+                ("write", "write"),
+                ("rectangle", LIB_RECTANGLE),
+                ("composite", formula),
+            ],
+        };
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: ShaderSource::Wgsl(
+                shader_compile(include_str!("layer/brush/round.wgsl"), &constants[..]).into(),
+            ),
+        });
+        device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    };
+
+    let blur_pipeline = |label| {
+        // bridge mode does not need read_write bind
+        let constants = [
+            ("read", "read"),
+            ("write", "write"),
+            ("constant", LIB_CONSTANT),
+            ("rectangle", LIB_RECTANGLE),
+        ];
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: ShaderSource::Wgsl(
+                shader_compile(include_str!("layer/brush/blur.wgsl"), &constants).into(),
+            ),
+        });
+        device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some(label),
+            layout: Some(&bridge_layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    };
+
+    let tint_pipeline = |label| {
+        let constants = match read_write {
+            true => [("read", "read_write"), ("write", "read_write")],
+            false => [("read", "read"), ("write", "write")],
+        };
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: ShaderSource::Wgsl(
+                shader_compile(include_str!("layer/brush/tint.wgsl"), &constants).into(),
+            ),
+        });
+        device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    };
+
+    BrushPipelines {
+        blur: blur_pipeline("blur"),
+        tint: tint_pipeline("tint"),
+        round_over: round_pipeline("over", "src + dst * (1 - src.a)"),
+        round_erase: round_pipeline("erase", "dst * (1 - src.a)"),
+    }
 }

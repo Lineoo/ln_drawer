@@ -1,9 +1,10 @@
 use glam::{IVec2, UVec2};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub enum Axis {
     Left,
     Down,
+    #[default]
     Right,
     Up,
 }

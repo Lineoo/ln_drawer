@@ -1,18 +1,18 @@
 pub mod camera;
-pub mod rounded;
 
 use std::time::{Duration, Instant};
 
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
 use wgpu::{
-    Adapter, Buffer, BufferDescriptor, BufferUsages, Color, CommandEncoder,
-    CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device, DeviceDescriptor,
-    ExperimentalFeatures, Extent3d, Features, Instance, Limits, LoadOp, MapMode, MemoryHints,
-    MultisampleState, Operations, PollType, PowerPreference, PresentMode, QuerySet,
-    QuerySetDescriptor, QueryType, Queue, RenderPass, RenderPassColorAttachment,
-    RenderPassDescriptor, RenderPassTimestampWrites, RequestAdapterOptions, StoreOp, Surface,
-    SurfaceColorSpace, SurfaceConfiguration, Texture, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, Trace,
+    Adapter, BackendOptions, Backends, Buffer, BufferDescriptor, BufferUsages, Color,
+    CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device,
+    DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, Instance, InstanceDescriptor,
+    InstanceFlags, Limits, LoadOp, MapMode, MemoryBudgetThresholds, MemoryHints, MultisampleState,
+    Operations, PollType, PowerPreference, PresentMode, QuerySet, QuerySetDescriptor, QueryType,
+    Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites,
+    RequestAdapterOptions, StoreOp, Surface, SurfaceColorSpace, SurfaceConfiguration, Texture,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
+    TextureViewDescriptor, Trace,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
@@ -47,9 +47,6 @@ pub struct Render {
 
     // render control
     preparing: bool,
-    seq_dirty: Vec<(Handle<RenderControl>, Handle, isize)>,
-    seq_remove: Vec<Handle<RenderControl>>,
-    sequence: Vec<(Handle<RenderControl>, Handle, isize)>,
 
     // time tracing
     last_redraw: Option<Instant>,
@@ -61,8 +58,15 @@ pub struct Render {
     pub timestamp_query: QuerySet,
 }
 
-type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation>>;
-type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, RenderExtra<'_, '_>)>;
+#[derive(Default)]
+pub struct RenderPhase {
+    seq_dirty: Vec<(Handle<RenderControl>, HandleAny, isize)>,
+    seq_remove: Vec<Handle<RenderControl>>,
+    sequence: Vec<(Handle<RenderControl>, HandleAny, isize)>,
+}
+
+type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation> + Send>;
+type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, RenderExtra<'_, '_>) + Send>;
 
 /// Need to call `RenderControl::reorder` before it can render normally.
 pub struct RenderControl {
@@ -94,7 +98,13 @@ pub struct RenderDiagnosis<'a> {
 
 impl Render {
     pub async fn new(lnwindow: &Lnwindow) -> Render {
-        let instance = Instance::default();
+        let instance = Instance::new(InstanceDescriptor {
+            backends: Backends::all(),
+            flags: InstanceFlags::default(),
+            memory_budget_thresholds: MemoryBudgetThresholds::default(),
+            backend_options: BackendOptions::default(),
+            display: None,
+        });
 
         let surface = instance.create_surface(lnwindow.window.clone()).unwrap();
 
@@ -110,11 +120,14 @@ impl Render {
 
         log::debug!("wgpu adapter: {:?}", adapter.get_info());
 
+        let ideal_features = Features::TIMESTAMP_QUERY
+            | Features::TIMESTAMP_QUERY_INSIDE_PASSES
+            | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES;
+
         let (device, queue) = adapter
             .request_device(&DeviceDescriptor {
                 label: None,
-                required_features: Features::TIMESTAMP_QUERY
-                    | Features::TIMESTAMP_QUERY_INSIDE_PASSES,
+                required_features: adapter.features() & ideal_features,
                 required_limits: Limits::defaults(),
                 experimental_features: ExperimentalFeatures::disabled(),
                 memory_hints: MemoryHints::MemoryUsage,
@@ -157,9 +170,6 @@ impl Render {
             msaa_texture: None,
             clear_color: Color::WHITE,
             preparing: false,
-            seq_dirty: Vec::new(),
-            seq_remove: Vec::new(),
-            sequence: Vec::new(),
             last_redraw: None,
             timestamp_poll: false,
             timestamp_mapper,
@@ -264,9 +274,7 @@ impl Render {
         config
     }
 
-    fn redraw(world: &mut World) {
-        // prepare controls
-
+    fn prepare(world: &World) -> bool {
         let mut render = world.single_fetch_mut::<Render>().unwrap();
         render.preparing = true;
         drop(render);
@@ -280,35 +288,23 @@ impl Render {
                     refreshing |= info.keep_redrawing;
                 };
             });
+            if world.queue_cache::<RenderControl>() {
+                log::debug!("control cached");
+            }
         });
 
-        world.flush();
+        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        render.preparing = false;
+        drop(render);
 
+        refreshing
+    }
+
+    fn redraw(world: &World) {
         // start redrawing
 
         let render = &mut *world.single_fetch_mut::<Render>().unwrap();
-        render.preparing = false;
         let now = Instant::now();
-
-        // order redraw sequence
-
-        'r: for (dirty, view, ord) in render.seq_dirty.drain(..) {
-            for (control, old_view, old_ord) in &mut render.sequence {
-                if *control == dirty {
-                    *old_view = view;
-                    *old_ord = ord;
-                    continue 'r;
-                }
-            }
-
-            // if new
-            render.sequence.push((dirty, view, ord));
-        }
-
-        (render.sequence).retain(|(control, ..)| !render.seq_remove.contains(control));
-        render.seq_remove.clear();
-
-        render.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
 
         // setup render pass
 
@@ -353,26 +349,23 @@ impl Render {
             front: 2,
         };
 
-        // draw
+        // redraw
 
-        for &(control, view, _) in &render.sequence {
-            world.enter(view, || {
-                let mut control = world.fetch_mut(control).unwrap();
-                if let Some(draw) = &mut control.draw {
-                    draw(
-                        world,
-                        &mut rpass,
-                        RenderExtra {
-                            device: &render.device,
-                            queue: &render.queue,
-                            early_encoder: &mut early_encoder,
-                            surface_config: &render.config,
-                            diagnosis: &mut diagnosis,
-                        },
-                    );
-                }
-            });
-        }
+        world.foreach_enter::<Camera>(|_| {
+            let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
+            phase.reorder();
+            phase.draw(
+                world,
+                &mut rpass,
+                RenderExtra {
+                    device: &render.device,
+                    queue: &render.queue,
+                    early_encoder: &mut early_encoder,
+                    surface_config: &render.config,
+                    diagnosis: &mut diagnosis,
+                },
+            );
+        });
 
         drop(rpass);
 
@@ -393,11 +386,6 @@ impl Render {
         );
 
         // active refreshing
-
-        if refreshing {
-            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-            lnwindow.window.request_redraw();
-        }
 
         // tasks submission
 
@@ -436,14 +424,7 @@ impl Render {
             );
 
             if let Some(last) = render.last_redraw {
-                output += &format!(
-                    "CPU frame time: {:.3?} | {}\n",
-                    (now - last),
-                    match refreshing {
-                        true => "ACTIVE",
-                        false => "INACTIVE",
-                    },
-                )
+                output += &format!("CPU frame time: {:.3?}\n", (now - last),)
             };
 
             output += &format!("GPU timestamp period: {} ns\n", period);
@@ -459,6 +440,46 @@ impl Render {
         // CPU time tracing
 
         render.last_redraw = Some(now);
+    }
+}
+
+impl RenderPhase {
+    pub fn reorder(&mut self) {
+        'r: for (dirty, view, ord) in self.seq_dirty.drain(..) {
+            for (control, old_view, old_ord) in &mut self.sequence {
+                if *control == dirty {
+                    *old_view = view;
+                    *old_ord = ord;
+                    continue 'r;
+                }
+            }
+
+            // if new
+            self.sequence.push((dirty, view, ord));
+        }
+
+        (self.sequence).retain(|(control, ..)| !self.seq_remove.contains(control));
+        self.seq_remove.clear();
+
+        self.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
+    }
+
+    pub fn draw(&mut self, world: &World, rpass: &mut RenderPass, extra: RenderExtra) {
+        for &(control, view, _) in &self.sequence {
+            let extra = RenderExtra {
+                device: extra.device,
+                queue: extra.queue,
+                early_encoder: extra.early_encoder,
+                surface_config: extra.surface_config,
+                diagnosis: extra.diagnosis,
+            };
+            world.enter(view, || {
+                let mut control = world.fetch_mut(control).unwrap();
+                if let Some(draw) = &mut control.draw {
+                    draw(world, rpass, extra);
+                }
+            });
+        }
     }
 }
 
@@ -521,8 +542,36 @@ fn plain_rpass<'encoder>(
 }
 
 impl RenderControl {
+    pub fn phase_with_draw(
+        view: impl HandleGeneric,
+        mut f: impl FnMut(&World, &mut RenderPass, RenderExtra) + Send + 'static,
+    ) -> Self {
+        let view = view.untyped();
+        RenderControl {
+            prepare: Some(Box::new(move |world| {
+                world.enter(view, || {
+                    let mut keep_redrawing = false;
+                    world.foreach_fetch_mut::<RenderControl>(|mut control| {
+                        if let Some(prepare) = &mut control.prepare
+                            && let Some(info) = prepare(world)
+                        {
+                            keep_redrawing |= info.keep_redrawing;
+                        };
+                    });
+                    if world.queue_cache::<RenderControl>() {
+                        log::debug!("control cached");
+                    }
+                    Some(RenderInformation { keep_redrawing })
+                })
+            })),
+            draw: Some(Box::new(move |world, rpass, extra| {
+                world.enter(view, || f(world, rpass, extra));
+            })),
+        }
+    }
+
     /// Safer functions to request redraw.
-    pub fn redraw(world: &World) {
+    pub fn request_redraw(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
 
@@ -532,13 +581,13 @@ impl RenderControl {
     }
 
     pub fn reorder(order: Option<isize>, world: &World, handle: Handle<Self>) {
-        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        let mut phase = world.single_fetch_mut::<RenderPhase>().unwrap();
 
         if let Some(order) = order {
-            render.seq_dirty.push((handle, world.here(), order));
-            render.seq_remove.retain(|&x| x != handle);
+            phase.seq_dirty.push((handle, world.here(), order));
+            phase.seq_remove.retain(|&x| x != handle);
         } else {
-            render.seq_remove.push(handle);
+            phase.seq_remove.push(handle);
         }
     }
 }
@@ -576,6 +625,12 @@ impl Element for Render {
 
             WindowEvent::RedrawRequested => {
                 world.queue(|world| {
+                    let refreshing = Render::prepare(world);
+                    if refreshing {
+                        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                        lnwindow.window.request_redraw();
+                    }
+                    world.flush();
                     Render::redraw(world);
                 });
             }
@@ -585,10 +640,12 @@ impl Element for Render {
     }
 }
 
+impl Element for RenderPhase {}
+
 impl Element for RenderControl {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let render = world.single::<Render>().unwrap();
-        world.dependency(this, render);
+        let phase = world.single::<RenderPhase>().unwrap();
+        world.dependency(this, phase);
     }
 
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {

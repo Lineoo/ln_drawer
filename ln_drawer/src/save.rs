@@ -33,6 +33,16 @@ const BACKUP_MINIMUM_DURATION: Duration = Duration::from_hours(24);
 
 const TABLE_METADATA: TableDefinition<u32, &[u8]> = TableDefinition::new("metadata");
 
+/// The core database.
+///
+/// ## Tables
+///
+/// | name | key | value |
+/// |------|-----|-------|
+/// | `metadata`            | `u32`                     | `&[u8]`   |
+/// | `stroke_chunk`        | `(u64, ChunkKey)`         | `&[u8]`   |
+/// | `stroke_chunk_meta`   | `((u64, ChunkKey), u32)`  | `&[u8]`   |
+/// | `camera`              | ` &str`                   | `&[u8]`   |
 #[derive(Clone)]
 pub struct SaveDatabase(pub Arc<Database>);
 
@@ -49,7 +59,7 @@ pub struct SaveMetadata1 {
 }
 
 impl SaveDatabase {
-    pub fn init(world: &mut World) {
+    pub fn init(world: &World) {
         let Err(WorldError::SingletonNoSuch(_)) = world.single::<SaveDatabase>() else {
             log::warn!("duplicated database initialization!");
             return;
@@ -68,8 +78,6 @@ impl SaveDatabase {
             world.insert(SaveDatabase(Arc::new(db)));
             log::debug!("database created");
         }
-
-        world.flush();
     }
 
     /// Format a fresh, empty database, this contains initializing minimum
@@ -253,7 +261,7 @@ impl SaveMetadata1 {
     }
 }
 
-pub struct Autosave(pub Box<dyn FnMut(&World, &WriteTransaction)>);
+pub struct Autosave(pub Box<dyn FnMut(&World, &WriteTransaction) + Send>);
 
 pub struct AutosaveScheduler {
     pub autosave_duration: Duration,
@@ -288,7 +296,10 @@ pub fn get_file_path(world: &World, filename: &str) -> PathBuf {
 #[cfg(not(target_os = "android"))]
 pub fn get_file_path(_world: &World, filename: &str) -> PathBuf {
     let mut path = dirs::data_local_dir().unwrap();
-    path.push(option_env!("LN_SAVE_FILE_LOCATION").unwrap_or("LnDrawerDev"));
+    match option_env!("LNDRAWER_RELEASE").is_some() {
+        true => path.push("LnDrawer"),
+        false => path.push("LnDrawerDev"),
+    }
     path.push(filename);
     path
 }

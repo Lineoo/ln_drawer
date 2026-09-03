@@ -1,13 +1,14 @@
-pub mod animation;
-pub mod layer;
-pub mod layout;
-pub mod lnwin;
-pub mod measures;
-pub mod render;
-pub mod save;
-pub mod theme;
-pub mod tools;
-pub mod widgets;
+mod animation;
+pub mod i18n;
+mod layer;
+mod layout;
+mod lnwin;
+mod measures;
+mod render;
+mod save;
+mod theme;
+mod tools;
+mod widgets;
 
 pub fn desktop_main() {
     use winit::event_loop::EventLoop;

@@ -1,136 +1,288 @@
 use std::sync::Arc;
 
-use cosmic_text::{Attrs, Metrics, Weight};
-use glam::{IVec2, UVec2, Vec2};
-use ln_world::{Descriptor, Handle, World};
-use palette::{Hsla, IntoColor, RgbHue, Srgba};
+use glam::{I64Vec2, IVec2, UVec2};
+use ln_world::{ElemRef, Handle, HandleGeneric, ViewRef, World};
+use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
 use crate::{
-    layer::wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
-    layout::{
-        luni::{
-            LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
-            LuniRect,
-        },
-        transform::{Transform, TransformEdge, TransformValue},
+    layer::{
+        input::LayerInput,
+        wrapper::{BrushConfigurationChanged, LayerWrapper},
     },
-    measures::{Axis, Rectangle},
-    render::rounded::{RoundedRect, RoundedRectDescriptor},
+    layout::transform::{Transform, TransformEdge, TransformValue},
+    lnwin::Lnwindow,
+    measures::{FI64Ext, Rectangle},
+    render::{RenderControl, RenderPhase, camera::CurrentCamera},
     theme::Theme,
+    tools::collider::ToolColliderPortal,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
-        echo::EchoWidget,
-        palette::hsl::{PaletteHsl, PaletteHsla},
-        panel::Panel,
-        renderer::{
-            svg::svg_render,
-            text::{SetText, Text},
+        container::Container,
+        palette::{
+            hsl::{ColorHsla, HslPanel, SetColorHsla},
+            oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
-        slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
-        tabs::Tabs,
+        panel::debug_panel::docker_button,
+        renderer::{
+            rrect::{RRect, SetRRectColor},
+            svg::svg_render,
+        },
+        tabs::{SetTabsActive, Tabs},
     },
 };
 
-pub struct ColorPicker(pub Handle<ToggleButton>);
-impl Descriptor for ColorPicker {
-    type Target = ();
-    fn when_build(self, world: &World) -> Self::Target {
-        let toggle_button = self.0;
+pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
+    let toggle_button_color_icon = world.insert(RRect {
+        rect: Rectangle::default(),
+        order: 21,
+        color: Srgba::new(0.9, 0.7, 0.7, 1.0),
+        radius: 10.0,
+        width: 0.0,
+        enabled: true,
+    });
 
-        let toggle_button_color_icon = world.build(RoundedRectDescriptor {
-            order: 21,
-            color: Srgba::new(0.9, 0.7, 0.7, 1.0),
-            value: 10.0,
-            shrink: 10.0,
-            shadow_offset: Vec2::ZERO,
-            vertex_extend: 20,
-            ..Default::default()
+    world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
+        let transform = Transform {
+            value: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+            ),
+            source: toggle_button.untyped(),
+            target: toggle_button_color_icon.untyped(),
+        };
+
+        let target = transform.value.compute(rect);
+
+        world.queue_trigger(toggle_button_color_icon, SetWidgetRectangle(target));
+    });
+
+    let tab_palette_hsl = world.insert(Container {
+        rect: Rectangle::default(),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue::copy(),
+        visible: false,
+    });
+
+    let tab_palette_oklch = world.insert(Container {
+        rect: Rectangle::default(),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue::copy(),
+        visible: false,
+    });
+
+    let tab_layer_selection = world.insert(Container {
+        rect: Rectangle::default(),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue::copy(),
+        visible: false,
+    });
+
+    let tab_settings = world.insert(Container {
+        rect: Rectangle::default(),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue {
+            left: TransformEdge {
+                anchor: 0.0,
+                offset: 0,
+            },
+            down: TransformEdge {
+                anchor: 1.0,
+                offset: -400,
+            },
+            right: TransformEdge {
+                anchor: 1.0,
+                offset: 0,
+            },
+            up: TransformEdge {
+                anchor: 1.0,
+                offset: 0,
+            },
+        },
+        visible: false,
+    });
+
+    let tab_debug = world.insert(Container {
+        rect: Rectangle::default(),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue::copy(),
+        visible: false,
+    });
+
+    let tabs = world.insert(Tabs {
+        active: 0,
+        rect: Rectangle::default(),
+        visible: false,
+        tabs: vec![
+            (
+                ButtonImage {
+                    transform: TransformValue::anchor(
+                        (0.5, 0.5),
+                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                    ),
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(
+                        include_bytes!("../../../res/interface/palette.svg"),
+                        1.0,
+                    ))),
+                },
+                tab_palette_hsl.untyped(),
+            ),
+            (
+                ButtonImage {
+                    transform: TransformValue::anchor(
+                        (0.5, 0.5),
+                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                    ),
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(
+                        include_bytes!("../../../res/interface/palette.svg"),
+                        1.0,
+                    ))),
+                },
+                tab_palette_oklch.untyped(),
+            ),
+            (
+                ButtonImage {
+                    transform: TransformValue::anchor(
+                        (0.5, 0.5),
+                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                    ),
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(
+                        include_bytes!("../../../res/interface/layers.svg"),
+                        1.0,
+                    ))),
+                },
+                tab_layer_selection.untyped(),
+            ),
+            (
+                ButtonImage {
+                    transform: TransformValue::anchor(
+                        (0.5, 0.5),
+                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                    ),
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(
+                        include_bytes!("../../../res/interface/settings.svg"),
+                        1.0,
+                    ))),
+                },
+                tab_settings.untyped(),
+            ),
+            (
+                ButtonImage {
+                    transform: TransformValue::anchor(
+                        (0.5, 0.5),
+                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
+                    ),
+                    bytes: Arc::new(image::DynamicImage::from(svg_render(
+                        include_bytes!("../../../res/interface/bug.svg"),
+                        1.0,
+                    ))),
+                },
+                tab_debug.untyped(),
+            ),
+        ],
+    });
+
+    let lnwindow = world.single::<Lnwindow>().unwrap();
+    let input = world.single::<LayerInput>().unwrap();
+    let wrapper = world.single::<LayerWrapper>().unwrap();
+    let camera = world.single::<CurrentCamera>().unwrap();
+    for panel in [
+        tab_palette_hsl,
+        tab_palette_oklch,
+        tab_layer_selection,
+        tab_settings,
+        tab_debug,
+    ] {
+        let control = world.insert(RenderControl::phase_with_draw(
+            panel,
+            move |world, rpass, extra| {
+                let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
+                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(camera.0).unwrap();
+                let panel = world.fetch(panel).unwrap();
+                let window_size = lnwindow.window.surface_size();
+                let left_up = lnwindow.screen_to_cursor(
+                    camera.world_to_screen_absolute(I64Vec2::q32_from_i32(panel.rect.left_up())),
+                );
+                let right_down = lnwindow.screen_to_cursor(
+                    camera.world_to_screen_absolute(I64Vec2::q32_from_i32(panel.rect.right_down())),
+                );
+                rpass.set_scissor_rect(
+                    (left_up.x as u32).max(0),
+                    (left_up.y as u32).max(0),
+                    (right_down.x as u32).min(window_size.width) - (left_up.x as u32),
+                    (right_down.y as u32).min(window_size.height) - (left_up.y as u32),
+                );
+                phase.reorder();
+                phase.draw(world, rpass, extra);
+                rpass.set_scissor_rect(0, 0, window_size.width, window_size.height);
+            },
+        ));
+        RenderControl::reorder(Some(isize::MAX), world, control);
+        world.enter(lnwindow, || {
+            world.insert(ToolColliderPortal(panel.untyped()));
         });
-
-        world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
-            let transform = Transform {
-                value: TransformValue::anchor(
-                    (0.5, 0.5),
-                    Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
-                ),
-                source: toggle_button.untyped(),
-                target: toggle_button_color_icon.untyped(),
-            };
-
-            let target = transform.value.compute(rect);
-
-            world.queue_trigger(toggle_button_color_icon, SetWidgetRectangle(target));
-        });
-
-        let tab_palette = world.insert(Panel {
-            rect: Rectangle::default(),
-            visible: true,
-            shadow: false,
-        });
-
-        palette(world, tab_palette, toggle_button_color_icon);
-
-        let tab_settings = world.insert(Panel {
-            rect: Rectangle::default(),
-            visible: true,
-            shadow: false,
-        });
-
-        settings(world, tab_settings);
-
-        let tabs = world.insert(Tabs {
-            active: 0,
-            rect: Rectangle::default(),
-            visible: false,
-            tabs: vec![
-                (
-                    ButtonImage {
-                        transform: TransformValue::anchor(
-                            (0.5, 0.5),
-                            Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                        ),
-                        bytes: Arc::new(image::DynamicImage::from(svg_render(
-                            include_bytes!("../../../res/interface/palette.svg"),
-                            1.0,
-                        ))),
-                    },
-                    tab_palette.untyped(),
-                ),
-                (
-                    ButtonImage {
-                        transform: TransformValue::anchor(
-                            (0.5, 0.5),
-                            Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                        ),
-                        bytes: Arc::new(image::DynamicImage::from(svg_render(
-                            include_bytes!("../../../res/interface/settings.svg"),
-                            1.0,
-                        ))),
-                    },
-                    tab_settings.untyped(),
-                ),
-            ],
-        });
-
-        world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
-            let transform = TransformValue::anchor(
-                (1.0, 0.5),
-                Rectangle::new_half(IVec2::new(192 + 20, 0), UVec2::new(192, 144)),
-            );
-            let rect = transform.compute(rect);
-            world.queue_trigger(tabs, SetWidgetRectangle(rect));
-        });
-
-        world.observer(toggle_button, move |&ButtonSelected(selected), world| {
-            world.queue_trigger(toggle_button, SetButtonSelected(selected));
-            world.queue_trigger(tabs, SetWidgetVisible(selected));
+        world.enter(panel, || {
+            world.insert(ViewRef(lnwindow.untyped()));
+            world.insert(ElemRef(input.untyped()));
+            world.insert(ElemRef(panel.untyped()));
+            world.insert(ElemRef(toggle_button.untyped()));
+            world.insert(ElemRef(wrapper.untyped()));
+            world.insert(ElemRef(camera.untyped()));
+            world.insert(RenderPhase::default());
         });
     }
+
+    world.enter_queue(tab_palette_hsl, move |world| {
+        palette_hsl(world, tab_palette_hsl)
+    });
+    world.enter_queue(tab_palette_oklch, move |world| {
+        palette_oklab(world, tab_palette_oklch, toggle_button)
+    });
+    world.enter_queue(tab_layer_selection, move |world| {
+        super::layer_selection::layer_selection(world, tab_layer_selection)
+    });
+    world.enter_queue(tab_settings, move |world| {
+        super::settings::panel_settings(world, tab_settings)
+    });
+    world.enter_queue(tab_debug, move |world| {
+        super::debug_panel::debug_panel(world, tab_debug)
+    });
+
+    // initialize layout
+    world.queue(move |world| {
+        let this = world.fetch(tabs).unwrap();
+        world.queue_trigger(tabs, SetWidgetRectangle(this.rect));
+        world.queue_trigger(tabs, SetWidgetVisible(this.visible));
+        world.queue_trigger(tabs, SetTabsActive(this.active));
+    });
+
+    let layer = world.single::<LayerWrapper>().unwrap();
+    world.observer(layer, move |&BrushConfigurationChanged, world| {
+        let layer = world.fetch(layer).unwrap();
+        let color = layer.round_brush.color;
+        world.queue_trigger(toggle_button_color_icon, SetRRectColor(color.into_color()));
+        // trigger palette_hsl SetPaletteHsl
+    });
+
+    world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
+        let transform = TransformValue::anchor(
+            (1.0, 0.5),
+            Rectangle::new_half(IVec2::new(192 + 20, 0), UVec2::new(192, 160)),
+        );
+        let rect = transform.compute(rect);
+        world.queue_trigger(tabs, SetWidgetRectangle(rect));
+    });
+
+    world.observer(toggle_button, move |&ButtonSelected(selected), world| {
+        world.queue_trigger(toggle_button, SetButtonSelected(selected));
+        world.queue_trigger(tabs, SetWidgetVisible(selected));
+    });
 }
 
-fn palette(world: &World, panel: Handle<Panel>, toggle_button_color_icon: Handle<RoundedRect>) {
-    let palette_hsl = world.insert(PaletteHsl {
+fn palette_hsl(world: &World, bg: Handle<Container>) {
+    let panel = world.insert(HslPanel {
         rect: Rectangle::default(),
         color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
         enabled: true,
@@ -141,285 +293,88 @@ fn palette(world: &World, panel: Handle<Panel>, toggle_button_color_icon: Handle
             (0.5, 0.5),
             Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
         ),
-        source: panel.untyped(),
-        target: palette_hsl.untyped(),
+        source: bg.untyped(),
+        target: panel.untyped(),
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();
-    world.observer(palette_hsl, move |&PaletteHsla(color), world| {
+    world.observer(panel, move |&ColorHsla(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
+        layer.tint_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
-
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
-        let mut toggle_button_color_icon = world.fetch_mut(toggle_button_color_icon).unwrap();
-        let color = layer.round_brush.color;
-        toggle_button_color_icon.desc.color = color.into_color();
-        // trigger palette_hsl SetPaletteHsl
+        let hsla = layer.round_brush.color.into_color();
+        world.trigger(panel, &SetColorHsla(hsla));
     });
 }
 
-fn settings(world: &World, panel: Handle<Panel>) {
-    let theme = world.single_fetch::<Theme>().unwrap();
+fn palette_oklab(world: &World, bg: Handle<Container>, toggle_button: Handle<ToggleButton>) {
+    let polar = world.insert(OklabPolar {
+        rect: Rectangle::default(),
+        color: Oklab::default(),
+        enabled: true,
+    });
+    let bar = world.insert(OklabBar {
+        rect: Rectangle::default(),
+        color: Oklab::default(),
+        enabled: true,
+    });
 
-    let label1_frame = world.insert(EchoWidget);
-    let label1 = world.insert(Text {
-        text: String::from("选项标签"),
-        metrics: Metrics {
-            font_size: 14.0,
-            line_height: 18.0,
-        },
-        attrs: Attrs::new().weight(Weight::BOLD),
-        color: theme.significant_color,
-        ..Default::default()
+    let theme = world.single_fetch::<Theme>().unwrap();
+    let docker_button = docker_button(world, &theme);
+    let pick = docker_button(include_bytes!("../../../res/interface/pipette.svg"));
+
+    world.insert(Transform {
+        value: TransformValue::anchor(
+            (0.5, 0.5),
+            Rectangle::new_half(IVec2::new(-30, 0), UVec2::splat(100)),
+        ),
+        source: bg.untyped(),
+        target: polar.untyped(),
     });
     world.insert(Transform {
-        value: TransformValue::anchor((0.0, 0.0), Rectangle::new_extend(16, 0, 56, 18)),
-        source: label1_frame.untyped(),
-        target: label1.untyped(),
+        value: TransformValue::anchor(
+            (0.5, 0.5),
+            Rectangle::new_half(IVec2::new(110, 0), UVec2::new(20, 100)),
+        ),
+        source: bg.untyped(),
+        target: bar.untyped(),
+    });
+    world.insert(Transform {
+        value: TransformValue::anchor(
+            (1.0, 1.0),
+            Rectangle::new_half(IVec2::new(-30, -30), UVec2::new(10, 10)),
+        ),
+        source: bg.untyped(),
+        target: pick.untyped(),
+    });
+
+    world.observer(pick, move |&ButtonSelected(_), world| {
+        let mut input = world.single_fetch_mut::<LayerInput>().unwrap();
+        input.pick = true;
+        world.queue_trigger(toggle_button, ButtonSelected(false));
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();
-
-    let flow_frame = world.insert(EchoWidget);
-    let flow_label = option_label(world, String::new(), flow_frame.untyped());
-    let flow_desc = option_desc(world, String::new(), flow_frame.untyped());
-    let (flow_slider, flow_slider_label) = option_slider(world, flow_frame.untyped());
-    world.observer(flow_slider, move |&SliderValue(value), world| {
+    world.observer(polar, move |&ColorOklab(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        match layer.brush_mode {
-            BrushMode::Round => layer.round_brush.flow.scale = value,
-            BrushMode::Blur => layer.blur_brush.sigma.scale = value * 3.0,
-        };
+        layer.round_brush.color = color.into_color();
+        layer.tint_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
-
-    let softness_frame = world.insert(EchoWidget);
-    let softness_label = option_label(world, String::new(), softness_frame.untyped());
-    let softness_desc = option_desc(world, String::new(), softness_frame.untyped());
-    let (softness_slider, softness_slider_label) = option_slider(world, softness_frame.untyped());
-    world.observer(softness_slider, move |&SliderValue(value), world| {
+    world.observer(bar, move |&ColorOklab(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        match layer.brush_mode {
-            BrushMode::Round => layer.round_brush.softness.scale = 1. - value,
-            BrushMode::Blur => layer.blur_brush.softness.scale = 1. - value,
-        };
+        layer.round_brush.color = color.into_color();
+        layer.tint_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
-
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
-
-        let mut flow_label = world.fetch_mut(flow_label).unwrap();
-        let mut flow_desc = world.fetch_mut(flow_desc).unwrap();
-
-        let value = match layer.brush_mode {
-            BrushMode::Round => layer.round_brush.flow.scale,
-            BrushMode::Blur => layer.blur_brush.sigma.scale / 3.0,
-        };
-
-        world.queue_trigger(flow_slider, SetSliderValue(value));
-        world.queue_trigger(flow_slider_label, SetText(format!("{value:.2}")));
-
-        let (label, desc) = match layer.brush_mode {
-            BrushMode::Round => ("流量", "笔刷每步流量（范围：[0, 1]）"),
-            BrushMode::Blur => ("模糊标准差", "卷积核应用半径：r = σ * 3（范围：[0, 1]）"),
-        };
-
-        if flow_label.text != label {
-            flow_label.text = label.into();
-            flow_label.outdated = true;
-        }
-
-        if flow_desc.text != desc {
-            flow_desc.text = desc.into();
-            flow_desc.outdated = true;
-        }
-
-        let mut softness_label = world.fetch_mut(softness_label).unwrap();
-        let mut softness_desc = world.fetch_mut(softness_desc).unwrap();
-
-        let value = match layer.brush_mode {
-            BrushMode::Round => 1. - layer.round_brush.softness.scale,
-            BrushMode::Blur => 1. - layer.blur_brush.softness.scale,
-        };
-
-        world.queue_trigger(softness_slider, SetSliderValue(value));
-        world.queue_trigger(softness_slider_label, SetText(format!("{value:.2}")));
-
-        let (label, desc) = ("硬度", "三次多项式平滑（范围：[0, 1]）");
-
-        if softness_label.text != label {
-            softness_label.text = label.into();
-            softness_label.outdated = true;
-        }
-
-        if softness_desc.text != desc {
-            softness_desc.text = desc.into();
-            softness_desc.outdated = true;
-        }
+        let oklab = layer.round_brush.color.into_color();
+        world.trigger(polar, &SetColorOklab(oklab));
+        world.trigger(bar, &SetColorOklab(oklab));
     });
-
-    world.insert(LuniFlex {
-        parent: (
-            panel.untyped(),
-            LuniParent {
-                axis: LuniAxis::Column,
-                distribution: LuniDistribution::FlexStart,
-                padding: LuniRect {
-                    left: 12,
-                    bottom: 4,
-                    right: 12,
-                    top: 4,
-                },
-                gap: 4,
-                template: LuniChildTemplate::default(),
-            },
-        ),
-        children: vec![
-            (
-                label1_frame.untyped(),
-                LuniChild {
-                    basis: Some(48),
-                    ..Default::default()
-                },
-            ),
-            (
-                flow_frame.untyped(),
-                LuniChild {
-                    basis: Some(108),
-                    ..Default::default()
-                },
-            ),
-            (
-                softness_frame.untyped(),
-                LuniChild {
-                    basis: Some(108),
-                    ..Default::default()
-                },
-            ),
-        ],
-    });
-}
-
-fn option_label(world: &World, text: String, option1_frame: Handle) -> Handle<Text> {
-    let theme = world.single_fetch::<Theme>().unwrap();
-
-    let label = world.insert(Text {
-        text,
-        metrics: Metrics {
-            font_size: 16.0,
-            line_height: 20.0,
-        },
-        color: theme.symbolic_color,
-        ..Default::default()
-    });
-
-    world.insert(Transform {
-        value: TransformValue {
-            left: TransformEdge {
-                anchor: 0.0,
-                offset: 56,
-            },
-            down: TransformEdge {
-                anchor: 1.0,
-                offset: -36,
-            },
-            right: TransformEdge {
-                anchor: 1.0,
-                offset: -72,
-            },
-            up: TransformEdge {
-                anchor: 1.0,
-                offset: -16,
-            },
-        },
-        source: option1_frame,
-        target: label.untyped(),
-    });
-
-    label
-}
-
-fn option_desc(world: &World, text: String, option1_frame: Handle) -> Handle<Text> {
-    let theme = world.single_fetch::<Theme>().unwrap();
-
-    let label = world.insert(Text {
-        text,
-        metrics: Metrics {
-            font_size: 12.0,
-            line_height: 14.0,
-        },
-        color: theme.significant_color,
-        ..Default::default()
-    });
-
-    world.insert(Transform {
-        value: TransformValue {
-            left: TransformEdge {
-                anchor: 0.0,
-                offset: 56,
-            },
-            down: TransformEdge {
-                anchor: 1.0,
-                offset: -72,
-            },
-            right: TransformEdge {
-                anchor: 1.0,
-                offset: -72,
-            },
-            up: TransformEdge {
-                anchor: 1.0,
-                offset: -36,
-            },
-        },
-        source: option1_frame,
-        target: label.untyped(),
-    });
-
-    label
-}
-
-fn option_slider(world: &World, option1_frame: Handle) -> (Handle<Slider>, Handle<SliderLabel>) {
-    let slider = world.insert(Slider {
-        value: 0.5,
-        axis: Axis::Right,
-        rect: Rectangle::default(),
-        pressed: false,
-    });
-
-    world.insert(Transform {
-        value: TransformValue {
-            left: TransformEdge {
-                anchor: 0.0,
-                offset: 56,
-            },
-            down: TransformEdge {
-                anchor: 1.0,
-                offset: -108,
-            },
-            right: TransformEdge {
-                anchor: 1.0,
-                offset: -72,
-            },
-            up: TransformEdge {
-                anchor: 1.0,
-                offset: -72,
-            },
-        },
-        source: option1_frame,
-        target: slider.untyped(),
-    });
-
-    let slider_label = world.insert(SliderLabel {
-        text: String::new(),
-        clockwise: false,
-        source: slider,
-        hover: false,
-        visible: true,
-    });
-
-    (slider, slider_label)
 }

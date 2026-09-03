@@ -7,6 +7,11 @@ on:
       version:
         description: Version (include "v" prefix, for example "v1.2.6-beta.3")
         required: true
+        type: string
+      draft:
+        description: Generate a Draft Release
+        required: true
+        type: boolean
 
 permissions:
   contents: write
@@ -80,9 +85,7 @@ jobs:
 
     - name: '[Build] Compile Binary'
       if: ${{ matrix.platform == 'desktop' }}
-      env:
-        LN_SAVE_FILE_LOCATION: LnDrawer
-      run: cargo build --verbose --release --package=ln_drawer --bin=ln_drawer --target ${{ matrix.target }}
+      run: LNDRAWER_RELEASE=1 cargo build --verbose --release --package=ln_drawer --bin=ln_drawer --target ${{ matrix.target }}
 
     - name: '[Build] Compile Library and Package (Apk)'
       if: ${{ matrix.platform == 'android' }}
@@ -90,7 +93,7 @@ jobs:
         CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
         CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
       run: |
-        cargo apk build --release --package=ln_drawer --lib --target ${{ matrix.target }}
+        LNDRAWER_RELEASE=1 cargo apk build --release --package=ln_drawer --lib --target ${{ matrix.target }}
         echo "ARTIFACT=$(readlink -f target/release/apk/ln_drawer.apk)" > $GITHUB_ENV
 
     - name: '[Build] Package for Windows (Zip)'
@@ -116,6 +119,7 @@ jobs:
   release:
     name: Release
     needs: [build]
+    if: ${{ inputs.draft }}
     runs-on: ubuntu-latest
 
     steps:

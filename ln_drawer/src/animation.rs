@@ -51,7 +51,7 @@ pub struct SimpleAnimationDescriptor<T, W, F>
 where
     T: AnimationType,
     W: Element,
-    F: FnMut(RefMut<W>, &World, T) + 'static,
+    F: FnMut(RefMut<W>, &World, T) + Send + 'static,
 {
     pub animation: AnimationDescriptor<T>,
     pub widget: Handle<W>,
@@ -62,7 +62,7 @@ impl<T, W, F> Descriptor for SimpleAnimationDescriptor<T, W, F>
 where
     T: AnimationType,
     W: Element,
-    F: FnMut(RefMut<W>, &World, T) + 'static,
+    F: FnMut(RefMut<W>, &World, T) + Send + 'static,
 {
     type Target = Handle<Animation<T>>;
 
@@ -78,11 +78,12 @@ where
     }
 }
 
+#[expect(unused)]
 pub struct OnceAnimationDescriptor<T, W, F>
 where
     T: AnimationType,
     W: Element,
-    F: FnMut(RefMut<W>, &World, T) + 'static,
+    F: FnMut(RefMut<W>, &World, T) + Send + 'static,
 {
     pub animation: AnimationDescriptor<T>,
     pub widget: Handle<W>,
@@ -93,7 +94,7 @@ impl<T, W, F> Descriptor for OnceAnimationDescriptor<T, W, F>
 where
     T: AnimationType,
     W: Element,
-    F: FnMut(RefMut<W>, &World, T) + 'static,
+    F: FnMut(RefMut<W>, &World, T) + Send + 'static,
 {
     type Target = Handle<Animation<T>>;
 
@@ -118,6 +119,7 @@ where
 
 pub struct SetAnimationDst<T: AnimationType>(pub T);
 
+#[expect(unused)]
 pub struct DirectAnimation<T, W>
 where
     T: AnimationType,
@@ -195,7 +197,7 @@ impl<T: AnimationType> Element for Animation<T> {
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         if self.src != self.dst || self.data_pushed != T::from_storage(self.src) {
             self.last_update = Instant::now();
-            RenderControl::redraw(world);
+            RenderControl::request_redraw(world);
         }
     }
 }
@@ -233,8 +235,8 @@ fn step<T: AnimationType>(
     changed
 }
 
-pub trait AnimationType: PartialEq + Clone + Copy + 'static {
-    type Storage: FloatArray;
+pub trait AnimationType: PartialEq + Clone + Copy + Send + 'static {
+    type Storage: FloatArray + Send;
     fn into_storage(self) -> Self::Storage;
     fn from_storage(storage: Self::Storage) -> Self;
 }

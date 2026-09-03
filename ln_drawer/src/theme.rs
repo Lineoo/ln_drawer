@@ -2,6 +2,8 @@ use glam::Vec2;
 use ln_world::Element;
 use palette::Srgba;
 
+use crate::measures::Axis;
+
 pub struct Theme {
     pub blank_color: Srgba,
     pub primary_color: Srgba,
@@ -14,6 +16,8 @@ pub struct Theme {
     pub shadow_offset: Vec2,
     pub shadow_blur: f32,
     pub roundness: f32,
+    #[expect(unused)]
+    pub axis: Axis,
     pub anim_factor: f32,
 }
 
@@ -31,6 +35,7 @@ impl Default for Theme {
             shadow_offset: Vec2::new(0.0, -4.0),
             shadow_blur: 4.0,
             roundness: 4.0,
+            axis: Axis::Right,
             anim_factor: 30.0,
         }
     }

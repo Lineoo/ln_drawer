@@ -1,11 +1,11 @@
-use glam::I64Vec2;
+use glam::{DVec2, I64Vec2};
 use hashbrown::HashMap;
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
 };
 
-use crate::{lnwin::Lnwindow, render::camera::Camera, tools::collider::ToolCollider};
+use crate::{lnwin::Lnwindow, render::camera::CurrentCamera, tools::collider::ToolCollider};
 
 /// Multi touch actions that allow inputs with more points than [`PointerTool`] but no hovering
 #[derive(Default)]
@@ -23,8 +23,8 @@ impl Element for MultiTouchTool {
 #[derive(Debug, Clone, Copy)]
 pub struct MultiTouch {
     pub position: I64Vec2,
-    pub screen: [f64; 2],
-    pub view: Handle<Camera>,
+    pub screen: DVec2,
+    pub view: HandleAny,
     pub status: MultiTouchStatus,
     pub data: MultiTouchData,
     pub pointer: PointerKind,
@@ -71,7 +71,8 @@ impl MultiTouchTool {
                 };
 
                 let position = world.enter(view, || {
-                    let camera = world.single_fetch::<Camera>().unwrap();
+                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                    let camera = world.fetch(current_camera.0).unwrap();
                     camera.screen_to_world_absolute(screen)
                 });
 
@@ -109,8 +110,10 @@ impl MultiTouchTool {
                         members: std::mem::take(list),
                     };
 
-                    world.trigger(target, &group.active);
-                    world.trigger(target, &group);
+                    world.enter(view, || {
+                        world.trigger(target, &group.active);
+                        world.trigger(target, &group);
+                    });
 
                     std::mem::swap(list, &mut group.members);
 
@@ -125,8 +128,10 @@ impl MultiTouchTool {
                     members: std::mem::take(list),
                 };
 
-                world.trigger(target, &group.active);
-                world.trigger(target, &group);
+                world.enter(view, || {
+                    world.trigger(target, &group.active);
+                    world.trigger(target, &group);
+                });
 
                 std::mem::swap(list, &mut group.members);
             }
@@ -149,7 +154,8 @@ impl MultiTouchTool {
                 drop(lnwindow);
 
                 let position = world.enter(touch.view, || {
-                    let camera = world.single_fetch::<Camera>().unwrap();
+                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                    let camera = world.fetch(current_camera.0).unwrap();
                     camera.screen_to_world_absolute(screen)
                 });
 
@@ -162,13 +168,16 @@ impl MultiTouchTool {
                     pointer: kind,
                 };
 
+                let view = touch.view;
                 let mut group = MultiTouchGroup {
                     active: *touch,
                     members: std::mem::take(list),
                 };
 
-                world.trigger(target, &group.active);
-                world.trigger(target, &group);
+                world.enter(view, || {
+                    world.trigger(target, &group.active);
+                    world.trigger(target, &group);
+                });
 
                 std::mem::swap(list, &mut group.members);
             }
@@ -200,11 +209,12 @@ impl MultiTouchTool {
                 drop(lnwindow);
 
                 let position = world.enter(touch.view, || {
-                    let camera = world.single_fetch::<Camera>().unwrap();
+                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                    let camera = world.fetch(current_camera.0).unwrap();
                     camera.screen_to_world_absolute(screen)
                 });
 
-                *touch = MultiTouch {
+                let active = MultiTouch {
                     position,
                     screen,
                     view: touch.view,
@@ -213,18 +223,20 @@ impl MultiTouchTool {
                     pointer: kind,
                 };
 
-                let mut group = MultiTouchGroup {
-                    active: *touch,
-                    members: std::mem::take(list),
-                };
+                let view = touch.view;
+                let mut members = std::mem::take(list);
 
-                world.trigger(target, &group.active);
-                world.trigger(target, &group);
+                members.swap_remove(idx);
+                tool.touches.remove(&kind);
+
+                let mut group = MultiTouchGroup { active, members };
+
+                world.enter(view, || {
+                    world.trigger(target, &group.active);
+                    world.trigger(target, &group);
+                });
 
                 std::mem::swap(list, &mut group.members);
-
-                list.swap_remove(idx);
-                tool.touches.remove(&kind);
             }
 
             _ => {}

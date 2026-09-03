@@ -1,4 +1,4 @@
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, World};
 
 use crate::{
     layout::visibility::VisibilityInherit,
@@ -8,8 +8,8 @@ use crate::{
 
 pub struct Transform {
     pub value: TransformValue,
-    pub source: Handle,
-    pub target: Handle,
+    pub source: HandleAny,
+    pub target: HandleAny,
 }
 
 #[derive(Clone, Copy)]
@@ -90,6 +90,7 @@ impl TransformValue {
         }
     }
 
+    #[expect(unused)]
     pub const fn scale(width: f32, height: f32) -> TransformValue {
         TransformValue {
             left: TransformEdge {

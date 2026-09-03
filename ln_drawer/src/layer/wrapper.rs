@@ -1,94 +1,82 @@
 use std::{
-    collections::VecDeque,
-    sync::mpsc::{Receiver, Sender, channel},
+    sync::{
+        Arc,
+        mpsc::{Receiver, Sender, channel},
+    },
     thread::JoinHandle,
-    time::{Duration, Instant},
 };
 
-use glam::{DVec2, IVec2, UVec2, Vec2};
+use glam::{IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Color, ColorTargetState,
-    ColorWrites, CommandEncoderDescriptor, Device, Extent3d, FragmentState, LoadOp, Operations,
-    Origin3d, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPass,
-    RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites, RenderPipeline,
-    RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp,
-    SurfaceConfiguration, TexelCopyTextureInfoBase, Texture, TextureAspect, TextureDescriptor,
+    ColorWrites, Device, Extent3d, FragmentState, LoadOp, Operations, PipelineLayoutDescriptor,
+    PrimitiveState, PrimitiveTopology, RenderPass, RenderPassColorAttachment, RenderPassDescriptor,
+    RenderPassTimestampWrites, RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StoreOp, SurfaceConfiguration, Texture, TextureDescriptor,
     TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
     TextureViewDimension, VertexState,
-};
-use winit::{
-    event::{ElementState, PointerKind, WindowEvent},
-    keyboard::KeyCode,
 };
 
 use crate::{
     layer::{
-        Layer, LayerPipeline,
+        DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_ENABLED, Layer, LayerPipeline,
         brush::{
-            Brush, Draw, LayerDrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush,
+            DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush, tint::TintBrush,
         },
-        chunk_to_rect, create_chunk, create_chunk_texture, rect_to_chunks,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
+        traveler::Traveler,
     },
     lnwin::Lnwindow,
-    measures::{FI64Ext, Rectangle},
+    measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderControl, RenderExtra, RenderInformation,
-        camera::{Camera, CameraBind, CameraPositionChanged, CameraUtils, UICamera},
-        rounded::{RoundedRect, RoundedRectDescriptor},
+        camera::{Camera, CameraBind, CameraUpdated, MainCamera, UICamera},
     },
     save::{Autosave, SaveDatabase},
-    tools::{
-        collider::ToolCollider,
-        modifiers::ModifiersTool,
-        pointer::{PointerHover, PointerHoverStatus},
-        touch::{MultiTouchGroup, MultiTouchStatus},
-    },
-    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_COLORSPACE},
+    widgets::{renderer::rrect::RRect, shaders::LIB_COLORSPACE},
 };
 
-const UNDO_LIMIT: usize = 32;
-const MAIN_CHUNK_SIZE: u32 = 512;
-const MAIN_CHUNK_MIPMAP: u8 = 8;
-
 pub struct LayerDebugMessage(pub String);
+
+pub const BRUSH_PREVIEW_SHADOW_BLUR: i32 = 30;
 
 pub struct BrushConfigurationChanged;
 
 pub struct LayerWrapper {
     pub main: Layer,
-    pub brush: LayerDrawPipeline,
+    pub brush: DrawPipeline,
+    pub traveler: Traveler,
 
     pub brush_mode: BrushMode,
     pub round_brush: RoundBrush,
     pub blur_brush: BlurBrush,
-
-    pub undos: VecDeque<Layer>,
-    pub redos: Vec<Layer>,
+    pub tint_brush: TintBrush,
 
     pub debug: bool,
 
-    temp_erase: RoundBrush,
+    pub temp_erase: RoundBrush,
 
-    brush_preview: Handle<RoundedRect>,
-    compositing_texture: Texture,
-    compositing_config: SurfaceConfiguration,
-    compositing_render_bind: BindGroup,
+    pub brush_preview: Handle<RRect>,
+    pub brush_preview_shadow: Handle<RRect>,
+    pub compositing_texture: Texture,
+    pub compositing_config: SurfaceConfiguration,
+    pub compositing_render_bind: BindGroup,
 
-    present_pipeline: RenderPipeline,
+    pub present_pipeline: RenderPipeline,
 
-    thread_tx: Sender<ThreadInput>,
-    thread_rx: Receiver<ThreadOutput>,
-    thread: Option<JoinHandle<()>>,
+    pub thread_tx: Sender<ThreadInput>,
+    pub thread_rx: Receiver<ThreadOutput>,
+    pub thread: Option<JoinHandle<()>>,
 }
 
 pub enum BrushMode {
     Round,
     Blur,
+    Tint,
 }
 
 impl LayerWrapper {
@@ -96,12 +84,16 @@ impl LayerWrapper {
         let render = world.single_fetch::<Render>().unwrap();
         let camera_bind = world.single_fetch::<CameraBind>().unwrap();
 
-        let brush = LayerDrawPipeline::new(LayerPipeline::new(
+        let layer = Arc::new(LayerPipeline::new(
+            render.adapter.clone(),
             render.device.clone(),
             render.queue.clone(),
             TextureFormat::Rgba8Unorm,
             &camera_bind.layout,
         ));
+
+        let brush = DrawPipeline::new(layer.clone());
+        let traveler = Traveler::new(layer.clone());
 
         let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
         let window = world.single_fetch::<Lnwindow>().unwrap().window.clone();
@@ -113,13 +105,15 @@ impl LayerWrapper {
             database,
             device: render.device.clone(),
             queue: render.queue.clone(),
-            chunk_layout: brush.layer.chunk_layout.clone(),
-            chunk_size: MAIN_CHUNK_SIZE,
-            mipmap_levels: MAIN_CHUNK_MIPMAP,
+            page: 0,
+            chunk_size: DEFAULT_CHUNK_SIZE,
+            mipmap_levels: DEFAULT_MIPMAP_ENABLED,
+            layer_pipeline: layer.clone(),
             window,
         };
 
-        let camera = world.single_fetch::<Camera>().unwrap();
+        let main_camera = world.single_fetch::<MainCamera>().unwrap();
+        let camera = world.fetch(main_camera.0).unwrap();
         input_tx
             .send(ThreadInput::SetStreamCamera(
                 camera.zoom,
@@ -133,20 +127,24 @@ impl LayerWrapper {
         });
 
         let ui_camera = world.single_fetch::<UICamera>().unwrap();
-        let brush_preview = world.enter(ui_camera.0, || {
-            world.build(RoundedRectDescriptor {
+        let (brush_preview, brush_preview_shadow) = world.enter(ui_camera.0, || {
+            let preview = world.insert(RRect {
                 rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
-                color: Srgba::new(0.5, 0.5, 0.5, 0.4),
-                shrink: 0.5,
-                value: 0.5,
-                shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.3),
-                shadow_offset: Vec2::ZERO,
-                shadow_blur: 30.0,
-                visible: false,
-                vertex_extend: 80,
                 order: -10,
-                ..Default::default()
-            })
+                color: Srgba::new(0.5, 0.5, 0.5, 0.4),
+                radius: 0.5,
+                width: 0.0,
+                enabled: false,
+            });
+            let preview_shadow = world.insert(RRect {
+                rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
+                order: -11,
+                color: Srgba::new(0.0, 0.0, 0.0, 0.3),
+                radius: 0.5,
+                width: BRUSH_PREVIEW_SHADOW_BLUR as f32,
+                enabled: false,
+            });
+            (preview, preview_shadow)
         });
 
         let (compositing_texture, compositing_render_bind) =
@@ -157,10 +155,12 @@ impl LayerWrapper {
         LayerWrapper {
             main: Layer {
                 chunks: HashMap::new(),
-                mipmap_levels: MAIN_CHUNK_MIPMAP,
-                chunk_size: MAIN_CHUNK_SIZE,
+                mipmap_levels: DEFAULT_MIPMAP_ENABLED,
+                chunk_size: DEFAULT_CHUNK_SIZE,
                 controlled: true,
             },
+            brush,
+            traveler,
             brush_mode: BrushMode::Round,
             round_brush: RoundBrush {
                 size: BrushParam::force_index(0.0, 6.0, 1.0),
@@ -171,13 +171,15 @@ impl LayerWrapper {
             },
             blur_brush: BlurBrush {
                 size: BrushParam::constant(20.0),
-                sigma: BrushParam::constant(2.0),
+                sigma: BrushParam::constant(3.0),
                 softness: BrushParam::constant(0.3),
             },
-            undos: VecDeque::new(),
-            redos: Vec::new(),
-            brush,
-            brush_preview,
+            tint_brush: TintBrush {
+                size: BrushParam::force_index(0.0, 6.0, 1.0),
+                flow: Vec4::new(0.1, 0.6, 0.6, 0.5),
+                softness: BrushParam::constant(0.2),
+                color: Srgba::new(0.0, 0.0, 0.0, 1.0),
+            },
             debug: false,
             temp_erase: RoundBrush {
                 size: BrushParam::force_index(5.0, 15.0, 1.0),
@@ -186,6 +188,8 @@ impl LayerWrapper {
                 color: Srgba::new(1.0, 1.0, 1.0, 1.0),
                 erase: true,
             },
+            brush_preview,
+            brush_preview_shadow,
             compositing_texture,
             compositing_config: render.config.clone(),
             compositing_render_bind,
@@ -194,171 +198,6 @@ impl LayerWrapper {
             thread_rx: output_rx,
             thread: Some(thread),
         }
-    }
-
-    fn attach_touch(&mut self, world: &World, this: Handle<Self>) {
-        let collider = world.insert(ToolCollider::fullscreen(-100));
-        world.dependency(collider, this);
-
-        world.observer(collider, move |event: &PointerHover, world| {
-            if let PointerKind::Touch(_) = event.pointer.kind {
-                return;
-            }
-
-            let this = world.fetch(this).unwrap();
-            let ui_camera = world.single_fetch::<UICamera>().unwrap();
-            world.enter(ui_camera.0, || {
-                let camera = world.single_fetch::<Camera>().unwrap();
-                let mut brush_preview = world.fetch_mut(this.brush_preview).unwrap();
-                brush_preview.desc.shadow_offset = event.pointer.tilt * 48.0;
-                world.queue_trigger(
-                    this.brush_preview,
-                    SetWidgetRectangle(Rectangle::new_half(
-                        camera
-                            .screen_to_world_absolute(event.pointer.screen)
-                            .q32_round(),
-                        UVec2::new(1, 1),
-                    )),
-                );
-
-                match event.status {
-                    PointerHoverStatus::Enter => {
-                        world.queue_trigger(this.brush_preview, SetWidgetVisible(true));
-                    }
-                    PointerHoverStatus::Moving => {}
-                    PointerHoverStatus::Leave => {
-                        world.queue_trigger(this.brush_preview, SetWidgetVisible(false));
-                    }
-                }
-            });
-        });
-
-        let lnwindow = world.single::<Lnwindow>().unwrap();
-        world.observer(lnwindow, move |event: &WindowEvent, world| {
-            let WindowEvent::KeyboardInput { event, .. } = event else {
-                return;
-            };
-
-            if event.physical_key == KeyCode::KeyZ
-                && !event.repeat
-                && event.state == ElementState::Pressed
-            {
-                let mut this = world.fetch_mut(this).unwrap();
-                let modifier = world.single_fetch::<ModifiersTool>().unwrap();
-                let ctrl = modifier.modifiers.state().control_key();
-                let shift = modifier.modifiers.state().shift_key();
-                if ctrl {
-                    if !shift {
-                        this.undo();
-                    } else {
-                        this.redo();
-                    }
-
-                    let lnwindow = world.fetch(lnwindow).unwrap();
-                    lnwindow.window.request_redraw();
-                }
-            }
-        });
-
-        let mut pinch_distance = None;
-        let mut drag_start = None;
-        let mut temp_erase_mode = false;
-        world.observer(collider, move |event: &MultiTouchGroup, world| {
-            let primary = event.members.first().unwrap();
-
-            if matches!(event.active.pointer, PointerKind::Touch(_)) || event.members.len() != 1 {
-                let mut sum = [0f64; 2];
-                for member in &event.members {
-                    sum[0] += member.screen[0];
-                    sum[1] += member.screen[1];
-                }
-
-                let cnt = event.members.len() as f64;
-                let center = [sum[0] / cnt, sum[1] / cnt];
-
-                let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-
-                match event.active.status {
-                    MultiTouchStatus::Press => {
-                        camera_utils.locked(false);
-                        camera_utils.cursor(world, center);
-                        camera_utils.anchor_on_screen(world, center);
-                        camera_utils.locked(true);
-                    }
-                    MultiTouchStatus::Holding => {
-                        camera_utils.cursor(world, center);
-                        camera_utils.locked(true);
-                    }
-                    MultiTouchStatus::Release => {
-                        camera_utils.cursor(world, center);
-                        camera_utils.locked(false);
-                    }
-                }
-
-                if event.members.len() == 2 {
-                    let first = event.members.first().unwrap().screen;
-                    let last = event.members.last().unwrap().screen;
-
-                    let (x, y) = (first[0] - last[0], first[1] - last[1]);
-                    let cur = (x * x + y * y).sqrt();
-                    let prev = pinch_distance.get_or_insert(cur);
-                    camera_utils.zoom_delta(world, i64::q32_from_f64((cur - *prev) * 2.0));
-                    *prev = cur;
-                } else {
-                    pinch_distance = None;
-                }
-            } else if let MultiTouchStatus::Holding | MultiTouchStatus::Press = primary.status {
-                let this = &mut *world.fetch_mut(this).unwrap();
-
-                if let MultiTouchStatus::Press = primary.status
-                    && !this.round_brush.erase
-                {
-                    drag_start = Some((primary.screen, Instant::now()));
-                }
-
-                if let Some((start, timer)) = drag_start {
-                    const DRAG_DISTANCE: f64 = 0.005;
-                    const ERASE_TIMER: f64 = 0.8;
-
-                    if DVec2::from_array(primary.screen).distance(DVec2::from_array(start))
-                        > DRAG_DISTANCE
-                    {
-                        drag_start = None;
-                    } else if timer.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
-                        this.undo_stock();
-                        this.brush.submit(&mut this.main, Some(&this.thread_tx));
-                        temp_erase_mode = true;
-                        drag_start = None;
-                    }
-                }
-
-                let brush: &dyn Brush = match (temp_erase_mode, &this.brush_mode) {
-                    (true, _) => &this.temp_erase,
-                    (_, BrushMode::Round) => &this.round_brush,
-                    (_, BrushMode::Blur) => &this.blur_brush,
-                };
-
-                brush.draw(
-                    &this.main,
-                    &mut this.brush,
-                    Draw {
-                        position: primary.position,
-                        force: primary.data.force.unwrap_or(1.0),
-                    },
-                );
-
-                this.brush.request_stream(&this.main, &this.thread_tx);
-
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                lnwindow.window.request_redraw();
-            } else {
-                let this = &mut *world.fetch_mut(this).unwrap();
-
-                this.undo_stock();
-                this.brush.submit(&mut this.main, Some(&this.thread_tx));
-                temp_erase_mode = false;
-            }
-        });
     }
 
     fn process_stream(&mut self, world: &World) {
@@ -444,149 +283,35 @@ impl LayerWrapper {
         extra.diagnosis.write(rpass, end);
     }
 
-    // TODO use a single texture sheets to hold all undo/redo and use dispatch-merge to apply
-    fn undo_stock(&mut self) {
-        self.redos.clear();
-
-        let mut to_backup = Vec::new();
-        for &src_key in self.brush.scratch_dst.chunks.keys() {
-            let (start, end) = rect_to_chunks(
-                chunk_to_rect(src_key, self.brush.scratch_dst.chunk_size),
-                0,
-                self.main.chunk_size,
-            );
-
-            for x in start.0..end.0 {
-                for y in start.1..end.1 {
-                    let dst_key = (x, y, 0);
-
-                    if !to_backup.contains(&dst_key) {
-                        to_backup.push(dst_key);
-                    }
-                }
-            }
-        }
-
-        let mut encoder =
-            self.brush
-                .layer
-                .device
-                .create_command_encoder(&CommandEncoderDescriptor {
-                    label: Some("layer_backup"),
-                });
-
-        let mut backup_layer = Layer {
-            chunks: HashMap::new(),
-            chunk_size: MAIN_CHUNK_SIZE,
-            mipmap_levels: 1,
-            controlled: false,
+    pub fn stock(&mut self) {
+        let Some(stroke) = &self.brush.stroke else {
+            return;
         };
-        for dst_key in to_backup {
-            let Some(src_chunk) = self.main.chunks.get(&dst_key) else {
-                continue;
-            };
-            let dst_texture =
-                create_chunk_texture(&self.brush.layer.device, backup_layer.chunk_size);
-            let dst_chunk = create_chunk(
-                &self.brush.layer.device,
-                &self.brush.layer.chunk_layout,
-                dst_texture,
-                chunk_to_rect(dst_key, backup_layer.chunk_size),
-            );
-            encoder.copy_texture_to_texture(
-                TexelCopyTextureInfoBase {
-                    texture: &src_chunk.texture,
-                    mip_level: 0,
-                    origin: Origin3d::ZERO,
-                    aspect: TextureAspect::All,
-                },
-                TexelCopyTextureInfoBase {
-                    texture: &dst_chunk.texture,
-                    mip_level: 0,
-                    origin: Origin3d::ZERO,
-                    aspect: TextureAspect::All,
-                },
-                Extent3d {
-                    width: backup_layer.chunk_size,
-                    height: backup_layer.chunk_size,
-                    depth_or_array_layers: 1,
-                },
-            );
-            backup_layer.chunks.insert(dst_key, dst_chunk);
-        }
 
-        self.brush.layer.queue.submit([encoder.finish()]);
-        self.undos.push_back(backup_layer);
-
-        while self.undos.len() > UNDO_LIMIT {
-            self.undos.pop_front();
-        }
+        self.traveler.stock(&self.main, stroke.dirty);
     }
 
     pub fn undo(&mut self) {
-        let Some(mut backup) = self.undos.pop_back() else {
-            return;
-        };
-
-        for key in backup.chunks.keys() {
-            if !self.main.chunks.contains_key(key) {
-                log::debug!("failed to undo");
-                return;
-            }
+        if self.traveler.undo_available(&self.main) {
+            let dirty = self.traveler.undo(&self.main).unwrap();
+            self.brush.layer.generate_mipmaps(&self.main, dirty);
+        } else {
+            log::debug!("failed to undo");
         }
-
-        let mut redo_chunks = Vec::new();
-        for (key, chunk) in backup.chunks.drain() {
-            self.thread_tx
-                .send(ThreadInput::SwapChunk(key, chunk.clone()))
-                .unwrap();
-            if let Some(old) = self.main.chunks.get(&key).cloned() {
-                redo_chunks.push((key, old));
-            }
-            self.main.chunks.insert(key, chunk);
-            self.brush
-                .layer
-                .generate_mipmaps(&self.main, chunk_to_rect(key, self.main.chunk_size));
-        }
-
-        for (key, chunk) in redo_chunks {
-            backup.chunks.insert(key, chunk);
-        }
-
-        self.redos.push(backup);
     }
 
     pub fn redo(&mut self) {
-        let Some(mut backup) = self.redos.pop() else {
-            return;
-        };
-
-        for key in backup.chunks.keys() {
-            if !self.main.chunks.contains_key(key) {
-                log::debug!("failed to redo");
-                return;
-            }
+        if self.traveler.redo_available(&self.main) {
+            let dirty = self.traveler.redo(&self.main).unwrap();
+            self.brush.layer.generate_mipmaps(&self.main, dirty);
+        } else {
+            log::debug!("failed to redo");
         }
+    }
 
-        let mut undo_chunks = Vec::new();
-        for (key, chunk) in backup.chunks.drain() {
-            self.thread_tx
-                .send(ThreadInput::SwapChunk(key, chunk.clone()))
-                .unwrap();
-            if let Some(old) = self.main.chunks.get(&key).cloned() {
-                undo_chunks.push((key, old));
-            }
-            self.main.chunks.insert(key, chunk);
-            self.brush
-                .layer
-                .generate_mipmaps(&self.main, chunk_to_rect(key, self.main.chunk_size));
-        }
-
-        for (key, chunk) in undo_chunks {
-            backup.chunks.insert(key, chunk);
-        }
-
-        self.undos.push_back(backup);
+    pub fn set_page(&mut self, page: u64) {
+        self.traveler.clear();
+        self.thread_tx.send(ThreadInput::SetPage(page)).unwrap();
     }
 }
 
@@ -700,10 +425,10 @@ impl Element for LayerWrapper {
 
         world.dependency(save, this);
 
-        let camera = world.single::<Camera>().unwrap();
-        world.observer(camera, move |_: &CameraPositionChanged, world| {
+        let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
+        world.observer(main_camera, move |&CameraUpdated, world| {
             let this = world.single_fetch::<LayerWrapper>().unwrap();
-            let camera = world.single_fetch::<Camera>().unwrap();
+            let camera = world.fetch(main_camera).unwrap();
 
             this.thread_tx
                 .send(ThreadInput::SetStreamCamera(
@@ -713,8 +438,6 @@ impl Element for LayerWrapper {
                 ))
                 .unwrap();
         });
-
-        self.attach_touch(world, this);
 
         let control = world.insert(RenderControl {
             prepare: Some(Box::new(move |world| {
@@ -727,7 +450,7 @@ impl Element for LayerWrapper {
             })),
             draw: Some(Box::new(move |world, rpass, extra| {
                 let mut this = world.single_fetch_mut::<LayerWrapper>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let camera = world.fetch(main_camera).unwrap();
                 this.render(&camera, rpass, extra);
             })),
         });

@@ -72,6 +72,13 @@ impl Rectangle {
         }
     }
 
+    pub fn new_minmax(min: IVec2, max: IVec2) -> Rectangle {
+        Rectangle {
+            origin: min.min(max),
+            extend: (min.max(max) - min.min(max)).abs().as_uvec2(),
+        }
+    }
+
     pub fn new_extend(left: i32, down: i32, width: u32, height: u32) -> Rectangle {
         Rectangle {
             origin: IVec2::new(left, down),
@@ -125,14 +132,14 @@ impl Rectangle {
     pub const fn left_up(self) -> IVec2 {
         IVec2::new(
             self.origin.x,
-            self.origin.y.wrapping_add_unsigned(self.extend.x),
+            self.origin.y.wrapping_add_unsigned(self.extend.y),
         )
     }
 
     #[inline]
     pub const fn right_down(self) -> IVec2 {
         IVec2::new(
-            self.origin.x.wrapping_add_unsigned(self.extend.y),
+            self.origin.x.wrapping_add_unsigned(self.extend.x),
             self.origin.y,
         )
     }
@@ -235,6 +242,36 @@ impl Rectangle {
             true => Some(Rectangle::new(left, down, right, up)),
             false => None,
         }
+    }
+
+    pub fn adjust_clamp(self, rhs: Rectangle) -> Rectangle {
+        if self.width() > rhs.width() || self.height() > rhs.height() {
+            return self;
+        }
+
+        let new_left = self
+            .left()
+            .clamp(rhs.left(), rhs.right() - self.width() as i32);
+        let new_down = self
+            .down()
+            .clamp(rhs.down(), rhs.up() - self.height() as i32);
+
+        Rectangle::new_extend(new_left, new_down, self.width(), self.height())
+    }
+
+    pub fn adjust_contain(self, rhs: Rectangle) -> Rectangle {
+        if self.width() < rhs.width() || self.height() < rhs.height() {
+            return self;
+        }
+
+        let new_left = self
+            .left()
+            .clamp(rhs.right() - self.width() as i32, rhs.left());
+        let new_down = self
+            .down()
+            .clamp(rhs.up() - self.height() as i32, rhs.down());
+
+        Rectangle::new_extend(new_left, new_down, self.width(), self.height())
     }
 
     pub fn contains(self, p: IVec2) -> bool {

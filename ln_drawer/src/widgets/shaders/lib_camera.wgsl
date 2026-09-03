@@ -12,8 +12,7 @@ fn world_to_clip(world_space: vec2i) -> vec2f {
     let camera_space = vec2f(world_space - camera.center) - vec2f(camera.center_fract) * vec2f(0x1p-32);
     let camera_zoom = pow(2.0, f32(camera.zoom) + f32(camera.zoom_fract) * 0x1p-32);
     let camera_scaled_space = camera_space * camera_zoom;
-    let camera_snapped_space = round(camera_scaled_space + vec2f(camera.size) / 2.0) - vec2f(camera.size) / 2.0;
-    let clip_space = camera_snapped_space / vec2f(camera.size) * 2.0;
+    let clip_space = camera_scaled_space / vec2f(camera.size) * 2.0;
 
     return clip_space;
 }

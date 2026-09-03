@@ -19,12 +19,9 @@ use crate::{
     measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderControl,
-        camera::{Camera, CameraBind},
+        camera::{CameraBind, CurrentCamera},
     },
-    widgets::{
-        SetWidgetRectangle, SetWidgetVisible, renderer::rectangle::RectangleUniform,
-        shaders::LIB_CAMERA,
-    },
+    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_CAMERA},
 };
 
 pub struct Canvas {
@@ -54,6 +51,13 @@ pub struct SetCanvasColor(pub Srgba);
 pub struct UploadCanvasData;
 pub struct RemakeCanvasTexture;
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RectangleUniform {
+    pub origin: [i32; 2],
+    pub extend: [u32; 2],
+}
+
 impl Canvas {
     pub fn init(&mut self, world: &World, this: Handle<Self>) {
         assert_eq!(
@@ -72,7 +76,8 @@ impl Canvas {
             draw: Some(Box::new(move |world, rpass, extra| {
                 let instance = world.fetch(instance).unwrap();
                 let pipeline = world.single_fetch::<CanvasPipeline>().unwrap();
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(current_camera.0).unwrap();
 
                 let (start, end) = extra.diagnosis.assign("main > canvas");
                 extra.diagnosis.write(rpass, start);
@@ -330,13 +335,7 @@ impl CanvasPipeline {
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("canvas_shader"),
             source: ShaderSource::Wgsl(
-                format!(
-                    "{}{}{}",
-                    LIB_CAMERA,
-                    include_str!("rectangle.wgsl"),
-                    include_str!("canvas.wgsl"),
-                )
-                .into(),
+                format!("{}{}", LIB_CAMERA, include_str!("canvas.wgsl"),).into(),
             ),
         });
 

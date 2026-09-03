@@ -19,13 +19,14 @@ use wgpu::{
 use winit::window::Window;
 
 use crate::{
-    layer::{Chunk, ChunkKey, ChunkLayout, chunk_to_rect},
+    layer::{Chunk, ChunkKey, LayerPipeline, chunk_to_rect},
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
     save::SaveDatabase,
 };
 
-const CHUNK_CAPS: usize = 512;
+const CHUNK_REAL_CAPS: usize = 512;
+const CHUNK_HARD_CAPS: usize = 1024;
 const CHUNK_BATCH: usize = 8;
 const CHUNK_META0_FORMAT: u32 = 1;
 
@@ -35,9 +36,11 @@ const TABLE_LAYER_CHUNK_META: TableDefinition<((u64, ChunkKey), u32), &[u8]> =
     TableDefinition::new("stroke_chunk_meta");
 
 pub enum ThreadInput {
+    SetPage(u64),
     SetStreamCamera(i64, UVec2, I64Vec2),
     MarkUnsaved(ChunkKey),
     RequestReal(ChunkKey),
+    #[expect(unused)]
     SwapChunk(ChunkKey, Chunk),
     Autosave,
     Abort,
@@ -58,13 +61,6 @@ struct ChunkMeta0 {
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct DispatchUniform {
-    dispatch_coords: [i32; 2],
-    dispatch_size: [u32; 2],
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct ChunkUniform {
     chunk: [i32; 3],
     _pad: u32,
@@ -74,9 +70,10 @@ pub struct StreamConfig {
     pub database: SaveDatabase,
     pub device: Device,
     pub queue: Queue,
-    pub chunk_layout: ChunkLayout,
+    pub page: u64,
     pub chunk_size: u32,
     pub mipmap_levels: u8,
+    pub layer_pipeline: Arc<LayerPipeline>,
     pub window: Arc<dyn Window>,
 }
 
@@ -84,6 +81,7 @@ pub struct StreamConfig {
 pub struct StreamBase {
     active: IndexMap<ChunkKey, Option<Texture>>,
     unsaved: HashSet<ChunkKey>,
+    real_cnt: usize,
 }
 
 /// Single batch of streaming chunks selected out of [`StreamQueue`] and waited to
@@ -111,21 +109,24 @@ pub struct CameraInfo {
 /// Debug information for diagnosis.
 #[derive(Default)]
 pub struct DebugInfo {
+    decode: usize,
     load: usize,
-    unload: usize,
     load_real: usize,
-    unload_real: usize,
     encode: usize,
+    unload: usize,
+    unload_real: usize,
+    clean: usize,
 }
 
 pub fn loading_thread(
-    config: StreamConfig,
+    mut config: StreamConfig,
     input_rx: Receiver<ThreadInput>,
     output_tx: Sender<ThreadOutput>,
 ) -> Result<(), Box<dyn Error>> {
     let mut base = StreamBase {
         active: IndexMap::<ChunkKey, Option<Texture>>::new(),
         unsaved: HashSet::new(),
+        real_cnt: 0,
     };
 
     let mut staging = StreamStaging { active: Vec::new() };
@@ -159,6 +160,11 @@ pub fn loading_thread(
         };
 
         match input {
+            Some(ThreadInput::SetPage(page)) => {
+                unload_all(&config, &output_tx, &mut base, &mut debug)?;
+                config.page = page;
+                camera.outdated = true;
+            }
             Some(ThreadInput::SetStreamCamera(zoom, size, center)) => {
                 camera.rect = Camera::manual_view_rect(zoom, size, center);
                 let stream_center_new = chunk_of(center.q32_round(), zoom, config.chunk_size);
@@ -180,16 +186,19 @@ pub fn loading_thread(
                     let (texture, chunk) = chunk_prepare(&config, key)?;
                     base.active.insert(key, Some(texture));
                     base.unsaved.insert(key);
+                    base.real_cnt += 1;
+                    debug.load += 1;
+                    debug.load_real += 1;
                     output_tx.send(ThreadOutput::Insert(key, chunk))?;
                 }
-                continue;
             }
             Some(ThreadInput::SwapChunk(key, chunk)) => {
                 base.active.insert(key, Some(chunk.texture.clone()));
                 base.unsaved.insert(key);
+                base.real_cnt += 1;
+                debug.load += 1;
+                debug.load_real += 1;
                 output_tx.send(ThreadOutput::Insert(key, chunk))?;
-
-                continue;
             }
             Some(ThreadInput::Autosave) => {
                 autosave(&config, &mut base, &mut debug)?;
@@ -202,23 +211,27 @@ pub fn loading_thread(
         };
 
         output_tx.send(ThreadOutput::ThreadDebugMessage(format!(
-            "Loading Queue: length {} - pending {} \n\
-            Texture Index: real {} / total {} \n\
-            Debug Counter: \n    \
-                | load {} | load_read {} | \n    \
-                | unload {} | unload_real {} | \n    \
-                | encode {} | \n\
-            Camera Center: {:?} \n\
-            ",
+            "\
+Loading Queue: length {} - pending {}
+Texture Index: real {} total {}
+Load Counter:
+    decode {}
+    real {} total {}
+Unload Counter:
+    encode {} clean {}
+    real {} total {} 
+Camera Center: {:?}",
             queue.inner.len(),
             queue.inner.len() - queue.front,
-            base.active.values().flatten().count(),
+            base.real_cnt,
             base.active.len(),
-            debug.load,
+            debug.decode,
             debug.load_real,
-            debug.unload,
-            debug.unload_real,
+            debug.load,
             debug.encode,
+            debug.clean,
+            debug.unload_real,
+            debug.unload,
             camera.center
         )))?;
 
@@ -267,7 +280,7 @@ fn restock_queue(config: &StreamConfig, camera: &mut CameraInfo, queue: &mut Str
         }
     }
 
-    debug_assert!(queue.inner.len() < CHUNK_CAPS - 1);
+    debug_assert!(queue.inner.len() < CHUNK_REAL_CAPS - 1);
 
     queue
         .inner
@@ -301,11 +314,12 @@ fn load(
     let table_chunk = read.open_table(TABLE_LAYER_CHUNK)?;
     let table_meta = read.open_table(TABLE_LAYER_CHUNK_META)?;
     for key in staging.active.drain(..) {
-        if let Some(data) = table_chunk.get((0, key))? {
+        if let Some(data) = table_chunk.get((config.page, key))? {
             let mut bytes = zstd::decode_all(data.value())?;
             let (texture, chunk) = chunk_prepare(config, key)?;
+            debug.decode += 1;
 
-            if let Some(meta) = table_meta.get(((0, key), 0))?
+            if let Some(meta) = table_meta.get(((config.page, key), 0))?
                 && let Ok(meta0) = postcard::from_bytes::<ChunkMeta0>(meta.value())
             {
                 if meta0.format > CHUNK_META0_FORMAT {
@@ -332,9 +346,9 @@ fn load(
 
             chunk_write(config, &bytes, &texture);
             base.active.insert(key, Some(texture));
-            output_tx.send(ThreadOutput::Insert(key, chunk))?;
-
+            base.real_cnt += 1;
             debug.load_real += 1;
+            output_tx.send(ThreadOutput::Insert(key, chunk))?;
         } else {
             base.active.insert(key, None);
         }
@@ -357,7 +371,9 @@ fn unload(
     let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
     let mut frnt = base.active.len();
-    while base.active.len() + staging.active.len() >= CHUNK_CAPS {
+    while base.real_cnt + staging.active.len() >= CHUNK_REAL_CAPS
+        || base.active.len() + staging.active.len() >= CHUNK_HARD_CAPS
+    {
         frnt -= 1;
         if (queue.inner).contains(base.active.get_index(frnt).unwrap().0) {
             continue;
@@ -372,10 +388,67 @@ fn unload(
             let rx = chunk_readback(texture, &config.device, &config.queue, config.chunk_size);
             config.device.poll(PollType::wait_indefinitely()).unwrap();
             let bytes = rx.recv().unwrap();
-            write_chunk_data(base, debug, &mut table_chunk, &mut table_meta, key, bytes).unwrap();
+            write_chunk_data(
+                base,
+                debug,
+                &mut table_chunk,
+                &mut table_meta,
+                config.page,
+                key,
+                bytes,
+            )
+            .unwrap();
         }
 
         if texture.is_some() {
+            base.real_cnt -= 1;
+            debug.unload_real += 1;
+        }
+
+        debug.unload += 1;
+    }
+
+    drop(table_chunk);
+    drop(table_meta);
+
+    write.commit()?;
+
+    Ok(())
+}
+
+fn unload_all(
+    config: &StreamConfig,
+    output_tx: &Sender<ThreadOutput>,
+    base: &mut StreamBase,
+    debug: &mut DebugInfo,
+) -> Result<(), Box<dyn Error + 'static>> {
+    let write = config.database.0.begin_write()?;
+    let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
+    let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
+    while !base.active.is_empty() {
+        let (key, texture) = base.active.pop().unwrap();
+        output_tx.send(ThreadOutput::Remove(key))?;
+
+        if let Some(texture) = &texture
+            && base.unsaved.contains(&key)
+        {
+            let rx = chunk_readback(texture, &config.device, &config.queue, config.chunk_size);
+            config.device.poll(PollType::wait_indefinitely()).unwrap();
+            let bytes = rx.recv().unwrap();
+            write_chunk_data(
+                base,
+                debug,
+                &mut table_chunk,
+                &mut table_meta,
+                config.page,
+                key,
+                bytes,
+            )
+            .unwrap();
+        }
+
+        if texture.is_some() {
+            base.real_cnt -= 1;
             debug.unload_real += 1;
         }
 
@@ -418,7 +491,15 @@ fn autosave(
 
     for (key, rx) in tasks {
         let bytes = rx.recv().unwrap();
-        write_chunk_data(base, debug, &mut table_chunk, &mut table_meta, key, bytes)?;
+        write_chunk_data(
+            base,
+            debug,
+            &mut table_chunk,
+            &mut table_meta,
+            config.page,
+            key,
+            bytes,
+        )?;
     }
     drop(table_chunk);
     drop(table_meta);
@@ -438,6 +519,7 @@ fn write_chunk_data(
     debug: &mut DebugInfo,
     table_chunk: &mut redb::Table<(u64, ChunkKey), &[u8]>,
     table_meta: &mut redb::Table<((u64, ChunkKey), u32), &[u8]>,
+    page: u64,
     key: ChunkKey,
     bytes: Vec<u8>,
 ) -> Result<(), Box<dyn Error + 'static>> {
@@ -450,11 +532,13 @@ fn write_chunk_data(
     }
 
     if transparent {
-        table_chunk.remove((0, key))?;
-        table_meta.remove(((0, key), 0))?;
+        table_chunk.remove((page, key))?;
+        table_meta.remove(((page, key), 0))?;
+        debug.clean += 1;
     } else {
         let compressed = zstd::encode_all(&bytes[..], 0)?;
-        table_chunk.insert((0, key), &compressed[..])?;
+        table_chunk.insert((page, key), &compressed[..])?;
+        debug.encode += 1;
 
         let meta0 = ChunkMeta0 {
             format: CHUNK_META0_FORMAT,
@@ -463,11 +547,10 @@ fn write_chunk_data(
 
         let mut meta_bytes = [0u8; 16];
         postcard::to_slice(&meta0, &mut meta_bytes).unwrap();
-        table_meta.insert(((0, key), 0), &meta_bytes[..])?;
+        table_meta.insert(((page, key), 0), &meta_bytes[..])?;
     }
 
     texel.unsaved.remove(&key);
-    debug.encode += 1;
 
     Ok(())
 }
@@ -479,7 +562,7 @@ fn chunk_prepare(
     let texture = super::create_chunk_texture(&config.device, config.chunk_size);
     let chunk = super::create_chunk(
         &config.device,
-        &config.chunk_layout,
+        &config.layer_pipeline.chunk_layout,
         (&texture).clone(),
         chunk_to_rect(key, config.chunk_size),
     );
@@ -603,7 +686,7 @@ fn touch_chunk_meta(
     let write = config.database.0.begin_write()?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
     let bytes = postcard::to_stdvec(&meta0)?;
-    table_meta.insert(((0, chunk_id), 0), &bytes[..])?;
+    table_meta.insert(((config.page, chunk_id), 0), &bytes[..])?;
     drop(table_meta);
     write.commit()?;
 
@@ -611,21 +694,116 @@ fn touch_chunk_meta(
 }
 
 /// Guaranteed assumption: Upper layer is always loaded first
-fn chunk_distance((x, y, z): ChunkKey, (cx, cy, cz): ChunkKey, mipmap: u8) -> u32 {
-    fn scale(mipmap: u8) -> i32 {
-        2i32.pow(mipmap as u32)
-    }
-
-    let dx = (x * scale(z) + scale(z.saturating_sub(1)))
-        - (cx * scale(cz) + scale(cz.saturating_sub(1)));
-    let dy = (y * scale(z) + scale(z.saturating_sub(1)))
-        - (cy * scale(cz) + scale(cz.saturating_sub(1)));
-    let dz = (mipmap - z) as i32 * 0x8000;
-    dx.unsigned_abs() + dy.unsigned_abs() + dz.unsigned_abs()
+fn chunk_distance((x, y, z): ChunkKey, (cx, cy, cz): ChunkKey, m: u8) -> u64 {
+    let dx = (x << z).abs_diff(cx << cz).saturating_sub(1 << z) as u64;
+    let dy = (y << z).abs_diff(cy << cz).saturating_sub(1 << z) as u64;
+    (dx + dy << m) + (255 - z) as u64
 }
 
 fn chunk_of(center: IVec2, zoom: i64, chunk_size: u32) -> ChunkKey {
     let mipmap = (-zoom).q32_round().max(0) as u8;
-    let size = chunk_size as i32 * (1i32 << mipmap as i32);
+    let size = (chunk_size << mipmap) as i32;
     (center.x.div_euclid(size), center.y.div_euclid(size), mipmap)
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn chunk_order_overlap() {
+        let golden: [super::ChunkKey; _] = [
+            (0, 1, 1),
+            (0, 0, 1),
+            (0, 2, 0),
+            (0, 1, 0),
+            (1, 1, 0),
+            (0, 0, 0),
+            (1, 0, 0),
+        ];
+
+        let center: super::ChunkKey = (0, 2, 0);
+        let mut test = golden.clone();
+        test.sort_by_key(|&chunk| super::chunk_distance(chunk, center, 8));
+        assert_eq!(test, golden);
+    }
+
+    #[test]
+    fn chunk_order_random() {
+        // raw data from script/gen/chunks.py
+        let golden: [super::ChunkKey; _] = [
+            (0, -1, 8),
+            (-1, 0, 8),
+            (-1, -1, 8),
+            (-1, -1, 7),
+            (0, -1, 7),
+            (-1, 0, 7),
+            (0, 0, 6),
+            (-1, -1, 6),
+            (0, -1, 5),
+            (-3, 2, 1),
+            (-13, -3, 0),
+            (-1, 2, 4),
+            (-1, -2, 5),
+            (-14, 5, 1),
+            (-10, 0, 2),
+            (-6, -41, 0),
+            (23, 26, 0),
+            (-3, 2, 4),
+            (-30, -22, 0),
+            (-6, -9, 2),
+            (-8, -49, 0),
+            (44, 19, 0),
+            (7, 3, 3),
+            (15, 3, 2),
+            (-11, -7, 2),
+            (26, 10, 1),
+            (-57, 21, 0),
+            (-35, 46, 0),
+            (6, 6, 3),
+            (16, -27, 1),
+            (-20, -24, 1),
+            (-57, -29, 0),
+            (14, -31, 1),
+            (-56, -41, 0),
+            (-30, 29, 1),
+        ];
+
+        let center: super::ChunkKey = (0, 0, 0);
+        let mut test = golden.clone();
+        test.sort_by_key(|&chunk| super::chunk_distance(chunk, center, 8));
+        assert_eq!(test, golden);
+    }
+
+    #[test]
+    fn chunk_order_key() {
+        // raw data from script/gen/chunks.py
+        let golden: [(super::ChunkKey, u64); _] = [
+            ((0, -1, 2), 765),
+            ((-1, 3, 1), 766),
+            ((1, 2, 1), 1278),
+            ((-5, 1, 1), 1278),
+            ((-3, -1, 2), 1789),
+            ((-4, 4, 1), 1790),
+            ((-10, 0, 0), 1791),
+            ((-1, -3, 2), 2813),
+            ((-5, 5, 1), 2814),
+            ((-7, -7, 0), 2815),
+            ((-6, -9, 0), 3071),
+            ((-15, -1, 0), 3327),
+            ((-11, -7, 0), 3839),
+            ((2, -3, 2), 4861),
+            ((7, 3, 1), 4862),
+            ((15, 3, 0), 4863),
+            ((4, 7, 1), 5374),
+            ((6, 6, 1), 5886),
+            ((8, -15, 0), 7167),
+            ((7, -16, 0), 7167),
+        ];
+
+        let center: super::ChunkKey = (-2, 1, 1);
+        let mut test = golden.clone();
+        test.iter_mut()
+            .for_each(|(chunk, key)| *key = super::chunk_distance(*chunk, center, 8));
+        test.sort_by_key(|(_, key)| *key);
+        assert_eq!(test, golden);
+    }
 }

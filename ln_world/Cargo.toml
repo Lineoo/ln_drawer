@@ -1,10 +1,11 @@
 [package]
 name = "ln_world"
 license = "MIT OR Apache-2.0"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 
 [dependencies]
+indexmap = "2.11.0"
 hashbrown = { version = "0.17.1", features = ["serde"] }
 smallvec = "1.15.1"
 thiserror = "2.0.16"

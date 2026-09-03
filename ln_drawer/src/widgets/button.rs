@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
-use glam::{DVec2, Vec2};
 use image::DynamicImage;
-use ln_world::{Descriptor, Element, Handle, World};
+use ln_world::{Element, Handle, World};
 use palette::Srgba;
 
 use crate::{
-    animation::{DirectAnimation, SetAnimationDst},
+    animation::{AnimationDescriptor, SetAnimationDst, SimpleAnimationDescriptor},
     layout::transform::TransformValue,
     measures::Rectangle,
-    render::rounded::RoundedRectDescriptor,
     theme::Theme,
     tools::{
         collider::ToolCollider,
@@ -17,7 +15,10 @@ use crate::{
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetHover,
-        renderer::canvas::{Canvas, SetCanvasColor},
+        renderer::{
+            canvas::{Canvas, SetCanvasColor},
+            rrect::{RRect, SetRRectColor},
+        },
     },
 };
 
@@ -43,6 +44,7 @@ pub struct ButtonImage {
     pub bytes: Arc<DynamicImage>,
 }
 
+#[expect(unused)]
 pub struct ButtonDrag {
     pub from: PointerHit,
     pub here: PointerHit,
@@ -69,27 +71,27 @@ pub enum ButtonDragStatus {
 }
 
 impl ToggleButton {
-    pub fn build(self, world: &World) -> Handle<ToggleButton> {
+    pub fn init(&self, world: &World, handle: Handle<Self>) {
         let theme = world.single_fetch::<Theme>().unwrap();
 
-        let frame = world.build(RoundedRectDescriptor {
+        let frame = world.insert(RRect {
             rect: self.rect,
-            color: self.theme.idle_color,
-            shadow_color: Srgba::new(0.0, 0.0, 0.0, 0.0),
-            shadow_offset: Vec2::ZERO,
-            shadow_blur: 0.0,
-            shrink: theme.roundness,
-            value: theme.roundness,
-            vertex_extend: 0,
-            visible: self.visible,
             order: 10,
+            color: match self.selected {
+                false => self.theme.idle_color,
+                true => self.theme.selected_color,
+            },
+            radius: theme.roundness,
+            width: 0.0,
+            enabled: self.visible,
         });
 
-        let frame_anim_color = world.build(DirectAnimation {
-            init: theme.primary_color,
-            factor: theme.anim_factor,
+        let frame_anim_color = world.build(SimpleAnimationDescriptor {
+            animation: AnimationDescriptor::new(theme.primary_color, theme.anim_factor),
             widget: frame,
-            access: |frame| &mut frame.desc.color,
+            action: move |_, world, color| {
+                world.queue_trigger(frame, SetRRectColor(color));
+            },
         });
 
         let collider = world.insert(ToolCollider {
@@ -114,8 +116,6 @@ impl ToggleButton {
             None
         };
 
-        let handle = world.insert(self);
-
         world.observer(handle, move |&SetButtonSelected(selected), world| {
             let mut this = world.fetch_mut(handle).unwrap();
             this.selected = selected;
@@ -133,10 +133,9 @@ impl ToggleButton {
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(handle).unwrap();
-            let mut frame = world.fetch_mut(frame).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
             this.rect = rect;
-            frame.desc.rect = rect;
+            world.queue_trigger(frame, SetWidgetRectangle(rect));
             collider.rect = rect;
 
             if let Some(canvas) = canvas
@@ -148,10 +147,9 @@ impl ToggleButton {
 
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(handle).unwrap();
-            let mut frame = world.fetch_mut(frame).unwrap();
             let mut collider = world.fetch_mut(collider).unwrap();
             this.visible = visible;
-            frame.desc.visible = visible;
+            world.queue_trigger(frame, SetWidgetVisible(visible));
             collider.enabled = visible;
 
             if let Some(canvas) = canvas {
@@ -178,9 +176,7 @@ impl ToggleButton {
                 }
                 PointerHitStatus::Moving => {
                     if let Some(start) = drag_start {
-                        if DVec2::from_array(event.pointer.screen)
-                            .distance(DVec2::from_array(start.pointer.screen))
-                            > DRAG_DISTANCE
+                        if event.pointer.screen.distance(start.pointer.screen) > DRAG_DISTANCE
                             && !dragging
                         {
                             dragging = true;
@@ -269,15 +265,11 @@ impl ToggleButton {
                 world.trigger(frame_anim_color, &SetAnimationDst(this.theme.idle_color));
             }
         });
-
-        handle
     }
 }
 
-impl Element for ToggleButton {}
-impl Descriptor for ToggleButton {
-    type Target = Handle<ToggleButton>;
-    fn when_build(self, world: &World) -> Self::Target {
-        self.build(world)
+impl Element for ToggleButton {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        self.init(world, this);
     }
 }

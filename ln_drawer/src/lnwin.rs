@@ -1,8 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
-use glam::{IVec2, UVec2};
+use glam::{DVec2, IVec2, UVec2};
 use hashbrown::HashMap;
-use ln_world::{Element, Handle, ViewOptions, World};
+use ln_world::{ElemRef, Element, Handle, HandleGeneric, ViewRef, World};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 use winit::{
@@ -14,44 +14,49 @@ use winit::{
 };
 
 use crate::{
-    layer::wrapper::LayerWrapper,
+    layer::{input::LayerInput, wrapper::LayerWrapper},
     measures::{FI64Ext, Rectangle},
     render::{
-        Render,
-        camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, UICamera},
-        rounded::RoundedRect,
+        Render, RenderPhase,
+        camera::{Camera, CameraDescriptor, CameraUtils, CurrentCamera, MainCamera, UICamera},
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     theme::Theme,
     tools::{
-        collider::ToolColliderDispatcher, focus::Focus, modifiers::ModifiersTool, mouse::MouseTool,
-        pointer::PointerTool, touch::MultiTouchTool,
+        collider::{ToolColliderDispatcher, ToolColliderPortal},
+        focus::FocusTool,
+        modifiers::ModifiersTool,
+        mouse::MouseTool,
+        pointer::PointerTool,
+        touch::MultiTouchTool,
     },
     widgets::{
         WidgetRectangle,
-        palette::hsl::PaletteHslMaterial,
-        panel::side_docker::SideDocker,
-        renderer::{canvas::CanvasPipeline, rectangle::RectangleMesh, text::TextPipeline},
+        palette::{
+            hsl::HslPanelMaterial,
+            oklab::{OklabBarMaterial, OklabPolarMaterial},
+        },
+        panel::side_docker::side_docker,
+        renderer::{
+            canvas::CanvasPipeline, quad::QuadMeshPipeline, rrect::RRectMaterial,
+            text::TextPipeline,
+        },
     },
 };
 
 #[derive(Default)]
 pub struct Lnwin {
     pub world: World,
-    pub windows: HashMap<WindowId, Handle>,
+    pub windows: HashMap<WindowId, Handle<Lnwindow>>,
 }
 
 impl ApplicationHandler for Lnwin {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.windows.is_empty() {
             let lnwindow = Lnwindow::new(event_loop);
-            let root = self.world.here();
             let window_id = lnwindow.window.id();
             let lnwindow = self.world.insert(lnwindow);
-            self.windows.insert(window_id, lnwindow.untyped());
-            self.world.enter(lnwindow, || {
-                self.world.option(ViewOptions { refs: vec![root] });
-            });
+            self.windows.insert(window_id, lnwindow);
         } else {
             for &view in self.windows.values() {
                 self.world.enter(view, || {
@@ -104,113 +109,141 @@ pub struct Lnwindow {
 
 impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.observer(this, move |event: &WindowEvent, world| {
-            if let WindowEvent::CloseRequested = event {
-                Autosave::autosave_all(world);
-                world.queue(|world| {
-                    world.clear();
-                });
-            }
-        });
+        let here = world.here();
+        world.enter(this, || world.insert(ViewRef(here)));
+        world.enter_queue(this, move |world| {
+            world.observer(this, move |event: &WindowEvent, world| {
+                if let WindowEvent::CloseRequested = event {
+                    Autosave::autosave_all(world);
+                    world.queue(|world| {
+                        world.clear();
+                    });
+                }
+            });
 
-        world.queue(move |world| {
-            let lnwindow = world.fetch_mut(this).unwrap();
+            let lnwindow = world.fetch(this).unwrap();
             world.insert(pollster::block_on(Render::new(&lnwindow)));
-        });
+            drop(lnwindow);
 
-        world.queue(|world| {
             SaveDatabase::init(world);
             world.insert(AutosaveScheduler {
                 autosave_duration: Duration::from_secs(180),
             });
-        });
 
-        world.queue(|world| {
+            world.flush();
+
             Camera::init(world);
+
             world.flush();
 
             world.insert(CanvasPipeline::from_world(world));
+            world.insert(QuadMeshPipeline::<HslPanelMaterial>::from_world(world));
+            world.insert(QuadMeshPipeline::<OklabPolarMaterial>::from_world(world));
+            world.insert(QuadMeshPipeline::<OklabBarMaterial>::from_world(world));
+            world.insert(QuadMeshPipeline::<RRectMaterial>::from_world(world));
             world.insert(TextPipeline::new());
-            RoundedRect::init(world);
-            RectangleMesh::<PaletteHslMaterial>::init(world);
             world.insert(Theme::default());
-        });
 
-        world.queue(|world| {
+            world.flush();
+
             world.insert(ToolColliderDispatcher);
             world.insert(PointerTool::default());
             world.insert(MouseTool::default());
             world.insert(MultiTouchTool::default());
-            world.insert(Focus::default());
+            world.insert(FocusTool::default());
             world.insert(ModifiersTool::default());
-        });
 
-        world.queue(|world| {
-            let here = world.here();
+            world.flush();
 
-            let camera1 = Camera::build_from_save(world, "camera1");
-            world.insert(MainCamera(camera1));
-
-            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            let lnwindow = world.fetch(this).unwrap();
             let size = lnwindow.window.surface_size();
-            let camera2 = world.build(CameraDescriptor {
+
+            let main_camera = Camera::build_from_save(world, "camera1");
+
+            let ui_camera = world.build(CameraDescriptor {
                 size: UVec2::new(size.width, size.height),
                 zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
                 ..Default::default()
             });
-            world.insert(UICamera(camera2));
+
             drop(lnwindow);
 
+            world.insert(MainCamera(main_camera));
+            world.insert(UICamera(ui_camera));
+            world.enter(main_camera, || world.insert(CurrentCamera(main_camera)));
+            world.enter(ui_camera, || world.insert(CurrentCamera(ui_camera)));
+            world.enter(main_camera, || world.insert(ViewRef(this.untyped())));
+            world.enter(ui_camera, || world.insert(ViewRef(this.untyped())));
+            world.insert(ToolColliderPortal(main_camera.untyped()));
+            world.insert(ToolColliderPortal(ui_camera.untyped()));
+
             world.flush();
 
-            world.enter(camera1, || {
-                world.option(ViewOptions { refs: vec![here] });
-            });
-            world.enter(camera2, || {
-                world.option(ViewOptions { refs: vec![here] });
-            });
+            world.enter(main_camera, || {
+                let camera = world.fetch(main_camera).unwrap();
 
-            world.flush();
-            world.enter(camera1, || {
-                world.queue(|world| {
-                    world.insert(LayerWrapper::new(world));
-                    world.insert(CameraUtils::default());
+                world.insert(RenderPhase::default());
+                world.insert(CameraUtils::new(&camera));
+
+                world.observer(this, move |event: &WindowEvent, world| {
+                    if let WindowEvent::SurfaceResized(size) = event {
+                        let mut camera = world.single_fetch_mut::<CameraUtils>().unwrap();
+                        camera.camera_size(UVec2::new(size.width, size.height));
+                    }
                 });
             });
 
             world.flush();
-            world.enter(camera2, || {
-                let stroke = world.enter(camera1, || world.single::<LayerWrapper>().unwrap());
-                world.option(ViewOptions {
-                    refs: vec![here, stroke.untyped()],
+
+            world.enter(ui_camera, || {
+                let camera = world.fetch(ui_camera).unwrap();
+
+                world.insert(RenderPhase::default());
+                world.insert(CameraUtils::new(&camera));
+
+                world.observer(this, move |event: &WindowEvent, world| {
+                    if let WindowEvent::SurfaceResized(size) = event {
+                        let lnwindow = world.fetch(this).unwrap();
+                        let mut camera2 = world.fetch_mut(ui_camera).unwrap();
+                        let mut camera = world.single_fetch_mut::<CameraUtils>().unwrap();
+
+                        let scale = lnwindow.window.scale_factor();
+                        world.queue_trigger(
+                            lnwindow.handle(),
+                            WidgetRectangle(Rectangle::new_half(
+                                IVec2::ZERO,
+                                (UVec2::new(size.width / 2, size.height / 2).as_dvec2() / scale)
+                                    .round()
+                                    .as_uvec2(),
+                            )),
+                        );
+
+                        camera2.zoom = i64::q32_from_f64(scale.log2());
+                        camera.update_from(&camera2);
+                    }
                 });
-                world.queue(move |world| {
-                    world.insert(CameraUtils::default());
-                    let lnwindow = world.single::<Lnwindow>().unwrap();
-                    world.observer(lnwindow, move |event: &WindowEvent, world| {
-                        if let WindowEvent::SurfaceResized(size) = event {
-                            let lnwindow = world.fetch(lnwindow).unwrap();
-                            let mut camera2 = world.fetch_mut(camera2).unwrap();
-
-                            let scale = lnwindow.window.scale_factor();
-                            world.queue_trigger(
-                                lnwindow.handle(),
-                                WidgetRectangle(Rectangle::new_half(
-                                    IVec2::ZERO,
-                                    (UVec2::new(size.width / 2, size.height / 2).as_dvec2()
-                                        / scale)
-                                        .round()
-                                        .as_uvec2(),
-                                )),
-                            );
-
-                            camera2.zoom = i64::q32_from_f64(scale.log2());
-                        }
-                    });
-                });
-
-                world.queue(|world| world.build(SideDocker));
             });
+
+            world.flush();
+
+            world.enter_queue(main_camera, |world| {
+                world.insert(LayerWrapper::new(world));
+                world.insert(LayerInput::default());
+            });
+
+            world.enter_queue(ui_camera, move |world| {
+                let stroke = world.enter(main_camera, || world.single::<LayerWrapper>().unwrap());
+                let input = world.enter(main_camera, || world.single::<LayerInput>().unwrap());
+
+                world.insert(ElemRef(stroke.untyped()));
+                world.insert(ElemRef(input.untyped()));
+
+                world.flush();
+
+                side_docker(world);
+            });
+
+            world.flush();
         });
     }
 }
@@ -227,11 +260,18 @@ impl Lnwindow {
         Lnwindow { window }
     }
 
-    pub fn cursor_to_screen(&self, position: PhysicalPosition<f64>) -> [f64; 2] {
+    pub fn cursor_to_screen(&self, position: PhysicalPosition<f64>) -> DVec2 {
         let size = self.window.surface_size();
         let x = (position.x * 2.0) / size.width as f64 - 1.0;
         let y = 1.0 - (position.y * 2.0) / size.height as f64;
-        [x, y]
+        DVec2::new(x, y)
+    }
+
+    pub fn screen_to_cursor(&self, ndc: DVec2) -> PhysicalPosition<f64> {
+        let size = self.window.surface_size();
+        let x = (ndc.x + 1.0) * size.width as f64 / 2.0;
+        let y = (1.0 - ndc.y) * size.height as f64 / 2.0;
+        PhysicalPosition::new(x, y)
     }
 }
 

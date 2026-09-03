@@ -1,12 +1,13 @@
-use glam::{I8Vec2, I64Vec2, Vec2};
-use ln_world::{Element, Handle, World};
+use glam::{DVec2, I8Vec2, I64Vec2, Vec2};
+use ln_world::{Element, Handle, HandleAny, World};
 use winit::event::{
-    ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
+    ButtonSource, ElementState, MouseButton, MouseScrollDelta, PointerKind, PointerSource,
+    WindowEvent,
 };
 
 use crate::{
     lnwin::Lnwindow,
-    render::camera::Camera,
+    render::camera::CurrentCamera,
     tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
 };
 
@@ -22,11 +23,21 @@ pub struct PointerHit {
     pub position: I64Vec2,
     pub pointer: PointerData,
     pub status: PointerHitStatus,
+    #[expect(unused)]
     pub data: PointerHitData,
+}
+
+#[derive(Clone, Copy)]
+pub struct PointerScroll {
+    pub delta: DVec2,
+    #[expect(unused)]
+    pub position: I64Vec2,
+    pub pointer: PointerData,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHover {
+    #[expect(unused)]
     pub position: I64Vec2,
     pub pointer: PointerData,
     pub status: PointerHoverStatus,
@@ -48,13 +59,14 @@ pub enum PointerHoverStatus {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerData {
-    pub screen: [f64; 2],
+    pub screen: DVec2,
     pub kind: PointerKind,
     pub tilt: Vec2,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHitData {
+    #[expect(unused)]
     pub force: f32,
 }
 
@@ -67,7 +79,7 @@ struct Pointer {
 #[derive(Clone, Copy)]
 struct Hover {
     position: I64Vec2,
-    view: Handle<Camera>,
+    view: HandleAny,
     handle: Handle<ToolCollider>,
 }
 
@@ -218,6 +230,34 @@ impl Element for PointerTool {
                     );
                 }
 
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let Some(pointer) = this.pointer.as_ref() else {
+                        return;
+                    };
+
+                    let Some(hover) = pointer.hovering else {
+                        return;
+                    };
+
+                    let delta = match delta {
+                        MouseScrollDelta::LineDelta(rows, lines) => {
+                            DVec2::new(*rows as f64, -*lines as f64) * 20.0
+                        }
+                        MouseScrollDelta::PixelDelta(delta) => DVec2::new(delta.x, -delta.y),
+                    };
+
+                    world.enter(hover.view, || {
+                        world.queue_trigger(
+                            hover.handle,
+                            PointerScroll {
+                                delta,
+                                position: hover.position,
+                                pointer: pointer.data,
+                            },
+                        )
+                    })
+                }
+
                 WindowEvent::PointerEntered { position, kind, .. } => {
                     let Some(pointer) = this.acquire_pointer(*kind) else {
                         return;
@@ -267,7 +307,7 @@ impl Element for PointerTool {
 }
 
 impl Pointer {
-    fn update_position(&mut self, world: &World, screen: [f64; 2]) {
+    fn update_position(&mut self, world: &World, screen: DVec2) {
         self.data.screen = screen;
 
         self.recalculate_hovering(world);
@@ -370,7 +410,8 @@ impl Pointer {
         if self.pressed.is_some() {
             let hovering = self.hovering.unwrap();
             let position = world.enter(hovering.view, || {
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(current_camera.0).unwrap();
                 camera.screen_to_world_absolute(self.data.screen)
             });
 
@@ -385,7 +426,8 @@ impl Pointer {
         } else if let Some(&(each, view)) = ToolCollider::intersect(world, self.data.screen).first()
         {
             let position = world.enter(view, || {
-                let camera = world.single_fetch::<Camera>().unwrap();
+                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(current_camera.0).unwrap();
                 camera.screen_to_world_absolute(self.data.screen)
             });
 

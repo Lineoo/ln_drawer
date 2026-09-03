@@ -1,4 +1,4 @@
-// #include constant rectangle
+#constant #rectangle
 
 struct Draw {
     position: vec2i,
@@ -12,10 +12,10 @@ struct Draw {
 @group(0) @binding(1) var<uniform> draws_length: u32;
 @group(0) @binding(2) var<storage, read> draws_array: array<Draw>;
 
-@group(1) @binding(0) var destination_texture: texture_storage_2d<rgba8unorm, read>;
+@group(1) @binding(0) var destination_texture: texture_storage_2d<rgba8unorm, #read>;
 @group(1) @binding(1) var<uniform> destination: Rectangle;
 
-@group(2) @binding(0) var swap_texture: texture_storage_2d<rgba8unorm, write>;
+@group(2) @binding(0) var swap_texture: texture_storage_2d<rgba8unorm, #write>;
 @group(2) @binding(1) var<uniform> swap: Rectangle;
 
 var<workgroup> intermediate: array<array<vec4f, 32>, 32>;

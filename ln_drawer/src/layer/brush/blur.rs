@@ -4,8 +4,8 @@ use wgpu::ComputePass;
 
 use crate::{
     layer::{
-        Layer,
-        brush::{Brush, BrushInner, Draw, LayerDrawPipeline, param::BrushParam},
+        LayerPipeline,
+        brush::{Brush, Draw, param::BrushParam},
     },
     measures::{FI64Ext, Rectangle},
 };
@@ -28,7 +28,7 @@ pub struct BlurDraw {
     pub _pad: u32,
 }
 
-impl BrushInner for BlurBrush {
+impl Brush for BlurBrush {
     type Draw = BlurDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
@@ -58,14 +58,8 @@ impl BrushInner for BlurBrush {
         true
     }
 
-    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerDrawPipeline) {
-        cpass.set_pipeline(&pipeline.pipelines.blur);
-    }
-}
-
-impl Brush for BlurBrush {
-    fn draw(&self, dst: &Layer, pipeline: &mut LayerDrawPipeline, target: Draw) {
-        pipeline.draw(dst, self, target);
+    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
+        cpass.set_pipeline(&pipeline.brush_pipelines.blur);
     }
 }
 

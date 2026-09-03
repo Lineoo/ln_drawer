@@ -1,9 +1,9 @@
-use glam::{IVec2, UVec2};
-use ln_world::{Element, Handle, World};
+use glam::{DVec2, IVec2, UVec2};
+use ln_world::{Element, Handle, HandleAny, World};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
-    render::camera::Camera,
+    render::camera::CurrentCamera,
     widgets::SetWidgetRectangle,
 };
 
@@ -13,6 +13,9 @@ pub struct ToolCollider {
     pub order: isize,
     pub enabled: bool,
 }
+
+// TODO scissor rect
+pub struct ToolColliderPortal(pub HandleAny);
 
 /// Event node for [`ToolColliderChanged`]
 pub struct ToolColliderDispatcher;
@@ -30,18 +33,18 @@ impl ToolCollider {
         }
     }
 
-    pub fn intersect(
-        world: &World,
-        screen: [f64; 2],
-    ) -> Vec<(Handle<ToolCollider>, Handle<Camera>)> {
+    pub fn intersect(world: &World, screen: DVec2) -> Vec<(Handle<ToolCollider>, HandleAny)> {
         let mut buf = Vec::new();
-        world.foreach_enter::<Camera>(|camera| {
-            let camera = world.fetch(camera).unwrap();
-            let position = camera.screen_to_world_absolute(screen).q32_floor();
-            world.foreach_fetch::<ToolCollider>(|collider| {
-                if collider.enabled && collider.rect.contains(position) {
-                    buf.push((collider.handle(), camera.handle(), collider.order));
-                }
+        world.foreach_fetch::<ToolColliderPortal>(|portal| {
+            world.enter(portal.0, || {
+                let camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(camera.0).unwrap();
+                let position = camera.screen_to_world_absolute(screen).q32_floor();
+                world.foreach_fetch::<ToolCollider>(|collider| {
+                    if collider.enabled && collider.rect.contains(position) {
+                        buf.push((collider.handle(), portal.0, collider.order));
+                    }
+                });
             });
         });
 
@@ -76,4 +79,5 @@ impl Element for ToolCollider {
     }
 }
 
+impl Element for ToolColliderPortal {}
 impl Element for ToolColliderDispatcher {}

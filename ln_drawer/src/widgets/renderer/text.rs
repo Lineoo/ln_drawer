@@ -93,10 +93,7 @@ impl Text {
 
         world.observer(this, move |SetText(text), world| {
             let mut this = world.fetch_mut(this).unwrap();
-            if this.text != *text {
-                this.text.clone_from(text);
-                this.outdated = true;
-            }
+            this.set_text(&text[..]);
         });
 
         self.outdated = true;
@@ -138,6 +135,13 @@ impl Text {
 
                 world.queue_trigger(canvas.handle(), UploadCanvasData);
             }
+        }
+    }
+
+    pub fn set_text(&mut self, text: impl Into<String> + PartialEq<String>) {
+        if text != self.text {
+            self.outdated = true;
+            self.text = text.into();
         }
     }
 

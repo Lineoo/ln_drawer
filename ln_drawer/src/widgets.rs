@@ -1,6 +1,7 @@
 use crate::measures::Rectangle;
 
 pub mod button;
+pub mod container;
 pub mod echo;
 pub mod palette;
 pub mod panel;
