@@ -57,6 +57,14 @@ impl Traveler {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.undos.clear();
+        self.redos.clear();
+        for atlas in &mut self.atlas {
+            atlas.allocator.clear();
+        }
+    }
+
     pub fn stock(&mut self, main: &Layer, dirty: Rectangle) {
         // 0. clear redos
         for snapshot in self.redos.drain(..) {

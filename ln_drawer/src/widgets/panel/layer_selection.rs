@@ -118,11 +118,8 @@ pub fn layer_selection(world: &World, panel: Handle<Container>) {
 
         world.observer(layer0_button, move |&ButtonSelected(val), world| {
             if val {
-                let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
-                wrapper
-                    .thread_tx
-                    .send(ThreadInput::SetPage(i as u64))
-                    .unwrap();
+                let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
+                wrapper.set_page(i as u64);
                 world.queue_trigger(layers_node, LayerChosen(i as u64));
             }
         });

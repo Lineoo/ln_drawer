@@ -10,4 +10,4 @@ softness.desc = "三次多项式平滑"
 [settings.layer_selection]
 doc_label = "文档"
 layer_label = "分页"
-layer_name = "图层 {index}"
+layer_name = "页 {index}"

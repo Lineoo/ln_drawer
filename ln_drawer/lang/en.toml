@@ -6,3 +6,8 @@ sigma.label = "Blur Standard Deviation"
 sigma.desc = "Standard deviation σ applied to the convolution kernel"
 softness.label = "Hardness"
 softness.desc = "Cubic polynomial smoothing"
+
+[settings.layer_selection]
+doc_label = "Document"
+layer_label = "Pages"
+layer_name = "Page {index}"

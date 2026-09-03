@@ -308,6 +308,11 @@ impl LayerWrapper {
             log::debug!("failed to redo");
         }
     }
+
+    pub fn set_page(&mut self, page: u64) {
+        self.traveler.clear();
+        self.thread_tx.send(ThreadInput::SetPage(page)).unwrap();
+    }
 }
 
 const LAYOUT_COMPOSITING_PRESENT: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {

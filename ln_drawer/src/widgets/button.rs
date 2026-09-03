@@ -77,7 +77,10 @@ impl ToggleButton {
         let frame = world.insert(RRect {
             rect: self.rect,
             order: 10,
-            color: self.theme.idle_color,
+            color: match self.selected {
+                false => self.theme.idle_color,
+                true => self.theme.selected_color,
+            },
             radius: theme.roundness,
             width: 0.0,
             enabled: self.visible,
