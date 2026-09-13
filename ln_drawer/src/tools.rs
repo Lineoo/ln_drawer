@@ -3,7 +3,6 @@
 
 pub mod collider;
 pub mod focus;
-pub mod modifiers;
 pub mod mouse;
 pub mod pointer;
 pub mod timer;

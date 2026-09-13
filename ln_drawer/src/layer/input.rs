@@ -19,7 +19,6 @@ use crate::{
     render::camera::{CameraUtils, MainCamera, UICamera},
     tools::{
         collider::ToolCollider,
-        modifiers::ModifiersTool,
         pointer::{PointerHover, PointerHoverStatus, PointerScroll},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
@@ -34,6 +33,7 @@ pub struct LayerInput {
     pub touch_draw: bool,
     pub space: bool,
     pub ctrl: bool,
+    pub shift: bool,
     pub pick: bool,
     pub hold_pick: bool,
 }
@@ -109,9 +109,8 @@ impl LayerInput {
 
             let mut this = world.fetch_mut(this).unwrap();
             let lnwindow = world.fetch(lnwindow).unwrap();
-            let modifier = world.single_fetch::<ModifiersTool>().unwrap();
-            let ctrl = modifier.modifiers.state().control_key();
-            let shift = modifier.modifiers.state().shift_key();
+            let ctrl = this.ctrl;
+            let shift = this.shift;
             let press = event.state == ElementState::Pressed;
 
             match KeyCode::from(event.physical_key) {
@@ -131,6 +130,9 @@ impl LayerInput {
                 }
                 KeyCode::ControlLeft => {
                     this.ctrl = press;
+                }
+                KeyCode::ShiftLeft => {
+                    this.shift = press;
                 }
                 _ => (),
             }
@@ -427,7 +429,7 @@ fn pick_color(point: I64Vec2, world: &World, wrapper: &mut LayerWrapper) {
     wrapper
         .brush
         .layer
-        .pick_color(&wrapper.main, point.q32_round(), move |color| {
+        .pick_color(&wrapper.main, point.q32_floor(), move |color| {
             cmd.queue(move |world| {
                 let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
                 wrapper.round_brush.color = color.into_color();

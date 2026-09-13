@@ -25,7 +25,6 @@ use crate::{
     tools::{
         collider::{ToolColliderDispatcher, ToolColliderPortal},
         focus::FocusTool,
-        modifiers::ModifiersTool,
         mouse::MouseTool,
         pointer::PointerTool,
         touch::MultiTouchTool,
@@ -38,11 +37,8 @@ use crate::{
         },
         panel::side_docker::side_docker,
         renderer::{
-            canvas::CanvasPipeline,
-            quad::QuadMeshPipeline,
-            rrect::RRectMaterial,
-            text::TextPipeline,
-            vtor::{Vtor, VtorPipeline},
+            canvas::CanvasPipeline, quad::QuadMeshPipeline, rrect::RRectMaterial,
+            text::TextPipeline, vtor::VtorPipeline,
         },
     },
 };
@@ -157,7 +153,6 @@ impl Element for Lnwindow {
             world.insert(MouseTool::default());
             world.insert(MultiTouchTool::default());
             world.insert(FocusTool::default());
-            world.insert(ModifiersTool::default());
 
             world.flush();
 
