@@ -302,6 +302,7 @@ fn palette_hsl(world: &World, bg: Handle<Container>) {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
         layer.pixel_brush.color = color.into_color();
+        layer.smudge_brush.color = color.into_color();
         layer.tint_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
@@ -364,6 +365,7 @@ fn palette_oklab(world: &World, bg: Handle<Container>, toggle_button: Handle<Tog
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
         layer.pixel_brush.color = color.into_color();
+        layer.smudge_brush.color = color.into_color();
         layer.tint_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
@@ -371,6 +373,7 @@ fn palette_oklab(world: &World, bg: Handle<Container>, toggle_button: Handle<Tog
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
         layer.pixel_brush.color = color.into_color();
+        layer.smudge_brush.color = color.into_color();
         layer.tint_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });

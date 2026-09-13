@@ -432,6 +432,7 @@ fn pick_color(point: I64Vec2, world: &World, wrapper: &mut LayerWrapper) {
                 let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
                 wrapper.round_brush.color = color.into_color();
                 wrapper.pixel_brush.color = color.into_color();
+                wrapper.smudge_brush.color = color.into_color();
                 wrapper.tint_brush.color = color.into_color();
                 world.queue_trigger(wrapper.handle(), BrushConfigurationChanged);
             });
@@ -482,6 +483,7 @@ fn draw_wrapper(wrapper: &mut LayerWrapper, draw: Draw) {
         BrushMode::Round => (wrapper.brush).draw(&wrapper.main, &wrapper.round_brush, draw),
         BrushMode::Pixel => (wrapper.brush).draw(&wrapper.main, &wrapper.pixel_brush, draw),
         BrushMode::Blur => (wrapper.brush).draw(&wrapper.main, &wrapper.blur_brush, draw),
+        BrushMode::Smudge => (wrapper.brush).draw(&wrapper.main, &wrapper.smudge_brush, draw),
         BrushMode::Tint => (wrapper.brush).draw(&wrapper.main, &wrapper.tint_brush, draw),
     };
 

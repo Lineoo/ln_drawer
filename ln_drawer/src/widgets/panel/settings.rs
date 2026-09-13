@@ -52,6 +52,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.flow.scale = value;
         layer.pixel_brush.flow.scale = value;
+        layer.smudge_brush.flow.scale = value;
         layer.tint_brush.flow.w = value;
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
@@ -76,6 +77,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.softness.scale = 1. - value;
         layer.blur_brush.softness.scale = 1. - value;
+        layer.smudge_brush.softness.scale = 1. - value;
         layer.tint_brush.softness.scale = 1. - value;
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
@@ -96,6 +98,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         let flow = match layer.brush_mode {
             BrushMode::Round | BrushMode::Blur => layer.round_brush.flow.scale,
             BrushMode::Pixel => layer.pixel_brush.flow.scale,
+            BrushMode::Smudge => layer.smudge_brush.flow.scale,
             BrushMode::Tint => layer.tint_brush.flow.w,
         };
         world.queue_trigger(flow_slider, SetSliderValue(flow));
@@ -114,6 +117,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         let softness = match layer.brush_mode {
             BrushMode::Round => 1. - layer.round_brush.softness.scale,
             BrushMode::Blur => 1. - layer.blur_brush.softness.scale,
+            BrushMode::Smudge => 1. - layer.smudge_brush.softness.scale,
             BrushMode::Tint => 1. - layer.tint_brush.softness.scale,
             BrushMode::Pixel => 1.0,
         };

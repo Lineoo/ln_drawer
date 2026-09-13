@@ -5,7 +5,10 @@ use ln_world::{HandleGeneric, World};
 
 use crate::{
     layer::{
-        brush::{param::BrushParam, pixel::PixelBrush, round::RoundBrush, tint::TintBrush},
+        brush::{
+            param::BrushParam, pixel::PixelBrush, round::RoundBrush, smudge::SmudgeBrush,
+            tint::TintBrush,
+        },
         input::LayerInput,
         wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
     },
@@ -64,6 +67,7 @@ pub fn side_docker(world: &World) {
     let brush = docker_button(include_bytes!("../../../res/interface/brush.svg"));
     let pixel = docker_button(include_bytes!("../../../res/interface/pencil.svg"));
     let tint = docker_button(include_bytes!("../../../res/interface/pencil-sparkles.svg"));
+    let smudge = docker_button(include_bytes!("../../../res/interface/palette.svg"));
     let eraser = docker_button(include_bytes!("../../../res/interface/eraser.svg"));
     let blur = docker_button(include_bytes!("../../../res/interface/droplet.svg"));
     let undo = docker_button(include_bytes!("../../../res/interface/undo-2.svg"));
@@ -109,6 +113,7 @@ pub fn side_docker(world: &World) {
         world.trigger(brush, &SetButtonSelected(false));
         world.trigger(pixel, &SetButtonSelected(false));
         world.trigger(tint, &SetButtonSelected(false));
+        world.trigger(smudge, &SetButtonSelected(false));
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Round;
         layer.round_brush = RoundBrush {
@@ -127,6 +132,7 @@ pub fn side_docker(world: &World) {
         world.trigger(brush, &SetButtonSelected(true));
         world.trigger(pixel, &SetButtonSelected(false));
         world.trigger(tint, &SetButtonSelected(false));
+        world.trigger(smudge, &SetButtonSelected(false));
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Round;
         layer.round_brush = RoundBrush {
@@ -145,6 +151,7 @@ pub fn side_docker(world: &World) {
         world.trigger(brush, &SetButtonSelected(false));
         world.trigger(pixel, &SetButtonSelected(true));
         world.trigger(tint, &SetButtonSelected(false));
+        world.trigger(smudge, &SetButtonSelected(false));
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Pixel;
         layer.pixel_brush = PixelBrush {
@@ -162,6 +169,7 @@ pub fn side_docker(world: &World) {
         world.trigger(brush, &SetButtonSelected(false));
         world.trigger(pixel, &SetButtonSelected(false));
         world.trigger(tint, &SetButtonSelected(true));
+        world.trigger(smudge, &SetButtonSelected(false));
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Tint;
         layer.tint_brush = TintBrush {
@@ -169,6 +177,27 @@ pub fn side_docker(world: &World) {
             flow: Vec4::new(0.05, 0.7, 0.7, 1.0),
             softness: BrushParam::constant(0.5),
             ..layer.tint_brush
+        };
+
+        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    });
+
+    world.observer(smudge, move |&ButtonClick, world| {
+        world.trigger(pen, &SetButtonSelected(false));
+        world.trigger(brush, &SetButtonSelected(false));
+        world.trigger(pixel, &SetButtonSelected(false));
+        world.trigger(tint, &SetButtonSelected(false));
+        world.trigger(smudge, &SetButtonSelected(true));
+        let mut layer = world.fetch_mut(layer).unwrap();
+        layer.brush_mode = BrushMode::Smudge;
+        layer.smudge_brush = SmudgeBrush {
+            size: BrushParam::force_index(1.0, 25.0, 1.0),
+            flow: BrushParam::force_index(0.1, 1.0, 1.0),
+            softness: BrushParam::constant(0.5),
+            color_ratio: BrushParam::constant(0.2),
+            sample_radius: BrushParam::constant(0.5),
+            sample_rate: BrushParam::constant(0.3),
+            ..layer.smudge_brush
         };
 
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
@@ -235,6 +264,7 @@ pub fn side_docker(world: &World) {
             BrushMode::Round => layer.round_brush.size.scale = scale,
             BrushMode::Pixel => layer.pixel_brush.size.scale = scale,
             BrushMode::Blur => layer.blur_brush.size.scale = scale,
+            BrushMode::Smudge => layer.smudge_brush.size.scale = scale,
             BrushMode::Tint => layer.tint_brush.size.scale = scale,
         }
 
@@ -247,6 +277,7 @@ pub fn side_docker(world: &World) {
             BrushMode::Round => layer.round_brush.size.scale,
             BrushMode::Pixel => layer.pixel_brush.size.scale,
             BrushMode::Blur => layer.blur_brush.size.scale,
+            BrushMode::Smudge => layer.smudge_brush.size.scale,
             BrushMode::Tint => layer.tint_brush.size.scale,
         };
         world.trigger(slider, &SetSliderValue(((value - 0.5) / 127.5 + 1.).log2()));
@@ -302,6 +333,7 @@ pub fn side_docker(world: &World) {
             (brush.untyped(), LuniChild::default()),
             (pixel.untyped(), LuniChild::default()),
             (tint.untyped(), LuniChild::default()),
+            (smudge.untyped(), LuniChild::default()),
             (eraser.untyped(), LuniChild::default()),
             (blur.untyped(), LuniChild::default()),
             (color_picker.untyped(), LuniChild::default()),

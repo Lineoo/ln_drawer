@@ -2,6 +2,7 @@ pub mod blur;
 pub mod param;
 pub mod pixel;
 pub mod round;
+pub mod smudge;
 pub mod tint;
 
 use std::{
