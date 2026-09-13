@@ -38,7 +38,7 @@ pub trait Descriptor {
 // Handle //
 
 /// Represent an element in the [`World`]. It may not be valid.
-pub struct Handle<T: Element>(usize, PhantomData<fn() -> T>);
+pub struct Handle<T: Element>(u32, u32, PhantomData<fn() -> T>);
 
 impl<T: Element> Clone for Handle<T> {
     fn clone(&self) -> Self {
@@ -50,7 +50,7 @@ impl<T: Element> Copy for Handle<T> {}
 
 impl<T: Element> PartialEq for Handle<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0)
+        self.0 == other.0 && self.1 == other.1
     }
 }
 
@@ -59,33 +59,34 @@ impl<T: Element> Eq for Handle<T> {}
 impl<T: Element> Hash for Handle<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state);
+        self.1.hash(state);
     }
 }
 
 impl<T: Element> fmt::Debug for Handle<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Handle<{}>({})", type_name::<T>(), self.0)
+        write!(f, "Handle<{}>({}:{})", type_name::<T>(), self.0, self.1)
     }
 }
 
 impl<T: Element> fmt::Display for Handle<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{}", self.0)
+        write!(f, "#{}:{}", self.0, self.1)
     }
 }
 
 /// Represent an untyped element in the [`World`]. It may not be valid.
-pub struct HandleAny(usize);
+pub struct HandleAny(u32, u32);
 
 impl fmt::Debug for HandleAny {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Handle({})", self.0)
+        write!(f, "Handle({}:{})", self.0, self.1)
     }
 }
 
 impl fmt::Display for HandleAny {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{}", self.0)
+        write!(f, "#{}:{}", self.0, self.1)
     }
 }
 
@@ -99,7 +100,7 @@ impl Copy for HandleAny {}
 
 impl PartialEq for HandleAny {
     fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0)
+        self.0 == other.0 && self.1 == other.1
     }
 }
 
@@ -108,12 +109,13 @@ impl Eq for HandleAny {}
 impl Hash for HandleAny {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state);
+        self.1.hash(state);
     }
 }
 
 impl HandleAny {
     const fn cast<U: Element>(self) -> Handle<U> {
-        Handle(self.0, PhantomData)
+        Handle(self.0, self.1, PhantomData)
     }
 }
 
@@ -125,13 +127,13 @@ pub trait HandleGeneric:
 
 impl<T: Element> HandleGeneric for Handle<T> {
     fn untyped(self) -> HandleAny {
-        HandleAny(self.0)
+        HandleAny(self.0, self.1)
     }
 }
 
 impl HandleGeneric for HandleAny {
     fn untyped(self) -> HandleAny {
-        HandleAny(self.0)
+        HandleAny(self.0, self.1)
     }
 }
 
@@ -141,13 +143,13 @@ pub struct HandleInfo(HandleAny, &'static str);
 
 impl fmt::Debug for HandleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Handle<{}>({})", self.1, self.0.0)
+        write!(f, "Handle<{}>({}:{})", self.1, self.0.0, self.0.1)
     }
 }
 
 impl fmt::Display for HandleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{}", self.0.0)
+        write!(f, "#{}:{}", self.0.0, self.0.1)
     }
 }
 
@@ -161,7 +163,8 @@ impl<T: Element> From<Handle<T>> for HandleInfo {
 
 // Center of multiple accesses in world, which also prevents constructional changes
 pub struct World {
-    elem_idx: RefCell<usize>,
+    elem_gen: RefCell<Vec<u32>>,
+    elem_free: RefCell<Vec<u32>>,
 
     indices: HashMap<HandleAny, HandleIndex>,
     storages: HashMap<TypeId, Box<dyn StorageGeneral>>,
@@ -265,7 +268,8 @@ impl World {
         indices.insert(INITELEM, initelem_index);
 
         World {
-            elem_idx: RefCell::new(1),
+            elem_gen: RefCell::new(vec![0]),
+            elem_free: RefCell::default(),
             indices,
             storages: HashMap::new(),
             cache: RefCell::default(),
@@ -284,13 +288,34 @@ impl World {
         descriptor.when_build(self)
     }
 
+    /// Allocate a slot for a new element, reusing a freed index if available and bumping its
+    /// generation on reuse so stale handles never alias fresh ones.
+    fn allocate(&self) -> (u32, u32) {
+        let mut free = self.elem_free.borrow_mut();
+        let mut generation = self.elem_gen.borrow_mut();
+
+        if let Some(index) = free.pop() {
+            (index, generation[index as usize])
+        } else {
+            let index = generation.len() as u32;
+            generation.push(0);
+            (index, 0)
+        }
+    }
+
+    /// Free a slot, bumping its generation so any outstanding handle to it becomes invalid.
+    fn deallocate(&self, index: u32) {
+        let mut generation = self.elem_gen.borrow_mut();
+        generation[index as usize] += 1;
+        self.elem_free.borrow_mut().push(index);
+    }
+
     /// Due to limit of cell, the inserted element cannot be fetched until `flush` is called.
     /// Meanwhile, handle-based ops, like `observer` or `dependency`, can still be used normally.
     pub fn insert<T: Element>(&self, element: T) -> Handle<T> {
         // assign estimate handle
-        let mut elem_idx = self.elem_idx.borrow_mut();
-        let handle = Handle::<T>(*elem_idx, PhantomData);
-        *elem_idx += 1;
+        let (index, generation) = self.allocate();
+        let handle = Handle::<T>(index, generation, PhantomData);
 
         // write immediate record
         let mut inserted = self.inserted.borrow_mut();
@@ -407,6 +432,9 @@ impl World {
             // pop out storage
             let storage = world.storages.get_mut(&tid).unwrap();
             storage.remove(handle.untyped());
+
+            // release the slot, invalidating any outstanding handle to it
+            world.deallocate(handle.0);
         });
 
         Ok(cnt)
@@ -1043,7 +1071,7 @@ impl<T: Element> RefMut<'_, T> {
 
 // View //
 
-const INITELEM: HandleAny = HandleAny(0);
+const INITELEM: HandleAny = HandleAny(0, 0);
 
 /// refer another element in other views
 pub struct ElemRef(pub HandleAny);
@@ -1524,5 +1552,27 @@ mod test {
 
         assert_eq!(&*world.fetch(left).unwrap(), &TestInserter(11));
         assert_eq!(&*world.fetch(right).unwrap(), &TestGoodInserter(12));
+    }
+
+    #[test]
+    fn generation_reuse() {
+        let mut world = World::default();
+
+        let old = world.insert(TestInserter(1));
+        world.flush();
+
+        world.remove(old).unwrap();
+        world.flush();
+
+        assert!(world.validate(old).is_err());
+
+        let new = world.insert(TestInserter(2));
+        world.flush();
+
+        assert_eq!(new.0, old.0);
+        assert_eq!(new.1, old.1 + 1);
+        assert!(world.validate(old).is_err());
+        assert!(world.validate(new).is_ok());
+        assert_eq!(&*world.fetch(new).unwrap(), &TestInserter(2));
     }
 }
