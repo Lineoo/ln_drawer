@@ -13,7 +13,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl,
         camera::{CameraBind, CurrentCamera},
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_CAMERA},
+    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::shader_compile},
 };
 
 pub trait QuadMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable + Send {
@@ -158,9 +158,7 @@ impl<M: QuadMaterial> QuadMeshPipeline<M> {
 
         let quad_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(M::label()),
-            source: ShaderSource::Wgsl(
-                format!("{}{}", LIB_CAMERA, include_str!("quad.wgsl")).into(),
-            ),
+            source: ShaderSource::Wgsl(shader_compile(include_str!("quad.wgsl"), &[]).into()),
         });
 
         let custom_shader = device.create_shader_module(ShaderModuleDescriptor {

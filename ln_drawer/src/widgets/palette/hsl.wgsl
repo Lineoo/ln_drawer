@@ -1,4 +1,4 @@
-// include! colorspace constant
+#lib_colorspace #lib_constant
 
 struct PaletteHsl {
     band_width: f32,

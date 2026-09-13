@@ -11,7 +11,7 @@ use crate::{
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         renderer::quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
-        shaders::{LIB_COLORSPACE, LIB_CONSTANT},
+        shaders::shader_compile,
     },
 };
 
@@ -137,15 +137,7 @@ impl QuadMaterial for HslPanelMaterial {
     }
 
     fn shader() -> wgpu::ShaderSource<'static> {
-        wgpu::ShaderSource::Wgsl(
-            format!(
-                "{}{}{}",
-                LIB_COLORSPACE,
-                LIB_CONSTANT,
-                include_str!("hsl.wgsl")
-            )
-            .into(),
-        )
+        wgpu::ShaderSource::Wgsl(shader_compile(include_str!("hsl.wgsl"), &[]).into())
     }
 
     fn fragment() -> Option<&'static str> {

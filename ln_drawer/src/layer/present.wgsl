@@ -1,3 +1,5 @@
+#lib_colorspace
+
 @group(0) @binding(0) var texture: texture_2d<f32>;
 
 @vertex

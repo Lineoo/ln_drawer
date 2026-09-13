@@ -2,6 +2,7 @@ pub const LIB_CAMERA: &'static str = include_str!("shaders/lib_camera.wgsl");
 pub const LIB_COLORSPACE: &'static str = include_str!("shaders/lib_colorspace.wgsl");
 pub const LIB_CONSTANT: &'static str = include_str!("shaders/lib_constant.wgsl");
 pub const LIB_RECTANGLE: &'static str = include_str!("shaders/lib_rectangle.wgsl");
+pub const LIB_MATH: &'static str = include_str!("shaders/lib_math.wgsl");
 
 /// replace every `#key` into `value`
 pub fn shader_compile(raw: &str, maps: &[(&str, &str)]) -> String {
@@ -14,6 +15,7 @@ pub fn shader_compile(raw: &str, maps: &[(&str, &str)]) -> String {
     map.insert("lib_colorspace", LIB_COLORSPACE);
     map.insert("lib_constant", LIB_CONSTANT);
     map.insert("lib_rectangle", LIB_RECTANGLE);
+    map.insert("lib_math", LIB_MATH);
     for &(key, value) in maps {
         map.insert(key, value);
     }

@@ -21,7 +21,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl,
         camera::{CameraBind, CurrentCamera},
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::LIB_CAMERA},
+    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::shader_compile},
 };
 
 pub struct Canvas {
@@ -334,9 +334,7 @@ impl CanvasPipeline {
 
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("canvas_shader"),
-            source: ShaderSource::Wgsl(
-                format!("{}{}", LIB_CAMERA, include_str!("canvas.wgsl"),).into(),
-            ),
+            source: ShaderSource::Wgsl(shader_compile(include_str!("canvas.wgsl"), &[]).into()),
         });
 
         let instance = render

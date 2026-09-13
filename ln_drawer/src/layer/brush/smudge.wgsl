@@ -1,4 +1,4 @@
-#lib_rectangle #lib_colorspace
+#lib_rectangle #lib_colorspace #lib_math
 
 struct Draw {
     color: vec4f,
@@ -15,6 +15,7 @@ struct Draw {
 @group(0) @binding(0) var<uniform> dispatch: Rectangle;
 @group(0) @binding(1) var<uniform> draws_length: u32;
 @group(0) @binding(2) var<storage, read> draws_array: array<Draw>;
+@group(0) @binding(3) var<storage, read_write> draws_state: vec4f;
 
 @group(1) @binding(0) var destination_texture: texture_storage_2d<rgba8unorm, #read>;
 @group(1) @binding(1) var<uniform> destination: Rectangle;
@@ -34,7 +35,9 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
     let tid = lid.x + lid.y * 16u;
     if tid < draws_length {
         let draw = draws_array[tid];
-        samples[tid] = sample_disk(draw.position, draw.size * draw.sample_radius);
+        var raw = sample_disk(draw.position, draw.size * draw.sample_radius);
+        // TODO
+        samples[tid] = raw;
     }
 
     workgroupBarrier();
@@ -51,7 +54,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
     var dst = vec4f(linear_srgb_to_oklab(srgb_to_linear(dst_ump).xyz) * dst_ump.a, dst_ump.a);
 
     // sample_rate: how fast the carried color is replaced by the new sample.
-    var smudge = vec4f();
+    var smudge = draws_state;
     for (var i = 0u; i < draws_length; i++) {
         let draw = draws_array[i];
         let sampled = samples[i];
@@ -72,9 +75,11 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
     let dst_out = linear_to_srgb(vec4f(oklab_to_linear_srgb(dst_ump_out.xyz), dst_ump_out.a));
 
     textureStore(swap_texture, swp_coords, dst_out);
+    draws_state = smudge;
 }
 
 // sample_radius: alpha-weighted average color inside the disk.
+// gaussian_2d use `r = 3σ`
 fn sample_disk(center: vec2i, radius: f32) -> vec4f {
     let r = i32(ceil(radius));
     var sum = vec4f();
@@ -86,8 +91,9 @@ fn sample_disk(center: vec2i, radius: f32) -> vec4f {
             if !rectangle_contains(destination, p) { continue; }
             let c = textureLoad(destination_texture, p - destination.coords);
             let oklab = linear_srgb_to_oklab(srgb_to_linear(c).xyz);
-            sum += vec4f(oklab * c.a, c.a);
-            count += 1.0;
+            let priority = gaussian_2d(vec2f(x, y), r * r / 9);
+            sum += vec4f(oklab * c.a, c.a) * priority;
+            count += priority;
         }
     }
     return sum / max(count, 1e-6);

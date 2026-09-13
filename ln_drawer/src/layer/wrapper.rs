@@ -38,7 +38,7 @@ use crate::{
         camera::{Camera, CameraBind, CameraUpdated, MainCamera, UICamera},
     },
     save::{Autosave, SaveDatabase},
-    widgets::{renderer::rrect::RRect, shaders::LIB_COLORSPACE},
+    widgets::{renderer::rrect::RRect, shaders::shader_compile},
 };
 
 pub struct LayerDebugMessage(pub String);
@@ -382,9 +382,7 @@ fn compositing_resources(device: &Device, config: &SurfaceConfiguration) -> (Tex
 fn present_pipeline(device: &Device, config: &SurfaceConfiguration) -> RenderPipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("wrapper_present_shader"),
-        source: ShaderSource::Wgsl(
-            format!("{}{}", LIB_COLORSPACE, include_str!("present.wgsl")).into(),
-        ),
+        source: ShaderSource::Wgsl(shader_compile(include_str!("present.wgsl"), &[]).into()),
     });
 
     let compositing_render_layout = device.create_bind_group_layout(&LAYOUT_COMPOSITING_PRESENT);

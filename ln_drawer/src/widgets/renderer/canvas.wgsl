@@ -1,4 +1,4 @@
-// include! camera rectangle
+#lib_camera
 
 struct Quad {
     origin: vec2i,

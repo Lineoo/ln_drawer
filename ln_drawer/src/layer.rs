@@ -34,7 +34,7 @@ use wgpu::{
 use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    widgets::shaders::{LIB_CAMERA, LIB_COLORSPACE, LIB_CONSTANT, LIB_RECTANGLE, shader_compile},
+    widgets::shaders::shader_compile,
 };
 
 pub type ChunkKey = (i32, i32, u8);
@@ -47,6 +47,7 @@ pub const CHUNK_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
 const DISPATCH_CAPACITY: u64 = 4;
 const DRAWS_ARRAY_CAPACITY: u64 = 0x2000;
+const DRAWS_STATE_CAPACITY: u64 = 0x2000;
 const WORKGROUP_SIZE: UVec2 = UVec2::new(16, 16);
 
 // function: render, merge, mipmap, clear & chunk recycle
@@ -66,10 +67,10 @@ pub struct LayerPipeline {
     draws_dispatch: Buffer,
     draws_length: Buffer,
     draws_array: Buffer,
+    draws_state: Buffer,
     draws_dispatch_group: BindGroup,
 
     readback_sample: Buffer,
-    readback_storage: Buffer,
     readback_share: Buffer,
     readback_group: BindGroup,
     readback_mapped: Arc<AtomicBool>,
@@ -174,12 +175,12 @@ impl LayerPipeline {
             sampler_groups(&device, &sampler_layout);
 
         let draw_dispatch_layout = device.create_bind_group_layout(&LAYOUT_DRAW_DISPATCH);
-        let (draws_dispatch, draws_length, draws_array, draws_dispatch_group) =
+        let (draws_dispatch, draws_length, draws_array, draws_state, draws_dispatch_group) =
             draws_dispatch_group(&device, &draw_dispatch_layout);
 
         let color_readback_layout = device.create_bind_group_layout(&LAYOUT_COLOR_READBACK);
-        let (readback_sample, readback_storage, readback_share, readback_group) =
-            color_readback_group(&device, &color_readback_layout);
+        let (readback_sample, readback_share, readback_group) =
+            color_readback_group(&device, &color_readback_layout, &draws_state);
 
         let chunk_layout = ChunkLayout {
             dispatch: dispatch_layout,
@@ -225,8 +226,8 @@ impl LayerPipeline {
             draws_length,
             draws_array,
             draws_dispatch_group,
+            draws_state,
             readback_sample,
-            readback_storage,
             readback_share,
             readback_group,
             readback_mapped: Arc::new(AtomicBool::new(false)),
@@ -465,7 +466,7 @@ impl LayerPipeline {
         drop(cpass);
 
         encoder.copy_buffer_to_buffer(
-            &self.readback_storage,
+            &self.draws_state,
             0,
             &self.readback_share,
             0,
@@ -628,6 +629,16 @@ const LAYOUT_DRAW_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescr
             visibility: ShaderStages::COMPUTE,
             ty: BindingType::Buffer {
                 ty: BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 3,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Storage { read_only: false },
                 has_dynamic_offset: false,
                 min_binding_size: None,
             },
@@ -841,7 +852,7 @@ fn sampler_groups(device: &Device, sampler_layout: &BindGroupLayout) -> (BindGro
 fn draws_dispatch_group(
     device: &Device,
     dispatch_draw_layout: &BindGroupLayout,
-) -> (Buffer, Buffer, Buffer, BindGroup) {
+) -> (Buffer, Buffer, Buffer, Buffer, BindGroup) {
     let dispatch = device.create_buffer(&BufferDescriptor {
         label: Some("layer_brush_dispatch"),
         size: size_of::<DispatchUniform>() as u64 * DISPATCH_CAPACITY,
@@ -860,6 +871,13 @@ fn draws_dispatch_group(
         label: Some("layer_brush_draws_array"),
         size: DRAWS_ARRAY_CAPACITY,
         usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let draws_state = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_storage"),
+        size: DRAWS_STATE_CAPACITY,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
 
@@ -891,27 +909,35 @@ fn draws_dispatch_group(
                     size: None,
                 }),
             },
+            BindGroupEntry {
+                binding: 3,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &draws_state,
+                    offset: 0,
+                    size: None,
+                }),
+            },
         ],
     });
 
-    (dispatch, draws_length, draws_array, dispatch_group_draw)
+    (
+        dispatch,
+        draws_length,
+        draws_array,
+        draws_state,
+        dispatch_group_draw,
+    )
 }
 
 fn color_readback_group(
     device: &Device,
     color_readback_layout: &BindGroupLayout,
-) -> (Buffer, Buffer, Buffer, BindGroup) {
+    drwas_state: &Buffer,
+) -> (Buffer, Buffer, BindGroup) {
     let sample_position = device.create_buffer(&BufferDescriptor {
         label: Some("color_readback_sample_position"),
         size: size_of::<IVec2>() as u64,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let storage_buffer = device.create_buffer(&BufferDescriptor {
-        label: Some("color_readback_storage_buffer"),
-        size: size_of::<Vec4>() as u64,
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
 
@@ -937,7 +963,7 @@ fn color_readback_group(
             BindGroupEntry {
                 binding: 1,
                 resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &storage_buffer,
+                    buffer: drwas_state,
                     offset: 0,
                     size: None,
                 }),
@@ -945,12 +971,7 @@ fn color_readback_group(
         ],
     });
 
-    (
-        sample_position,
-        storage_buffer,
-        share_buffer,
-        readback_group,
-    )
+    (sample_position, share_buffer, readback_group)
 }
 
 // --- Chunks --- //
@@ -1115,15 +1136,7 @@ fn render_pipelines(
 ) -> RenderPipelines {
     let render_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_chunk"),
-        source: ShaderSource::Wgsl(
-            format!(
-                "{}{}{}",
-                LIB_CAMERA,
-                LIB_COLORSPACE,
-                include_str!("layer/render.wgsl"),
-            )
-            .into(),
-        ),
+        source: ShaderSource::Wgsl(shader_compile(include_str!("layer/render.wgsl"), &[]).into()),
     });
 
     let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -1196,15 +1209,7 @@ fn render_pipelines(
 fn mipmap_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_mipmap"),
-        source: ShaderSource::Wgsl(
-            format!(
-                "{}{}{}",
-                LIB_COLORSPACE,
-                LIB_RECTANGLE,
-                include_str!("layer/mipmap.wgsl"),
-            )
-            .into(),
-        ),
+        source: ShaderSource::Wgsl(shader_compile(include_str!("layer/mipmap.wgsl"), &[]).into()),
     });
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -1256,15 +1261,9 @@ fn merge_pipelines(
             true => [
                 ("read", "read_write"),
                 ("write", "read_write"),
-                ("rectangle", LIB_RECTANGLE),
                 ("composite", formula),
             ],
-            false => [
-                ("read", "read"),
-                ("write", "write"),
-                ("rectangle", LIB_RECTANGLE),
-                ("composite", formula),
-            ],
+            false => [("read", "read"), ("write", "write"), ("composite", formula)],
         };
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -1294,9 +1293,7 @@ fn merge_pipelines(
 fn copy_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_copy"),
-        source: ShaderSource::Wgsl(
-            format!("{}{}", LIB_RECTANGLE, include_str!("layer/copy.wgsl")).into(),
-        ),
+        source: ShaderSource::Wgsl(shader_compile(include_str!("layer/copy.wgsl"), &[]).into()),
     });
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -1348,9 +1345,7 @@ fn readback_pipeline(
 fn clear_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_clear"),
-        source: ShaderSource::Wgsl(
-            format!("{}{}", LIB_RECTANGLE, include_str!("layer/clear.wgsl")).into(),
-        ),
+        source: ShaderSource::Wgsl(shader_compile(include_str!("layer/clear.wgsl"), &[]).into()),
     });
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -1407,15 +1402,9 @@ fn brush_pipelines(
             true => [
                 ("read", "read_write"),
                 ("write", "read_write"),
-                ("rectangle", LIB_RECTANGLE),
                 ("composite", formula),
             ],
-            false => [
-                ("read", "read"),
-                ("write", "write"),
-                ("rectangle", LIB_RECTANGLE),
-                ("composite", formula),
-            ],
+            false => [("read", "read"), ("write", "write"), ("composite", formula)],
         };
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -1439,15 +1428,9 @@ fn brush_pipelines(
             true => [
                 ("read", "read_write"),
                 ("write", "read_write"),
-                ("rectangle", LIB_RECTANGLE),
                 ("composite", formula),
             ],
-            false => [
-                ("read", "read"),
-                ("write", "write"),
-                ("rectangle", LIB_RECTANGLE),
-                ("composite", formula),
-            ],
+            false => [("read", "read"), ("write", "write"), ("composite", formula)],
         };
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -1468,12 +1451,7 @@ fn brush_pipelines(
 
     let blur_pipeline = |label| {
         // bridge mode does not need read_write bind
-        let constants = [
-            ("read", "read"),
-            ("write", "write"),
-            ("constant", LIB_CONSTANT),
-            ("rectangle", LIB_RECTANGLE),
-        ];
+        let constants = [("read", "read"), ("write", "write")];
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(label),

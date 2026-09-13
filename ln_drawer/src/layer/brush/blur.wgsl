@@ -1,4 +1,4 @@
-#constant #rectangle
+#lib_constant #lib_rectangle #lib_math
 
 struct Draw {
     position: vec2i,
@@ -72,12 +72,4 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
     dst /= max(k_sum, 1e-6);
 
     textureStore(swap_texture, swp_coords, select(vec4f(dst.rgb / dst.a, dst.a), vec4f(), dst.a < 1e-6));
-}
-
-fn gaussian_2d(n: vec2i, v: f32) -> f32 {
-    return FRAC_1_TAU / v * exp(-f32(n.x * n.x + n.y * n.y) / (2.0 * v));
-}
-
-fn gaussian_1d(n: i32, v: f32) -> f32 {
-    return FRAC_1_SQRT_TAU / sqrt(v) * exp(-f32(n * n) / (2.0 * v));
 }

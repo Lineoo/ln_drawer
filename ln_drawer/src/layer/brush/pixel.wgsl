@@ -1,4 +1,4 @@
-#rectangle
+#lib_rectangle
 
 struct Draw {
     color: vec4f,
