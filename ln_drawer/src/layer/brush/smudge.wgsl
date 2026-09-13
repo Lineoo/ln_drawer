@@ -1,4 +1,4 @@
-#lib_rectangle #lib_colorspace #lib_math
+#lib_constant #lib_rectangle #lib_colorspace #lib_math
 
 struct Draw {
     color: vec4f,
@@ -35,9 +35,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
     let tid = lid.x + lid.y * 16u;
     if tid < draws_length {
         let draw = draws_array[tid];
-        var raw = sample_disk(draw.position, draw.size * draw.sample_radius);
-        // TODO
-        samples[tid] = raw;
+        samples[tid] = sample_disk(draw.position, draw.size * draw.sample_radius);
     }
 
     workgroupBarrier();
@@ -55,10 +53,14 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
 
     // sample_rate: how fast the carried color is replaced by the new sample.
     var smudge = draws_state;
+    var painted = vec4f();
     for (var i = 0u; i < draws_length; i++) {
         let draw = draws_array[i];
         let sampled = samples[i];
-        smudge = select(sampled, mix(smudge, sampled, draw.sample_rate), i > 0u);
+
+        // Approximately correct the in-batch sampled color
+        let corrected_sampled = painted + sampled * (1.0 - painted.a);
+        smudge = select(corrected_sampled, mix(smudge, corrected_sampled, draw.sample_rate), i > 0u);
 
         // color_ratio: foreground color share of the mixed result.
         let foreground = vec4f(linear_srgb_to_oklab(srgb_to_linear(draw.color).xyz), 1.0) * draw.color.a;
@@ -69,6 +71,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
 
         let src = paint * draw.flow * mask;
         dst = src + dst * (1.0 - src.a);
+        painted = src + painted * (1.0 - src.a);
     }
 
     let dst_ump_out = alpha_premultiplied_invert(dst);
@@ -91,7 +94,7 @@ fn sample_disk(center: vec2i, radius: f32) -> vec4f {
             if !rectangle_contains(destination, p) { continue; }
             let c = textureLoad(destination_texture, p - destination.coords);
             let oklab = linear_srgb_to_oklab(srgb_to_linear(c).xyz);
-            let priority = gaussian_2d(vec2f(x, y), r * r / 9);
+            let priority = gaussian_2d(vec2i(x, y), f32(r * r) / 9.0);
             sum += vec4f(oklab * c.a, c.a) * priority;
             count += priority;
         }
