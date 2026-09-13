@@ -301,6 +301,7 @@ fn palette_hsl(world: &World, bg: Handle<Container>) {
     world.observer(panel, move |&ColorHsla(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
+        layer.pixel_brush.color = color.into_color();
         layer.tint_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
@@ -362,12 +363,14 @@ fn palette_oklab(world: &World, bg: Handle<Container>, toggle_button: Handle<Tog
     world.observer(polar, move |&ColorOklab(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
+        layer.pixel_brush.color = color.into_color();
         layer.tint_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
     world.observer(bar, move |&ColorOklab(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.round_brush.color = color.into_color();
+        layer.pixel_brush.color = color.into_color();
         layer.tint_brush.color = color.into_color();
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });

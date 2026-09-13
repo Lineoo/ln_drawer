@@ -1,5 +1,6 @@
 pub mod blur;
 pub mod param;
+pub mod pixel;
 pub mod round;
 pub mod tint;
 
@@ -57,6 +58,37 @@ pub trait Brush {
     fn process(&self, draw: Draw) -> Self::Draw;
     fn step(&self, draw: Self::Draw) -> f32;
     fn dirty(&self, draw: Self::Draw) -> Rectangle;
+
+    /// Append the stamps for the segment `from -> to` (excluding `from`) and
+    /// return the position the next segment should resume from.
+    ///
+    /// The default implementation samples the segment linearly, advancing one
+    /// `step` at a time and interpolating `force`. Discrete brushes (e.g. the
+    /// pixel brush) override this to emit stamps on their own grid.
+    fn interpolate(&self, from: Draw, to: Draw, out: &mut Vec<Self::Draw>) -> Draw {
+        let from_position = from.position.q32_as_f64();
+        let to_position = to.position.q32_as_f64();
+        let whole_dist = from_position.distance(to_position);
+
+        let mut curr = from;
+        let mut curr_position = from_position;
+        while curr_position.distance(to_position) >= self.step(self.process(curr)) as f64
+            && out.len() < DRAWS_ARRAY_CAPACITY as usize / size_of::<Self::Draw>()
+        {
+            let step = self.step(self.process(curr));
+            curr_position = curr_position.move_towards(to_position, step as f64);
+            curr.position = I64Vec2::q32_from_f64(curr_position);
+            let curr_dist = curr_position.distance(to_position);
+            let progress = match whole_dist < 1e-6 {
+                true => 1.0,
+                false => 1.0 - (curr_dist / whole_dist) as f32,
+            };
+            curr.force = (1.0 - progress) * from.force + progress * to.force;
+            out.push(self.process(curr));
+        }
+
+        curr
+    }
 
     /// - Normal Mode:
     ///     - Destination texture start with __transparent texture__.
@@ -128,37 +160,20 @@ impl DrawPipeline {
             force: target.force.clamp(0.0, 1.0),
         };
 
-        let prev = self.prev.unwrap_or_else(|| {
-            draws.push(brush.process(target));
-            target
-        });
-
-        let prev_position = prev.position.q32_as_f64();
-        let target_position = target.position.q32_as_f64();
-        let whole_dist = prev_position.distance(target_position);
-        let mut curr = prev;
-        let mut curr_position = prev_position;
-        while curr_position.distance(target_position) >= brush.step(brush.process(curr)) as f64
-            && draws.len() < DRAWS_ARRAY_CAPACITY as usize / size_of::<T::Draw>()
-        {
-            let step = brush.step(brush.process(curr));
-            curr_position = curr_position.move_towards(target_position, step as f64);
-            curr.position = I64Vec2::q32_from_f64(curr_position);
-            let curr_dist = curr_position.distance(target_position);
-            let progress = match whole_dist < 1e-6 {
-                true => 1.0,
-                false => 1.0 - (curr_dist / whole_dist) as f32,
-            };
-            curr.force = (1.0 - progress) * prev.force + progress * target.force;
-            draws.push(brush.process(curr));
-        }
+        let next = match self.prev {
+            Some(prev) => brush.interpolate(prev, target, &mut draws),
+            None => {
+                draws.push(brush.process(target));
+                target
+            }
+        };
 
         let mut dirty = Rectangle::new_half(target.position.q32_as_i32(), UVec2::ZERO);
         for &draw in &draws {
             dirty = dirty.grow(brush.dirty(draw));
         }
 
-        self.prev = Some(curr);
+        self.prev = Some(next);
 
         if dirty.extend.x == 0 || dirty.extend.y == 0 {
             return;

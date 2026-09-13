@@ -140,6 +140,8 @@ struct BrushPipelines {
     tint: ComputePipeline,
     round_over: ComputePipeline,
     round_erase: ComputePipeline,
+    pixel_over: ComputePipeline,
+    pixel_erase: ComputePipeline,
 }
 
 #[repr(C)]
@@ -1431,6 +1433,38 @@ fn brush_pipelines(
         })
     };
 
+    let pixel_pipeline = |label, formula| {
+        let constants = match read_write {
+            true => [
+                ("read", "read_write"),
+                ("write", "read_write"),
+                ("rectangle", LIB_RECTANGLE),
+                ("composite", formula),
+            ],
+            false => [
+                ("read", "read"),
+                ("write", "write"),
+                ("rectangle", LIB_RECTANGLE),
+                ("composite", formula),
+            ],
+        };
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(label),
+            source: ShaderSource::Wgsl(
+                shader_compile(include_str!("layer/brush/pixel.wgsl"), &constants[..]).into(),
+            ),
+        });
+        device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    };
+
     let blur_pipeline = |label| {
         // bridge mode does not need read_write bind
         let constants = [
@@ -1483,5 +1517,7 @@ fn brush_pipelines(
         tint: tint_pipeline("tint"),
         round_over: round_pipeline("over", "src + dst * (1 - src.a)"),
         round_erase: round_pipeline("erase", "dst * (1 - src.a)"),
+        pixel_over: pixel_pipeline("pixel_over", "src + dst * (1 - src.a)"),
+        pixel_erase: pixel_pipeline("pixel_erase", "dst * (1 - src.a)"),
     }
 }

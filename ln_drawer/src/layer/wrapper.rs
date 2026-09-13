@@ -25,7 +25,8 @@ use crate::{
     layer::{
         DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_ENABLED, Layer, LayerPipeline,
         brush::{
-            DrawPipeline, blur::BlurBrush, param::BrushParam, round::RoundBrush, tint::TintBrush,
+            DrawPipeline, blur::BlurBrush, param::BrushParam, pixel::PixelBrush, round::RoundBrush,
+            tint::TintBrush,
         },
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
         traveler::Traveler,
@@ -53,6 +54,7 @@ pub struct LayerWrapper {
 
     pub brush_mode: BrushMode,
     pub round_brush: RoundBrush,
+    pub pixel_brush: PixelBrush,
     pub blur_brush: BlurBrush,
     pub tint_brush: TintBrush,
 
@@ -75,6 +77,7 @@ pub struct LayerWrapper {
 
 pub enum BrushMode {
     Round,
+    Pixel,
     Blur,
     Tint,
 }
@@ -166,6 +169,12 @@ impl LayerWrapper {
                 size: BrushParam::force_index(0.0, 6.0, 1.0),
                 flow: BrushParam::force_index(0.7, 1.0, 2.0),
                 softness: BrushParam::constant(0.2),
+                color: Srgba::new(0.0, 0.0, 0.0, 1.0),
+                erase: false,
+            },
+            pixel_brush: PixelBrush {
+                size: BrushParam::constant(2.0),
+                flow: BrushParam::constant(1.0),
                 color: Srgba::new(0.0, 0.0, 0.0, 1.0),
                 erase: false,
             },

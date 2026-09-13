@@ -5,7 +5,7 @@ use ln_world::{HandleGeneric, World};
 
 use crate::{
     layer::{
-        brush::{param::BrushParam, round::RoundBrush, tint::TintBrush},
+        brush::{param::BrushParam, pixel::PixelBrush, round::RoundBrush, tint::TintBrush},
         input::LayerInput,
         wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
     },
@@ -62,6 +62,7 @@ pub fn side_docker(world: &World) {
 
     let pen = docker_button(include_bytes!("../../../res/interface/pen.svg"));
     let brush = docker_button(include_bytes!("../../../res/interface/brush.svg"));
+    let pixel = docker_button(include_bytes!("../../../res/interface/pencil.svg"));
     let tint = docker_button(include_bytes!("../../../res/interface/pencil-sparkles.svg"));
     let eraser = docker_button(include_bytes!("../../../res/interface/eraser.svg"));
     let blur = docker_button(include_bytes!("../../../res/interface/droplet.svg"));
@@ -106,6 +107,7 @@ pub fn side_docker(world: &World) {
     world.observer(pen, move |&ButtonClick, world| {
         world.trigger(pen, &SetButtonSelected(true));
         world.trigger(brush, &SetButtonSelected(false));
+        world.trigger(pixel, &SetButtonSelected(false));
         world.trigger(tint, &SetButtonSelected(false));
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Round;
@@ -123,6 +125,7 @@ pub fn side_docker(world: &World) {
     world.observer(brush, move |&ButtonClick, world| {
         world.trigger(pen, &SetButtonSelected(false));
         world.trigger(brush, &SetButtonSelected(true));
+        world.trigger(pixel, &SetButtonSelected(false));
         world.trigger(tint, &SetButtonSelected(false));
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Round;
@@ -137,9 +140,27 @@ pub fn side_docker(world: &World) {
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
+    world.observer(pixel, move |&ButtonClick, world| {
+        world.trigger(pen, &SetButtonSelected(false));
+        world.trigger(brush, &SetButtonSelected(false));
+        world.trigger(pixel, &SetButtonSelected(true));
+        world.trigger(tint, &SetButtonSelected(false));
+        let mut layer = world.fetch_mut(layer).unwrap();
+        layer.brush_mode = BrushMode::Pixel;
+        layer.pixel_brush = PixelBrush {
+            size: BrushParam::constant(2.0),
+            flow: BrushParam::constant(1.0),
+            erase: false,
+            ..layer.pixel_brush
+        };
+
+        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    });
+
     world.observer(tint, move |&ButtonClick, world| {
         world.trigger(pen, &SetButtonSelected(false));
         world.trigger(brush, &SetButtonSelected(false));
+        world.trigger(pixel, &SetButtonSelected(false));
         world.trigger(tint, &SetButtonSelected(true));
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.brush_mode = BrushMode::Tint;
@@ -155,8 +176,10 @@ pub fn side_docker(world: &World) {
 
     world.observer(eraser, move |&ButtonSelected(val), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        layer.brush_mode = BrushMode::Round;
-        layer.round_brush.erase = val;
+        match layer.brush_mode {
+            BrushMode::Pixel => layer.pixel_brush.erase = val,
+            _ => layer.round_brush.erase = val,
+        }
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
@@ -184,7 +207,11 @@ pub fn side_docker(world: &World) {
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
         let input = world.single_fetch::<LayerInput>().unwrap();
-        let is_eraser = matches!(layer.brush_mode, BrushMode::Round) && layer.round_brush.erase;
+        let is_eraser = match layer.brush_mode {
+            BrushMode::Round => layer.round_brush.erase,
+            BrushMode::Pixel => layer.pixel_brush.erase,
+            _ => false,
+        };
         world.trigger(eraser, &SetButtonSelected(is_eraser));
         let is_blur = matches!(layer.brush_mode, BrushMode::Blur);
         world.trigger(blur, &SetButtonSelected(is_blur));
@@ -203,9 +230,10 @@ pub fn side_docker(world: &World) {
 
     world.observer(slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        let scale = ((value + 0.5) * 4.).exp2();
+        let scale = (value.exp2() - 1.) * 127.5 + 0.5;
         match layer.brush_mode {
             BrushMode::Round => layer.round_brush.size.scale = scale,
+            BrushMode::Pixel => layer.pixel_brush.size.scale = scale,
             BrushMode::Blur => layer.blur_brush.size.scale = scale,
             BrushMode::Tint => layer.tint_brush.size.scale = scale,
         }
@@ -217,10 +245,11 @@ pub fn side_docker(world: &World) {
         let layer = world.fetch(layer).unwrap();
         let value = match layer.brush_mode {
             BrushMode::Round => layer.round_brush.size.scale,
+            BrushMode::Pixel => layer.pixel_brush.size.scale,
             BrushMode::Blur => layer.blur_brush.size.scale,
             BrushMode::Tint => layer.tint_brush.size.scale,
         };
-        world.trigger(slider, &SetSliderValue(value.log2() / 4. - 0.5));
+        world.trigger(slider, &SetSliderValue(((value - 0.5) / 127.5 + 1.).log2()));
         world.queue_trigger(slider_label, SetText(format!("{value:.2} px")));
     });
 
@@ -271,6 +300,7 @@ pub fn side_docker(world: &World) {
         children: vec![
             (pen.untyped(), LuniChild::default()),
             (brush.untyped(), LuniChild::default()),
+            (pixel.untyped(), LuniChild::default()),
             (tint.untyped(), LuniChild::default()),
             (eraser.untyped(), LuniChild::default()),
             (blur.untyped(), LuniChild::default()),
