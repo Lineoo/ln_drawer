@@ -239,11 +239,6 @@ impl Element for Lnwindow {
             world.enter_queue(main_camera, |world| {
                 world.insert(LayerWrapper::new(world));
                 world.insert(LayerInput::default());
-                world.insert(Vtor {
-                    rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(20)),
-                    visible: true,
-                    order: 100,
-                });
             });
 
             world.enter_queue(ui_camera, move |world| {
