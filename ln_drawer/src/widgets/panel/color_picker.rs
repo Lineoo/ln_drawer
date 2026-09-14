@@ -88,7 +88,7 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
             },
             down: TransformEdge {
                 anchor: 1.0,
-                offset: -400,
+                offset: -736,
             },
             right: TransformEdge {
                 anchor: 1.0,

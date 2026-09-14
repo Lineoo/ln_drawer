@@ -22,7 +22,5 @@ struct Draw {
 @compute @workgroup_size(1)
 fn cs_main() {
     if draws_length == 0u { return; }
-
-    let draw = draws_array[0];
-    draws_state[0] = vec4f(linear_srgb_to_oklab(srgb_to_linear(draw.color).xyz), 1.0) * draw.color.a;
+    draws_state[0] = vec4f();
 }

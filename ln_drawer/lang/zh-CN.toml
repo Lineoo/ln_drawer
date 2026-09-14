@@ -6,6 +6,12 @@ sigma.label = "模糊标准差"
 sigma.desc = "卷积核应用标准差 σ"
 softness.label = "硬度"
 softness.desc = "三次多项式平滑"
+color_ratio.label = "颜色占比"
+color_ratio.desc = "混合后前景色所占比例"
+sample_radius.label = "采样半径"
+sample_radius.desc = "每个笔触点采样画布的半径（相对笔刷大小）"
+sample_rate.label = "采样速率"
+sample_rate.desc = "携带颜色被画布采样颜色替换的速度"
 
 [settings.layer_selection]
 doc_label = "文档"

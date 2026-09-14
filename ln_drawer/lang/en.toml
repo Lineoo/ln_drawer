@@ -6,6 +6,12 @@ sigma.label = "Blur Standard Deviation"
 sigma.desc = "Standard deviation σ applied to the convolution kernel"
 softness.label = "Hardness"
 softness.desc = "Cubic polynomial smoothing"
+color_ratio.label = "Color Ratio"
+color_ratio.desc = "Foreground color share of the mixed smudge color"
+sample_radius.label = "Sample Radius"
+sample_radius.desc = "Canvas disk radius sampled by each dab, relative to brush size"
+sample_rate.label = "Sample Rate"
+sample_rate.desc = "How fast the carried color is replaced by the sampled canvas color"
 
 [settings.layer_selection]
 doc_label = "Document"

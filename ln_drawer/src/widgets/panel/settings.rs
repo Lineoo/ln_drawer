@@ -82,6 +82,42 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
+    // Color Ratio //
+    let color_ratio_frame = world.insert(EchoWidget);
+    let color_ratio_label = option_label(world, String::new(), color_ratio_frame.untyped());
+    let color_ratio_desc = option_desc(world, String::new(), color_ratio_frame.untyped());
+    let (color_ratio_slider, color_ratio_slider_label) =
+        option_slider(world, color_ratio_frame.untyped());
+    world.observer(color_ratio_slider, move |&SliderValue(value), world| {
+        let mut layer = world.fetch_mut(layer).unwrap();
+        layer.smudge_brush.color_ratio.scale = value;
+        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    });
+
+    // Sample Radius //
+    let sample_radius_frame = world.insert(EchoWidget);
+    let sample_radius_label = option_label(world, String::new(), sample_radius_frame.untyped());
+    let sample_radius_desc = option_desc(world, String::new(), sample_radius_frame.untyped());
+    let (sample_radius_slider, sample_radius_slider_label) =
+        option_slider(world, sample_radius_frame.untyped());
+    world.observer(sample_radius_slider, move |&SliderValue(value), world| {
+        let mut layer = world.fetch_mut(layer).unwrap();
+        layer.smudge_brush.sample_radius.scale = value;
+        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    });
+
+    // Sample Rate //
+    let sample_rate_frame = world.insert(EchoWidget);
+    let sample_rate_label = option_label(world, String::new(), sample_rate_frame.untyped());
+    let sample_rate_desc = option_desc(world, String::new(), sample_rate_frame.untyped());
+    let (sample_rate_slider, sample_rate_slider_label) =
+        option_slider(world, sample_rate_frame.untyped());
+    world.observer(sample_rate_slider, move |&SliderValue(value), world| {
+        let mut layer = world.fetch_mut(layer).unwrap();
+        layer.smudge_brush.sample_rate.scale = value;
+        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    });
+
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
 
@@ -91,6 +127,12 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         let mut sigma_desc = world.fetch_mut(sigma_desc).unwrap();
         let mut softness_label = world.fetch_mut(softness_label).unwrap();
         let mut softness_desc = world.fetch_mut(softness_desc).unwrap();
+        let mut color_ratio_label = world.fetch_mut(color_ratio_label).unwrap();
+        let mut color_ratio_desc = world.fetch_mut(color_ratio_desc).unwrap();
+        let mut sample_radius_label = world.fetch_mut(sample_radius_label).unwrap();
+        let mut sample_radius_desc = world.fetch_mut(sample_radius_desc).unwrap();
+        let mut sample_rate_label = world.fetch_mut(sample_rate_label).unwrap();
+        let mut sample_rate_desc = world.fetch_mut(sample_rate_desc).unwrap();
 
         // Flow //
         flow_label.set_text(tr("settings.brush.flow.label"));
@@ -123,6 +165,36 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         };
         world.queue_trigger(softness_slider, SetSliderValue(softness));
         world.queue_trigger(softness_slider_label, SetText(format!("{softness:.2}")));
+
+        // Color Ratio //
+        color_ratio_label.set_text(tr("settings.brush.color_ratio.label"));
+        color_ratio_desc.set_text(tr("settings.brush.color_ratio.desc"));
+        let color_ratio = layer.smudge_brush.color_ratio.scale;
+        world.queue_trigger(color_ratio_slider, SetSliderValue(color_ratio));
+        world.queue_trigger(
+            color_ratio_slider_label,
+            SetText(format!("{color_ratio:.2}")),
+        );
+
+        // Sample Radius //
+        sample_radius_label.set_text(tr("settings.brush.sample_radius.label"));
+        sample_radius_desc.set_text(tr("settings.brush.sample_radius.desc"));
+        let sample_radius = layer.smudge_brush.sample_radius.scale;
+        world.queue_trigger(sample_radius_slider, SetSliderValue(sample_radius));
+        world.queue_trigger(
+            sample_radius_slider_label,
+            SetText(format!("{sample_radius:.2}")),
+        );
+
+        // Sample Rate //
+        sample_rate_label.set_text(tr("settings.brush.sample_rate.label"));
+        sample_rate_desc.set_text(tr("settings.brush.sample_rate.desc"));
+        let sample_rate = layer.smudge_brush.sample_rate.scale;
+        world.queue_trigger(sample_rate_slider, SetSliderValue(sample_rate));
+        world.queue_trigger(
+            sample_rate_slider_label,
+            SetText(format!("{sample_rate:.2}")),
+        );
     });
 
     world.insert(LuniFlex {
@@ -165,6 +237,27 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
             ),
             (
                 softness_frame.untyped(),
+                LuniChild {
+                    basis: Some(108),
+                    ..Default::default()
+                },
+            ),
+            (
+                color_ratio_frame.untyped(),
+                LuniChild {
+                    basis: Some(108),
+                    ..Default::default()
+                },
+            ),
+            (
+                sample_radius_frame.untyped(),
+                LuniChild {
+                    basis: Some(108),
+                    ..Default::default()
+                },
+            ),
+            (
+                sample_rate_frame.untyped(),
                 LuniChild {
                     basis: Some(108),
                     ..Default::default()
