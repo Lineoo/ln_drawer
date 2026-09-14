@@ -1,16 +1,13 @@
 use std::sync::Arc;
 
-use glam::{IVec2, UVec2, Vec4};
-use ln_world::{HandleGeneric, World};
+use glam::{IVec2, UVec2};
+use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
     layer::{
-        brush::{
-            param::BrushParam, pixel::PixelBrush, round::RoundBrush, smudge::SmudgeBrush,
-            tint::TintBrush,
-        },
+        brush::param::BrushParamKey,
         input::LayerInput,
-        wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
+        wrapper::{BrushConfigurationChanged, LayerWrapper},
     },
     layout::{
         luni::{LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
@@ -109,115 +106,32 @@ pub fn side_docker(world: &World) {
     });
 
     world.observer(pen, move |&ButtonClick, world| {
-        world.trigger(pen, &SetButtonSelected(true));
-        world.trigger(brush, &SetButtonSelected(false));
-        world.trigger(pixel, &SetButtonSelected(false));
-        world.trigger(tint, &SetButtonSelected(false));
-        world.trigger(smudge, &SetButtonSelected(false));
-        let mut layer = world.fetch_mut(layer).unwrap();
-        layer.brush_mode = BrushMode::Round;
-        layer.round_brush = RoundBrush {
-            size: BrushParam::force_index(0.0, 6.0, 1.0),
-            flow: BrushParam::force_index(0.7, 1.0, 2.0),
-            softness: BrushParam::constant(0.2),
-            erase: false,
-            ..layer.round_brush
-        };
-
-        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+        select_brush(world, layer, 0);
     });
 
     world.observer(brush, move |&ButtonClick, world| {
-        world.trigger(pen, &SetButtonSelected(false));
-        world.trigger(brush, &SetButtonSelected(true));
-        world.trigger(pixel, &SetButtonSelected(false));
-        world.trigger(tint, &SetButtonSelected(false));
-        world.trigger(smudge, &SetButtonSelected(false));
-        let mut layer = world.fetch_mut(layer).unwrap();
-        layer.brush_mode = BrushMode::Round;
-        layer.round_brush = RoundBrush {
-            size: BrushParam::force_index(1.0, 25.0, 1.0),
-            flow: BrushParam::force_index(0.1, 1.0, 1.0),
-            softness: BrushParam::constant(0.5),
-            erase: false,
-            ..layer.round_brush
-        };
-
-        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+        select_brush(world, layer, 1);
     });
 
     world.observer(pixel, move |&ButtonClick, world| {
-        world.trigger(pen, &SetButtonSelected(false));
-        world.trigger(brush, &SetButtonSelected(false));
-        world.trigger(pixel, &SetButtonSelected(true));
-        world.trigger(tint, &SetButtonSelected(false));
-        world.trigger(smudge, &SetButtonSelected(false));
-        let mut layer = world.fetch_mut(layer).unwrap();
-        layer.brush_mode = BrushMode::Pixel;
-        layer.pixel_brush = PixelBrush {
-            size: BrushParam::constant(2.0),
-            flow: BrushParam::constant(1.0),
-            erase: false,
-            ..layer.pixel_brush
-        };
-
-        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+        select_brush(world, layer, 2);
     });
 
-    world.observer(tint, move |&ButtonClick, world| {
-        world.trigger(pen, &SetButtonSelected(false));
-        world.trigger(brush, &SetButtonSelected(false));
-        world.trigger(pixel, &SetButtonSelected(false));
-        world.trigger(tint, &SetButtonSelected(true));
-        world.trigger(smudge, &SetButtonSelected(false));
-        let mut layer = world.fetch_mut(layer).unwrap();
-        layer.brush_mode = BrushMode::Tint;
-        layer.tint_brush = TintBrush {
-            size: BrushParam::force_index(10.0, 30.0, 1.0),
-            flow: Vec4::new(0.05, 0.7, 0.7, 1.0),
-            softness: BrushParam::constant(0.5),
-            ..layer.tint_brush
-        };
-
-        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    world.observer(blur, move |&ButtonClick, world| {
+        select_brush(world, layer, 3);
     });
 
     world.observer(smudge, move |&ButtonClick, world| {
-        world.trigger(pen, &SetButtonSelected(false));
-        world.trigger(brush, &SetButtonSelected(false));
-        world.trigger(pixel, &SetButtonSelected(false));
-        world.trigger(tint, &SetButtonSelected(false));
-        world.trigger(smudge, &SetButtonSelected(true));
-        let mut layer = world.fetch_mut(layer).unwrap();
-        layer.brush_mode = BrushMode::Smudge;
-        layer.smudge_brush = SmudgeBrush {
-            size: BrushParam::force_index(1.0, 25.0, 1.0),
-            flow: BrushParam::force_index(0.1, 1.0, 1.0),
-            softness: BrushParam::constant(0.5),
-            color_ratio: BrushParam::constant(0.2),
-            sample_radius: BrushParam::constant(0.5),
-            sample_rate: BrushParam::constant(0.3),
-            ..layer.smudge_brush
-        };
+        select_brush(world, layer, 4);
+    });
 
-        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    world.observer(tint, move |&ButtonClick, world| {
+        select_brush(world, layer, 5);
     });
 
     world.observer(eraser, move |&ButtonSelected(val), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        match layer.brush_mode {
-            BrushMode::Pixel => layer.pixel_brush.erase = val,
-            _ => layer.round_brush.erase = val,
-        }
-        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
-    });
-
-    world.observer(blur, move |&ButtonSelected(val), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
-        layer.brush_mode = match val {
-            true => BrushMode::Blur,
-            false => BrushMode::Round,
-        };
+        layer.active_mut().set_toggle(BrushParamKey::Erase, val);
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
@@ -234,17 +148,23 @@ pub fn side_docker(world: &World) {
     });
 
     world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let layer = world.fetch(layer).unwrap();
-        let input = world.single_fetch::<LayerInput>().unwrap();
-        let is_eraser = match layer.brush_mode {
-            BrushMode::Round => layer.round_brush.erase,
-            BrushMode::Pixel => layer.pixel_brush.erase,
-            _ => false,
+        let (index, is_eraser, hold_pick) = {
+            let layer = world.fetch(layer).unwrap();
+            let input = world.single_fetch::<LayerInput>().unwrap();
+            (
+                layer.active_brush,
+                layer.active().toggle(BrushParamKey::Erase).unwrap_or(false),
+                input.hold_pick,
+            )
         };
+        world.trigger(pen, &SetButtonSelected(index == 0));
+        world.trigger(brush, &SetButtonSelected(index == 1));
+        world.trigger(pixel, &SetButtonSelected(index == 2));
+        world.trigger(blur, &SetButtonSelected(index == 3));
+        world.trigger(smudge, &SetButtonSelected(index == 4));
+        world.trigger(tint, &SetButtonSelected(index == 5));
         world.trigger(eraser, &SetButtonSelected(is_eraser));
-        let is_blur = matches!(layer.brush_mode, BrushMode::Blur);
-        world.trigger(blur, &SetButtonSelected(is_blur));
-        world.trigger(pipette, &SetButtonSelected(input.hold_pick));
+        world.trigger(pipette, &SetButtonSelected(hold_pick));
     });
 
     world.observer(undo, move |&ButtonClick, world| {
@@ -260,25 +180,21 @@ pub fn side_docker(world: &World) {
     world.observer(slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         let scale = (value.exp2() - 1.) * 127.5 + 0.5;
-        match layer.brush_mode {
-            BrushMode::Round => layer.round_brush.size.scale = scale,
-            BrushMode::Pixel => layer.pixel_brush.size.scale = scale,
-            BrushMode::Blur => layer.blur_brush.size.scale = scale,
-            BrushMode::Smudge => layer.smudge_brush.size.scale = scale,
-            BrushMode::Tint => layer.tint_brush.size.scale = scale,
+        if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Size) {
+            param.scale = scale;
         }
 
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
     world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let layer = world.fetch(layer).unwrap();
-        let value = match layer.brush_mode {
-            BrushMode::Round => layer.round_brush.size.scale,
-            BrushMode::Pixel => layer.pixel_brush.size.scale,
-            BrushMode::Blur => layer.blur_brush.size.scale,
-            BrushMode::Smudge => layer.smudge_brush.size.scale,
-            BrushMode::Tint => layer.tint_brush.size.scale,
+        let value = {
+            let layer = world.fetch(layer).unwrap();
+            layer
+                .active()
+                .scalar(BrushParamKey::Size)
+                .map(|param| param.scale)
+                .unwrap_or(0.0)
         };
         world.trigger(slider, &SetSliderValue(((value - 0.5) / 127.5 + 1.).log2()));
         world.queue_trigger(slider_label, SetText(format!("{value:.2} px")));
@@ -366,5 +282,10 @@ pub fn side_docker(world: &World) {
         ],
     });
 
+    world.queue_trigger(layer, BrushConfigurationChanged);
+}
+
+fn select_brush(world: &World, layer: Handle<LayerWrapper>, index: usize) {
+    world.fetch_mut(layer).unwrap().select_brush(index);
     world.queue_trigger(layer, BrushConfigurationChanged);
 }

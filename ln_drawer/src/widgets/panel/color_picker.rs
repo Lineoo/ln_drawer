@@ -261,7 +261,7 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     let layer = world.single::<LayerWrapper>().unwrap();
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
-        let color = layer.round_brush.color;
+        let color = layer.color();
         world.queue_trigger(toggle_button_color_icon, SetRRectColor(color.into_color()));
         // trigger palette_hsl SetPaletteHsl
     });
@@ -300,15 +300,12 @@ fn palette_hsl(world: &World, bg: Handle<Container>) {
     let layer = world.single::<LayerWrapper>().unwrap();
     world.observer(panel, move |&ColorHsla(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        layer.round_brush.color = color.into_color();
-        layer.pixel_brush.color = color.into_color();
-        layer.smudge_brush.color = color.into_color();
-        layer.tint_brush.color = color.into_color();
+        layer.set_color(color.into_color());
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
-        let hsla = layer.round_brush.color.into_color();
+        let hsla = layer.color().into_color();
         world.trigger(panel, &SetColorHsla(hsla));
     });
 }
@@ -363,23 +360,17 @@ fn palette_oklab(world: &World, bg: Handle<Container>, toggle_button: Handle<Tog
     let layer = world.single::<LayerWrapper>().unwrap();
     world.observer(polar, move |&ColorOklab(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        layer.round_brush.color = color.into_color();
-        layer.pixel_brush.color = color.into_color();
-        layer.smudge_brush.color = color.into_color();
-        layer.tint_brush.color = color.into_color();
+        layer.set_color(color.into_color());
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
     world.observer(bar, move |&ColorOklab(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        layer.round_brush.color = color.into_color();
-        layer.pixel_brush.color = color.into_color();
-        layer.smudge_brush.color = color.into_color();
-        layer.tint_brush.color = color.into_color();
+        layer.set_color(color.into_color());
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
-        let oklab = layer.round_brush.color.into_color();
+        let oklab = layer.color().into_color();
         world.trigger(polar, &SetColorOklab(oklab));
         world.trigger(bar, &SetColorOklab(oklab));
     });

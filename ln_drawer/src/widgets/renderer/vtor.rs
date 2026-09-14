@@ -20,10 +20,13 @@ use crate::{
 };
 
 pub struct VtorPipeline {
+    #[expect(unused)]
     pipeline: RenderPipeline,
+    #[expect(unused)]
     bind: BindGroupLayout,
 }
 
+#[expect(unused)]
 pub struct Vtor {
     pub rect: Rectangle,
     pub visible: bool,
@@ -31,6 +34,7 @@ pub struct Vtor {
 }
 
 impl Vtor {
+    #[expect(unused)]
     pub fn init(&self, world: &World, this: Handle<Self>) {
         let render = world.single_fetch::<Render>().unwrap();
         let pipeline = world.single_fetch::<VtorPipeline>().unwrap();

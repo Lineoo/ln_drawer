@@ -13,13 +13,25 @@ use std::{
 use bytemuck::{Pod, Zeroable, bytes_of, cast_slice};
 use glam::{I64Vec2, UVec2};
 use hashbrown::HashMap;
+use palette::Srgba;
 use wgpu::{BindGroup, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, RenderPass};
 
 use crate::{
     layer::{
         Chunk, ChunkPool, DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_DISABLED, DRAWS_ARRAY_CAPACITY, Layer,
-        LayerPipeline, chunk_to_rect, create_chunk, create_chunk_texture, dispatch_workgroups,
-        dispatch_workgroups_extend, rect_to_chunks, stream::ThreadInput, write_dispatch,
+        LayerPipeline,
+        brush::{
+            blur::BlurBrush,
+            param::{BrushParam, BrushParamKey, BrushValue, BrushValueMut},
+            pixel::PixelBrush,
+            round::RoundBrush,
+            smudge::SmudgeBrush,
+            tint::TintBrush,
+        },
+        chunk_to_rect, create_chunk, create_chunk_texture, dispatch_workgroups,
+        dispatch_workgroups_extend, rect_to_chunks,
+        stream::ThreadInput,
+        write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
@@ -119,6 +131,152 @@ pub trait Brush {
     fn bridge_mode(&self) -> bool;
 
     fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline);
+}
+
+/// Object-safe brush abstraction used by the brush registry and the settings UI.
+///
+/// It exposes the typed brush fields by [`BrushParamKey`] behind a type-erased borrowed view, so
+/// an editor can reach the full [`BrushParam`] (including its [`param::ParamCurve`]) without the
+/// brush having to duplicate its fields.
+pub trait BrushParams: Send {
+    fn draw(&self, pipeline: &mut DrawPipeline, dst: &Layer, draw: Draw);
+
+    /// Produce an independent copy, used for the temporary working brush.
+    fn dup(&self) -> Box<dyn BrushParams>;
+
+    #[expect(dead_code)]
+    fn param_keys(&self) -> &'static [BrushParamKey];
+
+    fn param(&self, key: BrushParamKey) -> Option<BrushValue<'_>>;
+    fn param_mut(&mut self, key: BrushParamKey) -> Option<BrushValueMut<'_>>;
+}
+
+macro_rules! brush_params {
+    ($ty:ty, { $( $key:ident => $variant:ident($field:ident) ),* $(,)? }) => {
+        impl $crate::layer::brush::BrushParams for $ty {
+            fn draw(
+                &self,
+                pipeline: &mut $crate::layer::brush::DrawPipeline,
+                dst: &$crate::layer::Layer,
+                draw: $crate::layer::brush::Draw,
+            ) {
+                pipeline.draw(dst, self, draw);
+            }
+
+            fn dup(&self) -> Box<dyn $crate::layer::brush::BrushParams> {
+                Box::new(self.clone())
+            }
+
+            fn param_keys(&self) -> &'static [$crate::layer::brush::param::BrushParamKey] {
+                const KEYS: &[$crate::layer::brush::param::BrushParamKey] =
+                    &[$( $crate::layer::brush::param::BrushParamKey::$key ),*];
+                KEYS
+            }
+
+            fn param(
+                &self,
+                key: $crate::layer::brush::param::BrushParamKey,
+            ) -> Option<$crate::layer::brush::param::BrushValue<'_>> {
+                use $crate::layer::brush::param::{BrushParamKey, BrushValue};
+                match key {
+                    $( BrushParamKey::$key => Some(BrushValue::$variant(&self.$field)), )*
+                    _ => None,
+                }
+            }
+
+            fn param_mut(
+                &mut self,
+                key: $crate::layer::brush::param::BrushParamKey,
+            ) -> Option<$crate::layer::brush::param::BrushValueMut<'_>> {
+                use $crate::layer::brush::param::{BrushParamKey, BrushValueMut};
+                match key {
+                    $( BrushParamKey::$key => Some(BrushValueMut::$variant(&mut self.$field)), )*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+brush_params!(RoundBrush, {
+    Size => Scalar(size),
+    Flow => Scalar(flow),
+    Softness => Scalar(softness),
+    Color => Color(color),
+    Erase => Toggle(erase),
+});
+
+brush_params!(PixelBrush, {
+    Size => Scalar(size),
+    Flow => Scalar(flow),
+    Color => Color(color),
+    Erase => Toggle(erase),
+});
+
+brush_params!(BlurBrush, {
+    Size => Scalar(size),
+    Sigma => Scalar(sigma),
+    Softness => Scalar(softness),
+});
+
+brush_params!(SmudgeBrush, {
+    Size => Scalar(size),
+    Flow => Scalar(flow),
+    Softness => Scalar(softness),
+    Color => Color(color),
+    ColorRatio => Scalar(color_ratio),
+    SampleRadius => Scalar(sample_radius),
+    SampleRate => Scalar(sample_rate),
+});
+
+brush_params!(TintBrush, {
+    Size => Scalar(size),
+    Softness => Scalar(softness),
+    Color => Color(color),
+    Flow => Vec4(flow),
+});
+
+/// Convenience accessors layered on top of the type-erased reflection interface.
+impl dyn BrushParams + '_ {
+    pub fn scalar(&self, key: BrushParamKey) -> Option<&BrushParam<f32>> {
+        match self.param(key)? {
+            BrushValue::Scalar(param) => Some(param),
+            _ => None,
+        }
+    }
+
+    pub fn scalar_mut(&mut self, key: BrushParamKey) -> Option<&mut BrushParam<f32>> {
+        match self.param_mut(key)? {
+            BrushValueMut::Scalar(param) => Some(param),
+            _ => None,
+        }
+    }
+
+    pub fn color(&self) -> Option<Srgba> {
+        match self.param(BrushParamKey::Color)? {
+            BrushValue::Color(color) => Some(*color),
+            _ => None,
+        }
+    }
+
+    pub fn set_color(&mut self, value: Srgba) {
+        if let Some(BrushValueMut::Color(color)) = self.param_mut(BrushParamKey::Color) {
+            *color = value;
+        }
+    }
+
+    pub fn toggle(&self, key: BrushParamKey) -> Option<bool> {
+        match self.param(key)? {
+            BrushValue::Toggle(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    pub fn set_toggle(&mut self, key: BrushParamKey, value: bool) {
+        if let Some(BrushValueMut::Toggle(toggle)) = self.param_mut(key) {
+            *toggle = value;
+        }
+    }
 }
 
 impl DrawPipeline {

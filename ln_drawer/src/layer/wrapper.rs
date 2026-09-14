@@ -25,8 +25,8 @@ use crate::{
     layer::{
         DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_ENABLED, Layer, LayerPipeline,
         brush::{
-            DrawPipeline, blur::BlurBrush, param::BrushParam, pixel::PixelBrush, round::RoundBrush,
-            smudge::SmudgeBrush, tint::TintBrush,
+            BrushParams, Draw, DrawPipeline, blur::BlurBrush, param::BrushParam, pixel::PixelBrush,
+            round::RoundBrush, smudge::SmudgeBrush, tint::TintBrush,
         },
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
         traveler::Traveler,
@@ -52,12 +52,13 @@ pub struct LayerWrapper {
     pub brush: DrawPipeline,
     pub traveler: Traveler,
 
-    pub brush_mode: BrushMode,
-    pub round_brush: RoundBrush,
-    pub pixel_brush: PixelBrush,
-    pub blur_brush: BlurBrush,
-    pub smudge_brush: SmudgeBrush,
-    pub tint_brush: TintBrush,
+    /// Immutable registry of brush presets.
+    pub brushes: Vec<Box<dyn BrushParams>>,
+    /// Index of the preset the active brush was copied from.
+    pub active_brush: usize,
+    /// Temporary working copy of [`Self::brushes`]`[active_brush]`; edits never touch the registry.
+    active: Box<dyn BrushParams>,
+    color: Srgba,
 
     pub debug: bool,
 
@@ -74,14 +75,6 @@ pub struct LayerWrapper {
     pub thread_tx: Sender<ThreadInput>,
     pub thread_rx: Receiver<ThreadOutput>,
     pub thread: Option<JoinHandle<()>>,
-}
-
-pub enum BrushMode {
-    Round,
-    Pixel,
-    Blur,
-    Smudge,
-    Tint,
 }
 
 impl LayerWrapper {
@@ -157,6 +150,53 @@ impl LayerWrapper {
 
         let present_pipeline = present_pipeline(&render.device, &render.config);
 
+        let color = Srgba::new(0.0, 0.0, 0.0, 1.0);
+
+        let brushes: Vec<Box<dyn BrushParams>> = vec![
+            Box::new(RoundBrush {
+                size: BrushParam::force_index(0.0, 6.0, 1.0),
+                flow: BrushParam::force_index(0.7, 1.0, 2.0),
+                softness: BrushParam::constant(0.2),
+                color,
+                erase: false,
+            }),
+            Box::new(RoundBrush {
+                size: BrushParam::force_index(1.0, 25.0, 1.0),
+                flow: BrushParam::force_index(0.1, 1.0, 1.0),
+                softness: BrushParam::constant(0.5),
+                color,
+                erase: false,
+            }),
+            Box::new(PixelBrush {
+                size: BrushParam::constant(2.0),
+                flow: BrushParam::constant(1.0),
+                color,
+                erase: false,
+            }),
+            Box::new(BlurBrush {
+                size: BrushParam::constant(20.0),
+                sigma: BrushParam::constant(3.0),
+                softness: BrushParam::constant(0.3),
+            }),
+            Box::new(SmudgeBrush {
+                size: BrushParam::force_index(1.0, 25.0, 1.0),
+                flow: BrushParam::force_index(0.1, 1.0, 1.0),
+                softness: BrushParam::constant(0.5),
+                color,
+                color_ratio: BrushParam::constant(0.2),
+                sample_radius: BrushParam::constant(0.5),
+                sample_rate: BrushParam::constant(0.3),
+            }),
+            Box::new(TintBrush {
+                size: BrushParam::force_index(10.0, 30.0, 1.0),
+                flow: Vec4::new(0.05, 0.7, 0.7, 1.0),
+                softness: BrushParam::constant(0.5),
+                color,
+            }),
+        ];
+        let mut active = brushes[0].dup();
+        active.set_color(color);
+
         LayerWrapper {
             main: Layer {
                 chunks: HashMap::new(),
@@ -166,40 +206,10 @@ impl LayerWrapper {
             },
             brush,
             traveler,
-            brush_mode: BrushMode::Round,
-            round_brush: RoundBrush {
-                size: BrushParam::force_index(0.0, 6.0, 1.0),
-                flow: BrushParam::force_index(0.7, 1.0, 2.0),
-                softness: BrushParam::constant(0.2),
-                color: Srgba::new(0.0, 0.0, 0.0, 1.0),
-                erase: false,
-            },
-            pixel_brush: PixelBrush {
-                size: BrushParam::constant(2.0),
-                flow: BrushParam::constant(1.0),
-                color: Srgba::new(0.0, 0.0, 0.0, 1.0),
-                erase: false,
-            },
-            blur_brush: BlurBrush {
-                size: BrushParam::constant(20.0),
-                sigma: BrushParam::constant(3.0),
-                softness: BrushParam::constant(0.3),
-            },
-            smudge_brush: SmudgeBrush {
-                size: BrushParam::force_index(1.0, 25.0, 1.0),
-                flow: BrushParam::force_index(0.1, 1.0, 1.0),
-                softness: BrushParam::constant(0.5),
-                color: Srgba::new(0.0, 0.0, 0.0, 1.0),
-                color_ratio: BrushParam::constant(0.2),
-                sample_radius: BrushParam::constant(0.5),
-                sample_rate: BrushParam::constant(0.3),
-            },
-            tint_brush: TintBrush {
-                size: BrushParam::force_index(0.0, 6.0, 1.0),
-                flow: Vec4::new(0.1, 0.6, 0.6, 0.5),
-                softness: BrushParam::constant(0.2),
-                color: Srgba::new(0.0, 0.0, 0.0, 1.0),
-            },
+            brushes,
+            active_brush: 0,
+            active,
+            color,
             debug: false,
             temp_erase: RoundBrush {
                 size: BrushParam::force_index(5.0, 15.0, 1.0),
@@ -218,6 +228,39 @@ impl LayerWrapper {
             thread_rx: output_rx,
             thread: Some(thread),
         }
+    }
+
+    pub fn active(&self) -> &dyn BrushParams {
+        self.active.as_ref()
+    }
+
+    pub fn active_mut(&mut self) -> &mut dyn BrushParams {
+        self.active.as_mut()
+    }
+
+    /// Draw one segment with the temporary working brush.
+    pub fn draw_active(&mut self, draw: Draw) {
+        self.active.draw(&mut self.brush, &self.main, draw);
+        self.brush.request_stream(&self.main, &self.thread_tx);
+    }
+
+    /// Copy the preset at `index` into the temporary working brush.
+    ///
+    /// The registry itself is never modified, so tuning the active brush is discarded once
+    /// another preset is selected.
+    pub fn select_brush(&mut self, index: usize) {
+        self.active_brush = index;
+        self.active = self.brushes[index].dup();
+        self.active.set_color(self.color);
+    }
+
+    pub fn color(&self) -> Srgba {
+        self.active.color().unwrap_or(self.color)
+    }
+
+    pub fn set_color(&mut self, color: Srgba) {
+        self.color = color;
+        self.active.set_color(color);
     }
 
     fn process_stream(&mut self, world: &World) {

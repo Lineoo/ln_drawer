@@ -12,7 +12,7 @@ use winit::{
 use crate::{
     layer::{
         brush::Draw,
-        wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
+        wrapper::{BrushConfigurationChanged, LayerWrapper},
     },
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
@@ -432,10 +432,7 @@ fn pick_color(point: I64Vec2, world: &World, wrapper: &mut LayerWrapper) {
         .pick_color(&wrapper.main, point.q32_floor(), move |color| {
             cmd.queue(move |world| {
                 let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
-                wrapper.round_brush.color = color.into_color();
-                wrapper.pixel_brush.color = color.into_color();
-                wrapper.smudge_brush.color = color.into_color();
-                wrapper.tint_brush.color = color.into_color();
+                wrapper.set_color(color.into_color());
                 world.queue_trigger(wrapper.handle(), BrushConfigurationChanged);
             });
         });
@@ -481,15 +478,7 @@ fn update_icon(this: &LayerInput, state: &LayerInputState, lnwindow: &Lnwindow) 
 }
 
 fn draw_wrapper(wrapper: &mut LayerWrapper, draw: Draw) {
-    match &wrapper.brush_mode {
-        BrushMode::Round => (wrapper.brush).draw(&wrapper.main, &wrapper.round_brush, draw),
-        BrushMode::Pixel => (wrapper.brush).draw(&wrapper.main, &wrapper.pixel_brush, draw),
-        BrushMode::Blur => (wrapper.brush).draw(&wrapper.main, &wrapper.blur_brush, draw),
-        BrushMode::Smudge => (wrapper.brush).draw(&wrapper.main, &wrapper.smudge_brush, draw),
-        BrushMode::Tint => (wrapper.brush).draw(&wrapper.main, &wrapper.tint_brush, draw),
-    };
-
-    (wrapper.brush).request_stream(&wrapper.main, &wrapper.thread_tx);
+    wrapper.draw_active(draw);
 }
 
 fn erase_wrapper(wrapper: &mut LayerWrapper, draw: Draw) {

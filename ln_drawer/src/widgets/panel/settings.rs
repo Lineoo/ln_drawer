@@ -3,7 +3,10 @@ use ln_world::{Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
     i18n::tr,
-    layer::wrapper::{BrushConfigurationChanged, BrushMode, LayerWrapper},
+    layer::{
+        brush::param::{BrushParamKey, BrushValue, BrushValueMut},
+        wrapper::{BrushConfigurationChanged, LayerWrapper},
+    },
     layout::{
         luni::{
             LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
@@ -50,10 +53,11 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
     let (flow_slider, flow_slider_label) = option_slider(world, flow_frame.untyped());
     world.observer(flow_slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        layer.round_brush.flow.scale = value;
-        layer.pixel_brush.flow.scale = value;
-        layer.smudge_brush.flow.scale = value;
-        layer.tint_brush.flow.w = value;
+        match layer.active_mut().param_mut(BrushParamKey::Flow) {
+            Some(BrushValueMut::Scalar(param)) => param.scale = value,
+            Some(BrushValueMut::Vec4(flow)) => flow.w = value,
+            _ => {}
+        }
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
@@ -64,7 +68,9 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
     let (sigma_slider, sigma_slider_label) = option_slider(world, sigma_frame.untyped());
     world.observer(sigma_slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        layer.blur_brush.sigma.scale = value * 3.0;
+        if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Sigma) {
+            param.scale = value * 3.0;
+        }
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
@@ -75,10 +81,9 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
     let (softness_slider, softness_slider_label) = option_slider(world, softness_frame.untyped());
     world.observer(softness_slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        layer.round_brush.softness.scale = 1. - value;
-        layer.blur_brush.softness.scale = 1. - value;
-        layer.smudge_brush.softness.scale = 1. - value;
-        layer.tint_brush.softness.scale = 1. - value;
+        if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Softness) {
+            param.scale = 1. - value;
+        }
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
@@ -90,7 +95,9 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         option_slider(world, color_ratio_frame.untyped());
     world.observer(color_ratio_slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        layer.smudge_brush.color_ratio.scale = value;
+        if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::ColorRatio) {
+            param.scale = value;
+        }
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
@@ -102,7 +109,9 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         option_slider(world, sample_radius_frame.untyped());
     world.observer(sample_radius_slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        layer.smudge_brush.sample_radius.scale = value;
+        if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::SampleRadius) {
+            param.scale = value;
+        }
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
@@ -114,7 +123,9 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         option_slider(world, sample_rate_frame.untyped());
     world.observer(sample_rate_slider, move |&SliderValue(value), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
-        layer.smudge_brush.sample_rate.scale = value;
+        if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::SampleRate) {
+            param.scale = value;
+        }
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
@@ -137,11 +148,10 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         // Flow //
         flow_label.set_text(tr("settings.brush.flow.label"));
         flow_desc.set_text(tr("settings.brush.flow.desc"));
-        let flow = match layer.brush_mode {
-            BrushMode::Round | BrushMode::Blur => layer.round_brush.flow.scale,
-            BrushMode::Pixel => layer.pixel_brush.flow.scale,
-            BrushMode::Smudge => layer.smudge_brush.flow.scale,
-            BrushMode::Tint => layer.tint_brush.flow.w,
+        let flow = match layer.active().param(BrushParamKey::Flow) {
+            Some(BrushValue::Scalar(param)) => param.scale,
+            Some(BrushValue::Vec4(flow)) => flow.w,
+            _ => 0.0,
         };
         world.queue_trigger(flow_slider, SetSliderValue(flow));
         world.queue_trigger(flow_slider_label, SetText(format!("{flow:.2}")));
@@ -149,27 +159,33 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         // Sigma //
         sigma_label.set_text(tr("settings.brush.sigma.label"));
         sigma_desc.set_text(tr("settings.brush.sigma.desc"));
-        let sigma = layer.blur_brush.sigma.scale;
+        let sigma = layer
+            .active()
+            .scalar(BrushParamKey::Sigma)
+            .map(|param| param.scale)
+            .unwrap_or(0.0);
         world.queue_trigger(sigma_slider, SetSliderValue(sigma / 3.0));
         world.queue_trigger(sigma_slider_label, SetText(format!("{sigma:.2}")));
 
         // Softness
         softness_label.set_text(tr("settings.brush.softness.label"));
         softness_desc.set_text(tr("settings.brush.softness.desc"));
-        let softness = match layer.brush_mode {
-            BrushMode::Round => 1. - layer.round_brush.softness.scale,
-            BrushMode::Blur => 1. - layer.blur_brush.softness.scale,
-            BrushMode::Smudge => 1. - layer.smudge_brush.softness.scale,
-            BrushMode::Tint => 1. - layer.tint_brush.softness.scale,
-            BrushMode::Pixel => 1.0,
-        };
+        let softness = layer
+            .active()
+            .scalar(BrushParamKey::Softness)
+            .map(|param| 1. - param.scale)
+            .unwrap_or(1.0);
         world.queue_trigger(softness_slider, SetSliderValue(softness));
         world.queue_trigger(softness_slider_label, SetText(format!("{softness:.2}")));
 
         // Color Ratio //
         color_ratio_label.set_text(tr("settings.brush.color_ratio.label"));
         color_ratio_desc.set_text(tr("settings.brush.color_ratio.desc"));
-        let color_ratio = layer.smudge_brush.color_ratio.scale;
+        let color_ratio = layer
+            .active()
+            .scalar(BrushParamKey::ColorRatio)
+            .map(|param| param.scale)
+            .unwrap_or(0.0);
         world.queue_trigger(color_ratio_slider, SetSliderValue(color_ratio));
         world.queue_trigger(
             color_ratio_slider_label,
@@ -179,7 +195,11 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         // Sample Radius //
         sample_radius_label.set_text(tr("settings.brush.sample_radius.label"));
         sample_radius_desc.set_text(tr("settings.brush.sample_radius.desc"));
-        let sample_radius = layer.smudge_brush.sample_radius.scale;
+        let sample_radius = layer
+            .active()
+            .scalar(BrushParamKey::SampleRadius)
+            .map(|param| param.scale)
+            .unwrap_or(0.0);
         world.queue_trigger(sample_radius_slider, SetSliderValue(sample_radius));
         world.queue_trigger(
             sample_radius_slider_label,
@@ -189,7 +209,11 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         // Sample Rate //
         sample_rate_label.set_text(tr("settings.brush.sample_rate.label"));
         sample_rate_desc.set_text(tr("settings.brush.sample_rate.desc"));
-        let sample_rate = layer.smudge_brush.sample_rate.scale;
+        let sample_rate = layer
+            .active()
+            .scalar(BrushParamKey::SampleRate)
+            .map(|param| param.scale)
+            .unwrap_or(0.0);
         world.queue_trigger(sample_rate_slider, SetSliderValue(sample_rate));
         world.queue_trigger(
             sample_rate_slider_label,
