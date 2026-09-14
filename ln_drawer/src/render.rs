@@ -542,6 +542,11 @@ fn plain_rpass<'encoder>(
 }
 
 impl RenderControl {
+    /// A render control that groups a nested [`RenderPhase`] living under `view`.
+    ///
+    /// `prepare` descends into `view` to prepare the nested controls. `draw` invokes the
+    /// callback in the control's own view, so the caller can set up outer render state (such
+    /// as a scissor rect) before entering `view` itself to draw the nested phase.
     pub fn phase_with_draw(
         view: impl HandleGeneric,
         mut f: impl FnMut(&World, &mut RenderPass, RenderExtra) + Send + 'static,
@@ -565,7 +570,7 @@ impl RenderControl {
                 })
             })),
             draw: Some(Box::new(move |world, rpass, extra| {
-                world.enter(view, || f(world, rpass, extra));
+                f(world, rpass, extra);
             })),
         }
     }

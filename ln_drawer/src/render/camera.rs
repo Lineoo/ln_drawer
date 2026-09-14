@@ -62,41 +62,8 @@ impl Descriptor for CameraDescriptor {
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>().unwrap();
         let binding = world.single_fetch::<CameraBind>().unwrap();
-        let device = &render.device;
 
-        let uniform = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("camera_uniform"),
-            contents: bytemuck::bytes_of(&CameraUniform {
-                size: self.size.into(),
-                center: self.center.q32_floor().into(),
-                center_fract: self.center.q32_fract().into(),
-                zoom: self.zoom.q32_floor(),
-                zoom_fract: self.zoom.q32_fract(),
-            }),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        let bind = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("camera_bind"),
-            layout: &binding.layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &uniform,
-                    offset: 0,
-                    size: None,
-                }),
-            }],
-        });
-
-        world.insert(Camera {
-            size: self.size,
-            center: self.center,
-            zoom: self.zoom,
-            uniform,
-            bind,
-            queue: render.queue.clone(),
-        })
+        world.insert(Camera::from_descriptor(self, &render, &binding.layout))
     }
 }
 
@@ -134,6 +101,54 @@ impl Element for Camera {
 impl Element for CameraBind {}
 
 impl Camera {
+    /// Build a camera that lives in an arbitrary view, sharing the render device and the
+    /// already-created [`CameraBind`] layout with the rest of the cameras.
+    ///
+    /// Unlike [`CameraDescriptor::when_build`], this does not require the world to expose
+    /// `Render` from the camera's own view, which allows creating nested cameras inside a
+    /// container that only sees the root view through references.
+    pub fn from_descriptor(
+        descriptor: CameraDescriptor,
+        render: &Render,
+        layout: &BindGroupLayout,
+    ) -> Camera {
+        let device = &render.device;
+
+        let uniform = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("camera_uniform"),
+            contents: bytemuck::bytes_of(&CameraUniform {
+                size: descriptor.size.into(),
+                center: descriptor.center.q32_floor().into(),
+                center_fract: descriptor.center.q32_fract().into(),
+                zoom: descriptor.zoom.q32_floor(),
+                zoom_fract: descriptor.zoom.q32_fract(),
+            }),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("camera_bind"),
+            layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &uniform,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
+        Camera {
+            size: descriptor.size,
+            center: descriptor.center,
+            zoom: descriptor.zoom,
+            uniform,
+            bind,
+            queue: render.queue.clone(),
+        }
+    }
+
     #[inline]
     pub fn screen_to_world_absolute(&self, point: DVec2) -> I64Vec2 {
         self.center + self.screen_to_world_relative(point)

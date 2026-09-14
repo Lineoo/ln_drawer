@@ -195,14 +195,27 @@ that.trigger(that, ElementUpdate);
 |   Camera (Paint)          Camera (UI)         |
 |---vvvvvvvvvvvvv----|------vvvvvvvvvvvvv-------|
 |   RenderPhase      |      RenderPhase         |
-|                    |                          |
+|   CurrentCamera    |      CurrentCamera       |
 |   RenderControl    |      RenderControl       |
 |   RenderControl    |      ToolCollider        |
-|   ToolCollider     |--------------------------|
-|                    | RenderPhase |RenderPhase |
-|                    | SubUI       |SubUI       |
+|   ToolCollider     |                          |
+|                    |   Container (view)       |
+|                    |---vvvvvvvvvvvvvvvvvvvv---|
+|                    |   Camera (Sub)           |
+|                    |   CurrentCamera          |
+|                    |   RenderPhase            |
+|                    |   RenderControl ...      |
 |--------------------|--------------------------|
 ```
+
+### 子视图与独立相机
+
+`CurrentCamera` 是**逐视图解析**的。子界面（如 `Container`）只要在自己的视图内放入一台
+相机，其内部渲染与交互便都使用这台**独立相机**。
+
+这样坐标系就与外层解耦：子视图内容按本地坐标布局，移动子界面只需移动相机，子元素不必
+重排或重新上传。子相机只存在于子视图内、对外层不可见，因此不会参与外层的相机遍历，只
+作为该视图的 `CurrentCamera` 使用。
 
 ## 管理保证 ##
 
