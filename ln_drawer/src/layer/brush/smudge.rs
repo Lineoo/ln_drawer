@@ -1,6 +1,7 @@
 use glam::{IVec2, UVec2, Vec4};
 use ln_world::Element;
 use palette::Srgba;
+use wgpu::{BindGroup, ComputePass};
 
 use crate::{
     layer::{
@@ -73,7 +74,13 @@ impl Brush for SmudgeBrush {
         true
     }
 
-    fn set_pipeline(&self, cpass: &mut wgpu::ComputePass, pipeline: &LayerPipeline) {
+    fn prepare_stroke(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
+        cpass.set_pipeline(&pipeline.brush_pipelines.smudge);
+    }
+
+    fn prepare_draw(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline, dst: &BindGroup) {}
+
+    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
         cpass.set_pipeline(&pipeline.brush_pipelines.smudge);
     }
 }

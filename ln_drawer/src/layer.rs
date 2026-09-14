@@ -1387,6 +1387,11 @@ fn brush_pipelines(
         immediate_size: 0,
     });
 
+    let constants = match read_write {
+        true => [("read", "read_write"), ("write", "read_write")],
+        false => [("read", "read"), ("write", "write")],
+    };
+
     let bridge_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_brush"),
         bind_group_layouts: &[
@@ -1397,127 +1402,96 @@ fn brush_pipelines(
         immediate_size: 0,
     });
 
-    let round_pipeline = |label, formula| {
-        let constants = match read_write {
-            true => [
-                ("read", "read_write"),
-                ("write", "read_write"),
-                ("composite", formula),
-            ],
-            false => [("read", "read"), ("write", "write"), ("composite", formula)],
-        };
-
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some(label),
-            source: ShaderSource::Wgsl(
-                shader_compile(include_str!("layer/brush/round.wgsl"), &constants[..]).into(),
-            ),
-        });
-        device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some(label),
-            layout: Some(&layout),
-            module: &shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        })
-    };
-
-    let pixel_pipeline = |label, formula| {
-        let constants = match read_write {
-            true => [
-                ("read", "read_write"),
-                ("write", "read_write"),
-                ("composite", formula),
-            ],
-            false => [("read", "read"), ("write", "write"), ("composite", formula)],
-        };
-
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some(label),
-            source: ShaderSource::Wgsl(
-                shader_compile(include_str!("layer/brush/pixel.wgsl"), &constants[..]).into(),
-            ),
-        });
-        device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some(label),
-            layout: Some(&layout),
-            module: &shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        })
-    };
-
-    let blur_pipeline = |label| {
-        // bridge mode does not need read_write bind
-        let constants = [("read", "read"), ("write", "write")];
-
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some(label),
-            source: ShaderSource::Wgsl(
-                shader_compile(include_str!("layer/brush/blur.wgsl"), &constants).into(),
-            ),
-        });
-        device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some(label),
-            layout: Some(&bridge_layout),
-            module: &shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        })
-    };
-
-    let smudge_pipeline = |label| {
-        // bridge mode does not need read_write bind
-        let constants = [("read", "read"), ("write", "write")];
-
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some(label),
-            source: ShaderSource::Wgsl(
-                shader_compile(include_str!("layer/brush/smudge.wgsl"), &constants).into(),
-            ),
-        });
-        device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some(label),
-            layout: Some(&bridge_layout),
-            module: &shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        })
-    };
-
-    let tint_pipeline = |label| {
-        let constants = match read_write {
-            true => [("read", "read_write"), ("write", "read_write")],
-            false => [("read", "read"), ("write", "write")],
-        };
-
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some(label),
-            source: ShaderSource::Wgsl(
-                shader_compile(include_str!("layer/brush/tint.wgsl"), &constants).into(),
-            ),
-        });
-        device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some(label),
-            layout: Some(&layout),
-            module: &shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        })
-    };
+    // bridge mode does not need read_write bind
+    let bridge_constants = [("read", "read"), ("write", "write")];
 
     BrushPipelines {
-        blur: blur_pipeline("blur"),
-        smudge: smudge_pipeline("smudge"),
-        tint: tint_pipeline("tint"),
-        round_over: round_pipeline("over", "src + dst * (1 - src.a)"),
-        round_erase: round_pipeline("erase", "dst * (1 - src.a)"),
-        pixel_over: pixel_pipeline("pixel_over", "src + dst * (1 - src.a)"),
-        pixel_erase: pixel_pipeline("pixel_erase", "dst * (1 - src.a)"),
+        blur: general_brush_pipeline(
+            device,
+            &bridge_layout,
+            "blur",
+            include_str!("layer/brush/blur.wgsl"),
+            &bridge_constants,
+            "",
+            "cs_main",
+        ),
+        smudge: general_brush_pipeline(
+            device,
+            &bridge_layout,
+            "smudge",
+            include_str!("layer/brush/smudge.wgsl"),
+            &bridge_constants,
+            "",
+            "cs_main",
+        ),
+        tint: general_brush_pipeline(
+            device,
+            &layout,
+            "tint",
+            include_str!("layer/brush/tint.wgsl"),
+            &constants,
+            "",
+            "cs_main",
+        ),
+        round_over: general_brush_pipeline(
+            device,
+            &layout,
+            "round_over",
+            include_str!("layer/brush/round.wgsl"),
+            &constants[..],
+            "src + dst * (1 - src.a)",
+            "cs_main",
+        ),
+        round_erase: general_brush_pipeline(
+            device,
+            &layout,
+            "round_erase",
+            include_str!("layer/brush/round.wgsl"),
+            &constants[..],
+            "dst * (1 - src.a)",
+            "cs_main",
+        ),
+        pixel_over: general_brush_pipeline(
+            device,
+            &layout,
+            "pixel_over",
+            include_str!("layer/brush/pixel.wgsl"),
+            &constants[..],
+            "src + dst * (1 - src.a)",
+            "cs_main",
+        ),
+        pixel_erase: general_brush_pipeline(
+            device,
+            &layout,
+            "pixel_erase",
+            include_str!("layer/brush/pixel.wgsl"),
+            &constants[..],
+            "dst * (1 - src.a)",
+            "cs_main",
+        ),
     }
+}
+
+fn general_brush_pipeline(
+    device: &Device,
+    layout: &wgpu::PipelineLayout,
+    label: &str,
+    shader: &str,
+    constants: &[(&str, &str)],
+    composite: &str,
+    entry: &str,
+) -> ComputePipeline {
+    let maps = &[constants, &[("composite", composite)][..]].concat()[..];
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some(label),
+        source: ShaderSource::Wgsl(shader_compile(shader, maps).into()),
+    });
+    device.create_compute_pipeline(&ComputePipelineDescriptor {
+        label: Some(label),
+        layout: Some(layout),
+        module: &shader,
+        entry_point: Some(entry),
+        compilation_options: PipelineCompilationOptions::default(),
+        cache: None,
+    })
 }

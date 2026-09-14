@@ -15,7 +15,7 @@ struct Draw {
 @group(0) @binding(0) var<uniform> dispatch: Rectangle;
 @group(0) @binding(1) var<uniform> draws_length: u32;
 @group(0) @binding(2) var<storage, read> draws_array: array<Draw>;
-@group(0) @binding(3) var<storage, read_write> draws_state: vec4f;
+@group(0) @binding(3) var<storage, read_write> draws_state: array<vec4f>;
 
 @group(1) @binding(0) var destination_texture: texture_storage_2d<rgba8unorm, #read>;
 @group(1) @binding(1) var<uniform> destination: Rectangle;
@@ -51,34 +51,35 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
     let dst_ump = textureLoad(destination_texture, dst_coords);
     var dst = vec4f(linear_srgb_to_oklab(srgb_to_linear(dst_ump).xyz) * dst_ump.a, dst_ump.a);
 
-    // sample_rate: how fast the carried color is replaced by the new sample.
-    var smudge = draws_state;
+    var smudge = draws_state[0];
     var painted = vec4f();
     for (var i = 0u; i < draws_length; i++) {
         let draw = draws_array[i];
-        let sampled = samples[i];
 
-        // Approximately correct the in-batch sampled color
+        // sample_rate: how fast the carried color is replaced by the new sample.
+        // Approximately correct the in-batch sampled color.
+        let sampled = samples[i];
         let corrected_sampled = painted + sampled * (1.0 - painted.a);
-        smudge = select(corrected_sampled, mix(smudge, corrected_sampled, draw.sample_rate), i > 0u);
+        smudge = mix(smudge, corrected_sampled, draw.sample_rate);
 
         // color_ratio: foreground color share of the mixed result.
         let foreground = vec4f(linear_srgb_to_oklab(srgb_to_linear(draw.color).xyz), 1.0) * draw.color.a;
-        let paint = mix(smudge, foreground, draw.color_ratio);
+        smudge = mix(smudge, foreground, draw.color_ratio);
 
         let dist = length(vec2f(draw.position - position) - vec2f(0.5) + vec2f(draw.position_fract) * 0x1p-32);
         let mask = smoothstep((1.0 + draw.softness) * draw.size + 0.5, (1.0 - draw.softness) * draw.size + 0.5, dist);
 
-        let src = paint * draw.flow * mask;
+        let src = smudge * draw.flow * mask;
         dst = src + dst * (1.0 - src.a);
-        painted = src + painted * (1.0 - src.a);
+
+        // used for sample correction
+        painted = smudge + painted * (1.0 - smudge.a);
     }
 
     let dst_ump_out = alpha_premultiplied_invert(dst);
     let dst_out = linear_to_srgb(vec4f(oklab_to_linear_srgb(dst_ump_out.xyz), dst_ump_out.a));
 
     textureStore(swap_texture, swp_coords, dst_out);
-    draws_state = smudge;
 }
 
 // sample_radius: alpha-weighted average color inside the disk.

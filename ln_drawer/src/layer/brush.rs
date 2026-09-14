@@ -13,7 +13,7 @@ use std::{
 use bytemuck::{Pod, Zeroable, bytes_of, cast_slice};
 use glam::{I64Vec2, UVec2};
 use hashbrown::HashMap;
-use wgpu::{CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, RenderPass};
+use wgpu::{BindGroup, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, RenderPass};
 
 use crate::{
     layer::{
@@ -89,6 +89,14 @@ pub trait Brush {
         }
 
         curr
+    }
+
+    fn prepare_stroke(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
+        let _ = (cpass, pipeline);
+    }
+
+    fn prepare_draw(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline, dst: &BindGroup) {
+        let _ = (cpass, pipeline, dst);
     }
 
     /// - Normal Mode:
@@ -180,6 +188,7 @@ impl DrawPipeline {
             return;
         }
 
+        let stroke_start = self.stroke.is_none();
         let stroke = self.stroke.get_or_insert_with(|| Stroke {
             dirty,
             replace: brush.replace_mode(),
@@ -207,22 +216,6 @@ impl DrawPipeline {
             write_dispatch(&self.layer.queue, &self.bridge.rectangle, 0, bridge_rect);
         }
 
-        if !self.layer.support_read_write {
-            self.draw_upload_swap(dst, brush, dirty, bridge_rect);
-        } else {
-            self.draw_upload_read_write(dst, brush, dirty, bridge_rect);
-        }
-    }
-
-    fn draw_upload_swap<T: Brush>(
-        &mut self,
-        dst: &Layer,
-        brush: &T,
-        dirty: Rectangle,
-        bridge_rect: Rectangle,
-    ) {
-        // prepare
-
         let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
             label: Some("layer_draw"),
         });
@@ -231,6 +224,30 @@ impl DrawPipeline {
             label: Some("layer_draw"),
             timestamp_writes: None,
         });
+
+        if stroke_start {
+            brush.prepare_stroke(&mut cpass, &self.layer);
+        }
+
+        if !self.layer.support_read_write {
+            self.draw_upload_swap(&mut cpass, dst, brush, dirty, bridge_rect);
+        } else {
+            self.draw_upload_read_write(&mut cpass, dst, brush, dirty, bridge_rect);
+        }
+
+        drop(cpass);
+        self.layer.queue.submit([encoder.finish()]);
+    }
+
+    fn draw_upload_swap<T: Brush>(
+        &mut self,
+        cpass: &mut ComputePass,
+        dst: &Layer,
+        brush: &T,
+        dirty: Rectangle,
+        bridge_rect: Rectangle,
+    ) {
+        // prepare
 
         let reference_layer = match brush.replace_mode() {
             true => Some(dst),
@@ -243,14 +260,14 @@ impl DrawPipeline {
             reference_layer,
             &mut self.scratch_pool,
             dirty,
-            &mut cpass,
+            cpass,
         );
         self.layer.prepare_chunks(
             &mut self.scratch_swp,
             reference_layer,
             &mut self.scratch_pool,
             dirty,
-            &mut cpass,
+            cpass,
         );
 
         // draw
@@ -271,7 +288,7 @@ impl DrawPipeline {
                     cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[0]);
                     cpass.set_bind_group(1, Some(&self.bridge.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(&mut cpass, &[bridge_rect, src_rect]);
+                    dispatch_workgroups(cpass, &[bridge_rect, src_rect]);
                 }
             }
         }
@@ -287,11 +304,13 @@ impl DrawPipeline {
                         continue;
                     };
 
-                    brush.set_pipeline(&mut cpass, &self.layer);
+                    brush.prepare_draw(cpass, &self.layer, &self.bridge.read);
+
+                    brush.set_pipeline(cpass, &self.layer);
                     cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&self.bridge.read), &[]);
                     cpass.set_bind_group(2, Some(&dst_chunk.write), &[]);
-                    dispatch_workgroups(&mut cpass, &[dirty, scratch_rect, bridge_rect]);
+                    dispatch_workgroups(cpass, &[dirty, scratch_rect, bridge_rect]);
                 } else {
                     let (Some(dst_chunk), Some(swp_chunk)) = (
                         self.scratch_dst.chunks.get(&key),
@@ -300,42 +319,33 @@ impl DrawPipeline {
                         continue;
                     };
 
-                    brush.set_pipeline(&mut cpass, &self.layer);
+                    brush.prepare_draw(cpass, &self.layer, &dst_chunk.read);
+
+                    brush.set_pipeline(cpass, &self.layer);
                     cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
                     cpass.set_bind_group(2, Some(&swp_chunk.write), &[]);
-                    dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
+                    dispatch_workgroups(cpass, &[dirty, scratch_rect]);
 
                     cpass.set_pipeline(&self.layer.copy_pipeline);
                     cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
                     cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&swp_chunk.read), &[]);
-                    dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
+                    dispatch_workgroups(cpass, &[dirty, scratch_rect]);
                 };
             }
         }
-
-        drop(cpass);
-        self.layer.queue.submit([encoder.finish()]);
     }
 
     fn draw_upload_read_write<T: Brush>(
         &mut self,
+        cpass: &mut ComputePass,
         dst: &Layer,
         brush: &T,
         dirty: Rectangle,
         bridge_rect: Rectangle,
     ) {
         // prepare
-
-        let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("layer_draw"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_draw"),
-            timestamp_writes: None,
-        });
 
         let reference_layer = match brush.replace_mode() {
             true => Some(dst),
@@ -348,7 +358,7 @@ impl DrawPipeline {
             reference_layer,
             &mut self.scratch_pool,
             dirty,
-            &mut cpass,
+            cpass,
         );
 
         // draw
@@ -369,7 +379,7 @@ impl DrawPipeline {
                     cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[0]);
                     cpass.set_bind_group(1, Some(&self.bridge.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(&mut cpass, &[bridge_rect, src_rect]);
+                    dispatch_workgroups(cpass, &[bridge_rect, src_rect]);
                 }
             }
         }
@@ -385,27 +395,28 @@ impl DrawPipeline {
                         continue;
                     };
 
-                    brush.set_pipeline(&mut cpass, &self.layer);
+                    brush.prepare_draw(cpass, &self.layer, &self.bridge.read);
+
+                    brush.set_pipeline(cpass, &self.layer);
                     cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&self.bridge.read), &[]);
                     cpass.set_bind_group(2, Some(&dst_chunk.write), &[]);
-                    dispatch_workgroups(&mut cpass, &[dirty, scratch_rect, bridge_rect]);
+                    dispatch_workgroups(cpass, &[dirty, scratch_rect, bridge_rect]);
                 } else {
                     let Some(dst_chunk) = self.scratch_dst.chunks.get(&key) else {
                         continue;
                     };
 
-                    brush.set_pipeline(&mut cpass, &self.layer);
+                    brush.prepare_draw(cpass, &self.layer, &self.bridge.read);
+
+                    brush.set_pipeline(cpass, &self.layer);
                     cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
                     cpass.set_bind_group(1, Some(&dst_chunk.read_write), &[]);
                     cpass.set_bind_group(2, Some(&dst_chunk.read_write), &[]);
-                    dispatch_workgroups(&mut cpass, &[dirty, scratch_rect]);
+                    dispatch_workgroups(cpass, &[dirty, scratch_rect]);
                 };
             }
         }
-
-        drop(cpass);
-        self.layer.queue.submit([encoder.finish()]);
     }
 
     pub fn scratch_render(&self, rpass: &mut RenderPass, camera: &Camera, debug: bool) {
