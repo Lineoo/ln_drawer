@@ -17,3 +17,11 @@ sample_rate.desc = "How fast the carried color is replaced by the sampled canvas
 doc_label = "Document"
 layer_label = "Pages"
 layer_name = "Page {index}"
+
+[brush]
+pen = "Pen"
+soft = "Soft Brush"
+pixel = "Pixel"
+blur = "Blur"
+smudge = "Smudge"
+tint = "Tint"

@@ -47,13 +47,20 @@ pub const BRUSH_PREVIEW_SHADOW_BLUR: i32 = 30;
 
 pub struct BrushConfigurationChanged;
 
+/// A named brush stored in the preset registry.
+pub struct BrushPreset {
+    /// i18n key of the display name.
+    pub label: &'static str,
+    pub brush: Box<dyn BrushParams>,
+}
+
 pub struct LayerWrapper {
     pub main: Layer,
     pub brush: DrawPipeline,
     pub traveler: Traveler,
 
     /// Immutable registry of brush presets.
-    pub brushes: Vec<Box<dyn BrushParams>>,
+    pub brushes: Vec<BrushPreset>,
     /// Index of the preset the active brush was copied from.
     pub active_brush: usize,
     /// Temporary working copy of [`Self::brushes`]`[active_brush]`; edits never touch the registry.
@@ -152,49 +159,67 @@ impl LayerWrapper {
 
         let color = Srgba::new(0.0, 0.0, 0.0, 1.0);
 
-        let brushes: Vec<Box<dyn BrushParams>> = vec![
-            Box::new(RoundBrush {
-                size: BrushParam::force_index(0.0, 6.0, 1.0),
-                flow: BrushParam::force_index(0.7, 1.0, 2.0),
-                softness: BrushParam::constant(0.2),
-                color,
-                erase: false,
-            }),
-            Box::new(RoundBrush {
-                size: BrushParam::force_index(1.0, 25.0, 1.0),
-                flow: BrushParam::force_index(0.1, 1.0, 1.0),
-                softness: BrushParam::constant(0.5),
-                color,
-                erase: false,
-            }),
-            Box::new(PixelBrush {
-                size: BrushParam::constant(2.0),
-                flow: BrushParam::constant(1.0),
-                color,
-                erase: false,
-            }),
-            Box::new(BlurBrush {
-                size: BrushParam::constant(20.0),
-                sigma: BrushParam::constant(3.0),
-                softness: BrushParam::constant(0.3),
-            }),
-            Box::new(SmudgeBrush {
-                size: BrushParam::force_index(1.0, 25.0, 1.0),
-                flow: BrushParam::force_index(0.1, 1.0, 1.0),
-                softness: BrushParam::constant(0.5),
-                color,
-                color_ratio: BrushParam::constant(0.2),
-                sample_radius: BrushParam::constant(0.5),
-                sample_rate: BrushParam::constant(0.3),
-            }),
-            Box::new(TintBrush {
-                size: BrushParam::force_index(10.0, 30.0, 1.0),
-                flow: Vec4::new(0.05, 0.7, 0.7, 1.0),
-                softness: BrushParam::constant(0.5),
-                color,
-            }),
+        let brushes: Vec<BrushPreset> = vec![
+            BrushPreset {
+                label: "brush.pen",
+                brush: Box::new(RoundBrush {
+                    size: BrushParam::force_index(0.0, 6.0, 1.0),
+                    flow: BrushParam::force_index(0.7, 1.0, 2.0),
+                    softness: BrushParam::constant(0.2),
+                    color,
+                    erase: false,
+                }),
+            },
+            BrushPreset {
+                label: "brush.soft",
+                brush: Box::new(RoundBrush {
+                    size: BrushParam::force_index(1.0, 25.0, 1.0),
+                    flow: BrushParam::force_index(0.1, 1.0, 1.0),
+                    softness: BrushParam::constant(0.5),
+                    color,
+                    erase: false,
+                }),
+            },
+            BrushPreset {
+                label: "brush.pixel",
+                brush: Box::new(PixelBrush {
+                    size: BrushParam::constant(2.0),
+                    flow: BrushParam::constant(1.0),
+                    color,
+                    erase: false,
+                }),
+            },
+            BrushPreset {
+                label: "brush.blur",
+                brush: Box::new(BlurBrush {
+                    size: BrushParam::constant(20.0),
+                    sigma: BrushParam::constant(3.0),
+                    softness: BrushParam::constant(0.3),
+                }),
+            },
+            BrushPreset {
+                label: "brush.smudge",
+                brush: Box::new(SmudgeBrush {
+                    size: BrushParam::force_index(1.0, 25.0, 1.0),
+                    flow: BrushParam::force_index(0.1, 1.0, 1.0),
+                    softness: BrushParam::constant(0.5),
+                    color,
+                    color_ratio: BrushParam::constant(0.2),
+                    sample_radius: BrushParam::constant(0.5),
+                    sample_rate: BrushParam::constant(0.3),
+                }),
+            },
+            BrushPreset {
+                label: "brush.tint",
+                brush: Box::new(TintBrush {
+                    size: BrushParam::force_index(10.0, 30.0, 1.0),
+                    flow: Vec4::new(0.05, 0.7, 0.7, 1.0),
+                    softness: BrushParam::constant(0.5),
+                    color,
+                }),
+            },
         ];
-        let mut active = brushes[0].dup();
+        let mut active = brushes[0].brush.dup();
         active.set_color(color);
 
         LayerWrapper {
@@ -250,7 +275,7 @@ impl LayerWrapper {
     /// another preset is selected.
     pub fn select_brush(&mut self, index: usize) {
         self.active_brush = index;
-        self.active = self.brushes[index].dup();
+        self.active = self.brushes[index].brush.dup();
         self.active.set_color(self.color);
     }
 

@@ -131,7 +131,7 @@ impl Container {
 
 /// Move the container's internal camera by `delta` while keeping the contents inside the
 /// container bounds.
-fn move_camera(world: &World, handle: Handle<Container>, delta: IVec2) {
+pub(crate) fn move_camera(world: &World, handle: Handle<Container>, delta: IVec2) {
     world.enter(handle, || {
         let Ok(current) = world.single::<CurrentCamera>() else {
             return;
@@ -149,8 +149,33 @@ fn move_camera(world: &World, handle: Handle<Container>, delta: IVec2) {
             origin: position.q32_round(),
             extend: inner.extend,
         };
-        camera.center = -I64Vec2::q32_from_i32(anchored.adjust_contain(rect).origin);
+        camera.center = -I64Vec2::q32_from_i32(rect_contain(anchored, rect).origin);
     });
+}
+
+/// Keep `content` inside `viewport`.
+///
+/// Axes that overflow their viewport axis scroll normally. Axes that are too small to fill the
+/// viewport cannot scroll, so the content is pinned to the top / left edge instead of drifting
+/// freely (the conventional list behavior).
+fn rect_contain(content: Rectangle, viewport: Rectangle) -> Rectangle {
+    let width = content.width();
+    let height = content.height();
+
+    let left = match width >= viewport.width() {
+        true => content
+            .left()
+            .clamp(viewport.right() - width as i32, viewport.left()),
+        false => viewport.left(),
+    };
+    let down = match height >= viewport.height() {
+        true => content
+            .down()
+            .clamp(viewport.up() - height as i32, viewport.down()),
+        false => viewport.up() - height as i32,
+    };
+
+    Rectangle::new_extend(left, down, width, height)
 }
 
 impl Element for Container {

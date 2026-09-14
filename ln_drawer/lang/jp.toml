@@ -12,3 +12,11 @@ sample_radius.label = "サンプリング半径"
 sample_radius.desc = "各ダブがキャンバスをサンプリングする半径（ブラシサイズ比）"
 sample_rate.label = "サンプリング速度"
 sample_rate.desc = "保持色がキャンバスの色に置き換わる速度"
+
+[brush]
+pen = "丸筆"
+soft = "筆"
+pixel = "ピクセル"
+blur = "ぼかし"
+smudge = "スミッジ"
+tint = "淡彩"

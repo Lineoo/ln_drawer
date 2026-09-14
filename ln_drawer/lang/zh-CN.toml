@@ -17,3 +17,11 @@ sample_rate.desc = "携带颜色被画布采样颜色替换的速度"
 doc_label = "文档"
 layer_label = "分页"
 layer_name = "页 {index}"
+
+[brush]
+pen = "圆笔"
+soft = "毛笔"
+pixel = "像素"
+blur = "模糊"
+smudge = "涂抹"
+tint = "淡彩"

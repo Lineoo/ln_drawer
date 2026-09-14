@@ -9,7 +9,7 @@ use crate::{
         input::LayerInput,
         wrapper::{BrushConfigurationChanged, LayerWrapper},
     },
-    layout::transform::{Transform, TransformEdge, TransformValue},
+    layout::transform::{Transform, TransformValue},
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{RenderControl, RenderPhase, camera::CurrentCamera},
@@ -31,6 +31,9 @@ use crate::{
         tabs::{SetTabsActive, Tabs},
     },
 };
+
+const PANEL_WIDTH: i32 = 384;
+const PANEL_HEIGHT: i32 = 320;
 
 pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     let toggle_button_color_icon = world.insert(RRect {
@@ -75,30 +78,6 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         rect: Rectangle::default(),
         inner: Rectangle::default(),
         inner_transform: TransformValue::copy(),
-        visible: false,
-    });
-
-    let tab_settings = world.insert(Container {
-        rect: Rectangle::default(),
-        inner: Rectangle::default(),
-        inner_transform: TransformValue {
-            left: TransformEdge {
-                anchor: 0.0,
-                offset: 0,
-            },
-            down: TransformEdge {
-                anchor: 1.0,
-                offset: -736,
-            },
-            right: TransformEdge {
-                anchor: 1.0,
-                offset: 0,
-            },
-            up: TransformEdge {
-                anchor: 1.0,
-                offset: 0,
-            },
-        },
         visible: false,
     });
 
@@ -160,19 +139,6 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
                         Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
                     ),
                     bytes: Arc::new(image::DynamicImage::from(svg_render(
-                        include_bytes!("../../../res/interface/settings.svg"),
-                        1.0,
-                    ))),
-                },
-                tab_settings.untyped(),
-            ),
-            (
-                ButtonImage {
-                    transform: TransformValue::anchor(
-                        (0.5, 0.5),
-                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                    ),
-                    bytes: Arc::new(image::DynamicImage::from(svg_render(
                         include_bytes!("../../../res/interface/bug.svg"),
                         1.0,
                     ))),
@@ -189,7 +155,6 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         tab_palette_hsl,
         tab_palette_oklch,
         tab_layer_selection,
-        tab_settings,
         tab_debug,
     ] {
         let control = world.insert(RenderControl::phase_with_draw(
@@ -243,9 +208,6 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     world.enter_queue(tab_layer_selection, move |world| {
         super::layer_selection::layer_selection(world, tab_layer_selection)
     });
-    world.enter_queue(tab_settings, move |world| {
-        super::settings::panel_settings(world, tab_settings)
-    });
     world.enter_queue(tab_debug, move |world| {
         super::debug_panel::debug_panel(world, tab_debug)
     });
@@ -268,8 +230,8 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
 
     world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
         let transform = TransformValue::anchor(
-            (1.0, 0.5),
-            Rectangle::new_half(IVec2::new(192 + 20, 0), UVec2::new(192, 160)),
+            (1.0, 1.0),
+            Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
         );
         let rect = transform.compute(rect);
         world.queue_trigger(tabs, SetWidgetRectangle(rect));
@@ -277,6 +239,9 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
 
     world.observer(toggle_button, move |&ButtonSelected(selected), world| {
         world.queue_trigger(toggle_button, SetButtonSelected(selected));
+    });
+
+    world.observer(toggle_button, move |&SetButtonSelected(selected), world| {
         world.queue_trigger(tabs, SetWidgetVisible(selected));
     });
 }

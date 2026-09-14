@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use glam::{IVec2, UVec2};
-use ln_world::{Handle, HandleGeneric, World};
+use ln_world::{HandleGeneric, World};
 
 use crate::{
     layer::{
@@ -21,7 +21,7 @@ use crate::{
             ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton,
             ToggleButtonTheme,
         },
-        panel::{Panel, color_picker::color_picker_panel},
+        panel::{Panel, brush_panel::brush_panel, color_picker::color_picker_panel},
         renderer::{svg::svg_render, text::SetText},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
@@ -60,13 +60,8 @@ pub fn side_docker(world: &World) {
         })
     };
 
-    let pen = docker_button(include_bytes!("../../../res/interface/pen.svg"));
-    let brush = docker_button(include_bytes!("../../../res/interface/brush.svg"));
-    let pixel = docker_button(include_bytes!("../../../res/interface/pencil.svg"));
-    let tint = docker_button(include_bytes!("../../../res/interface/pencil-sparkles.svg"));
-    let smudge = docker_button(include_bytes!("../../../res/interface/palette.svg"));
+    let brush_menu = docker_button(include_bytes!("../../../res/interface/pen.svg"));
     let eraser = docker_button(include_bytes!("../../../res/interface/eraser.svg"));
-    let blur = docker_button(include_bytes!("../../../res/interface/droplet.svg"));
     let undo = docker_button(include_bytes!("../../../res/interface/undo-2.svg"));
     let redo = docker_button(include_bytes!("../../../res/interface/redo-2.svg"));
     let touch = docker_button(include_bytes!("../../../res/interface/pointer.svg"));
@@ -87,6 +82,20 @@ pub fn side_docker(world: &World) {
     });
 
     color_picker_panel(world, color_picker);
+    brush_panel(world, brush_menu);
+
+    // Only one popup may be open at a time, otherwise the overlapping panels cross.
+    world.observer(brush_menu, move |&ButtonSelected(selected), world| {
+        if selected {
+            world.queue_trigger(color_picker, SetButtonSelected(false));
+        }
+    });
+
+    world.observer(color_picker, move |&ButtonSelected(selected), world| {
+        if selected {
+            world.queue_trigger(brush_menu, SetButtonSelected(false));
+        }
+    });
 
     let elastic_blank = world.insert(());
 
@@ -103,30 +112,6 @@ pub fn side_docker(world: &World) {
         source: slider,
         hover: false,
         visible: true,
-    });
-
-    world.observer(pen, move |&ButtonClick, world| {
-        select_brush(world, layer, 0);
-    });
-
-    world.observer(brush, move |&ButtonClick, world| {
-        select_brush(world, layer, 1);
-    });
-
-    world.observer(pixel, move |&ButtonClick, world| {
-        select_brush(world, layer, 2);
-    });
-
-    world.observer(blur, move |&ButtonClick, world| {
-        select_brush(world, layer, 3);
-    });
-
-    world.observer(smudge, move |&ButtonClick, world| {
-        select_brush(world, layer, 4);
-    });
-
-    world.observer(tint, move |&ButtonClick, world| {
-        select_brush(world, layer, 5);
     });
 
     world.observer(eraser, move |&ButtonSelected(val), world| {
@@ -148,23 +133,11 @@ pub fn side_docker(world: &World) {
     });
 
     world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let (index, is_eraser, hold_pick) = {
+        let is_eraser = {
             let layer = world.fetch(layer).unwrap();
-            let input = world.single_fetch::<LayerInput>().unwrap();
-            (
-                layer.active_brush,
-                layer.active().toggle(BrushParamKey::Erase).unwrap_or(false),
-                input.hold_pick,
-            )
+            layer.active().toggle(BrushParamKey::Erase).unwrap_or(false)
         };
-        world.trigger(pen, &SetButtonSelected(index == 0));
-        world.trigger(brush, &SetButtonSelected(index == 1));
-        world.trigger(pixel, &SetButtonSelected(index == 2));
-        world.trigger(blur, &SetButtonSelected(index == 3));
-        world.trigger(smudge, &SetButtonSelected(index == 4));
-        world.trigger(tint, &SetButtonSelected(index == 5));
         world.trigger(eraser, &SetButtonSelected(is_eraser));
-        world.trigger(pipette, &SetButtonSelected(hold_pick));
     });
 
     world.observer(undo, move |&ButtonClick, world| {
@@ -245,13 +218,8 @@ pub fn side_docker(world: &World) {
             },
         ),
         children: vec![
-            (pen.untyped(), LuniChild::default()),
-            (brush.untyped(), LuniChild::default()),
-            (pixel.untyped(), LuniChild::default()),
-            (tint.untyped(), LuniChild::default()),
-            (smudge.untyped(), LuniChild::default()),
+            (brush_menu.untyped(), LuniChild::default()),
             (eraser.untyped(), LuniChild::default()),
-            (blur.untyped(), LuniChild::default()),
             (color_picker.untyped(), LuniChild::default()),
             (undo.untyped(), LuniChild::default()),
             (redo.untyped(), LuniChild::default()),
@@ -282,10 +250,5 @@ pub fn side_docker(world: &World) {
         ],
     });
 
-    world.queue_trigger(layer, BrushConfigurationChanged);
-}
-
-fn select_brush(world: &World, layer: Handle<LayerWrapper>, index: usize) {
-    world.fetch_mut(layer).unwrap().select_brush(index);
     world.queue_trigger(layer, BrushConfigurationChanged);
 }
