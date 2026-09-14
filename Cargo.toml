@@ -12,6 +12,15 @@ branch = "ln_drawer"
 [profile.dev]
 debug = "line-tables-only"
 
+[profile.dev.package.ln_drawer]
+opt-level = 1
+
+[profile.dev.package.ln_world]
+opt-level = 3
+
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 strip = "symbols"
 lto = "thin"
