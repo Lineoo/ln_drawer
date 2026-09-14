@@ -139,6 +139,8 @@ struct MergePipelines {
 struct BrushPipelines {
     blur: ComputePipeline,
     smudge: ComputePipeline,
+    smudge_prepare_stroke: ComputePipeline,
+    smudge_prepare_draw: ComputePipeline,
     tint: ComputePipeline,
     round_over: ComputePipeline,
     round_erase: ComputePipeline,
@@ -1387,12 +1389,19 @@ fn brush_pipelines(
         immediate_size: 0,
     });
 
-    let constants = match read_write {
-        true => [("read", "read_write"), ("write", "read_write")],
-        false => [("read", "read"), ("write", "write")],
-    };
+    let layout_prepare_stroke = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_brush"),
+        bind_group_layouts: &[Some(dispatch_draw_layout)],
+        immediate_size: 0,
+    });
 
-    let bridge_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+    let layout_prepare_draw = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_brush"),
+        bind_group_layouts: &[Some(dispatch_draw_layout), Some(&chunk_layout.read)],
+        immediate_size: 0,
+    });
+
+    let layout_bridge = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_brush"),
         bind_group_layouts: &[
             Some(dispatch_draw_layout),
@@ -1402,25 +1411,48 @@ fn brush_pipelines(
         immediate_size: 0,
     });
 
+    let constants = match read_write {
+        true => [("read", "read_write"), ("write", "read_write")],
+        false => [("read", "read"), ("write", "write")],
+    };
+
     // bridge mode does not need read_write bind
-    let bridge_constants = [("read", "read"), ("write", "write")];
+    let constants_bridge = [("read", "read"), ("write", "write")];
 
     BrushPipelines {
         blur: general_brush_pipeline(
             device,
-            &bridge_layout,
+            &layout_bridge,
             "blur",
             include_str!("layer/brush/blur.wgsl"),
-            &bridge_constants,
+            &constants_bridge,
             "",
             "cs_main",
         ),
         smudge: general_brush_pipeline(
             device,
-            &bridge_layout,
+            &layout_bridge,
             "smudge",
             include_str!("layer/brush/smudge.wgsl"),
-            &bridge_constants,
+            &constants_bridge,
+            "",
+            "cs_main",
+        ),
+        smudge_prepare_draw: general_brush_pipeline(
+            device,
+            &layout_prepare_draw,
+            "smudge_prepare_draw",
+            include_str!("layer/brush/smudge_prepare_draw.wgsl"),
+            &constants_bridge,
+            "",
+            "cs_main",
+        ),
+        smudge_prepare_stroke: general_brush_pipeline(
+            device,
+            &layout_prepare_stroke,
+            "smudge_prepare_stroke",
+            include_str!("layer/brush/smudge_prepare_stroke.wgsl"),
+            &constants_bridge,
             "",
             "cs_main",
         ),

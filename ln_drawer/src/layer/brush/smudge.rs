@@ -75,10 +75,17 @@ impl Brush for SmudgeBrush {
     }
 
     fn prepare_stroke(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
-        cpass.set_pipeline(&pipeline.brush_pipelines.smudge);
+        cpass.set_pipeline(&pipeline.brush_pipelines.smudge_prepare_stroke);
+        cpass.set_bind_group(0, Some(&pipeline.draws_dispatch_group), &[]);
+        cpass.dispatch_workgroups(1, 1, 1);
     }
 
-    fn prepare_draw(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline, dst: &BindGroup) {}
+    fn prepare_draw(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline, dst: &BindGroup) {
+        cpass.set_pipeline(&pipeline.brush_pipelines.smudge_prepare_draw);
+        cpass.set_bind_group(0, Some(&pipeline.draws_dispatch_group), &[]);
+        cpass.set_bind_group(1, Some(dst), &[]);
+        cpass.dispatch_workgroups(1, 1, 1);
+    }
 
     fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
         cpass.set_pipeline(&pipeline.brush_pipelines.smudge);

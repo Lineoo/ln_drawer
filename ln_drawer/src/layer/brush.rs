@@ -293,6 +293,12 @@ impl DrawPipeline {
             }
         }
 
+        // Bridge brushes share one source texture for the whole batch, so their
+        // per-draw preparation only has to run once.
+        if brush.bridge_mode() {
+            brush.prepare_draw(cpass, &self.layer, &self.bridge.read);
+        }
+
         let (start, end) = rect_to_chunks(dirty, 0, self.scratch_dst.chunk_size);
         for x in start.0..end.0 {
             for y in start.1..end.1 {
@@ -303,8 +309,6 @@ impl DrawPipeline {
                     let Some(dst_chunk) = self.scratch_dst.chunks.get(&key) else {
                         continue;
                     };
-
-                    brush.prepare_draw(cpass, &self.layer, &self.bridge.read);
 
                     brush.set_pipeline(cpass, &self.layer);
                     cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
@@ -384,6 +388,12 @@ impl DrawPipeline {
             }
         }
 
+        // Bridge brushes share one source texture for the whole batch, so their
+        // per-draw preparation only has to run once.
+        if brush.bridge_mode() {
+            brush.prepare_draw(cpass, &self.layer, &self.bridge.read);
+        }
+
         let (start, end) = rect_to_chunks(dirty, 0, self.scratch_dst.chunk_size);
         for x in start.0..end.0 {
             for y in start.1..end.1 {
@@ -394,8 +404,6 @@ impl DrawPipeline {
                     let Some(dst_chunk) = self.scratch_dst.chunks.get(&key) else {
                         continue;
                     };
-
-                    brush.prepare_draw(cpass, &self.layer, &self.bridge.read);
 
                     brush.set_pipeline(cpass, &self.layer);
                     cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);

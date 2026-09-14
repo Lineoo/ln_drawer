@@ -1,4 +1,4 @@
-#lib_constant #lib_rectangle #lib_colorspace #lib_math
+#lib_constant #lib_rectangle #lib_colorspace
 
 struct Draw {
     color: vec4f,
@@ -23,22 +23,10 @@ struct Draw {
 @group(2) @binding(0) var swap_texture: texture_storage_2d<rgba8unorm, #write>;
 @group(2) @binding(1) var<uniform> swap: Rectangle;
 
-// Per-dab color sampled from the canvas, shared by every pixel in the
-// workgroup since it only depends on the dab position.
-var<workgroup> samples: array<vec4f, 256>;
-
 @compute @workgroup_size(16, 16)
-fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     let start = max(max(dispatch.coords, destination.coords), swap.coords);
     let position = start + vec2i(id.xy);
-
-    let tid = lid.x + lid.y * 16u;
-    if tid < draws_length {
-        let draw = draws_array[tid];
-        samples[tid] = sample_disk(draw.position, draw.size * draw.sample_radius);
-    }
-
-    workgroupBarrier();
 
     let validated = rectangle_contains(dispatch, position)
         && rectangle_contains(destination, position)
@@ -51,54 +39,21 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
     let dst_ump = textureLoad(destination_texture, dst_coords);
     var dst = vec4f(linear_srgb_to_oklab(srgb_to_linear(dst_ump).xyz) * dst_ump.a, dst_ump.a);
 
-    var smudge = draws_state[0];
-    var painted = vec4f();
+    // `draws_state[1 + i]` already holds the sampled and carried color for dab
+    // `i` (prepared by smudge_prepare_draw), so only the mask is left to apply.
     for (var i = 0u; i < draws_length; i++) {
         let draw = draws_array[i];
-
-        // sample_rate: how fast the carried color is replaced by the new sample.
-        // Approximately correct the in-batch sampled color.
-        let sampled = samples[i];
-        let corrected_sampled = painted + sampled * (1.0 - painted.a);
-        smudge = mix(smudge, corrected_sampled, draw.sample_rate);
-
-        // color_ratio: foreground color share of the mixed result.
-        let foreground = vec4f(linear_srgb_to_oklab(srgb_to_linear(draw.color).xyz), 1.0) * draw.color.a;
-        smudge = mix(smudge, foreground, draw.color_ratio);
+        let paint = draws_state[1 + i];
 
         let dist = length(vec2f(draw.position - position) - vec2f(0.5) + vec2f(draw.position_fract) * 0x1p-32);
         let mask = smoothstep((1.0 + draw.softness) * draw.size + 0.5, (1.0 - draw.softness) * draw.size + 0.5, dist);
 
-        let src = smudge * draw.flow * mask;
+        let src = paint * draw.flow * mask;
         dst = src + dst * (1.0 - src.a);
-
-        // used for sample correction
-        painted = smudge + painted * (1.0 - smudge.a);
     }
 
     let dst_ump_out = alpha_premultiplied_invert(dst);
     let dst_out = linear_to_srgb(vec4f(oklab_to_linear_srgb(dst_ump_out.xyz), dst_ump_out.a));
 
     textureStore(swap_texture, swp_coords, dst_out);
-}
-
-// sample_radius: alpha-weighted average color inside the disk.
-// gaussian_2d use `r = 3σ`
-fn sample_disk(center: vec2i, radius: f32) -> vec4f {
-    let r = i32(ceil(radius));
-    var sum = vec4f();
-    var count = 0.0;
-    for (var y = -r; y <= r; y++) {
-        for (var x = -r; x <= r; x++) {
-            if f32(x * x + y * y) > radius * radius { continue; }
-            let p = center + vec2i(x, y);
-            if !rectangle_contains(destination, p) { continue; }
-            let c = textureLoad(destination_texture, p - destination.coords);
-            let oklab = linear_srgb_to_oklab(srgb_to_linear(c).xyz);
-            let priority = gaussian_2d(vec2i(x, y), f32(r * r) / 9.0);
-            sum += vec4f(oklab * c.a, c.a) * priority;
-            count += priority;
-        }
-    }
-    return sum / max(count, 1e-6);
 }
