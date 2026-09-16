@@ -1,4 +1,4 @@
-use glam::{I64Vec2, IVec2};
+use glam::{DVec2, I64Vec2};
 use ln_world::{ElemRef, Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -76,22 +76,24 @@ impl Container {
         let mut status = None;
         world.observer(collider, move |event: &PointerHit, world| {
             status = match (status, event.status) {
-                (None, PointerHitStatus::Press | PointerHitStatus::Moving) => Some(event.position),
-                (None, PointerHitStatus::Release) => None,
-                (Some(_), PointerHitStatus::Press) => Some(event.position),
-                (Some(p), PointerHitStatus::Moving) => {
-                    move_camera(world, handle, (event.position - p).q32_round());
-                    Some(event.position)
+                (None, PointerHitStatus::Press | PointerHitStatus::Moving) => {
+                    Some(event.pointer.screen)
                 }
-                (Some(p), PointerHitStatus::Release) => {
-                    move_camera(world, handle, (event.position - p).q32_round());
+                (None, PointerHitStatus::Release) => None,
+                (Some(_), PointerHitStatus::Press) => Some(event.pointer.screen),
+                (Some(position), PointerHitStatus::Moving) => {
+                    move_camera(world, handle, event.pointer.screen - position);
+                    Some(event.pointer.screen)
+                }
+                (Some(position), PointerHitStatus::Release) => {
+                    move_camera(world, handle, event.pointer.screen - position);
                     None
                 }
             }
         });
 
         world.observer(collider, move |event: &PointerScroll, world| {
-            move_camera(world, handle, event.delta.round().as_ivec2());
+            move_camera(world, handle, event.delta);
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
@@ -115,7 +117,7 @@ impl Container {
             if relayout {
                 world.queue_trigger(handle, WidgetRectangle(inner));
             }
-            move_camera(world, handle, rect.origin - old_origin);
+            move_camera(world, handle, (rect.origin - old_origin).as_dvec2());
         });
 
         world.observer(handle, move |&SetWidgetVisible(enabled), world| {
@@ -131,19 +133,17 @@ impl Container {
 
 /// Move the container's internal camera by `delta` while keeping the contents inside the
 /// container bounds.
-pub(crate) fn move_camera(world: &World, handle: Handle<Container>, delta: IVec2) {
+pub(crate) fn move_camera(world: &World, handle: Handle<Container>, delta: DVec2) {
     world.enter(handle, || {
-        let Ok(current) = world.single::<CurrentCamera>() else {
-            return;
-        };
-        let camera_handle = world.fetch(current).unwrap().0;
+        let current = world.single_fetch::<CurrentCamera>().unwrap();
+        let mut camera = world.fetch_mut(current.0).unwrap();
+        let delta = camera.screen_to_world_relative(delta).q32_round();
 
         let (inner, rect) = {
             let this = world.fetch(handle).unwrap();
             (this.inner, this.rect)
         };
 
-        let mut camera = world.fetch_mut(camera_handle).unwrap();
         let position = -camera.center + I64Vec2::q32_from_i32(delta);
         let anchored = Rectangle {
             origin: position.q32_round(),

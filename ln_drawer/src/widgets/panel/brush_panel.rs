@@ -316,7 +316,7 @@ fn brush_list(world: &World, container: Handle<Container>) {
                         let camera = world.fetch(camera.0).unwrap();
                         camera.screen_to_world_relative(screen - prev)
                     });
-                    move_camera(world, container, delta.q32_round());
+                    move_camera(world, container, delta.q32_as_f64());
                 }
                 last = Some(screen);
             }
