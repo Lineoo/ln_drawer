@@ -19,7 +19,7 @@ use wgpu::{BindGroup, CommandEncoderDescriptor, ComputePass, ComputePassDescript
 use crate::{
     layer::{
         Chunk, ChunkPool, DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_DISABLED, DRAWS_ARRAY_CAPACITY, Layer,
-        LayerPipeline,
+        LayerPipeline, Standalone,
         brush::{
             blur::BlurBrush,
             param::{BrushParam, BrushParamKey, BrushValue, BrushValueMut},
@@ -46,9 +46,9 @@ pub struct DrawPipeline {
     scratch_swp: Layer,
     scratch_pool: ChunkPool,
 
-    bridge: Chunk,
-
-    pub prev: Option<Draw>,
+    bridge: Standalone,
+    batch: DrawsBatch,
+    prev: Option<Draw>,
     pub stroke: Option<Stroke>,
 }
 
@@ -63,6 +63,11 @@ pub struct Stroke {
     pub dirty: Rectangle,
     pub replace: bool,
     pub bridge: bool,
+}
+
+struct DrawsBatch {
+    start: bool,
+    dirty: Rectangle,
 }
 
 pub trait Brush {
@@ -296,11 +301,12 @@ impl DrawPipeline {
         };
 
         let bridge_texture = create_chunk_texture(&layer.device, BRIDGE_CHUNK_SIZE);
-        let bridge = create_chunk(
+        let bridge_rect = Rectangle::new_extend(0, 0, BRIDGE_CHUNK_SIZE, BRIDGE_CHUNK_SIZE);
+        let bridge_chunk = create_chunk(
             &layer.device,
             &layer.chunk_layout,
             bridge_texture,
-            chunk_to_rect((0, 0, 0), BRIDGE_CHUNK_SIZE),
+            bridge_rect,
         );
 
         DrawPipeline {
@@ -311,14 +317,20 @@ impl DrawPipeline {
                 list: Vec::new(),
                 chunk_size: 512,
             },
-            bridge,
+            bridge: Standalone {
+                chunk: bridge_chunk,
+                rect: bridge_rect,
+            },
+            batch: DrawsBatch {
+                start: false,
+                dirty: Rectangle::default(),
+            },
             prev: None,
             stroke: None,
         }
     }
 
-    /// CPU-end draw process
-    pub fn draw<T: Brush>(&mut self, dst: &Layer, brush: &T, target: Draw) {
+    fn proceed_draws<T: Brush>(&mut self, brush: &T, target: Draw) {
         let mut draws = Vec::new();
 
         // draw preprocess
@@ -341,12 +353,13 @@ impl DrawPipeline {
         }
 
         self.prev = Some(next);
+        self.batch.dirty = dirty;
 
         if dirty.extend.x == 0 || dirty.extend.y == 0 {
             return;
         }
 
-        let stroke_start = self.stroke.is_none();
+        self.batch.start = self.stroke.is_none();
         let stroke = self.stroke.get_or_insert_with(|| Stroke {
             dirty,
             replace: brush.replace_mode(),
@@ -355,23 +368,36 @@ impl DrawPipeline {
 
         stroke.dirty = stroke.dirty.grow(dirty);
 
-        let bridge_rect = Rectangle::new_extend(
-            dirty.horizontal_center() - BRIDGE_CHUNK_SIZE as i32 / 2,
-            dirty.vertical_center() - BRIDGE_CHUNK_SIZE as i32 / 2,
-            BRIDGE_CHUNK_SIZE,
-            BRIDGE_CHUNK_SIZE,
-        );
+        if brush.bridge_mode() {
+            self.bridge.rect = Rectangle::new_extend(
+                dirty.horizontal_center() - BRIDGE_CHUNK_SIZE as i32 / 2,
+                dirty.vertical_center() - BRIDGE_CHUNK_SIZE as i32 / 2,
+                BRIDGE_CHUNK_SIZE,
+                BRIDGE_CHUNK_SIZE,
+            );
 
-        let queue = &self.layer.queue;
-        write_dispatch(queue, &self.layer.draws_dispatch, 0, dirty);
-        write_dispatch(queue, &self.layer.dispatch, 0, dirty);
+            write_dispatch(
+                &self.layer.queue,
+                &self.bridge.chunk.rectangle,
+                0,
+                self.bridge.rect,
+            );
+        }
+
+        write_dispatch(&self.layer.queue, &self.layer.draws_dispatch, 0, dirty);
+        write_dispatch(&self.layer.queue, &self.layer.dispatch, 0, dirty);
 
         let draw_length = draws.len() as u32;
-        queue.write_buffer(&self.layer.draws_length, 0, bytes_of(&draw_length));
-        queue.write_buffer(&self.layer.draws_array, 0, cast_slice(&draws));
+        (&self.layer.queue).write_buffer(&self.layer.draws_length, 0, bytes_of(&draw_length));
+        (&self.layer.queue).write_buffer(&self.layer.draws_array, 0, cast_slice(&draws));
+    }
 
-        if brush.bridge_mode() {
-            write_dispatch(&self.layer.queue, &self.bridge.rectangle, 0, bridge_rect);
+    /// CPU-end draw process
+    pub fn draw<T: Brush>(&mut self, dst: &Layer, brush: &T, target: Draw) {
+        self.proceed_draws(brush, target);
+
+        if self.batch.dirty.extend.x == 0 || self.batch.dirty.extend.y == 0 {
+            return;
         }
 
         let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
@@ -383,150 +409,138 @@ impl DrawPipeline {
             timestamp_writes: None,
         });
 
-        if stroke_start {
+        self.prepare_scratch(&mut cpass, dst, brush);
+        if self.batch.start {
             brush.prepare_stroke(&mut cpass, &self.layer);
         }
 
-        if !self.layer.support_read_write {
-            self.draw_upload_swap(&mut cpass, dst, brush, dirty, bridge_rect);
+        let mut chunks = Vec::new();
+        let (start, end) = rect_to_chunks(self.batch.dirty, 0, self.scratch_dst.chunk_size);
+        for x in start.0..end.0 {
+            for y in start.1..end.1 {
+                chunks.push((x, y, 0));
+            }
+        }
+
+        if brush.bridge_mode() {
+            self.prepare_bridge(&mut cpass, brush);
+            brush.prepare_draw(&mut cpass, &self.layer, &self.bridge.chunk.read);
+            for key in chunks {
+                let chunk_rect = chunk_to_rect(key, dst.chunk_size);
+                let Some(chunk) = self.scratch_dst.chunks.get(&key) else {
+                    continue;
+                };
+                self.draw_chunk_swap(
+                    &mut cpass,
+                    &self.bridge.chunk,
+                    self.bridge.rect,
+                    chunk,
+                    chunk_rect,
+                    brush,
+                    self.batch.dirty,
+                );
+            }
+        } else if !self.layer.support_read_write {
+            for key in chunks {
+                let chunk_rect = chunk_to_rect(key, dst.chunk_size);
+                let (Some(dst_chunk), Some(swp_chunk)) = (
+                    self.scratch_dst.chunks.get(&key),
+                    self.scratch_swp.chunks.get(&key),
+                ) else {
+                    continue;
+                };
+                brush.prepare_draw(&mut cpass, &self.layer, &dst_chunk.read);
+                self.draw_chunk_swap(
+                    &mut cpass,
+                    dst_chunk,
+                    chunk_rect,
+                    swp_chunk,
+                    chunk_rect,
+                    brush,
+                    self.batch.dirty,
+                );
+            }
         } else {
-            self.draw_upload_read_write(&mut cpass, dst, brush, dirty, bridge_rect);
+            for key in chunks {
+                let chunk_rect = chunk_to_rect(key, dst.chunk_size);
+                let Some(dst_chunk) = self.scratch_dst.chunks.get(&key) else {
+                    continue;
+                };
+                brush.prepare_draw(&mut cpass, &self.layer, &dst_chunk.read);
+                self.draw_chunk_read_write(
+                    &mut cpass,
+                    dst_chunk,
+                    chunk_rect,
+                    brush,
+                    self.batch.dirty,
+                );
+            }
         }
 
         drop(cpass);
         self.layer.queue.submit([encoder.finish()]);
     }
 
-    fn draw_upload_swap<T: Brush>(
-        &mut self,
-        cpass: &mut ComputePass,
-        dst: &Layer,
-        brush: &T,
-        dirty: Rectangle,
-        bridge_rect: Rectangle,
-    ) {
-        // prepare
-
-        let reference_layer = match brush.replace_mode() {
-            true => Some(dst),
-            false => None,
-        };
-
-        // Brush always use uncontrolled layer as scratch
-        self.layer.prepare_chunks(
-            &mut self.scratch_dst,
-            reference_layer,
-            &mut self.scratch_pool,
-            dirty,
-            cpass,
-        );
-        self.layer.prepare_chunks(
-            &mut self.scratch_swp,
-            reference_layer,
-            &mut self.scratch_pool,
-            dirty,
-            cpass,
-        );
-
-        // draw
-
-        if brush.bridge_mode() && brush.replace_mode() {
-            let (start, end) = rect_to_chunks(bridge_rect, 0, self.scratch_dst.chunk_size);
-            for x in start.0..end.0 {
-                for y in start.1..end.1 {
-                    let key = (x, y, 0);
-                    let src_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
-
-                    let Some(src_chunk) = self.scratch_dst.chunks.get(&key) else {
-                        continue;
-                    };
-
-                    // TODO need a extra buffer to represent bridge *sample* rect
-                    cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[0]);
-                    cpass.set_bind_group(1, Some(&self.bridge.write), &[]);
-                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(cpass, &[bridge_rect, src_rect]);
+    fn prepare_scratch<T: Brush>(&mut self, cpass: &mut ComputePass, layer: &Layer, brush: &T) {
+        match (
+            self.layer.support_read_write,
+            brush.replace_mode(),
+            brush.bridge_mode(),
+        ) {
+            (true, false, _) | (false, false, true) => {
+                self.layer.layer_prepare_rect(
+                    &mut self.scratch_dst,
+                    &mut self.scratch_pool,
+                    self.batch.dirty,
+                );
+            }
+            (false, false, false) => {
+                self.layer.layer_prepare_rect(
+                    &mut self.scratch_dst,
+                    &mut self.scratch_pool,
+                    self.batch.dirty,
+                );
+                self.layer.layer_prepare_rect(
+                    &mut self.scratch_swp,
+                    &mut self.scratch_pool,
+                    self.batch.dirty,
+                );
+            }
+            (true, true, _) | (false, true, true) => {
+                let chunks = self.layer.layer_prepare_rect(
+                    &mut self.scratch_dst,
+                    &mut self.scratch_pool,
+                    self.batch.dirty,
+                );
+                for key in chunks {
+                    self.layer
+                        .layer_copy_chunk(layer, &mut self.scratch_dst, cpass, key);
                 }
             }
-        }
-
-        // Bridge brushes share one source texture for the whole batch, so their
-        // per-draw preparation only has to run once.
-        if brush.bridge_mode() {
-            brush.prepare_draw(cpass, &self.layer, &self.bridge.read);
-        }
-
-        let (start, end) = rect_to_chunks(dirty, 0, self.scratch_dst.chunk_size);
-        for x in start.0..end.0 {
-            for y in start.1..end.1 {
-                let key = (x, y, 0);
-                let scratch_rect = chunk_to_rect(key, dst.chunk_size);
-
-                if brush.bridge_mode() {
-                    let Some(dst_chunk) = self.scratch_dst.chunks.get(&key) else {
-                        continue;
-                    };
-
-                    brush.set_pipeline(cpass, &self.layer);
-                    cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
-                    cpass.set_bind_group(1, Some(&self.bridge.read), &[]);
-                    cpass.set_bind_group(2, Some(&dst_chunk.write), &[]);
-                    dispatch_workgroups(cpass, &[dirty, scratch_rect, bridge_rect]);
-                } else {
-                    let (Some(dst_chunk), Some(swp_chunk)) = (
-                        self.scratch_dst.chunks.get(&key),
-                        self.scratch_swp.chunks.get(&key),
-                    ) else {
-                        continue;
-                    };
-
-                    brush.prepare_draw(cpass, &self.layer, &dst_chunk.read);
-
-                    brush.set_pipeline(cpass, &self.layer);
-                    cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
-                    cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
-                    cpass.set_bind_group(2, Some(&swp_chunk.write), &[]);
-                    dispatch_workgroups(cpass, &[dirty, scratch_rect]);
-
-                    cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
-                    cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
-                    cpass.set_bind_group(2, Some(&swp_chunk.read), &[]);
-                    dispatch_workgroups(cpass, &[dirty, scratch_rect]);
-                };
+            (false, true, false) => {
+                let chunks = self.layer.layer_prepare_rect(
+                    &mut self.scratch_dst,
+                    &mut self.scratch_pool,
+                    self.batch.dirty,
+                );
+                self.layer.layer_prepare_rect(
+                    &mut self.scratch_swp,
+                    &mut self.scratch_pool,
+                    self.batch.dirty,
+                );
+                for key in chunks {
+                    self.layer
+                        .layer_copy_chunk(layer, &mut self.scratch_dst, cpass, key);
+                    self.layer
+                        .layer_copy_chunk(layer, &mut self.scratch_swp, cpass, key);
+                }
             }
         }
     }
 
-    fn draw_upload_read_write<T: Brush>(
-        &mut self,
-        cpass: &mut ComputePass,
-        dst: &Layer,
-        brush: &T,
-        dirty: Rectangle,
-        bridge_rect: Rectangle,
-    ) {
-        // prepare
-
-        let reference_layer = match brush.replace_mode() {
-            true => Some(dst),
-            false => None,
-        };
-
-        // Brush always use uncontrolled layer as scratch
-        self.layer.prepare_chunks(
-            &mut self.scratch_dst,
-            reference_layer,
-            &mut self.scratch_pool,
-            dirty,
-            cpass,
-        );
-
-        // draw
-
+    fn prepare_bridge<T: Brush>(&self, cpass: &mut ComputePass, brush: &T) {
         if brush.bridge_mode() && brush.replace_mode() {
-            let (start, end) = rect_to_chunks(bridge_rect, 0, self.scratch_dst.chunk_size);
+            let (start, end) = rect_to_chunks(self.bridge.rect, 0, self.scratch_dst.chunk_size);
             for x in start.0..end.0 {
                 for y in start.1..end.1 {
                     let key = (x, y, 0);
@@ -536,53 +550,54 @@ impl DrawPipeline {
                         continue;
                     };
 
-                    // TODO need a extra buffer to represent bridge *sample* rect
                     cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[0]);
-                    cpass.set_bind_group(1, Some(&self.bridge.write), &[]);
+                    cpass.set_bind_group(0, Some(&self.bridge.chunk.dispatch), &[0]);
+                    cpass.set_bind_group(1, Some(&self.bridge.chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(cpass, &[bridge_rect, src_rect]);
+                    dispatch_workgroups(cpass, &[self.bridge.rect, src_rect]);
                 }
             }
         }
+    }
 
-        // Bridge brushes share one source texture for the whole batch, so their
-        // per-draw preparation only has to run once.
-        if brush.bridge_mode() {
-            brush.prepare_draw(cpass, &self.layer, &self.bridge.read);
-        }
+    fn draw_chunk_swap<T: Brush>(
+        &self,
+        cpass: &mut ComputePass,
+        chunk: &Chunk,
+        chunk_rect: Rectangle,
+        swap: &Chunk,
+        swap_rect: Rectangle,
+        brush: &T,
+        dispatch: Rectangle,
+    ) {
+        brush.set_pipeline(cpass, &self.layer);
+        cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
+        cpass.set_bind_group(1, Some(&chunk.read), &[]);
+        cpass.set_bind_group(2, Some(&swap.write), &[]);
+        dispatch_workgroups(cpass, &[dispatch, chunk_rect, swap_rect]);
 
-        let (start, end) = rect_to_chunks(dirty, 0, self.scratch_dst.chunk_size);
-        for x in start.0..end.0 {
-            for y in start.1..end.1 {
-                let key = (x, y, 0);
-                let scratch_rect = chunk_to_rect(key, dst.chunk_size);
+        cpass.set_pipeline(&self.layer.copy_pipeline);
+        cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
+        cpass.set_bind_group(1, Some(&chunk.write), &[]);
+        cpass.set_bind_group(2, Some(&swap.read), &[]);
+        dispatch_workgroups(cpass, &[dispatch, chunk_rect, swap_rect]);
+    }
 
-                if brush.bridge_mode() {
-                    let Some(dst_chunk) = self.scratch_dst.chunks.get(&key) else {
-                        continue;
-                    };
+    fn draw_chunk_read_write<T: Brush>(
+        &self,
+        cpass: &mut ComputePass,
+        chunk: &Chunk,
+        chunk_rect: Rectangle,
+        brush: &T,
+        dispatch: Rectangle,
+    ) {
+        brush.prepare_draw(cpass, &self.layer, &chunk.read);
 
-                    brush.set_pipeline(cpass, &self.layer);
-                    cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
-                    cpass.set_bind_group(1, Some(&self.bridge.read), &[]);
-                    cpass.set_bind_group(2, Some(&dst_chunk.write), &[]);
-                    dispatch_workgroups(cpass, &[dirty, scratch_rect, bridge_rect]);
-                } else {
-                    let Some(dst_chunk) = self.scratch_dst.chunks.get(&key) else {
-                        continue;
-                    };
-
-                    brush.prepare_draw(cpass, &self.layer, &self.bridge.read);
-
-                    brush.set_pipeline(cpass, &self.layer);
-                    cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
-                    cpass.set_bind_group(1, Some(&dst_chunk.read_write), &[]);
-                    cpass.set_bind_group(2, Some(&dst_chunk.read_write), &[]);
-                    dispatch_workgroups(cpass, &[dirty, scratch_rect]);
-                };
-            }
-        }
+        brush.set_pipeline(cpass, &self.layer);
+        cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
+        cpass.set_bind_group(1, Some(&chunk.read_write), &[]);
+        cpass.set_bind_group(2, Some(&chunk.read_write), &[]);
+        dispatch_workgroups(cpass, &[dispatch, chunk_rect]);
     }
 
     pub fn scratch_render(&self, rpass: &mut RenderPass, camera: &Camera, debug: bool) {
@@ -657,8 +672,8 @@ impl DrawPipeline {
         // Clear bridge chunk
         if stroke.bridge && stroke.replace {
             cpass.set_pipeline(&self.layer.clear_pipeline);
-            cpass.set_bind_group(0, Some(&self.bridge.dispatch), &[0]);
-            cpass.set_bind_group(1, Some(&self.bridge.write), &[]);
+            cpass.set_bind_group(0, Some(&self.bridge.chunk.dispatch), &[0]);
+            cpass.set_bind_group(1, Some(&self.bridge.chunk.write), &[]);
             dispatch_workgroups_extend(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
         }
 

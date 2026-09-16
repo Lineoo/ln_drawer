@@ -93,6 +93,11 @@ pub struct Layer {
     pub controlled: bool,
 }
 
+pub struct Standalone {
+    pub chunk: Chunk,
+    pub rect: Rectangle,
+}
+
 pub struct ChunkPool {
     pub list: Vec<Chunk>,
     pub chunk_size: u32,
@@ -111,7 +116,7 @@ pub struct Chunk {
 }
 
 #[derive(Clone)]
-pub struct ChunkLayout {
+struct ChunkLayout {
     dispatch: BindGroupLayout,
     render: BindGroupLayout,
     read: BindGroupLayout,
@@ -260,63 +265,54 @@ impl LayerPipeline {
         return true;
     }
 
-    /// Assume `self.controlled` is false. if `origin` is `None`, create transparent chunk, otherwise
-    /// clone data from the `origin` layer
-    pub fn prepare_chunks(
+    /// Assume `self.controlled` is false.
+    pub fn layer_prepare_rect(
         &self,
-        dst: &mut Layer,
-        src: Option<&Layer>,
+        layer: &mut Layer,
         pool: &mut ChunkPool,
         rect: Rectangle,
-        cpass: &mut ComputePass,
-    ) {
-        debug_assert!(!dst.controlled, "controlled layer cannot prepare chunks");
-        debug_assert_eq!(
-            dst.chunk_size, pool.chunk_size,
+    ) -> Vec<ChunkKey> {
+        assert!(!layer.controlled, "controlled layer cannot prepare chunks");
+        assert_eq!(
+            layer.chunk_size, pool.chunk_size,
             "pool chunk_size does not matched"
         );
 
-        let mut dst_chunks = Vec::new();
-
-        for mipmap in 0..dst.mipmap_levels {
-            let (start, end) = rect_to_chunks(rect, mipmap, dst.chunk_size);
-            for chunk_x in start.0..end.0 {
-                for chunk_y in start.1..end.1 {
-                    let key = (chunk_x, chunk_y, mipmap);
-                    if !dst.chunks.contains_key(&key) {
-                        dst_chunks.push(key);
-                    }
-                }
-            }
+        let chunks = layer.get_missing_chunks(rect);
+        for &key in &chunks {
+            let dst_chunk = pool.pop(key, layer.chunk_size, self);
+            layer.chunks.insert(key, dst_chunk);
         }
 
-        // Copy texture if src layer is provided
-        if let Some(src) = src {
-            debug_assert_eq!(
-                src.chunk_size, dst.chunk_size,
-                "reference layer chunk_size does not matched"
-            );
+        return chunks;
+    }
 
-            for dst_key in dst_chunks {
-                let src_chunk = src.chunks.get(&dst_key);
-                let dst_chunk = self.recycle_chunk(dst_key, dst.chunk_size, pool);
+    /// Unloaded chunk will be ignored.
+    fn layer_copy_chunk(
+        &self,
+        src: &Layer,
+        dst: &mut Layer,
+        cpass: &mut ComputePass<'_>,
+        key: ChunkKey,
+    ) -> bool {
+        assert_eq!(
+            src.chunk_size, dst.chunk_size,
+            "reference layer chunk_size does not matched"
+        );
 
-                if let Some(src_chunk) = src_chunk {
-                    cpass.set_pipeline(&self.copy_pipeline);
-                    cpass.set_bind_group(0, &dst_chunk.dispatch, &[0]);
-                    cpass.set_bind_group(1, &dst_chunk.write, &[]);
-                    cpass.set_bind_group(2, &src_chunk.read, &[]);
-                    let chunk_rect = chunk_to_rect(dst_key, dst.chunk_size);
-                    dispatch_workgroups(cpass, &[chunk_rect]);
-                }
+        let src_chunk = src.chunks.get(&key);
+        let dst_chunk = dst.chunks.get(&key);
 
-                dst.chunks.insert(dst_key, dst_chunk);
-            }
+        if let (Some(src_chunk), Some(dst_chunk)) = (src_chunk, dst_chunk) {
+            cpass.set_pipeline(&self.copy_pipeline);
+            cpass.set_bind_group(0, &dst_chunk.dispatch, &[0]);
+            cpass.set_bind_group(1, &dst_chunk.write, &[]);
+            cpass.set_bind_group(2, &src_chunk.read, &[]);
+            let chunk_rect = chunk_to_rect(key, dst.chunk_size);
+            dispatch_workgroups(cpass, &[chunk_rect]);
+            true
         } else {
-            for dst_key in dst_chunks {
-                let dst_chunk = self.recycle_chunk(dst_key, dst.chunk_size, pool);
-                dst.chunks.insert(dst_key, dst_chunk);
-            }
+            false
         }
     }
 
@@ -408,28 +404,6 @@ impl LayerPipeline {
         }
     }
 
-    /// return `true` if the chunk is guaranteed to be empty
-    fn recycle_chunk(&self, key: ChunkKey, chunk_size: u32, pool: &mut ChunkPool) -> Chunk {
-        if let Some(chunk) = pool.list.pop() {
-            write_dispatch(
-                &self.queue,
-                &chunk.rectangle,
-                0,
-                chunk_to_rect(key, chunk_size),
-            );
-            chunk
-        } else {
-            let texture = create_chunk_texture(&self.device, chunk_size);
-            let chunk = create_chunk(
-                &self.device,
-                &self.chunk_layout,
-                texture,
-                chunk_to_rect(key, chunk_size),
-            );
-            chunk
-        }
-    }
-
     pub fn pick_color(
         &self,
         layer: &Layer,
@@ -499,6 +473,47 @@ impl LayerPipeline {
     }
 }
 
+impl Layer {
+    fn get_missing_chunks(&mut self, rect: Rectangle) -> Vec<ChunkKey> {
+        let mut missing = Vec::new();
+        for mipmap in 0..self.mipmap_levels {
+            let (start, end) = rect_to_chunks(rect, mipmap, self.chunk_size);
+            for chunk_x in start.0..end.0 {
+                for chunk_y in start.1..end.1 {
+                    let key = (chunk_x, chunk_y, mipmap);
+                    if !self.chunks.contains_key(&key) {
+                        missing.push(key);
+                    }
+                }
+            }
+        }
+        missing
+    }
+}
+
+impl ChunkPool {
+    fn pop(&mut self, key: ChunkKey, chunk_size: u32, pipeline: &LayerPipeline) -> Chunk {
+        if let Some(chunk) = self.list.pop() {
+            write_dispatch(
+                &pipeline.queue,
+                &chunk.rectangle,
+                0,
+                chunk_to_rect(key, chunk_size),
+            );
+            chunk
+        } else {
+            let texture = create_chunk_texture(&pipeline.device, chunk_size);
+            let chunk = create_chunk(
+                &pipeline.device,
+                &pipeline.chunk_layout,
+                texture,
+                chunk_to_rect(key, chunk_size),
+            );
+            chunk
+        }
+    }
+}
+
 // --- Utils --- //
 
 fn dispatch_workgroups_extend(cpass: &mut ComputePass, size: UVec2) {
@@ -529,14 +544,10 @@ fn dispatch_workgroups(cpass: &mut ComputePass, rects: &[Rectangle]) {
 }
 
 fn write_dispatch(queue: &Queue, buffer: &Buffer, index: u64, rect: Rectangle) {
-    let uniform = DispatchUniform {
-        coords: rect.origin.into(),
-        size: rect.extend.into(),
-    };
     queue.write_buffer(
         buffer,
-        size_of::<DispatchUniform>() as u64 * index,
-        bytes_of(&uniform),
+        size_of::<Rectangle>() as u64 * index,
+        bytes_of(&rect),
     );
 }
 
@@ -1419,6 +1430,8 @@ fn brush_pipelines(
     // bridge mode does not need read_write bind
     let constants_bridge = [("read", "read"), ("write", "write")];
 
+    const COMPOSITE_OVER: &str = "src + dst * (1 - src.a)";
+    const COMPOSITE_ERASE: &str = "dst * (1 - src.a)";
     BrushPipelines {
         blur: general_brush_pipeline(
             device,
@@ -1471,7 +1484,7 @@ fn brush_pipelines(
             "round_over",
             include_str!("layer/brush/round.wgsl"),
             &constants[..],
-            "src + dst * (1 - src.a)",
+            COMPOSITE_OVER,
             "cs_main",
         ),
         round_erase: general_brush_pipeline(
@@ -1480,7 +1493,7 @@ fn brush_pipelines(
             "round_erase",
             include_str!("layer/brush/round.wgsl"),
             &constants[..],
-            "dst * (1 - src.a)",
+            COMPOSITE_ERASE,
             "cs_main",
         ),
         pixel_over: general_brush_pipeline(
@@ -1489,7 +1502,7 @@ fn brush_pipelines(
             "pixel_over",
             include_str!("layer/brush/pixel.wgsl"),
             &constants[..],
-            "src + dst * (1 - src.a)",
+            COMPOSITE_OVER,
             "cs_main",
         ),
         pixel_erase: general_brush_pipeline(
@@ -1498,7 +1511,7 @@ fn brush_pipelines(
             "pixel_erase",
             include_str!("layer/brush/pixel.wgsl"),
             &constants[..],
-            "dst * (1 - src.a)",
+            COMPOSITE_ERASE,
             "cs_main",
         ),
     }
