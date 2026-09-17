@@ -26,9 +26,7 @@ use crate::{
 /// `version`: `format` (the last version that used it)
 /// - `v0.1.3-alpha.2`: 0
 /// - `v0.1.3-alpha.3`: 1
-/// - `v0.5.0`: 2
-///
-/// `3` moves canvas chunks out of this database into the sidecar `chunks/` store.
+/// - `v0.4.0`: 2
 const FORMAT_VERSION: u32 = 3;
 
 /// The number of backup files.
