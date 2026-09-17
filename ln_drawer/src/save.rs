@@ -80,10 +80,22 @@ impl SaveDatabase {
         }
     }
 
+    /// Begin a write transaction with quick-repair enabled.
+    ///
+    /// A commit made this way records the allocator state on disk (and forces a
+    /// two-phase commit), so a later unclean shutdown — such as the Android
+    /// process being killed — can be recovered by loading that state instead of
+    /// walking the whole database to verify every checksum.
+    pub fn begin_clean_write(db: &Database) -> Result<WriteTransaction, redb::Error> {
+        let mut write = db.begin_write()?;
+        write.set_quick_repair(true);
+        Ok(write)
+    }
+
     /// Format a fresh, empty database, this contains initializing minimum
     /// sets of data such as metadata and format version.
     fn fresh(db: &Database) -> Result<(), redb::Error> {
-        let write = db.begin_write()?;
+        let write = Self::begin_clean_write(db)?;
 
         let mut metadata = write.open_table(TABLE_METADATA)?;
         metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
@@ -98,7 +110,7 @@ impl SaveDatabase {
     /// Touch a existed database, including updating necessary timestamps,
     /// validation, and most of all migration data from older versions.
     fn touch(db: &mut Database, file: &Path) -> Result<(), redb::Error> {
-        let write = db.begin_write()?;
+        let write = Self::begin_clean_write(db)?;
         Self::migrate_format(&write, file)?;
         write.commit()?;
 
@@ -157,7 +169,7 @@ impl SaveDatabase {
             log::debug!("database compact finished, result: {result}");
         }
 
-        let write = db.begin_write()?;
+        let write = Self::begin_clean_write(db)?;
         let mut metadata = write.open_table(TABLE_METADATA)?;
 
         // update metadata
@@ -228,7 +240,7 @@ impl SaveDatabase {
     }
 
     pub fn write_compact(db: &Database) -> Result<(), redb::Error> {
-        let write = db.begin_write()?;
+        let write = Self::begin_clean_write(db)?;
         let mut metadata = write.open_table(TABLE_METADATA)?;
 
         // update metadata
@@ -273,7 +285,7 @@ impl Autosave {
 
         world.foreach_enter::<Camera>(|_| {
             let db = world.single_fetch::<SaveDatabase>().unwrap();
-            let write = db.0.begin_write().unwrap();
+            let write = SaveDatabase::begin_clean_write(&db.0).unwrap();
             world.foreach_fetch_mut::<Autosave>(|mut task| {
                 (task.0)(world, &write);
             });

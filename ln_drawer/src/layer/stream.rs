@@ -367,6 +367,12 @@ fn unload(
     queue: &StreamQueue,
     debug: &mut DebugInfo,
 ) -> Result<(), Box<dyn Error + 'static>> {
+    if base.real_cnt + staging.active.len() < CHUNK_REAL_CAPS
+        && base.active.len() + staging.active.len() < CHUNK_HARD_CAPS
+    {
+        return Ok(());
+    }
+
     let write = config.database.0.begin_write()?;
     let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
@@ -470,7 +476,7 @@ fn autosave(
 ) -> Result<(), Box<dyn Error + 'static>> {
     let now = Instant::now();
 
-    let write = config.database.0.begin_write()?;
+    let write = SaveDatabase::begin_clean_write(&config.database.0)?;
 
     let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
