@@ -153,13 +153,6 @@ struct BrushPipelines {
     pixel_erase: ComputePipeline,
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct DispatchUniform {
-    coords: [i32; 2],
-    size: [u32; 2],
-}
-
 impl LayerPipeline {
     pub fn new(
         _adapter: Adapter,
@@ -474,7 +467,7 @@ impl LayerPipeline {
 }
 
 impl Layer {
-    fn get_missing_chunks(&mut self, rect: Rectangle) -> Vec<ChunkKey> {
+    fn get_missing_chunks(&self, rect: Rectangle) -> Vec<ChunkKey> {
         let mut missing = Vec::new();
         for mipmap in 0..self.mipmap_levels {
             let (start, end) = rect_to_chunks(rect, mipmap, self.chunk_size);
@@ -799,7 +792,7 @@ const LAYOUT_COLOR_READBACK: BindGroupLayoutDescriptor = BindGroupLayoutDescript
 fn dispatch_group(device: &Device, dispatch_layout: &BindGroupLayout) -> (Buffer, BindGroup) {
     let dispatch = device.create_buffer(&BufferDescriptor {
         label: Some("layer_dispatch"),
-        size: size_of::<DispatchUniform>() as u64,
+        size: size_of::<Rectangle>() as u64,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -868,7 +861,7 @@ fn draws_dispatch_group(
 ) -> (Buffer, Buffer, Buffer, Buffer, BindGroup) {
     let dispatch = device.create_buffer(&BufferDescriptor {
         label: Some("layer_brush_dispatch"),
-        size: size_of::<DispatchUniform>() as u64 * DISPATCH_CAPACITY,
+        size: size_of::<Rectangle>() as u64 * DISPATCH_CAPACITY,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -1017,10 +1010,7 @@ fn create_chunk(
 ) -> Chunk {
     let rectangle = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("layer_chunk_buffer"),
-        contents: bytes_of(&DispatchUniform {
-            coords: rect.origin.into(),
-            size: rect.extend.into(),
-        }),
+        contents: bytes_of(&rect),
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
 

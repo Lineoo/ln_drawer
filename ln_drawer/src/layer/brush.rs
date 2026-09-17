@@ -430,7 +430,7 @@ impl DrawPipeline {
                 let Some(chunk) = self.scratch_dst.chunks.get(&key) else {
                     continue;
                 };
-                self.draw_chunk_swap(
+                self.draw_chunk_cross(
                     &mut cpass,
                     &self.bridge.chunk,
                     self.bridge.rect,
@@ -558,6 +558,23 @@ impl DrawPipeline {
                 }
             }
         }
+    }
+
+    fn draw_chunk_cross<T: Brush>(
+        &self,
+        cpass: &mut ComputePass,
+        src: &Chunk,
+        src_rect: Rectangle,
+        dst: &Chunk,
+        dst_rect: Rectangle,
+        brush: &T,
+        dispatch: Rectangle,
+    ) {
+        brush.set_pipeline(cpass, &self.layer);
+        cpass.set_bind_group(0, Some(&self.layer.draws_dispatch_group), &[]);
+        cpass.set_bind_group(1, Some(&src.read), &[]);
+        cpass.set_bind_group(2, Some(&dst.write), &[]);
+        dispatch_workgroups(cpass, &[dispatch, src_rect, dst_rect]);
     }
 
     fn draw_chunk_swap<T: Brush>(
