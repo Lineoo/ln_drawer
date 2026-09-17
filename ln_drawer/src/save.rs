@@ -1,3 +1,6 @@
+// TODO(step-3): drop these allows once `ChunkStore` is wired into the save pipeline.
+#[allow(dead_code)]
+mod chunk;
 mod legacy;
 
 use std::{
@@ -6,6 +9,8 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+#[allow(unused_imports)]
+pub use chunk::ChunkStore;
 use ln_world::{Element, Handle, World, WorldError};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition, WriteTransaction};
 
