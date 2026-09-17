@@ -1,4 +1,5 @@
 use cosmic_text::{Attrs, Metrics, Weight};
+use glam::UVec2;
 use ln_world::{Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
@@ -19,6 +20,7 @@ use crate::{
     widgets::{
         container::Container,
         echo::EchoWidget,
+        panel::brush_preview::{BrushPreview, PreviewSource},
         renderer::text::{SetText, Text},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
@@ -45,6 +47,15 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();
+
+    // Live brush preview //
+    let preview_frame = world.insert(EchoWidget);
+    let preview = BrushPreview::build(world, PreviewSource::Active, UVec2::new(340, 110), 50);
+    world.insert(Transform {
+        value: TransformValue::shrink(0, 0),
+        source: preview_frame.untyped(),
+        target: preview.untyped(),
+    });
 
     // Flow //
     let flow_frame = world.insert(EchoWidget);
@@ -238,6 +249,13 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
             },
         ),
         children: vec![
+            (
+                preview_frame.untyped(),
+                LuniChild {
+                    basis: Some(110),
+                    ..Default::default()
+                },
+            ),
             (
                 label1_frame.untyped(),
                 LuniChild {

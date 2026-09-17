@@ -30,6 +30,7 @@ use crate::{
         },
         container::{Container, move_camera},
         echo::Echo,
+        panel::brush_preview::BrushPreviewGenerator,
         renderer::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
@@ -118,6 +119,7 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     let lnwindow = world.single::<Lnwindow>().unwrap();
     let input = world.single::<LayerInput>().unwrap();
     let wrapper = world.single::<LayerWrapper>().unwrap();
+    let generator = world.insert(BrushPreviewGenerator::new(world));
     for panel in [list_container, settings_container] {
         let control = world.insert(RenderControl::phase_with_draw(
             panel,
@@ -157,6 +159,7 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
             world.insert(ElemRef(panel.untyped()));
             world.insert(ElemRef(toggle_button.untyped()));
             world.insert(ElemRef(wrapper.untyped()));
+            world.insert(ElemRef(generator.untyped()));
             world.insert(RenderPhase::default());
         });
     }

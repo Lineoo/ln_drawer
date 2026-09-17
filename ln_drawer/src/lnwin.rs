@@ -38,7 +38,7 @@ use crate::{
         panel::side_docker::side_docker,
         renderer::{
             canvas::CanvasPipeline, quad::QuadMeshPipeline, rrect::RRectMaterial,
-            text::TextPipeline, vtor::VtorPipeline,
+            text::TextPipeline, texture_quad::TextureQuadPipeline, vtor::VtorPipeline,
         },
     },
 };
@@ -138,6 +138,7 @@ impl Element for Lnwindow {
             world.flush();
 
             world.insert(CanvasPipeline::from_world(world));
+            world.insert(TextureQuadPipeline::from_world(world));
             world.insert(QuadMeshPipeline::<HslPanelMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<OklabPolarMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<OklabBarMaterial>::from_world(world));

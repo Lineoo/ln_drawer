@@ -1,4 +1,5 @@
 pub mod brush_panel;
+pub mod brush_preview;
 pub mod color_picker;
 pub mod debug_panel;
 pub mod layer_selection;
