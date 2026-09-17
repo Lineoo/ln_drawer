@@ -32,16 +32,6 @@ impl BrushPreviewGenerator {
         }
     }
 
-    /// Allocate a fresh offscreen canvas.
-    pub fn make_canvas(&self) -> Standalone {
-        self.layer.create_standalone(Rectangle::new_extend(
-            0,
-            0,
-            DEFAULT_CHUNK_SIZE,
-            DEFAULT_CHUNK_SIZE,
-        ))
-    }
-
     /// Redraw `brush` over a fixed seed into `canvas`.
     pub fn paint(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
         self.layer.clear_chunk(&canvas.chunk, canvas.rect);
