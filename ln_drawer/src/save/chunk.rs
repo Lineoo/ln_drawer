@@ -46,6 +46,7 @@ const CHUNK_FRAMING_LEN: usize = CHUNK_PREFIX_LEN + size_of::<u32>();
 const CHUNK_CODEC_ZSTD: u8 = 0;
 
 /// Historic (now unused) flag marking a chunk as mipmapped.
+#[expect(dead_code)]
 const CHUNK_FLAG_MIPMAPPED: u8 = 1 << 0;
 
 /// Current chunk format version. See [module docs](self).
@@ -187,6 +188,7 @@ impl ChunkStore {
 
     /// List every chunk currently on disk. Unrecognized files are ignored with
     /// a warning. Used by active migration sweeps.
+    #[cfg_attr(not(test), expect(dead_code))] // tested, but no migration step sweeps yet
     pub fn iter_all(&self) -> io::Result<Vec<(u64, ChunkKey)>> {
         let mut chunks = Vec::new();
 
@@ -234,6 +236,7 @@ impl ChunkStore {
     /// Rewrite every chunk into the current chunk format. This is the entry
     /// point future `migrateN` steps use for changes that cannot be applied
     /// lazily on read (codec or layout changes).
+    #[cfg_attr(not(test), expect(dead_code))] // tested, but no migration step sweeps yet
     pub fn migrate_all(&self) -> io::Result<()> {
         for (page, key) in self.iter_all()? {
             if let Some(bytes) = self.read(page, key)? {
@@ -265,6 +268,7 @@ impl ChunkStore {
     }
 }
 
+#[cfg_attr(not(test), expect(dead_code))] // only reached through `iter_all`
 fn parse_chunk_key(stem: &str) -> Option<ChunkKey> {
     let mut parts = stem.split('_');
     let x = parts.next()?.parse().ok()?;

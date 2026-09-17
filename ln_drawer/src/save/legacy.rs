@@ -123,7 +123,6 @@ pub fn migrate1(write: &WriteTransaction) -> Result<(), redb::Error> {
 ///
 /// The migration is idempotent: if it is interrupted between deleting the tables
 /// and bumping the format version, the next run simply finds empty tables.
-#[allow(dead_code)] // TODO(step-3): drop once wired into `migrate_format`.
 pub fn migrate2(write: &WriteTransaction, file: &Path) -> Result<(), Box<dyn Error>> {
     const TABLE_LAYER_CHUNK: TableDefinition<(u64, ChunkKey), &[u8]> =
         TableDefinition::new("stroke_chunk");

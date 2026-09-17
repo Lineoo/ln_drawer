@@ -37,7 +37,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl, RenderExtra, RenderInformation,
         camera::{Camera, CameraBind, CameraUpdated, MainCamera, UICamera},
     },
-    save::{Autosave, SaveDatabase},
+    save::{Autosave, ChunkStore},
     widgets::{renderer::rrect::RRect, shaders::shader_compile},
 };
 
@@ -100,14 +100,14 @@ impl LayerWrapper {
         let brush = DrawPipeline::new(layer.clone());
         let traveler = Traveler::new(layer.clone());
 
-        let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
+        let chunks = world.single_fetch::<ChunkStore>().unwrap().clone();
         let window = world.single_fetch::<Lnwindow>().unwrap().window.clone();
 
         let (input_tx, input_rx) = channel();
         let (output_tx, output_rx) = channel();
 
         let stream_config = StreamConfig {
-            database,
+            chunks,
             device: render.device.clone(),
             queue: render.queue.clone(),
             page: 0,
