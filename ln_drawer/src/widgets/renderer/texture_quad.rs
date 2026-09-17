@@ -1,24 +1,20 @@
-use glam::UVec2;
 use ln_world::{Element, Handle, World};
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
-    Buffer, BufferBindingType, BufferUsages, Color, ColorTargetState, ColorWrites,
-    CommandEncoderDescriptor, Extent3d, FilterMode, FragmentState, LoadOp, Operations,
-    PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPassColorAttachment,
-    RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType,
-    SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureView, TextureViewDescriptor, TextureViewDimension, VertexState,
+    Buffer, BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, FilterMode,
+    FragmentState, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPipeline,
+    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, Texture, TextureSampleType, TextureViewDescriptor,
+    TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
-    layer::{Layer, LayerPipeline},
     measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderControl,
-        camera::{Camera, CameraBind, CurrentCamera},
+        camera::{CameraBind, CurrentCamera},
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, renderer::canvas::RectangleUniform,
@@ -26,18 +22,14 @@ use crate::{
     },
 };
 
-/// A widget that displays an engine render target.
+/// Displays an externally owned [`Texture`] inside a widget rectangle.
 ///
-/// The texture is `Rgba8Unorm` so it can be used directly as the color target of
-/// [`LayerPipeline::render`], which is compiled for that format. Rendering into it is driven by
-/// [`TextureQuad::render_layer`]; this widget only owns the target and its display quad.
+/// The texture is sampled as sRGB-encoded, premultiplied data (matching
+/// [`crate::layer::CHUNK_TEXTURE_FORMAT`]), so it can show a layer chunk directly.
 pub struct TextureQuad {
     pub rect: Rectangle,
     pub visible: bool,
     pub order: isize,
-    pub size: UVec2,
-
-    pub view: TextureView,
 
     rectangle_uniform: Buffer,
     bind: BindGroup,
@@ -49,25 +41,10 @@ pub struct TextureQuadPipeline {
 }
 
 impl TextureQuad {
-    pub fn new(world: &World, size: UVec2, order: isize) -> Self {
+    pub fn from_texture(world: &World, texture: &Texture, order: isize) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let pipeline = world.single_fetch::<TextureQuadPipeline>().unwrap();
         let device = &render.device;
-
-        let texture = device.create_texture(&TextureDescriptor {
-            label: Some("texture_quad_texture"),
-            size: Extent3d {
-                width: size.x.max(1),
-                height: size.y.max(1),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
 
         let view = texture.create_view(&TextureViewDescriptor {
             label: Some("texture_quad_texture_view"),
@@ -116,8 +93,6 @@ impl TextureQuad {
             rect: Rectangle::default(),
             visible: false,
             order,
-            size,
-            view,
             rectangle_uniform,
             bind,
         }
@@ -172,45 +147,6 @@ impl TextureQuad {
             RenderControl::reorder(visible.then_some(this.order), world, control);
             RenderControl::request_redraw(world);
         });
-    }
-
-    /// Render `layer` into this quad's texture with `camera`.
-    pub fn render_layer(
-        &self,
-        render: &Render,
-        layer_pipeline: &LayerPipeline,
-        layer: &Layer,
-        camera: &Camera,
-        debug: bool,
-    ) {
-        let mut encoder = render
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("texture_quad_render"),
-            });
-
-        {
-            let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("texture_quad_render"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &self.view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(Color::TRANSPARENT),
-                        store: StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-            layer_pipeline.render(layer, &mut rpass, camera, debug, false);
-        }
-
-        render.queue.submit([encoder.finish()]);
     }
 }
 

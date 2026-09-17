@@ -146,6 +146,9 @@ pub trait Brush {
 pub trait BrushParams: Send {
     fn draw(&self, pipeline: &mut DrawPipeline, dst: &Layer, draw: Draw);
 
+    /// Draw directly into a single offscreen chunk instead of a full layer.
+    fn draw_standalone(&self, pipeline: &mut DrawPipeline, dst: &Standalone, draw: Draw);
+
     /// Produce an independent copy, used for the temporary working brush.
     fn dup(&self) -> Box<dyn BrushParams>;
 
@@ -166,6 +169,15 @@ macro_rules! brush_params {
                 draw: $crate::layer::brush::Draw,
             ) {
                 pipeline.draw(dst, self, draw);
+            }
+
+            fn draw_standalone(
+                &self,
+                pipeline: &mut $crate::layer::brush::DrawPipeline,
+                dst: &$crate::layer::Standalone,
+                draw: $crate::layer::brush::Draw,
+            ) {
+                pipeline.draw_standalone(dst, self, draw);
             }
 
             fn dup(&self) -> Box<dyn $crate::layer::brush::BrushParams> {
@@ -481,6 +493,78 @@ impl DrawPipeline {
         self.layer.queue.submit([encoder.finish()]);
     }
 
+    /// Draw directly into a single offscreen chunk.
+    ///
+    /// Unlike [`DrawPipeline::draw`] this never uses the scratch layer: the target chunk is both
+    /// the destination and the sampling source, and [`DrawPipeline::bridge`] acts as the swap
+    /// texture when the platform has no read-write storage textures. Useful for previews and for
+    /// a future limited canvas.
+    pub fn draw_standalone<T: Brush>(&mut self, target: &Standalone, brush: &T, draw: Draw) {
+        self.proceed_draws(brush, draw);
+
+        if self.batch.dirty.extend.x == 0 || self.batch.dirty.extend.y == 0 {
+            return;
+        }
+
+        let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("layer_draw_standalone"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_draw_standalone"),
+            timestamp_writes: None,
+        });
+
+        if self.batch.start {
+            brush.prepare_stroke(&mut cpass, &self.layer);
+        }
+
+        if brush.bridge_mode() {
+            if brush.replace_mode() {
+                self.copy_into_bridge(&mut cpass, &target.chunk, target.rect);
+            }
+            brush.prepare_draw(&mut cpass, &self.layer, &self.bridge.chunk.read);
+            self.draw_chunk_cross(
+                &mut cpass,
+                &self.bridge.chunk,
+                self.bridge.rect,
+                &target.chunk,
+                target.rect,
+                brush,
+                self.batch.dirty,
+            );
+        } else if !self.layer.support_read_write {
+            brush.prepare_draw(&mut cpass, &self.layer, &target.chunk.read);
+            self.draw_chunk_swap(
+                &mut cpass,
+                &target.chunk,
+                target.rect,
+                &self.bridge.chunk,
+                self.bridge.rect,
+                brush,
+                self.batch.dirty,
+            );
+        } else {
+            brush.prepare_draw(&mut cpass, &self.layer, &target.chunk.read);
+            self.draw_chunk_read_write(
+                &mut cpass,
+                &target.chunk,
+                target.rect,
+                brush,
+                self.batch.dirty,
+            );
+        }
+
+        drop(cpass);
+        self.layer.queue.submit([encoder.finish()]);
+    }
+
+    /// Drop any in-progress stroke without touching the scratch.
+    pub fn reset(&mut self) {
+        self.prev = None;
+        self.stroke = None;
+    }
+
     fn prepare_scratch<T: Brush>(&mut self, cpass: &mut ComputePass, layer: &Layer, brush: &T) {
         match (
             self.layer.support_read_write,
@@ -550,14 +634,18 @@ impl DrawPipeline {
                         continue;
                     };
 
-                    cpass.set_pipeline(&self.layer.copy_pipeline);
-                    cpass.set_bind_group(0, Some(&self.bridge.chunk.dispatch), &[0]);
-                    cpass.set_bind_group(1, Some(&self.bridge.chunk.write), &[]);
-                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    dispatch_workgroups(cpass, &[self.bridge.rect, src_rect]);
+                    self.copy_into_bridge(cpass, src_chunk, src_rect);
                 }
             }
         }
+    }
+
+    fn copy_into_bridge(&self, cpass: &mut ComputePass, src: &Chunk, src_rect: Rectangle) {
+        cpass.set_pipeline(&self.layer.copy_pipeline);
+        cpass.set_bind_group(0, Some(&self.bridge.chunk.dispatch), &[0]);
+        cpass.set_bind_group(1, Some(&self.bridge.chunk.write), &[]);
+        cpass.set_bind_group(2, Some(&src.read), &[]);
+        dispatch_workgroups(cpass, &[self.bridge.rect, src_rect]);
     }
 
     fn draw_chunk_cross<T: Brush>(

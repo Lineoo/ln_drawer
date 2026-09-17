@@ -309,6 +309,34 @@ impl LayerPipeline {
         }
     }
 
+    /// Create a single offscreen chunk, used as a standalone preview/render target.
+    pub fn create_standalone(&self, rect: Rectangle) -> Standalone {
+        let texture = create_chunk_texture(&self.device, rect.extend.x);
+        let chunk = create_chunk(&self.device, &self.chunk_layout, texture, rect);
+        Standalone { chunk, rect }
+    }
+
+    /// Clear `rect` of a standalone chunk to transparent.
+    pub fn clear_chunk(&self, chunk: &Chunk, rect: Rectangle) {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("layer_clear_chunk"),
+            });
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("layer_clear_chunk"),
+            timestamp_writes: None,
+        });
+
+        cpass.set_pipeline(&self.clear_pipeline);
+        cpass.set_bind_group(0, &chunk.dispatch, &[0]);
+        cpass.set_bind_group(1, &chunk.write, &[]);
+        dispatch_workgroups(&mut cpass, &[rect]);
+
+        drop(cpass);
+        self.queue.submit([encoder.finish()]);
+    }
+
     pub fn generate_mipmaps(&self, layer: &Layer, dirty: Rectangle) {
         if layer.mipmap_levels <= 1 {
             return;

@@ -1,5 +1,4 @@
 use cosmic_text::{Attrs, Metrics, Weight};
-use glam::UVec2;
 use ln_world::{Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
@@ -18,15 +17,19 @@ use crate::{
     measures::{Axis, Rectangle},
     theme::Theme,
     widgets::{
+        brush_preview::{BrushPreview, BrushPreviewGenerator},
         container::Container,
         echo::EchoWidget,
-        panel::brush_preview::{BrushPreview, PreviewSource},
         renderer::text::{SetText, Text},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
 };
 
-pub fn panel_settings(world: &World, panel: Handle<Container>) {
+pub fn panel_settings(
+    world: &World,
+    panel: Handle<Container>,
+    generator: Handle<BrushPreviewGenerator>,
+) {
     let theme = world.single_fetch::<Theme>().unwrap();
 
     let label1_frame = world.insert(EchoWidget);
@@ -50,11 +53,20 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
 
     // Live brush preview //
     let preview_frame = world.insert(EchoWidget);
-    let preview = BrushPreview::build(world, PreviewSource::Active, UVec2::new(340, 110), 50);
+    let preview = BrushPreview::build(world, generator, 1000);
     world.insert(Transform {
         value: TransformValue::shrink(0, 0),
         source: preview_frame.untyped(),
         target: preview.untyped(),
+    });
+
+    world.queue(move |world| {
+        let layer = world.single_fetch::<LayerWrapper>().unwrap();
+        BrushPreview::paint(world, preview, layer.active());
+    });
+    world.observer(layer, move |&BrushConfigurationChanged, world| {
+        let layer = world.fetch(layer).unwrap();
+        BrushPreview::paint(world, preview, layer.active());
     });
 
     // Flow //

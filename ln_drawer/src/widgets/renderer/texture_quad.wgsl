@@ -27,9 +27,9 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-    // The offscreen layer target stores sRGB encoded, premultiplied `Rgba8Unorm`; decode to
-    // linear here and let the sRGB surface re-encode on write.
-    let color = textureSample(texture, texture_sampler, vec2f(uv.x, 1.0 - uv.y));
+    // Layer chunks store sRGB encoded, premultiplied data; decode to linear here and let the sRGB
+    // surface re-encode on write.
+    let color = textureSample(texture, texture_sampler, uv);
     let linear = srgb_to_linear(color);
     return vec4f(linear.rgb, color.a);
 }

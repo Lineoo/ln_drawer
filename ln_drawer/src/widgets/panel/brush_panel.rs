@@ -24,13 +24,13 @@ use crate::{
     tools::collider::ToolColliderPortal,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
+        brush_preview::{BrushPreview, BrushPreviewGenerator},
         button::{
             ButtonClick, ButtonDrag, ButtonDragStatus, ButtonImage, ButtonSelected,
             SetButtonSelected, ToggleButton, ToggleButtonTheme,
         },
         container::{Container, move_camera},
         echo::Echo,
-        panel::brush_preview::BrushPreviewGenerator,
         renderer::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
@@ -119,7 +119,10 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     let lnwindow = world.single::<Lnwindow>().unwrap();
     let input = world.single::<LayerInput>().unwrap();
     let wrapper = world.single::<LayerWrapper>().unwrap();
-    let generator = world.insert(BrushPreviewGenerator::new(world));
+    let wrapper_instance = world.fetch(wrapper).unwrap();
+    let generator = world.insert(BrushPreviewGenerator::new(
+        wrapper_instance.brush.layer.clone(),
+    ));
     for panel in [list_container, settings_container] {
         let control = world.insert(RenderControl::phase_with_draw(
             panel,
@@ -165,10 +168,10 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     }
 
     world.enter_queue(list_container, move |world| {
-        brush_list(world, list_container)
+        brush_list(world, list_container, generator)
     });
     world.enter_queue(settings_container, move |world| {
-        super::settings::panel_settings(world, settings_container)
+        super::settings::panel_settings(world, settings_container, generator)
     });
 
     world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
@@ -197,7 +200,11 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     });
 }
 
-fn brush_list(world: &World, container: Handle<Container>) {
+fn brush_list(
+    world: &World,
+    container: Handle<Container>,
+    generator: Handle<BrushPreviewGenerator>,
+) {
     let theme = world.single_fetch::<Theme>().unwrap();
     let wrapper = world.single::<LayerWrapper>().unwrap();
     let (count, active, labels) = {
@@ -279,6 +286,19 @@ fn brush_list(world: &World, container: Handle<Container>) {
             },
             source: button.untyped(),
             target: label.untyped(),
+        });
+
+        let preview = BrushPreview::build(world, generator, 10);
+        world.insert(Transform {
+            value: TransformValue::anchor((1.0, 0.5), Rectangle::new_extend(-56, -20, 40, 40)),
+            source: button.untyped(),
+            target: preview.untyped(),
+        });
+        world.queue(move |world| {
+            let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
+            if let Some(preset) = wrapper.brushes.get(i) {
+                BrushPreview::paint(world, preview, preset.brush.as_ref());
+            }
         });
 
         world.observer(button, move |&ButtonClick, world| {
