@@ -1,14 +1,11 @@
-mod chunk;
 mod legacy;
 
 use std::{
-    error::Error,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
 
-pub use chunk::ChunkStore;
 use ln_world::{Element, Handle, World, WorldError};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition, WriteTransaction};
 
@@ -26,8 +23,7 @@ use crate::{
 /// `version`: `format` (the last version that used it)
 /// - `v0.1.3-alpha.2`: 0
 /// - `v0.1.3-alpha.3`: 1
-/// - `v0.4.0`: 2
-const FORMAT_VERSION: u32 = 3;
+const FORMAT_VERSION: u32 = 2;
 
 /// The number of backup files.
 const BACKUP_SLOT: u32 = 6;
@@ -43,10 +39,10 @@ const TABLE_METADATA: TableDefinition<u32, &[u8]> = TableDefinition::new("metada
 ///
 /// | name | key | value |
 /// |------|-----|-------|
-/// | `metadata` | `u32`  | `&[u8]` |
-/// | `camera`   | `&str` | `&[u8]` |
-///
-/// Canvas chunks are not stored here; see [`ChunkStore`].
+/// | `metadata`            | `u32`                     | `&[u8]`   |
+/// | `stroke_chunk`        | `(u64, ChunkKey)`         | `&[u8]`   |
+/// | `stroke_chunk_meta`   | `((u64, ChunkKey), u32)`  | `&[u8]`   |
+/// | `camera`              | ` &str`                   | `&[u8]`   |
 #[derive(Clone)]
 pub struct SaveDatabase(pub Arc<Database>);
 
@@ -72,24 +68,16 @@ impl SaveDatabase {
         let file = get_file_path(world, "world.lndb");
         std::fs::create_dir_all(&file.parent().unwrap()).unwrap();
         SaveDatabase::create_backup(&file, "old", true, BACKUP_SLOT);
-
-        let db = match Database::open(&file) {
-            Ok(mut db) => {
-                SaveDatabase::touch(&mut db, &file).unwrap();
-                log::debug!("database loaded");
-                db
-            }
-            Err(_) => {
-                let db = Database::create(&file).unwrap();
-                SaveDatabase::fresh(&db).unwrap();
-                log::debug!("database created");
-                db
-            }
-        };
-
-        let chunks = ChunkStore::open(chunk::chunk_root(&file)).unwrap();
-        world.insert(SaveDatabase(Arc::new(db)));
-        world.insert(chunks);
+        if let Ok(mut db) = Database::open(&file) {
+            SaveDatabase::touch(&mut db, &file).unwrap();
+            world.insert(SaveDatabase(Arc::new(db)));
+            log::debug!("database loaded");
+        } else {
+            let db = Database::create(&file).unwrap();
+            SaveDatabase::fresh(&db).unwrap();
+            world.insert(SaveDatabase(Arc::new(db)));
+            log::debug!("database created");
+        }
     }
 
     /// Format a fresh, empty database, this contains initializing minimum
@@ -109,7 +97,7 @@ impl SaveDatabase {
 
     /// Touch a existed database, including updating necessary timestamps,
     /// validation, and most of all migration data from older versions.
-    fn touch(db: &mut Database, file: &Path) -> Result<(), Box<dyn Error>> {
+    fn touch(db: &mut Database, file: &Path) -> Result<(), redb::Error> {
         let write = db.begin_write()?;
         Self::migrate_format(&write, file)?;
         write.commit()?;
@@ -119,7 +107,7 @@ impl SaveDatabase {
         Ok(())
     }
 
-    fn migrate_format(write: &WriteTransaction, file: &Path) -> Result<(), Box<dyn Error>> {
+    fn migrate_format(write: &WriteTransaction, file: &Path) -> Result<(), redb::Error> {
         let mut metadata = write.open_table(TABLE_METADATA)?;
 
         let access0 = metadata.get(0)?.unwrap();
@@ -138,9 +126,8 @@ impl SaveDatabase {
 
         for migrate_format in from_format..FORMAT_VERSION {
             match migrate_format {
-                0 => legacy::migrate0(&write)?,
-                1 => legacy::migrate1(&write)?,
-                2 => legacy::migrate2(&write, file)?,
+                0 => legacy::migrate0(&write).unwrap(),
+                1 => legacy::migrate1(&write).unwrap(),
                 _ => unimplemented!("unsupported migration {migrate_format}"),
             }
 
@@ -150,30 +137,21 @@ impl SaveDatabase {
         // update metadata
         metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
 
-        // migrations free pages, request a compaction on this startup
-        let meta1 = postcard::to_stdvec(&SaveMetadata1 {
-            compact_on_startup: true,
-        })
-        .unwrap();
-        metadata.insert(1, &meta1[..])?;
-
         log::info!("migration all finished");
         Ok(())
     }
 
     fn perform_compact(db: &mut Database) -> Result<(), redb::Error> {
-        // Scope the read transaction tightly: the access guard keeps pages
-        // referenced, and `compact` requires that no read guard is alive.
-        let compact_on_startup = {
-            let read = db.begin_read()?;
-            let metadata = read.open_table(TABLE_METADATA)?;
-            metadata
-                .get(1)?
-                .and_then(|access| postcard::from_bytes::<SaveMetadata1>(access.value()).ok())
-                .is_some_and(|meta1| meta1.compact_on_startup)
-        };
+        let read = db.begin_read()?;
+        let metadata = read.open_table(TABLE_METADATA)?;
+        let access = metadata.get(1)?;
+        drop(metadata);
+        drop(read);
 
-        if compact_on_startup {
+        if let Some(access) = access
+            && let Ok(meta1) = postcard::from_bytes::<SaveMetadata1>(access.value())
+            && meta1.compact_on_startup
+        {
             log::debug!("database compact started");
             let result = db.compact()?;
             log::debug!("database compact finished, result: {result}");
@@ -340,107 +318,3 @@ impl Element for AutosaveScheduler {
 }
 
 impl Element for SaveDatabase {}
-
-impl Element for ChunkStore {}
-
-#[cfg(test)]
-mod test {
-    use std::{fs, path::PathBuf};
-
-    use redb::{Database, ReadableDatabase, TableDefinition};
-
-    use super::{FORMAT_VERSION, SaveDatabase, SaveMetadata0, SaveMetadata1, TABLE_METADATA};
-    use crate::save::chunk::{ChunkStore, chunk_root};
-
-    const TABLE_LAYER_CHUNK: TableDefinition<(u64, (i32, i32, u8)), &[u8]> =
-        TableDefinition::new("stroke_chunk");
-    const TABLE_LAYER_CHUNK_META: TableDefinition<((u64, (i32, i32, u8)), u32), &[u8]> =
-        TableDefinition::new("stroke_chunk_meta");
-
-    #[derive(serde::Serialize)]
-    struct SerializedMeta0 {
-        format: u32,
-    }
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(name: &str) -> Self {
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let mut path = std::env::temp_dir();
-            path.push(format!(
-                "ln_drawer_touch_test_{}_{}_{}",
-                std::process::id(),
-                name,
-                nanos
-            ));
-            fs::create_dir_all(&path).unwrap();
-            TempDir(path)
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
-    #[test]
-    fn touch_migrates_chunks_out_of_database() {
-        let temp = TempDir::new("migrate_v2");
-        let file = temp.0.join("world.lndb");
-        let raw = [12u8, 34, 56, 78];
-
-        let db = Database::create(&file).unwrap();
-        {
-            let write = db.begin_write().unwrap();
-            {
-                let mut metadata = write.open_table(TABLE_METADATA).unwrap();
-                metadata
-                    .insert(0, bytemuck::bytes_of(&SaveMetadata0 { version: 2 }))
-                    .unwrap();
-                let meta1 = postcard::to_stdvec(&SaveMetadata1 {
-                    compact_on_startup: false,
-                })
-                .unwrap();
-                metadata.insert(1, &meta1[..]).unwrap();
-
-                let mut chunk = write.open_table(TABLE_LAYER_CHUNK).unwrap();
-                chunk
-                    .insert((0, (0, 0, 0)), &zstd::encode_all(&raw[..], 0).unwrap()[..])
-                    .unwrap();
-
-                let mut chunk_meta = write.open_table(TABLE_LAYER_CHUNK_META).unwrap();
-                chunk_meta
-                    .insert(
-                        ((0, (0, 0, 0)), 0),
-                        &postcard::to_stdvec(&SerializedMeta0 { format: 1 }).unwrap()[..],
-                    )
-                    .unwrap();
-            }
-            write.commit().unwrap();
-        }
-        drop(db);
-
-        let mut db = Database::open(&file).unwrap();
-        SaveDatabase::touch(&mut db, &file).unwrap();
-
-        let read = db.begin_read().unwrap();
-        let metadata = read.open_table(TABLE_METADATA).unwrap();
-        let version = metadata.get(0).unwrap().unwrap();
-        assert_eq!(
-            u32::from_le_bytes(version.value().try_into().unwrap()),
-            FORMAT_VERSION
-        );
-        drop(metadata);
-        assert!(read.open_table(TABLE_LAYER_CHUNK).is_err());
-        assert!(read.open_table(TABLE_LAYER_CHUNK_META).is_err());
-        drop(read);
-
-        let store = ChunkStore::open(chunk_root(&file)).unwrap();
-        assert_eq!(store.read(0, (0, 0, 0)).unwrap().unwrap(), raw);
-    }
-}
