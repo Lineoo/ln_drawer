@@ -6,9 +6,9 @@
 
 功能比较类似 ECS 系统，对于类型组件的缓存访问性能也不错，但总体上没有 ECS 的高并行能力。
 
-## 世界外 Element ##
+## 独立 Element 写法 ##
 
-允许独立存在，独立运行的组件，参考 `LayerPipeline` (`layer.rs`)
+独立 Element 是指那些可以脱离 World 存在的组件，一般给渲染组件管线等功能丰富的结构体使用。
 
 推荐简单、解耦的写法：
 
@@ -20,7 +20,7 @@ impl Foo {
 }
 ```
 
-不推荐直接获取整个世界的写法：
+直接获取整个世界的写法也可以，但是会限制 Element 依赖 World 进行构建：
 
 ```rust
 impl Bar {
@@ -30,7 +30,7 @@ impl Bar {
 }
 ```
 
-最不推荐使用 `Option<T>` 的写法：
+不应使用 `Option<T>` 的写法：
 
 ```rust
 impl Baz {
@@ -49,31 +49,11 @@ impl Element for Baz {
 }
 ```
 
-Descriptor 模式本身**不暗示世界外使用**，真正暗示世界外使用的是 **Descriptor 不返回 `Handle<T>` 而直接返回 `T`**。
+## 简单 Element 写法 ##
 
-如果有对应的描述器，也推荐如下写法：
+这个写法更常见一些，用于大部分业务代码、渲染组件等。
 
-```rust
-struct BazDescriptor {
-    property: Property
-}
-impl ElementDescriptor for BazDescriptor {
-    type Target = Baz;
-    fn prepare(self, world: &WorldCell) -> Self::Target {
-        // 描述器专门用于从世界中提取数据进行构建
-        let interface = world.single_fetch_mut::<Interface>().unwrap();
-        let inner = interface.create_painter(/* .. */);
-        // 没有非法状态
-        Baz { inner }
-    }
-}
-```
-
-### 完全世界节点
-
-这种类型只工作在世界内，就可以简化一些代码
-
-实例来自 `quad.rs`
+实例来自 `quad.rs`：
 
 ```rust
 impl<M: QuadMaterial> QuadMesh<M> {
@@ -89,6 +69,17 @@ impl<M: QuadMaterial> Element for QuadMesh<M> {
     }
 }
 ```
+
+简单 Element 的**简单**二字指的是 Element 所有字段都是公开的，全部都是公共 API，外部调用者可以**直接构造**这些结构并直接插入世界。
+
+- 内部实现发生在 `when_insert` 阶段，一般路由回结构体的 `init` 方法。
+- 内部实现的内容，如 GPU 资源、或者嵌套元素返回的句柄，不保存在 `Element` 上，而是直接利用 observer 闭包捕获。
+- 闭包捕获虽然已经足够满足绝大多数场景了，但是有些时候某些资源需要在不同过程之间共享；这个时候可以创建一个私有结构体，命名一般为 `*Instance`，并在 observer 捕获句柄，在需要的时候 `fetch` 得到需要的数据。
+
+比起独立 Element 写法，最大的特点就是高度依赖 world 的 observer 系统来保存运行变量，可以说是针对业务逻辑代码特化的。
+
+- 优点是针对 observer 进行了特化，事件调用简单，响应代码写起来很规整。
+- 但缺点也是针对 observer 进行了特化，内部字段被封闭在 observer 系统内，业务逻辑基本只能依附于 observer 系统存在，单单一个结构体什么都做不了。
 
 ## insert & remove 生命周期 ##
 
