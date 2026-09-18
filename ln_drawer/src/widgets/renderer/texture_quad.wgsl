@@ -31,5 +31,5 @@ fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
     // surface re-encode on write.
     let color = textureSample(texture, texture_sampler, uv);
     let linear = srgb_to_linear(color);
-    return vec4f(linear.rgb, color.a);
+    return vec4f(linear.rgb * color.a, color.a);
 }

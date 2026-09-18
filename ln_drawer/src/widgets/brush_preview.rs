@@ -25,6 +25,7 @@ pub struct BrushPreview {
     pub generator: Handle<BrushPreviewGenerator>,
     pub brush: Option<Box<dyn BrushParams>>,
     pub outdated: bool,
+    pub visible: bool,
 }
 
 struct BrushPreviewInstance {
@@ -73,6 +74,7 @@ impl BrushPreview {
                 let instance = world.fetch(instance).unwrap();
                 if let Some(brush) = &this.brush
                     && this.outdated
+                    && this.visible
                 {
                     let mut generator = world.fetch_mut(this.generator).unwrap();
                     generator.paint(&instance.preview_canvas, brush.as_ref());
@@ -116,7 +118,9 @@ impl BrushPreview {
             world.queue_trigger(instance.quad, SetWidgetRectangle(rect));
         });
         world.observer(this, move |&SetWidgetVisible(visible), world| {
+            let mut this = world.fetch_mut(this).unwrap();
             let instance = world.fetch(instance).unwrap();
+            this.visible = visible;
             world.queue_trigger(instance.quad, SetWidgetVisible(visible));
         });
     }

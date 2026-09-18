@@ -39,6 +39,7 @@ pub fn new_panel_settings(
         generator,
         outdated: false,
         brush: Some(layer.active().dup()),
+        visible: false,
     });
 
     world.observer(layer.handle(), move |&BrushConfigurationChanged, world| {

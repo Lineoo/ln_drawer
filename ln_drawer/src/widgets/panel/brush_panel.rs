@@ -243,6 +243,7 @@ fn brush_list(
             generator,
             outdated: true,
             brush: wrapper_instance.brushes.get(i).map(|x| x.brush.dup()),
+            visible: false,
         });
 
         world.insert(Transform {
