@@ -153,9 +153,9 @@ impl BrushPreviewGenerator {
     fn paint_seed(&mut self, canvas: &Standalone) {
         let w = canvas.rect.width() as f32;
         let h = canvas.rect.height() as f32;
-        let radius = w / 4.0;
+        let radius = w / 4.0 + 5.0;
         let bands = [
-            (w * 0.25, Srgba::new(0.409, 0.808, 0.937, 1.0)),
+            (w * 0.25, Srgba::new(0.624, 0.951, 0.865, 1.0)),
             (w * 0.75, Srgba::new(0.959, 0.869, 0.601, 1.0)),
         ];
 

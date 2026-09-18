@@ -41,7 +41,7 @@ use crate::{
 
 const PANEL_WIDTH: i32 = 364;
 const PANEL_HEIGHT: i32 = 480;
-const ITEM_HEIGHT: i32 = 100;
+const ITEM_HEIGHT: i32 = 80;
 const ITEM_GAP: i32 = 6;
 const LIST_PADDING: i32 = 8;
 
