@@ -97,17 +97,13 @@ impl Container {
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let (old_origin, inner, relayout) = {
-                let this = &mut *world.fetch_mut(handle).unwrap();
-                let old_origin = this.rect.origin;
-                this.rect = rect;
+            let this = &mut *world.fetch_mut(handle).unwrap();
+            let old_origin = this.rect.origin;
+            this.rect = rect;
 
-                let extend = this.inner_transform.compute(rect).extend;
-                let relayout = this.inner.extend != extend;
-                this.inner = Rectangle::new_extend(0, 0, extend.x, extend.y);
-
-                (old_origin, this.inner, relayout)
-            };
+            let extend = this.inner_transform.compute(rect).extend;
+            let relayout = this.inner.extend != extend;
+            this.inner = Rectangle::new_extend(0, 0, extend.x, extend.y);
 
             let mut collider = world.fetch_mut(collider).unwrap();
             collider.rect = rect;
@@ -115,7 +111,7 @@ impl Container {
 
             world.queue_trigger(back, SetWidgetRectangle(rect));
             if relayout {
-                world.queue_trigger(handle, WidgetRectangle(inner));
+                world.queue_trigger(handle, WidgetRectangle(this.inner));
             }
             move_camera(world, handle, (rect.origin - old_origin).as_dvec2());
         });
