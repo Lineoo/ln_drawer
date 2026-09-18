@@ -149,7 +149,7 @@ struct BrushPipelines {
     tint: ComputePipeline,
     round_over: ComputePipeline,
     round_erase: ComputePipeline,
-    pixel_over: ComputePipeline,
+    pixel_replace: ComputePipeline,
     pixel_erase: ComputePipeline,
 }
 
@@ -1449,6 +1449,7 @@ fn brush_pipelines(
     let constants_bridge = [("read", "read"), ("write", "write")];
 
     const COMPOSITE_OVER: &str = "src + dst * (1 - src.a)";
+    const COMPOSITE_REPLACE: &str = "src";
     const COMPOSITE_ERASE: &str = "dst * (1 - src.a)";
     BrushPipelines {
         blur: general_brush_pipeline(
@@ -1514,13 +1515,13 @@ fn brush_pipelines(
             COMPOSITE_ERASE,
             "cs_main",
         ),
-        pixel_over: general_brush_pipeline(
+        pixel_replace: general_brush_pipeline(
             device,
             &layout,
             "pixel_over",
             include_str!("layer/brush/pixel.wgsl"),
             &constants[..],
-            COMPOSITE_OVER,
+            COMPOSITE_REPLACE,
             "cs_main",
         ),
         pixel_erase: general_brush_pipeline(

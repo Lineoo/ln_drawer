@@ -131,11 +131,6 @@ pub fn step_of(size: f32, spacing: f32) -> f32 {
     (2.0 * size.max(0.0) * spacing.max(0.0)).max(MIN_STEP)
 }
 
-/// Integer distance between dabs for the discrete pixel brush (at least one pixel).
-pub fn pixel_step_of(size: f32, spacing: f32) -> f32 {
-    (2.0 * size.max(0.0) * spacing.max(0.0)).round().max(1.0)
-}
-
 /// Centerline overlap count: how many mask-weighted dabs a point on the stroke receives. The
 /// mask integral along the centerline is exactly `2 * size + 1` regardless of softness, so this
 /// is the factor that turns a per-dab quantity into a per-unit-length one.
@@ -153,57 +148,6 @@ pub fn mask_sq_integral(size: f32, softness: f32) -> f32 {
 
 /// Per-dab flow coefficient that yields `flow` interior opacity after [`overlap`] dabs. `flow` is
 /// therefore independent of spacing, size and softness.
-pub fn flow_coeff(flow: f32, overlap: f32) -> f32 {
-    let f = flow.clamp(0.0, 1.0);
-    (1.0 - (1.0 - f).powf(1.0 / overlap.max(1e-3))).clamp(0.0, 1.0)
-}
-
-/// Per-dab mix rate that yields `rate` total mixing after travelling `reference` pixels. The
-/// reference length fixes whether the rate is per pixel (`1.0`) or per brush diameter (`2 * size`).
-pub fn rate_coeff(rate: f32, step: f32, reference: f32) -> f32 {
-    let r = rate.clamp(0.0, 1.0);
-    (1.0 - (1.0 - r).powf(step.max(0.0) / reference.max(1e-6))).clamp(0.0, 1.0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn flow_coeff_recovers_flow_after_overlap_dabs() {
-        for flow in [0.05, 0.2, 0.5, 0.9, 1.0] {
-            for m in [1.0, 5.0, 10.0, 40.0] {
-                let coeff = flow_coeff(flow, m);
-                let total = 1.0 - (1.0 - coeff).powf(m);
-                assert!((total - flow).abs() < 1e-3, "flow={flow} m={m} -> {total}");
-            }
-        }
-    }
-
-    #[test]
-    fn rate_coeff_recovers_rate_over_reference_length() {
-        let step = 5.0;
-        let reference = 20.0;
-        let dabs = reference / step;
-        for rate in [0.05, 0.3, 0.8] {
-            let coeff = rate_coeff(rate, step, reference);
-            let total = 1.0 - (1.0 - coeff).powf(dabs);
-            assert!((total - rate).abs() < 1e-3, "rate={rate} -> {total}");
-        }
-    }
-
-    #[test]
-    fn overlap_is_independent_of_softness() {
-        // The mask integral along the centerline is `2 * size + 1` for every softness, so the
-        // overlap only depends on size and step.
-        let step = step_of(20.0, 0.1);
-        assert_eq!(overlap(20.0, step), overlap(20.0, step));
-        assert!((overlap(20.0, step) - (41.0 / step)).abs() < 1e-6);
-    }
-
-    #[test]
-    fn step_of_never_reaches_zero() {
-        assert_eq!(step_of(0.0, 0.0), MIN_STEP);
-        assert_eq!(pixel_step_of(0.0, 0.0), 1.0);
-    }
+pub fn rate_coeff(flow: f32, overlap: f32) -> f32 {
+    (1.0 - (1.0 - flow.clamp(0.0, 1.0)).powf(1.0 / overlap.max(1e-3))).clamp(0.0, 1.0)
 }

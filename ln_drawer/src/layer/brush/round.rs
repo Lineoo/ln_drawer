@@ -7,7 +7,7 @@ use crate::{
         LayerPipeline,
         brush::{
             Brush, Draw,
-            param::{BrushParam, flow_coeff, overlap, step_of},
+            param::{BrushParam, rate_coeff, overlap, step_of},
         },
     },
     measures::{FI64Ext, Rectangle},
@@ -49,7 +49,7 @@ impl Brush for RoundBrush {
             position_fract: draw.position.q32_fract(),
             softness: self.softness.get(draw),
             size,
-            flow: flow_coeff(self.flow.get(draw), overlap),
+            flow: rate_coeff(self.flow.get(draw), overlap),
             _pad: 0,
         }
     }

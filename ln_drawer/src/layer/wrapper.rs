@@ -186,8 +186,6 @@ impl LayerWrapper {
                 label: "brush.pixel",
                 brush: Box::new(PixelBrush {
                     size: BrushParam::constant(2.0),
-                    flow: BrushParam::constant(1.0),
-                    spacing: BrushParam::constant(0.1),
                     color,
                     erase: false,
                 }),

@@ -4,7 +4,6 @@ struct Draw {
     color: vec4f,
     position: vec2i,
     size: f32,
-    flow: f32,
 }
 
 @group(0) @binding(0) var<uniform> dispatch: Rectangle;
@@ -35,11 +34,9 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     for (var i = 0u; i < draws_length; i++) {
         let draw = draws_array[i];
         let dist = length(vec2f(draw.position - position));
-        let mask = select(0.0f, 1.0f, dist <= draw.size);
+        let src = vec4f(draw.color.rgb, 1) * draw.color.a;
 
-        let src = vec4f(draw.color.rgb, 1) * draw.color.a * draw.flow * mask;
-
-        dst = #composite;
+        dst = select(dst, #composite, dist <= draw.size);
     }
 
     textureStore(swap_texture, swp_coords, select(vec4f(dst.rgb / dst.a, dst.a), vec4f(), dst.a < 1e-6));

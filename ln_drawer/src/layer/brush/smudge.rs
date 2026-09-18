@@ -8,15 +8,11 @@ use crate::{
         LayerPipeline,
         brush::{
             Brush, Draw,
-            param::{BrushParam, flow_coeff, overlap, rate_coeff, step_of},
+            param::{BrushParam, overlap, rate_coeff, step_of},
         },
     },
     measures::{FI64Ext, Rectangle},
 };
-
-/// The smudge pickup/foreground mix is normalized per pixel of travel, so `sample_rate` and
-/// `color_ratio` keep the same strength at any spacing or brush size.
-const SMUDGE_REFERENCE_LENGTH: f32 = 1.0;
 
 #[derive(Clone)]
 pub struct SmudgeBrush {
@@ -59,10 +55,11 @@ impl Brush for SmudgeBrush {
             position_fract: draw.position.q32_fract(),
             softness: self.softness.get(draw),
             size,
-            flow: flow_coeff(self.flow.get(draw), overlap),
-            color_ratio: rate_coeff(self.color_ratio.get(draw), step, SMUDGE_REFERENCE_LENGTH),
+            flow: rate_coeff(self.flow.get(draw), overlap),
+            color_ratio: rate_coeff(self.color_ratio.get(draw), step)
+                * rate_coeff(self.sample_rate.get(draw), step),
             sample_radius: self.sample_radius.get(draw),
-            sample_rate: rate_coeff(self.sample_rate.get(draw), step, SMUDGE_REFERENCE_LENGTH),
+            sample_rate: rate_coeff(self.sample_rate.get(draw), step),
             _pad: [0; 2],
         }
     }

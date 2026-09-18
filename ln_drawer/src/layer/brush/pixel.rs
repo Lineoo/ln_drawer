@@ -7,10 +7,7 @@ use palette::Srgba;
 use crate::{
     layer::{
         DRAWS_ARRAY_CAPACITY, LayerPipeline,
-        brush::{
-            Brush, Draw,
-            param::{BrushParam, flow_coeff, overlap, pixel_step_of},
-        },
+        brush::{Brush, Draw, param::BrushParam},
     },
     measures::{FI64Ext, Rectangle},
 };
@@ -18,8 +15,6 @@ use crate::{
 #[derive(Clone)]
 pub struct PixelBrush {
     pub size: BrushParam<f32>,
-    pub flow: BrushParam<f32>,
-    pub spacing: BrushParam<f32>,
     pub color: Srgba,
     pub erase: bool,
 }
@@ -30,22 +25,18 @@ pub struct PixelDraw {
     pub color: Vec4,
     pub position: IVec2,
     pub size: f32,
-    pub flow: f32,
+    pub _pad: u32
 }
 
 impl Brush for PixelBrush {
     type Draw = PixelDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
-        let size = self.size.get(draw);
-        let step = pixel_step_of(size, self.spacing.get(draw));
-        let overlap = overlap(size, step);
-
         PixelDraw {
             color: Vec4::from(self.color.into_components()),
             position: draw.position.q32_floor(),
-            size,
-            flow: flow_coeff(self.flow.get(draw), overlap),
+            size: self.size.get(draw),
+            _pad: 0,
         }
     }
 
@@ -55,7 +46,6 @@ impl Brush for PixelBrush {
 
     fn interpolate(&self, from: Draw, to: Draw, out: &mut Vec<Self::Draw>) -> Draw {
         let cap = DRAWS_ARRAY_CAPACITY as usize / size_of::<Self::Draw>();
-        let stride = pixel_step_of(self.size.get(from), self.spacing.get(from)) as i64;
 
         let mut pixel = from.position.q32_floor();
         let target = to.position.q32_floor();
@@ -80,6 +70,10 @@ impl Brush for PixelBrush {
                 pixel.y += sy;
             }
 
+            if out.len() >= cap {
+                return curr;
+            }
+
             index += 1;
             curr.position = I64Vec2::q32_from_i32(pixel);
             let progress = match steps {
@@ -87,15 +81,6 @@ impl Brush for PixelBrush {
                 _ => index as f32 / steps as f32,
             };
             curr.force = from.force + (to.force - from.force) * progress;
-
-            if index % stride != 0 {
-                continue;
-            }
-
-            if out.len() >= cap {
-                return curr;
-            }
-
             out.push(self.process(curr));
         }
 
@@ -108,7 +93,7 @@ impl Brush for PixelBrush {
     }
 
     fn replace_mode(&self) -> bool {
-        self.erase
+        true
     }
 
     fn bridge_mode(&self) -> bool {
@@ -118,7 +103,7 @@ impl Brush for PixelBrush {
     fn set_pipeline(&self, cpass: &mut wgpu::ComputePass, pipeline: &LayerPipeline) {
         match self.erase {
             true => cpass.set_pipeline(&pipeline.brush_pipelines.pixel_erase),
-            false => cpass.set_pipeline(&pipeline.brush_pipelines.pixel_over),
+            false => cpass.set_pipeline(&pipeline.brush_pipelines.pixel_replace),
         }
     }
 }

@@ -235,8 +235,6 @@ brush_params!(RoundBrush, {
 
 brush_params!(PixelBrush, {
     Size => Scalar(size),
-    Flow => Scalar(flow),
-    Spacing => Scalar(spacing),
     Color => Color(color),
     Erase => Toggle(erase),
 });

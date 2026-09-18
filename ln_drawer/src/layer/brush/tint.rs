@@ -7,7 +7,7 @@ use crate::{
         LayerPipeline,
         brush::{
             Brush, Draw,
-            param::{BrushParam, flow_coeff, overlap, step_of},
+            param::{BrushParam, rate_coeff, overlap, step_of},
         },
     },
     measures::{FI64Ext, Rectangle},
@@ -45,10 +45,10 @@ impl Brush for TintBrush {
         // `flow.a` is the per-dab alpha and `flow.rgb` the under/over mix ratio; both accumulate
         // geometrically so both are normalized by the overlap count.
         let flow = Vec4::new(
-            flow_coeff(self.flow.x, overlap),
-            flow_coeff(self.flow.y, overlap),
-            flow_coeff(self.flow.z, overlap),
-            flow_coeff(self.flow.w, overlap),
+            rate_coeff(self.flow.x, overlap),
+            rate_coeff(self.flow.y, overlap),
+            rate_coeff(self.flow.z, overlap),
+            rate_coeff(self.flow.w, overlap),
         );
 
         TintDraw {
