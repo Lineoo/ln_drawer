@@ -14,7 +14,7 @@ use winit::{
 };
 
 use crate::{
-    layer::{input::LayerInput, wrapper::LayerWrapper},
+    layer::{input::LayerInput, wrapper::LayerPage},
     measures::{FI64Ext, Rectangle},
     render::{
         Render, RenderPhase,
@@ -236,12 +236,12 @@ impl Element for Lnwindow {
             // Setup interface components
 
             world.enter_queue(main_camera, |world| {
-                world.insert(LayerWrapper::new(world));
+                world.insert(LayerPage::new(world));
                 world.insert(LayerInput::default());
             });
 
             world.enter_queue(ui_camera, move |world| {
-                let stroke = world.enter(main_camera, || world.single::<LayerWrapper>().unwrap());
+                let stroke = world.enter(main_camera, || world.single::<LayerPage>().unwrap());
                 let input = world.enter(main_camera, || world.single::<LayerInput>().unwrap());
 
                 world.insert(ElemRef(stroke.untyped()));

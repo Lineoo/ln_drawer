@@ -14,7 +14,7 @@ use bytemuck::{Pod, Zeroable, bytes_of, cast_slice};
 use glam::{I64Vec2, UVec2};
 use hashbrown::HashMap;
 use palette::Srgba;
-use wgpu::{BindGroup, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, RenderPass};
+use wgpu::{BindGroup, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor};
 
 use crate::{
     layer::{
@@ -34,15 +34,15 @@ use crate::{
         write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
-    render::camera::Camera,
 };
 
 const BRIDGE_CHUNK_SIZE: u32 = 1024;
 
+/// provide two layer utility for painting: scratch and bridge, as well tracking painting stroke and chunks pool
 pub struct DrawPipeline {
     pub layer: Arc<LayerPipeline>,
 
-    scratch_dst: Layer,
+    pub scratch_dst: Layer,
     scratch_swp: Layer,
     scratch_pool: ChunkPool,
 
@@ -506,11 +506,7 @@ impl DrawPipeline {
     }
 
     /// Draw directly into a single offscreen chunk.
-    ///
-    /// Unlike [`DrawPipeline::draw`] this never uses the scratch layer: the target chunk is both
-    /// the destination and the sampling source, and [`DrawPipeline::bridge`] acts as the swap
-    /// texture when the platform has no read-write storage textures. Useful for previews and for
-    /// a future limited canvas.
+    /// TODO cannot reproduce `draw` fully precisely since we are not using scratch layer
     pub fn draw_standalone<T: Brush>(&mut self, target: &Standalone, brush: &T, draw: Draw) {
         self.proceed_draws(brush, draw);
 
@@ -572,10 +568,60 @@ impl DrawPipeline {
         self.layer.queue.submit([encoder.finish()]);
     }
 
-    /// Drop any in-progress stroke without touching the scratch.
-    pub fn reset(&mut self) {
-        self.prev = None;
-        self.stroke = None;
+    // generate a merge preview for over mode brush.
+    pub fn cache_merge_scratch(&mut self, layer: &Layer, merge: &mut Layer) {
+        let Some(stroke) = &self.stroke else {
+            return;
+        };
+
+        if stroke.replace {
+            return;
+        }
+
+        let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("draw_cache_merge"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("draw_cache_merge"),
+            timestamp_writes: None,
+        });
+
+        let chunks = self
+            .layer
+            .layer_prepare_rect(merge, &mut self.scratch_pool, stroke.dirty);
+        for key in chunks {
+            self.layer.layer_copy_chunk(layer, merge, &mut cpass, key);
+        }
+
+        for (&key, src_chunk) in self.scratch_dst.chunks.iter() {
+            let (Some(dst_chunk), Some(swp_chunk)) =
+                (layer.chunks.get(&key), merge.chunks.get(&key))
+            else {
+                continue;
+            };
+
+            let chunk_rect = chunk_to_rect(key, layer.chunk_size);
+
+            if self.layer.support_read_write {
+                cpass.set_pipeline(&self.layer.merge_pipelines.over);
+                cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
+                cpass.set_bind_group(1, Some(&dst_chunk.read_write), &[]);
+                cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
+                cpass.set_bind_group(3, Some(&swp_chunk.read_write), &[]);
+                dispatch_workgroups(&mut cpass, &[self.batch.dirty, chunk_rect]);
+            } else {
+                cpass.set_pipeline(&self.layer.merge_pipelines.over);
+                cpass.set_bind_group(0, Some(&self.layer.dispatch_group), &[0]);
+                cpass.set_bind_group(1, Some(&dst_chunk.read), &[]);
+                cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
+                cpass.set_bind_group(3, Some(&swp_chunk.write), &[]);
+                dispatch_workgroups(&mut cpass, &[self.batch.dirty, chunk_rect]);
+            }
+        }
+
+        drop(cpass);
+        self.layer.queue.submit([encoder.finish()]);
     }
 
     fn prepare_scratch<T: Brush>(&mut self, cpass: &mut ComputePass, layer: &Layer, brush: &T) {
@@ -718,14 +764,7 @@ impl DrawPipeline {
         dispatch_workgroups(cpass, &[dispatch, chunk_rect]);
     }
 
-    pub fn scratch_render(&self, rpass: &mut RenderPass, camera: &Camera, debug: bool) {
-        if let Some(stroke) = &self.stroke {
-            self.layer
-                .render(&self.scratch_dst, rpass, camera, debug, stroke.replace);
-        }
-    }
-
-    pub fn request_stream(&mut self, dst: &Layer, tx: &Sender<ThreadInput>) {
+    pub fn request_stream(&self, dst: &Layer, tx: &Sender<ThreadInput>) {
         let Some(stroke) = &self.stroke else {
             return;
         };
@@ -752,8 +791,15 @@ impl DrawPipeline {
         }
     }
 
+    // TODO move cpass creation to `page`
+
     /// All finished, merge to dst layer and optionally notify stream thread unsaved chunks
-    pub fn submit(&mut self, dst: &mut Layer, tx: Option<&Sender<ThreadInput>>) {
+    pub fn submit(
+        &mut self,
+        dst: &mut Layer,
+        tx: Option<&Sender<ThreadInput>>,
+        cpass: &mut ComputePass,
+    ) {
         self.prev = None;
         let Some(stroke) = self.stroke.take() else {
             return;
@@ -762,29 +808,18 @@ impl DrawPipeline {
         debug_assert_eq!(dst.chunk_size, self.scratch_dst.chunk_size);
         debug_assert_eq!(self.scratch_swp.chunk_size, self.scratch_dst.chunk_size);
 
-        let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("layer_submit"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_submit"),
-            timestamp_writes: None,
-        });
-
         write_dispatch(&self.layer.queue, &self.layer.dispatch, 0, stroke.dirty);
 
         // if failed to merge, we simply drop it.
         if tx.is_some() && !self.layer.validate_chunks(dst, stroke.dirty) {
-            self.recycle_scratch(&stroke, &mut cpass);
-            drop(cpass);
-            self.layer.queue.submit([encoder.finish()]);
+            self.recycle_scratch(&stroke, cpass);
             return;
         }
 
         if !self.layer.support_read_write {
-            self.submit_upload_swap(dst, &stroke, &mut cpass);
+            self.submit_upload_swap(dst, &stroke, cpass);
         } else {
-            self.submit_upload_read_write(dst, &stroke, &mut cpass);
+            self.submit_upload_read_write(dst, &stroke, cpass);
         }
 
         // Clear bridge chunk
@@ -792,15 +827,12 @@ impl DrawPipeline {
             cpass.set_pipeline(&self.layer.clear_pipeline);
             cpass.set_bind_group(0, Some(&self.bridge.chunk.dispatch), &[0]);
             cpass.set_bind_group(1, Some(&self.bridge.chunk.write), &[]);
-            dispatch_workgroups_extend(&mut cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
+            dispatch_workgroups_extend(cpass, UVec2::splat(BRIDGE_CHUNK_SIZE));
         }
 
-        self.recycle_scratch(&stroke, &mut cpass);
+        self.recycle_scratch(&stroke, cpass);
 
-        drop(cpass);
-        self.layer.queue.submit([encoder.finish()]);
-
-        self.layer.generate_mipmaps(dst, stroke.dirty);
+        self.layer.generate_mipmaps(dst, stroke.dirty, cpass);
 
         if let Some(tx) = tx {
             for level in 0..dst.mipmap_levels {
@@ -891,6 +923,23 @@ impl DrawPipeline {
 
         drop(cpass);
         self.layer.queue.submit([encoder.finish()]);
+    }
+
+    /// Drop any in-progress stroke without touching the scratch.
+    pub fn reset(&mut self) {
+        self.prev = None;
+        self.stroke = None;
+    }
+
+    pub fn recycle_all(&mut self, layer: &mut Layer, cpass: &mut ComputePass) {
+        for (key, chunk) in layer.chunks.drain() {
+            cpass.set_pipeline(&self.layer.clear_pipeline);
+            cpass.set_bind_group(0, Some(&chunk.dispatch), &[0]);
+            cpass.set_bind_group(1, Some(&chunk.write), &[]);
+            let chunk_rect = chunk_to_rect(key, self.scratch_dst.chunk_size);
+            dispatch_workgroups(cpass, &[chunk_rect]);
+            self.scratch_pool.list.push(chunk);
+        }
     }
 
     /// Need dispatch buffer to be written ahead

@@ -7,7 +7,7 @@ use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 use crate::{
     layer::{
         input::LayerInput,
-        wrapper::{BrushConfigurationChanged, LayerWrapper},
+        wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::transform::{Transform, TransformValue},
     lnwin::Lnwindow,
@@ -148,7 +148,7 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
 
     let lnwindow = world.single::<Lnwindow>().unwrap();
     let input = world.single::<LayerInput>().unwrap();
-    let wrapper = world.single::<LayerWrapper>().unwrap();
+    let wrapper = world.single::<LayerPage>().unwrap();
     for panel in [
         tab_palette_hsl,
         tab_palette_oklch,
@@ -185,7 +185,7 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         world.queue_trigger(tabs, SetTabsActive(this.active));
     });
 
-    let layer = world.single::<LayerWrapper>().unwrap();
+    let layer = world.single::<LayerPage>().unwrap();
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
         let color = layer.color();
@@ -227,7 +227,7 @@ fn palette_hsl(world: &World, bg: Handle<Container>) {
         target: panel.untyped(),
     });
 
-    let layer = world.single::<LayerWrapper>().unwrap();
+    let layer = world.single::<LayerPage>().unwrap();
     world.observer(panel, move |&ColorHsla(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.set_color(color.into_color());
@@ -287,7 +287,7 @@ fn palette_oklab(world: &World, bg: Handle<Container>, toggle_button: Handle<Tog
         world.queue_trigger(toggle_button, ButtonSelected(false));
     });
 
-    let layer = world.single::<LayerWrapper>().unwrap();
+    let layer = world.single::<LayerPage>().unwrap();
     world.observer(polar, move |&ColorOklab(color), world| {
         let mut layer = world.fetch_mut(layer).unwrap();
         layer.set_color(color.into_color());

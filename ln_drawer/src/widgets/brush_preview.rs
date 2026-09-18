@@ -9,7 +9,7 @@ use crate::{
     layer::{
         LayerPipeline, Standalone,
         brush::{BrushParams, Draw, DrawPipeline, param::BrushParam, round::RoundBrush},
-        wrapper::LayerWrapper,
+        wrapper::LayerPage,
     },
     measures::{FI64Ext, Rectangle},
     render::RenderControl,
@@ -92,9 +92,9 @@ impl BrushPreview {
                 let old_visible = quad.visible;
                 drop(quad);
                 world.remove(instance.quad).unwrap();
-                let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
+                let wrapper = world.single_fetch::<LayerPage>().unwrap();
                 instance.preview_canvas =
-                    wrapper.brush.layer.create_standalone(Rectangle::new_extend(
+                    wrapper.draw.layer.create_standalone(Rectangle::new_extend(
                         0,
                         0,
                         (rect.width() * 2).max(1),

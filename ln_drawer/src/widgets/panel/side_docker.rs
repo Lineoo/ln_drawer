@@ -7,7 +7,7 @@ use crate::{
     layer::{
         brush::param::BrushParamKey,
         input::LayerInput,
-        wrapper::{BrushConfigurationChanged, LayerWrapper},
+        wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::{
         luni::{LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
@@ -30,7 +30,7 @@ use crate::{
 pub fn side_docker(world: &World) {
     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
     let theme = world.single_fetch::<Theme>().unwrap();
-    let layer = world.single::<LayerWrapper>().unwrap();
+    let layer = world.single::<LayerPage>().unwrap();
 
     let side_panel = world.insert(Panel {
         rect: Rectangle::default(),
@@ -141,12 +141,12 @@ pub fn side_docker(world: &World) {
     });
 
     world.observer(undo, move |&ButtonClick, world| {
-        let mut layer = world.fetch_mut::<LayerWrapper>(layer).unwrap();
+        let mut layer = world.fetch_mut::<LayerPage>(layer).unwrap();
         layer.undo();
     });
 
     world.observer(redo, move |&ButtonClick, world| {
-        let mut layer = world.fetch_mut::<LayerWrapper>(layer).unwrap();
+        let mut layer = world.fetch_mut::<LayerPage>(layer).unwrap();
         layer.redo();
     });
 

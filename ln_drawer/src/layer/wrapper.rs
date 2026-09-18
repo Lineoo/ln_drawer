@@ -6,40 +6,34 @@ use std::{
     thread::JoinHandle,
 };
 
-use glam::{IVec2, UVec2, Vec4};
+use glam::{I64Vec2, IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
-use palette::Srgba;
-use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Color, ColorTargetState,
-    ColorWrites, Device, Extent3d, FragmentState, LoadOp, Operations, PipelineLayoutDescriptor,
-    PrimitiveState, PrimitiveTopology, RenderPass, RenderPassColorAttachment, RenderPassDescriptor,
-    RenderPassTimestampWrites, RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, StoreOp, SurfaceConfiguration, Texture, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
-    TextureViewDimension, VertexState,
-};
+use palette::{IntoColor, Srgba};
+use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor, RenderPass};
 
 use crate::{
     layer::{
-        DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_ENABLED, Layer, LayerPipeline,
+        DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_DISABLED, DEFAULT_MIPMAP_ENABLED, Layer, LayerPipeline,
         brush::{
             BrushParams, Draw, DrawPipeline, blur::BlurBrush, param::BrushParam, pixel::PixelBrush,
             round::RoundBrush, smudge::SmudgeBrush, tint::TintBrush,
         },
+        rect_to_chunks,
         stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
         traveler::Traveler,
     },
     lnwin::Lnwindow,
-    measures::Rectangle,
+    measures::{FI64Ext, Rectangle},
     render::{
-        MSAA_STATE, Render, RenderControl, RenderExtra, RenderInformation,
+        Render, RenderControl, RenderExtra, RenderInformation,
         camera::{Camera, CameraBind, CameraUpdated, MainCamera, UICamera},
     },
     save::{Autosave, SaveDatabase},
-    widgets::{renderer::rrect::RRect, shaders::shader_compile},
+    widgets::renderer::rrect::RRect,
 };
+
+// TODO rename module to `page`
 
 pub struct LayerDebugMessage(pub String);
 
@@ -54,37 +48,47 @@ pub struct BrushPreset {
     pub brush: Box<dyn BrushParams>,
 }
 
-pub struct LayerWrapper {
+/// layer page - the main entry of infinite canvas
+///
+/// Page optimization comes from three layers:
+/// 1. `main` - The raw data layer
+/// 2. `merge` - The *view* cache, the same size as the main layer
+///     - contains data merged, for example strokes that are still in draw pipeline scratch
+/// 3. `mipmap` - The LOD part, contains textures that are mipmapped upwards.
+///    - not implemented yet, we are still holding it inside main layer
+///
+/// This structure also contains:
+///
+/// - stream IO loader control
+/// - brush preview
+/// - undo/redo traveler
+pub struct LayerPage {
     pub main: Layer,
-    pub brush: DrawPipeline,
-    pub traveler: Traveler,
+    merge: Layer,
+
+    pub draw: DrawPipeline,
+    traveler: Traveler,
 
     /// Immutable registry of brush presets.
     pub brushes: Vec<BrushPreset>,
     /// Index of the preset the active brush was copied from.
     pub active_brush: usize,
-    /// Temporary working copy of [`Self::brushes`]`[active_brush]`; edits never touch the registry.
+
     active: Box<dyn BrushParams>,
+    erase: RoundBrush,
     color: Srgba,
 
     pub debug: bool,
 
-    pub temp_erase: RoundBrush,
-
     pub brush_preview: Handle<RRect>,
     pub brush_preview_shadow: Handle<RRect>,
-    pub compositing_texture: Texture,
-    pub compositing_config: SurfaceConfiguration,
-    pub compositing_render_bind: BindGroup,
-
-    pub present_pipeline: RenderPipeline,
 
     pub thread_tx: Sender<ThreadInput>,
     pub thread_rx: Receiver<ThreadOutput>,
     pub thread: Option<JoinHandle<()>>,
 }
 
-impl LayerWrapper {
+impl LayerPage {
     pub fn new(world: &World) -> Self {
         let render = world.single_fetch::<Render>().unwrap();
         let camera_bind = world.single_fetch::<CameraBind>().unwrap();
@@ -93,11 +97,11 @@ impl LayerWrapper {
             render.adapter.clone(),
             render.device.clone(),
             render.queue.clone(),
-            TextureFormat::Rgba8Unorm,
+            render.config.format,
             &camera_bind.layout,
         ));
 
-        let brush = DrawPipeline::new(layer.clone());
+        let draw = DrawPipeline::new(layer.clone());
         let traveler = Traveler::new(layer.clone());
 
         let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
@@ -151,11 +155,6 @@ impl LayerWrapper {
             });
             (preview, preview_shadow)
         });
-
-        let (compositing_texture, compositing_render_bind) =
-            compositing_resources(&render.device, &render.config);
-
-        let present_pipeline = present_pipeline(&render.device, &render.config);
 
         let color = Srgba::new(0.0, 0.0, 0.0, 1.0);
 
@@ -223,37 +222,40 @@ impl LayerWrapper {
                 }),
             },
         ];
+
         let mut active = brushes[0].brush.dup();
         active.set_color(color);
 
-        LayerWrapper {
+        LayerPage {
             main: Layer {
                 chunks: HashMap::new(),
                 mipmap_levels: DEFAULT_MIPMAP_ENABLED,
                 chunk_size: DEFAULT_CHUNK_SIZE,
                 controlled: true,
             },
-            brush,
+            merge: Layer {
+                chunks: HashMap::new(),
+                mipmap_levels: DEFAULT_MIPMAP_DISABLED,
+                chunk_size: DEFAULT_CHUNK_SIZE,
+                controlled: false,
+            },
+            draw,
             traveler,
             brushes,
             active_brush: 0,
             active,
             color,
             debug: false,
-            temp_erase: RoundBrush {
+            erase: RoundBrush {
                 size: BrushParam::force_index(5.0, 15.0, 1.0),
                 flow: BrushParam::force_index(0.9, 1.0, 0.5),
-                softness: BrushParam::constant(0.5),
+                softness: BrushParam::constant(0.3),
                 spacing: BrushParam::constant(0.1),
                 color: Srgba::new(1.0, 1.0, 1.0, 1.0),
                 erase: true,
             },
             brush_preview,
             brush_preview_shadow,
-            compositing_texture,
-            compositing_config: render.config.clone(),
-            compositing_render_bind,
-            present_pipeline,
             thread_tx: input_tx,
             thread_rx: output_rx,
             thread: Some(thread),
@@ -268,10 +270,54 @@ impl LayerWrapper {
         self.active.as_mut()
     }
 
-    /// Draw one segment with the temporary working brush.
     pub fn draw_active(&mut self, draw: Draw) {
-        self.active.draw(&mut self.brush, &self.main, draw);
-        self.brush.request_stream(&self.main, &self.thread_tx);
+        self.active.draw(&mut self.draw, &self.main, draw);
+        self.draw.request_stream(&self.main, &self.thread_tx);
+        if let Some(stroke) = &self.draw.stroke
+            && !stroke.replace
+        {
+            self.draw.cache_merge_scratch(&self.main, &mut self.merge);
+        }
+    }
+
+    pub fn draw_erase(&mut self, draw: Draw) {
+        self.erase.draw(&mut self.draw, &self.main, draw);
+        self.draw.request_stream(&self.main, &self.thread_tx);
+        if let Some(stroke) = &self.draw.stroke
+            && !stroke.replace
+        {
+            self.draw.cache_merge_scratch(&self.main, &mut self.merge);
+        }
+    }
+
+    pub fn submit(&mut self) {
+        let Some(stroke) = &self.draw.stroke else {
+            return;
+        };
+
+        let mut encoder =
+            (self.draw.layer.device).create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("page_submit"),
+            });
+
+        self.traveler.stock(&mut encoder, &self.main, stroke.dirty);
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("page_submit"),
+            timestamp_writes: None,
+        });
+
+        self.draw
+            .submit(&mut self.main, Some(&self.thread_tx), &mut cpass);
+        self.merge.chunks.clear();
+        self.draw.recycle_all(&mut self.merge, &mut cpass);
+
+        drop(cpass);
+        self.draw.layer.queue.submit([encoder.finish()]);
+    }
+
+    pub fn discard(&mut self) {
+        self.draw.discard();
     }
 
     /// Copy the preset at `index` into the temporary working brush.
@@ -293,12 +339,25 @@ impl LayerWrapper {
         self.active.set_color(color);
     }
 
+    pub fn pick_color(&mut self, cursor: I64Vec2, world: &World) {
+        let cmd = world.commander();
+        self.draw
+            .layer
+            .pick_color(&self.main, cursor.q32_floor(), move |color| {
+                cmd.queue(move |world| {
+                    let mut wrapper = world.single_fetch_mut::<LayerPage>().unwrap();
+                    wrapper.set_color(color.into_color());
+                    world.queue_trigger(wrapper.handle(), BrushConfigurationChanged);
+                });
+            });
+    }
+
     fn process_stream(&mut self, world: &World) {
         while let Ok(output) = self.thread_rx.try_recv() {
             match output {
                 ThreadOutput::ThreadDebugMessage(msg) => {
                     world.queue_trigger(
-                        world.single::<LayerWrapper>().unwrap(),
+                        world.single::<LayerPage>().unwrap(),
                         LayerDebugMessage(msg),
                     );
                 }
@@ -312,82 +371,69 @@ impl LayerWrapper {
         }
     }
 
-    fn layers_render(&mut self, camera: &Camera, extra: &mut RenderExtra) {
-        // prepare rpass
-        let (start, end) = extra.diagnosis.assign("layers");
-        let compositing_view = self
-            .compositing_texture
-            .create_view(&TextureViewDescriptor::default());
-        let mut rpass = extra
-            .early_encoder
-            .begin_render_pass(&RenderPassDescriptor {
-                label: Some("in_layer_rpass"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &compositing_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(Color::TRANSPARENT),
-                        store: StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: Some(RenderPassTimestampWrites {
-                    query_set: extra.diagnosis.query,
-                    beginning_of_pass_write_index: Some(start),
-                    end_of_pass_write_index: Some(end),
-                }),
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-        // draw layers
-
-        let (start, end) = extra.diagnosis.assign("layers > main");
-        extra.diagnosis.write(&mut rpass, start);
-        (self.brush.layer).render(&self.main, &mut rpass, &camera, self.debug, false);
-        extra.diagnosis.write(&mut rpass, end);
-
-        let (start, end) = extra.diagnosis.assign("layers > scratch");
-        extra.diagnosis.write(&mut rpass, start);
-        (self.brush).scratch_render(&mut rpass, &camera, self.debug);
-        extra.diagnosis.write(&mut rpass, end);
-    }
-
-    fn render(&mut self, camera: &Camera, rpass: &mut RenderPass, mut extra: RenderExtra) {
-        // compositing texture
-        if self.compositing_config != *extra.surface_config {
-            self.compositing_config = extra.surface_config.clone();
-            (self.compositing_texture, self.compositing_render_bind) =
-                compositing_resources(extra.device, extra.surface_config)
-        }
-
-        // in-layer render pass
-        self.layers_render(camera, &mut extra);
-
-        // final screen draw
-        let (start, end) = extra.diagnosis.assign("main > layers_present");
+    fn render(&mut self, camera: &Camera, rpass: &mut RenderPass, extra: RenderExtra) {
+        let (start, end) = extra.diagnosis.assign("main > layers");
         extra.diagnosis.write(rpass, start);
 
-        rpass.set_pipeline(&self.present_pipeline);
-        rpass.set_bind_group(0, &self.compositing_render_bind, &[]);
-        rpass.draw(0..3, 0..1);
+        let view_rect = camera.world_view_rect();
+        let mipmap = (-camera.zoom).q32_floor().max(0) as u8;
+        let actual_mipmap = mipmap.min(self.main.mipmap_levels.saturating_sub(1));
+        let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, self.main.chunk_size);
+        let pixel = camera.zoom.q32_as_f64().exp2() > 6.0;
+
+        match (self.debug, pixel) {
+            (false, false) => rpass.set_pipeline(&self.draw.layer.render_pipelines.over),
+            (false, true) => rpass.set_pipeline(&self.draw.layer.render_pipelines.over_fast),
+            (true, _) => rpass.set_pipeline(&self.draw.layer.render_pipelines.over_debug),
+        }
+
+        rpass.set_bind_group(0, &camera.bind, &[]);
+
+        match pixel {
+            true => rpass.set_bind_group(1, &self.draw.layer.sampler_group_unfiltered, &[]),
+            false => rpass.set_bind_group(1, &self.draw.layer.sampler_group_filtered, &[]),
+        }
+
+        for x in src.0..dst.0 {
+            for y in src.1..dst.1 {
+                if let Some(merge) = self.merge.chunks.get(&(x, y, actual_mipmap)) {
+                    rpass.set_bind_group(2, &merge.render, &[]);
+                    rpass.draw(0..4, 0..1);
+                } else if let Some(scratch) =
+                    self.draw.scratch_dst.chunks.get(&(x, y, actual_mipmap))
+                {
+                    rpass.set_bind_group(2, &scratch.render, &[]);
+                    rpass.draw(0..4, 0..1);
+                } else if let Some(chunk) = self.main.chunks.get(&(x, y, actual_mipmap)) {
+                    rpass.set_bind_group(2, &chunk.render, &[]);
+                    rpass.draw(0..4, 0..1);
+                }
+            }
+        }
 
         extra.diagnosis.write(rpass, end);
-    }
-
-    pub fn stock(&mut self) {
-        let Some(stroke) = &self.brush.stroke else {
-            return;
-        };
-
-        self.traveler.stock(&self.main, stroke.dirty);
     }
 
     pub fn undo(&mut self) {
         if self.traveler.undo_available(&self.main) {
             let dirty = self.traveler.undo(&self.main).unwrap();
-            self.brush.layer.generate_mipmaps(&self.main, dirty);
+
+            let mut encoder =
+                (self.draw.layer.device).create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("page_undo"),
+                });
+
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("page_undo"),
+                timestamp_writes: None,
+            });
+
+            self.draw
+                .layer
+                .generate_mipmaps(&self.main, dirty, &mut cpass);
+
+            drop(cpass);
+            self.draw.layer.queue.submit([encoder.finish()]);
         } else {
             log::debug!("failed to undo");
         }
@@ -396,7 +442,23 @@ impl LayerWrapper {
     pub fn redo(&mut self) {
         if self.traveler.redo_available(&self.main) {
             let dirty = self.traveler.redo(&self.main).unwrap();
-            self.brush.layer.generate_mipmaps(&self.main, dirty);
+
+            let mut encoder =
+                (self.draw.layer.device).create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("page_undo"),
+                });
+
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("page_undo"),
+                timestamp_writes: None,
+            });
+
+            self.draw
+                .layer
+                .generate_mipmaps(&self.main, dirty, &mut cpass);
+
+            drop(cpass);
+            self.draw.layer.queue.submit([encoder.finish()]);
         } else {
             log::debug!("failed to redo");
         }
@@ -408,95 +470,7 @@ impl LayerWrapper {
     }
 }
 
-const LAYOUT_COMPOSITING_PRESENT: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
-    label: Some("compositing_render"),
-    entries: &[BindGroupLayoutEntry {
-        binding: 0,
-        visibility: ShaderStages::FRAGMENT,
-        ty: BindingType::Texture {
-            sample_type: TextureSampleType::Float { filterable: false },
-            view_dimension: TextureViewDimension::D2,
-            multisampled: false,
-        },
-        count: None,
-    }],
-};
-
-fn compositing_resources(device: &Device, config: &SurfaceConfiguration) -> (Texture, BindGroup) {
-    let texture = device.create_texture(&TextureDescriptor {
-        label: Some("compositing"),
-        size: Extent3d {
-            width: config.width,
-            height: config.height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: TextureDimension::D2,
-        format: TextureFormat::Rgba8Unorm,
-        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-
-    let layout = device.create_bind_group_layout(&LAYOUT_COMPOSITING_PRESENT);
-
-    let bind_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("compositing_render"),
-        layout: &layout,
-        entries: &[BindGroupEntry {
-            binding: 0,
-            resource: BindingResource::TextureView(&texture.create_view(&Default::default())),
-        }],
-    });
-
-    (texture, bind_group)
-}
-
-fn present_pipeline(device: &Device, config: &SurfaceConfiguration) -> RenderPipeline {
-    let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("wrapper_present_shader"),
-        source: ShaderSource::Wgsl(shader_compile(include_str!("present.wgsl"), &[]).into()),
-    });
-
-    let compositing_render_layout = device.create_bind_group_layout(&LAYOUT_COMPOSITING_PRESENT);
-
-    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[Some(&compositing_render_layout)],
-        immediate_size: 0,
-    });
-
-    device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("wrapper_present_pipeline"),
-        layout: Some(&layout),
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        primitive: PrimitiveState {
-            topology: PrimitiveTopology::TriangleStrip,
-            ..Default::default()
-        },
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(ColorTargetState {
-                format: config.format,
-                blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: ColorWrites::ALL,
-            })],
-        }),
-        depth_stencil: None,
-        multisample: MSAA_STATE,
-        multiview_mask: None,
-        cache: None,
-    })
-}
-
-impl Drop for LayerWrapper {
+impl Drop for LayerPage {
     fn drop(&mut self) {
         self.thread_tx.send(ThreadInput::Abort).unwrap();
         if let Some(thread) = self.thread.take() {
@@ -505,12 +479,12 @@ impl Drop for LayerWrapper {
     }
 }
 
-impl Element for LayerWrapper {
+impl Element for LayerPage {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.single::<LayerWrapper>().unwrap();
+        world.single::<LayerPage>().unwrap();
 
         let save = world.insert(Autosave(Box::new(move |world, _write| {
-            let this = world.single_fetch::<LayerWrapper>().unwrap();
+            let this = world.single_fetch::<LayerPage>().unwrap();
             this.thread_tx.send(ThreadInput::Autosave).unwrap();
         })));
 
@@ -518,7 +492,7 @@ impl Element for LayerWrapper {
 
         let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
         world.observer(main_camera, move |&CameraUpdated, world| {
-            let this = world.single_fetch::<LayerWrapper>().unwrap();
+            let this = world.single_fetch::<LayerPage>().unwrap();
             let camera = world.fetch(main_camera).unwrap();
 
             this.thread_tx
@@ -540,7 +514,7 @@ impl Element for LayerWrapper {
                 })
             })),
             draw: Some(Box::new(move |world, rpass, extra| {
-                let mut this = world.single_fetch_mut::<LayerWrapper>().unwrap();
+                let mut this = world.single_fetch_mut::<LayerPage>().unwrap();
                 let camera = world.fetch(main_camera).unwrap();
                 this.render(&camera, rpass, extra);
             })),

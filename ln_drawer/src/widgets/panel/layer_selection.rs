@@ -3,7 +3,7 @@ use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
     i18n::{tr, trp},
-    layer::wrapper::LayerWrapper,
+    layer::wrapper::LayerPage,
     layout::transform::{Transform, TransformEdge, TransformValue},
     measures::Rectangle,
     theme::Theme,
@@ -118,7 +118,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>) {
 
         world.observer(layer0_button, move |&ButtonSelected(val), world| {
             if val {
-                let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
+                let mut wrapper = world.single_fetch_mut::<LayerPage>().unwrap();
                 wrapper.set_page(i as u64);
                 world.queue_trigger(layers_node, LayerChosen(i as u64));
             }

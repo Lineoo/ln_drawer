@@ -8,7 +8,7 @@ use crate::{
     i18n::tr,
     layer::{
         input::LayerInput,
-        wrapper::{BrushConfigurationChanged, LayerWrapper},
+        wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::{
         luni::{
@@ -46,7 +46,7 @@ const ITEM_GAP: i32 = 6;
 const LIST_PADDING: i32 = 8;
 
 pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
-    let count = world.single_fetch::<LayerWrapper>().unwrap().brushes.len();
+    let count = world.single_fetch::<LayerPage>().unwrap().brushes.len();
 
     let content_height =
         count as i32 * ITEM_HEIGHT + (count as i32 - 1).max(0) * ITEM_GAP + LIST_PADDING * 2;
@@ -100,10 +100,10 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
 
     let lnwindow = world.single::<Lnwindow>().unwrap();
     let input = world.single::<LayerInput>().unwrap();
-    let wrapper = world.single::<LayerWrapper>().unwrap();
+    let wrapper = world.single::<LayerPage>().unwrap();
     let wrapper_instance = world.fetch(wrapper).unwrap();
     let generator = world.insert(BrushPreviewGenerator::new(
-        wrapper_instance.brush.layer.clone(),
+        wrapper_instance.draw.layer.clone(),
     ));
     for panel in [list_container, settings_container] {
         world.enter(panel, || {
@@ -155,9 +155,9 @@ fn brush_list(
     generator: Handle<BrushPreviewGenerator>,
 ) {
     let theme = world.single_fetch::<Theme>().unwrap();
-    let wrapper = world.single::<LayerWrapper>().unwrap();
+    let wrapper = world.single::<LayerPage>().unwrap();
     let (count, active, labels) = {
-        let layer = world.single_fetch::<LayerWrapper>().unwrap();
+        let layer = world.single_fetch::<LayerPage>().unwrap();
         let labels = layer
             .brushes
             .iter()

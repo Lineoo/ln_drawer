@@ -1,8 +1,7 @@
 use std::time::{Duration, Instant};
 
-use glam::{DVec2, I64Vec2, UVec2};
+use glam::{DVec2, UVec2};
 use ln_world::{Element, Handle, World};
-use palette::IntoColor;
 use winit::{
     cursor::{Cursor, CursorIcon},
     event::{ElementState, PointerKind, WindowEvent},
@@ -12,7 +11,7 @@ use winit::{
 use crate::{
     layer::{
         brush::Draw,
-        wrapper::{BrushConfigurationChanged, LayerWrapper},
+        wrapper::{BrushConfigurationChanged, LayerPage},
     },
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
@@ -69,7 +68,7 @@ impl LayerInput {
             let ui_camera = world.single_fetch::<UICamera>().unwrap();
             world.enter(ui_camera.0, || {
                 let camera = world.fetch(ui_camera.0).unwrap();
-                let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
+                let wrapper = world.single_fetch::<LayerPage>().unwrap();
                 let brush_rect = Rectangle::new_half(
                     camera
                         .screen_to_world_absolute(event.pointer.screen)
@@ -115,7 +114,7 @@ impl LayerInput {
 
             match KeyCode::from(event.physical_key) {
                 KeyCode::KeyZ if press && ctrl => {
-                    let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
+                    let mut wrapper = world.single_fetch_mut::<LayerPage>().unwrap();
 
                     if !shift {
                         wrapper.undo();
@@ -165,7 +164,7 @@ impl LayerInput {
             let mut this = world.fetch_mut(this).unwrap();
             let lnwindow = world.fetch(lnwindow).unwrap();
             let camera_utils = &mut *world.single_fetch_mut::<CameraUtils>().unwrap();
-            let wrapper = &mut *world.single_fetch_mut::<LayerWrapper>().unwrap();
+            let page = &mut *world.single_fetch_mut::<LayerPage>().unwrap();
             let center = touch_center(event);
             let pinch = touch_pinch(event);
 
@@ -194,7 +193,7 @@ impl LayerInput {
                     }
                 }
                 (LayerInputState::None, MultiTouchStatus::Press) if this.ctrl || this.pick => {
-                    pick_color(event.active.position, world, wrapper);
+                    page.pick_color(event.active.position, world);
                     LayerInputState::PickColor
                 }
 
@@ -295,7 +294,7 @@ impl LayerInput {
                         force: event.active.data.force.unwrap_or(1.0),
                     };
 
-                    draw_wrapper(wrapper, draw);
+                    page.draw_active(draw);
 
                     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                     lnwindow.window.request_redraw();
@@ -311,7 +310,7 @@ impl LayerInput {
                     | LayerInputState::PaintNoErase,
                     MultiTouchStatus::Press,
                 ) => {
-                    wrapper.brush.discard();
+                    page.discard();
 
                     camera_utils.camera_cursor_by_anchor_center(center);
                     if let Some(distance) = pinch {
@@ -335,7 +334,7 @@ impl LayerInput {
                         force: event.active.data.force.unwrap_or(1.0),
                     };
 
-                    draw_wrapper(wrapper, draw);
+                    page.draw_active(draw);
 
                     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                     lnwindow.window.request_redraw();
@@ -343,7 +342,7 @@ impl LayerInput {
                     if event.active.screen.distance(start_position) > DRAG_DISTANCE {
                         LayerInputState::PaintNoErase
                     } else if start_instant.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
-                        wrapper.brush.discard();
+                        page.discard();
                         if this.hold_pick {
                             LayerInputState::PickColor
                         } else {
@@ -362,7 +361,7 @@ impl LayerInput {
                         force: event.active.data.force.unwrap_or(1.0),
                     };
 
-                    draw_wrapper(wrapper, draw);
+                    page.draw_active(draw);
 
                     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                     lnwindow.window.request_redraw();
@@ -375,7 +374,7 @@ impl LayerInput {
                         force: event.active.data.force.unwrap_or(1.0),
                     };
 
-                    erase_wrapper(wrapper, draw);
+                    page.draw_erase(draw);
 
                     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                     lnwindow.window.request_redraw();
@@ -391,8 +390,7 @@ impl LayerInput {
                     if event.members.len() > 1 {
                         p
                     } else {
-                        wrapper.stock();
-                        (wrapper.brush).submit(&mut wrapper.main, Some(&wrapper.thread_tx));
+                        page.submit();
                         LayerInputState::None
                     }
                 }
@@ -401,14 +399,14 @@ impl LayerInput {
                     LayerInputState::PickColor,
                     MultiTouchStatus::Press | MultiTouchStatus::Holding,
                 ) => {
-                    pick_color(event.active.position, world, wrapper);
+                    page.pick_color(event.active.position, world);
                     LayerInputState::PickColor
                 }
                 (LayerInputState::PickColor, MultiTouchStatus::Release) => {
-                    pick_color(event.active.position, world, wrapper);
+                    page.pick_color(event.active.position, world);
                     this.pick = false;
                     world.queue_trigger(
-                        world.single::<LayerWrapper>().unwrap(),
+                        world.single::<LayerPage>().unwrap(),
                         BrushConfigurationChanged,
                     );
                     LayerInputState::None
@@ -422,20 +420,6 @@ impl LayerInput {
             update_icon(&this, &state, &lnwindow);
         });
     }
-}
-
-fn pick_color(point: I64Vec2, world: &World, wrapper: &mut LayerWrapper) {
-    let cmd = world.commander();
-    wrapper
-        .brush
-        .layer
-        .pick_color(&wrapper.main, point.q32_floor(), move |color| {
-            cmd.queue(move |world| {
-                let mut wrapper = world.single_fetch_mut::<LayerWrapper>().unwrap();
-                wrapper.set_color(color.into_color());
-                world.queue_trigger(wrapper.handle(), BrushConfigurationChanged);
-            });
-        });
 }
 
 fn update_icon(this: &LayerInput, state: &LayerInputState, lnwindow: &Lnwindow) {
@@ -475,15 +459,6 @@ fn update_icon(this: &LayerInput, state: &LayerInputState, lnwindow: &Lnwindow) 
                 .set_cursor(Cursor::Icon(CursorIcon::Default));
         }
     }
-}
-
-fn draw_wrapper(wrapper: &mut LayerWrapper, draw: Draw) {
-    wrapper.draw_active(draw);
-}
-
-fn erase_wrapper(wrapper: &mut LayerWrapper, draw: Draw) {
-    (wrapper.brush).draw(&wrapper.main, &wrapper.temp_erase, draw);
-    (wrapper.brush).request_stream(&wrapper.main, &wrapper.thread_tx);
 }
 
 fn touch_center(event: &MultiTouchGroup) -> DVec2 {

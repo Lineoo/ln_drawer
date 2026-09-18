@@ -65,7 +65,7 @@ impl Traveler {
         }
     }
 
-    pub fn stock(&mut self, main: &Layer, dirty: Rectangle) {
+    pub fn stock(&mut self, encoder: &mut CommandEncoder, main: &Layer, dirty: Rectangle) {
         // 0. clear redos
         for snapshot in self.redos.drain(..) {
             for section in &snapshot.sections {
@@ -85,13 +85,6 @@ impl Traveler {
                 keys.push(key);
             }
         }
-
-        let mut encoder = self
-            .layer
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("traveler_stock"),
-            });
 
         let mut sections = SmallVec::with_capacity(keys.len());
         for key in keys {
@@ -126,7 +119,7 @@ impl Traveler {
             };
 
             self.copy_into_atlas(
-                &mut encoder,
+                encoder,
                 &chunk.texture,
                 &self.atlas[section.atlas_index].texture,
                 &section,
@@ -134,8 +127,6 @@ impl Traveler {
 
             sections.push(section);
         }
-
-        self.layer.queue.submit([encoder.finish()]);
 
         // 4. stock snapshot
 

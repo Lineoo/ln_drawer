@@ -23,7 +23,7 @@ use wgpu::{
     ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
     ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState, MapMode,
     PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
-    RenderPass, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
+    RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
     ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
     TextureDescriptor, TextureDimension, TextureFormat, TextureFormatFeatureFlags,
     TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
@@ -31,11 +31,7 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
 };
 
-use crate::{
-    measures::{FI64Ext, Rectangle},
-    render::camera::Camera,
-    widgets::shaders::shader_compile,
-};
+use crate::{measures::Rectangle, widgets::shaders::shader_compile};
 
 pub type ChunkKey = (i32, i32, u8);
 
@@ -128,9 +124,6 @@ struct RenderPipelines {
     over: RenderPipeline,
     over_fast: RenderPipeline,
     over_debug: RenderPipeline,
-    replace: RenderPipeline,
-    replace_fast: RenderPipeline,
-    replace_debug: RenderPipeline,
 }
 
 struct MergePipelines {
@@ -337,22 +330,12 @@ impl LayerPipeline {
         self.queue.submit([encoder.finish()]);
     }
 
-    pub fn generate_mipmaps(&self, layer: &Layer, dirty: Rectangle) {
+    pub fn generate_mipmaps(&self, layer: &Layer, dirty: Rectangle, cpass: &mut ComputePass) {
         if layer.mipmap_levels <= 1 {
             return;
         }
 
         write_dispatch(&self.queue, &self.dispatch, 0, dirty);
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("layer_mipmap"),
-            });
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_mipmap"),
-            timestamp_writes: None,
-        });
 
         cpass.set_pipeline(&self.mipmap_pipeline);
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
@@ -376,50 +359,7 @@ impl LayerPipeline {
                     cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
                     let dst_rect = chunk_to_rect(dst_key, layer.chunk_size);
                     let src_rect = chunk_to_rect(src_key, layer.chunk_size);
-                    dispatch_workgroups_divide(&mut cpass, &[dirty, dst_rect, src_rect], scale);
-                }
-            }
-        }
-
-        drop(cpass);
-        self.queue.submit([encoder.finish()]);
-    }
-
-    pub fn render(
-        &self,
-        layer: &Layer,
-        rpass: &mut RenderPass,
-        camera: &Camera,
-        debug: bool,
-        replace: bool,
-    ) {
-        let view_rect = camera.world_view_rect();
-        let mipmap = (-camera.zoom).q32_floor().max(0) as u8;
-        let actual_mipmap = mipmap.min(layer.mipmap_levels.saturating_sub(1));
-        let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, layer.chunk_size);
-        let pixel = camera.zoom.q32_as_f64().exp2() > 6.0;
-
-        match (debug, replace, pixel) {
-            (false, false, false) => rpass.set_pipeline(&self.render_pipelines.over),
-            (false, false, true) => rpass.set_pipeline(&self.render_pipelines.over_fast),
-            (true, false, _) => rpass.set_pipeline(&self.render_pipelines.over_debug),
-            (false, true, false) => rpass.set_pipeline(&self.render_pipelines.replace),
-            (false, true, true) => rpass.set_pipeline(&self.render_pipelines.replace_fast),
-            (true, true, _) => rpass.set_pipeline(&self.render_pipelines.replace_debug),
-        }
-
-        rpass.set_bind_group(0, &camera.bind, &[]);
-
-        match pixel {
-            true => rpass.set_bind_group(1, &self.sampler_group_unfiltered, &[]),
-            false => rpass.set_bind_group(1, &self.sampler_group_filtered, &[]),
-        }
-
-        for x in src.0..dst.0 {
-            for y in src.1..dst.1 {
-                if let Some(chunk) = layer.chunks.get(&(x, y, actual_mipmap)) {
-                    rpass.set_bind_group(2, &chunk.render, &[]);
-                    rpass.draw(0..4, 0..1);
+                    dispatch_workgroups_divide(cpass, &[dirty, dst_rect, src_rect], scale);
                 }
             }
         }
@@ -1226,13 +1166,6 @@ fn render_pipelines(
             BlendState::PREMULTIPLIED_ALPHA_BLENDING,
             "layer_chunk_over_debug",
             "fs_debug0",
-        ),
-        replace: new_pipeline(BlendState::REPLACE, "layer_chunk_replace", "fs_main"),
-        replace_fast: new_pipeline(BlendState::REPLACE, "layer_chunk_replace", "fs_fast"),
-        replace_debug: new_pipeline(
-            BlendState::REPLACE,
-            "layer_chunk_replace_debug",
-            "fs_debug1",
         ),
     }
 }

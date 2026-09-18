@@ -6,7 +6,7 @@ use crate::{
     layer::{
         brush::param::{BrushParamKey, BrushValue, BrushValueMut},
         input::LayerInput,
-        wrapper::{BrushConfigurationChanged, LayerWrapper},
+        wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::{
         luni::{
@@ -33,7 +33,7 @@ pub fn new_panel_settings(
     generator: Handle<BrushPreviewGenerator>,
 ) {
     // Live brush preview //
-    let layer = world.single_fetch::<LayerWrapper>().unwrap();
+    let layer = world.single_fetch::<LayerPage>().unwrap();
     let preview = world.insert(BrushPreview {
         rect: Rectangle::default(),
         generator,
@@ -44,7 +44,7 @@ pub fn new_panel_settings(
 
     world.observer(layer.handle(), move |&BrushConfigurationChanged, world| {
         let mut preview = world.fetch_mut(preview).unwrap();
-        let layer_instance = world.single_fetch::<LayerWrapper>().unwrap();
+        let layer_instance = world.single_fetch::<LayerPage>().unwrap();
         preview.outdated = true;
         preview.brush = Some(layer_instance.active().dup());
     });
@@ -75,7 +75,7 @@ pub fn new_panel_settings(
 
     let lnwindow = world.single::<Lnwindow>().unwrap();
     let input = world.single::<LayerInput>().unwrap();
-    let wrapper = world.single::<LayerWrapper>().unwrap();
+    let wrapper = world.single::<LayerPage>().unwrap();
 
     {
         world.enter(settings, || {
@@ -141,7 +141,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         target: label1.untyped(),
     });
 
-    let layer = world.single::<LayerWrapper>().unwrap();
+    let layer = world.single::<LayerPage>().unwrap();
 
     // Flow //
     let flow_frame = world.insert(EchoWidget);

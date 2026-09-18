@@ -5,7 +5,7 @@ use glam::{I64Vec2, IVec2, UVec2};
 use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
-    layer::wrapper::{LayerDebugMessage, LayerWrapper},
+    layer::wrapper::{LayerDebugMessage, LayerPage},
     layout::transform::{Transform, TransformValue},
     measures::Rectangle,
     render::{
@@ -43,7 +43,7 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>) {
     });
 
     world.observer(submenu, move |&SetWidgetVisible(visible), world| {
-        let mut layer = world.single_fetch_mut::<LayerWrapper>().unwrap();
+        let mut layer = world.single_fetch_mut::<LayerPage>().unwrap();
         layer.debug = visible;
     });
 
@@ -59,7 +59,7 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>) {
     );
 
     world.observer(
-        world.single::<LayerWrapper>().unwrap(),
+        world.single::<LayerPage>().unwrap(),
         move |LayerDebugMessage(msg), world| {
             let render = world.single_fetch::<Render>().unwrap();
             if render.timestamp_poll {
