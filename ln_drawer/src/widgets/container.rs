@@ -1,4 +1,4 @@
-use glam::{DVec2, I64Vec2};
+use glam::{I64Vec2, UVec2};
 use ln_world::{ElemRef, Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -82,18 +82,26 @@ impl Container {
                 (None, PointerHitStatus::Release) => None,
                 (Some(_), PointerHitStatus::Press) => Some(event.pointer.screen),
                 (Some(position), PointerHitStatus::Moving) => {
-                    move_camera(world, handle, event.pointer.screen - position);
+                    let current = world.single_fetch::<CurrentCamera>().unwrap();
+                    let camera = world.fetch(current.0).unwrap();
+                    let delta = camera.screen_to_world_relative(event.pointer.screen - position);
+                    drop(camera);
+                    move_camera(world, handle, delta);
                     Some(event.pointer.screen)
                 }
                 (Some(position), PointerHitStatus::Release) => {
-                    move_camera(world, handle, event.pointer.screen - position);
+                    let current = world.single_fetch::<CurrentCamera>().unwrap();
+                    let camera = world.fetch(current.0).unwrap();
+                    let delta = camera.screen_to_world_relative(event.pointer.screen - position);
+                    drop(camera);
+                    move_camera(world, handle, delta);
                     None
                 }
             }
         });
 
         world.observer(collider, move |event: &PointerScroll, world| {
-            move_camera(world, handle, event.delta);
+            move_camera(world, handle, I64Vec2::q32_from_f64(event.delta));
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
@@ -114,7 +122,11 @@ impl Container {
                 world.queue_trigger(handle, WidgetRectangle(this.inner));
             }
             drop(this);
-            move_camera(world, handle, (rect.origin - old_origin).as_dvec2());
+            move_camera(
+                world,
+                handle,
+                I64Vec2::q32_from_i32(rect.origin - old_origin),
+            );
         });
 
         world.observer(handle, move |&SetWidgetVisible(enabled), world| {
@@ -130,49 +142,44 @@ impl Container {
 
 /// Move the container's internal camera by `delta` while keeping the contents inside the
 /// container bounds.
-pub(crate) fn move_camera(world: &World, handle: Handle<Container>, delta: DVec2) {
+pub(crate) fn move_camera(world: &World, handle: Handle<Container>, delta: I64Vec2) {
     world.enter(handle, || {
         let current = world.single_fetch::<CurrentCamera>().unwrap();
         let mut camera = world.fetch_mut(current.0).unwrap();
-        let delta = camera.screen_to_world_relative(delta).q32_round();
+        let this = world.fetch(handle).unwrap();
 
-        let (inner, rect) = {
-            let this = world.fetch(handle).unwrap();
-            (this.inner, this.rect)
-        };
-
-        let position = -camera.center + I64Vec2::q32_from_i32(delta);
-        let anchored = Rectangle {
-            origin: position.q32_round(),
-            extend: inner.extend,
-        };
-        camera.center = -I64Vec2::q32_from_i32(rect_contain(anchored, rect).origin);
+        camera.center = -rect_contain(-camera.center + delta, this.inner.extend, this.rect);
     });
 }
 
-/// Keep `content` inside `viewport`.
+/// Keep a fixed-point content rectangle inside `viewport`.
 ///
 /// Axes that overflow their viewport axis scroll normally. Axes that are too small to fill the
 /// viewport cannot scroll, so the content is pinned to the top / left edge instead of drifting
 /// freely (the conventional list behavior).
-fn rect_contain(content: Rectangle, viewport: Rectangle) -> Rectangle {
-    let width = content.width();
-    let height = content.height();
-
-    let left = match width >= viewport.width() {
-        true => content
-            .left()
-            .clamp(viewport.right() - width as i32, viewport.left()),
-        false => viewport.left(),
+///
+/// `origin` stays in q32 fixed point on purpose: rounding it to whole pixels on every move throws
+/// away the sub-pixel remainder, so slow drags snap between pixels and the content drifts away
+/// from the pointer. The shader already consumes the fractional camera offset, so keep it.
+fn rect_contain(origin: I64Vec2, extend: UVec2, viewport: Rectangle) -> I64Vec2 {
+    let x = match extend.x >= viewport.width() {
+        true => {
+            let min = i64::q32_from_i32(viewport.right() - extend.x as i32);
+            let max = i64::q32_from_i32(viewport.left());
+            origin.x.clamp(min, max)
+        }
+        false => i64::q32_from_i32(viewport.left()),
     };
-    let down = match height >= viewport.height() {
-        true => content
-            .down()
-            .clamp(viewport.up() - height as i32, viewport.down()),
-        false => viewport.up() - height as i32,
+    let y = match extend.y >= viewport.height() {
+        true => {
+            let min = i64::q32_from_i32(viewport.up() - extend.y as i32);
+            let max = i64::q32_from_i32(viewport.down());
+            origin.y.clamp(min, max)
+        }
+        false => i64::q32_from_i32(viewport.up() - extend.y as i32),
     };
 
-    Rectangle::new_extend(left, down, width, height)
+    I64Vec2::new(x, y)
 }
 
 impl Element for Container {

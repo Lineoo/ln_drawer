@@ -42,7 +42,7 @@ use crate::{
 
 const PANEL_WIDTH: i32 = 364;
 const PANEL_HEIGHT: i32 = 480;
-const ITEM_HEIGHT: i32 = 52;
+const ITEM_HEIGHT: i32 = 100;
 const ITEM_GAP: i32 = 6;
 const LIST_PADDING: i32 = 8;
 
@@ -257,8 +257,8 @@ fn brush_list(
         let label = world.insert(Text {
             text: tr(labels[i]).into(),
             metrics: Metrics {
-                font_size: 15.0,
-                line_height: 18.0,
+                font_size: 12.0,
+                line_height: 14.0,
             },
             attrs: Attrs::new(),
             color: symbolic,
@@ -272,16 +272,16 @@ fn brush_list(
                     offset: 14,
                 },
                 down: TransformEdge {
-                    anchor: 0.5,
-                    offset: -9,
+                    anchor: 1.0,
+                    offset: -4 - 14,
                 },
                 right: TransformEdge {
                     anchor: 1.0,
                     offset: -14,
                 },
                 up: TransformEdge {
-                    anchor: 0.5,
-                    offset: 9,
+                    anchor: 1.0,
+                    offset: -4,
                 },
             },
             source: button.untyped(),
@@ -297,7 +297,24 @@ fn brush_list(
         });
 
         world.insert(Transform {
-            value: TransformValue::copy(),
+            value: TransformValue {
+                left: TransformEdge {
+                    anchor: 0.0,
+                    offset: 0,
+                },
+                down: TransformEdge {
+                    anchor: 0.0,
+                    offset: 0,
+                },
+                right: TransformEdge {
+                    anchor: 1.0,
+                    offset: 0,
+                },
+                up: TransformEdge {
+                    anchor: 1.0,
+                    offset: -20,
+                },
+            },
             source: button.untyped(),
             target: preview.untyped(),
         });
@@ -340,7 +357,7 @@ fn brush_list(
                         let camera = world.fetch(camera.0).unwrap();
                         camera.screen_to_world_relative(screen - prev)
                     });
-                    move_camera(world, container, delta.q32_as_f64());
+                    move_camera(world, container, delta);
                 }
                 last = Some(screen);
             }

@@ -149,6 +149,8 @@ pub trait BrushParams: Send {
     /// Draw directly into a single offscreen chunk instead of a full layer.
     fn draw_standalone(&self, pipeline: &mut DrawPipeline, dst: &Standalone, draw: Draw);
 
+    fn seed(&self) -> bool;
+
     /// Produce an independent copy, used for the temporary working brush.
     fn dup(&self) -> Box<dyn BrushParams>;
 
@@ -178,6 +180,10 @@ macro_rules! brush_params {
                 draw: $crate::layer::brush::Draw,
             ) {
                 pipeline.draw_standalone(dst, self, draw);
+            }
+
+            fn seed(&self) -> bool {
+                self.replace_mode()
             }
 
             fn dup(&self) -> Box<dyn $crate::layer::brush::BrushParams> {

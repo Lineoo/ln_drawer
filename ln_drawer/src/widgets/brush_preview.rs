@@ -50,8 +50,8 @@ impl BrushPreview {
             .create_standalone(Rectangle::new_extend(
                 0,
                 0,
-                self.rect.width().max(1),
-                self.rect.height().max(1),
+                (self.rect.width() * 2).max(1),
+                (self.rect.height() * 2).max(1),
             ));
         let view = preview_canvas
             .chunk
@@ -91,9 +91,13 @@ impl BrushPreview {
                 drop(quad);
                 world.remove(instance.quad).unwrap();
                 let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
-                instance.preview_canvas = wrapper.brush.layer.create_standalone(
-                    Rectangle::new_extend(0, 0, rect.width().max(1), rect.height().max(1)),
-                );
+                instance.preview_canvas =
+                    wrapper.brush.layer.create_standalone(Rectangle::new_extend(
+                        0,
+                        0,
+                        (rect.width() * 2).max(1),
+                        (rect.height() * 2).max(1),
+                    ));
                 this.outdated = true;
                 let view = instance
                     .preview_canvas
@@ -130,8 +134,11 @@ impl BrushPreviewGenerator {
     pub fn paint(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
         self.layer.clear_chunk(&canvas.chunk, canvas.rect);
 
-        self.pipe.reset();
-        self.paint_seed(canvas);
+        if brush.seed() {
+            self.pipe.reset();
+            self.paint_seed(canvas);
+        }
+
         // Begin the brush stroke without connecting it to the seed path.
         self.pipe.reset();
         self.paint_stroke(canvas, brush);
@@ -144,8 +151,8 @@ impl BrushPreviewGenerator {
         let h = canvas.rect.height() as f32;
         let radius = w / 4.0;
         let bands = [
-            (w * 0.25, Srgba::new(0.90, 0.20, 0.20, 1.0)),
-            (w * 0.75, Srgba::new(0.25, 0.40, 0.95, 1.0)),
+            (w * 0.25, Srgba::new(0.409, 0.808, 0.937, 1.0)),
+            (w * 0.75, Srgba::new(0.959, 0.869, 0.601, 1.0)),
         ];
 
         for (x, color) in bands {
@@ -183,8 +190,8 @@ impl BrushPreviewGenerator {
         let steps = 24;
         for i in 0..=steps {
             let t = i as f32 / steps as f32;
-            let x = canvas.rect.width() as f32 * (0.18 + 0.64 * t);
-            let y = canvas.rect.height() as f32 * (0.5 + 0.28 * (t * std::f32::consts::TAU).sin());
+            let x = canvas.rect.width() as f32 * 0.5 - 250. + 500. * t;
+            let y = canvas.rect.height() as f32 * 0.5 + 20. * (t * std::f32::consts::TAU).sin();
             let f = 4. * t * (1. - t);
 
             brush.draw_standalone(
