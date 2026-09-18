@@ -13,7 +13,7 @@ branch = "ln_drawer"
 debug = "line-tables-only"
 
 [profile.dev.package.ln_drawer]
-opt-level = 1
+opt-level = 0
 
 [profile.dev.package.ln_world]
 opt-level = 3

@@ -312,7 +312,7 @@ impl DrawPipeline {
             controlled: false,
         };
 
-        let bridge_texture = create_chunk_texture(&layer.device, BRIDGE_CHUNK_SIZE);
+        let bridge_texture = create_chunk_texture(&layer.device, UVec2::splat(BRIDGE_CHUNK_SIZE));
         let bridge_rect = Rectangle::new_extend(0, 0, BRIDGE_CHUNK_SIZE, BRIDGE_CHUNK_SIZE);
         let bridge_chunk = create_chunk(
             &layer.device,
@@ -519,10 +519,11 @@ impl DrawPipeline {
             brush.prepare_stroke(&mut cpass, &self.layer);
         }
 
+        if brush.bridge_mode() && brush.replace_mode() {
+            self.copy_into_bridge(&mut cpass, &target.chunk, target.rect);
+        }
+
         if brush.bridge_mode() {
-            if brush.replace_mode() {
-                self.copy_into_bridge(&mut cpass, &target.chunk, target.rect);
-            }
             brush.prepare_draw(&mut cpass, &self.layer, &self.bridge.chunk.read);
             self.draw_chunk_cross(
                 &mut cpass,

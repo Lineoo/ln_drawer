@@ -53,12 +53,8 @@ pub fn panel_settings(
 
     // Live brush preview //
     let layer_instance = world.single_fetch::<LayerWrapper>().unwrap();
-    let generator_instance = world.fetch(generator).unwrap();
-    let preview_canvas = generator_instance
-        .layer
-        .create_standalone(Rectangle::new_extend(0, 0, 512, 512));
     let preview = world.insert(BrushPreview {
-        canvas: preview_canvas,
+        rect: Rectangle::default(),
         generator,
         outdated: false,
         brush: Some(layer_instance.active().dup()),

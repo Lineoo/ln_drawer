@@ -15,10 +15,7 @@ use crate::{
         MSAA_STATE, Render, RenderControl,
         camera::{CameraBind, CurrentCamera},
     },
-    widgets::{
-        SetWidgetRectangle, SetWidgetVisible, renderer::canvas::RectangleUniform,
-        shaders::shader_compile,
-    },
+    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::shader_compile},
 };
 
 /// Displays an externally owned [`Texture`] inside a widget rectangle.
@@ -55,10 +52,7 @@ impl TextureQuad {
 
         let rectangle_uniform = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("texture_quad_uniform"),
-            contents: bytemuck::bytes_of(&RectangleUniform {
-                origin: [0, 0],
-                extend: [0, 0],
-            }),
+            contents: bytemuck::bytes_of(&Rectangle::default()),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
@@ -106,20 +100,16 @@ impl TextureQuad {
         });
 
         RenderControl::reorder(self.visible.then_some(self.order), world, control);
+        world.dependency(control, this);
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.rect = rect;
 
             let render = world.single_fetch::<Render>().unwrap();
-            render.queue.write_buffer(
-                &rectangle_uniform,
-                0,
-                bytemuck::bytes_of(&RectangleUniform {
-                    origin: rect.origin.into(),
-                    extend: rect.extend.into(),
-                }),
-            );
+            render
+                .queue
+                .write_buffer(&rectangle_uniform, 0, bytemuck::bytes_of(&rect));
             RenderControl::request_redraw(world);
         });
 

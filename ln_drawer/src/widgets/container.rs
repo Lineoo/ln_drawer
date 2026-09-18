@@ -97,7 +97,7 @@ impl Container {
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let this = &mut *world.fetch_mut(handle).unwrap();
+            let mut this = world.fetch_mut(handle).unwrap();
             let old_origin = this.rect.origin;
             this.rect = rect;
 
@@ -113,6 +113,7 @@ impl Container {
             if relayout {
                 world.queue_trigger(handle, WidgetRectangle(this.inner));
             }
+            drop(this);
             move_camera(world, handle, (rect.origin - old_origin).as_dvec2());
         });
 

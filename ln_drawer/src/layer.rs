@@ -311,7 +311,7 @@ impl LayerPipeline {
 
     /// Create a single offscreen chunk, used as a standalone preview/render target.
     pub fn create_standalone(&self, rect: Rectangle) -> Standalone {
-        let texture = create_chunk_texture(&self.device, rect.extend.x);
+        let texture = create_chunk_texture(&self.device, rect.extend);
         let chunk = create_chunk(&self.device, &self.chunk_layout, texture, rect);
         Standalone { chunk, rect }
     }
@@ -523,7 +523,7 @@ impl ChunkPool {
             );
             chunk
         } else {
-            let texture = create_chunk_texture(&pipeline.device, chunk_size);
+            let texture = create_chunk_texture(&pipeline.device, UVec2::splat(chunk_size));
             let chunk = create_chunk(
                 &pipeline.device,
                 &pipeline.chunk_layout,
@@ -1010,12 +1010,12 @@ fn color_readback_group(
 
 // --- Chunks --- //
 
-fn create_chunk_texture(device: &Device, chunk_size: u32) -> Texture {
+fn create_chunk_texture(device: &Device, size: UVec2) -> Texture {
     device.create_texture(&TextureDescriptor {
         label: Some("layer_chunk_texture"),
         size: Extent3d {
-            width: chunk_size,
-            height: chunk_size,
+            width: size.x,
+            height: size.y,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,

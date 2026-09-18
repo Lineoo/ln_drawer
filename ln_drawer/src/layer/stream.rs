@@ -566,7 +566,7 @@ fn chunk_prepare(
     config: &StreamConfig,
     key: (i32, i32, u8),
 ) -> Result<(Texture, Chunk), Box<dyn Error + 'static>> {
-    let texture = super::create_chunk_texture(&config.device, config.chunk_size);
+    let texture = super::create_chunk_texture(&config.device, UVec2::splat(config.chunk_size));
     let chunk = super::create_chunk(
         &config.device,
         &config.layer_pipeline.chunk_layout,
