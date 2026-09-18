@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use glam::{I64Vec2, IVec2, UVec2};
+use glam::{IVec2, UVec2};
 use ln_world::{ElemRef, Handle, HandleGeneric, ViewRef, World};
 use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
@@ -11,8 +11,7 @@ use crate::{
     },
     layout::transform::{Transform, TransformValue},
     lnwin::Lnwindow,
-    measures::{FI64Ext, Rectangle},
-    render::{RenderControl, RenderPhase, camera::CurrentCamera},
+    measures::Rectangle,
     theme::Theme,
     tools::collider::ToolColliderPortal,
     widgets::{
@@ -157,35 +156,6 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         tab_layer_selection,
         tab_debug,
     ] {
-        let control = world.insert(RenderControl::phase_with_draw(
-            panel,
-            move |world, rpass, extra| {
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let camera = world.single_fetch::<CurrentCamera>().unwrap();
-                let camera = world.fetch(camera.0).unwrap();
-                let panel_rect = world.fetch(panel).unwrap().rect;
-                let window_size = lnwindow.window.surface_size();
-                let left_up = lnwindow.screen_to_cursor(
-                    camera.world_to_screen_absolute(I64Vec2::q32_from_i32(panel_rect.left_up())),
-                );
-                let right_down = lnwindow.screen_to_cursor(
-                    camera.world_to_screen_absolute(I64Vec2::q32_from_i32(panel_rect.right_down())),
-                );
-                rpass.set_scissor_rect(
-                    (left_up.x as u32).max(0),
-                    (left_up.y as u32).max(0),
-                    (right_down.x as u32).min(window_size.width) - (left_up.x as u32),
-                    (right_down.y as u32).min(window_size.height) - (left_up.y as u32),
-                );
-                world.enter(panel, || {
-                    let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
-                    phase.reorder();
-                    phase.draw(world, rpass, extra);
-                });
-                rpass.set_scissor_rect(0, 0, window_size.width, window_size.height);
-            },
-        ));
-        RenderControl::reorder(Some(isize::MAX), world, control);
         world.enter(lnwindow, || {
             world.insert(ToolColliderPortal(panel.untyped()));
         });
@@ -195,7 +165,6 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
             world.insert(ElemRef(panel.untyped()));
             world.insert(ElemRef(toggle_button.untyped()));
             world.insert(ElemRef(wrapper.untyped()));
-            world.insert(RenderPhase::default());
         });
     }
 

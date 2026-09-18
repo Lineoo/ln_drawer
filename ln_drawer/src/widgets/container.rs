@@ -6,7 +6,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{
-        Render,
+        Render, RenderControl, RenderPhase,
         camera::{Camera, CameraBind, CameraDescriptor, CurrentCamera},
     },
     theme::Theme,
@@ -65,7 +65,38 @@ impl Container {
         drop(camera_bind);
         drop(render);
 
+        let control = world.insert(RenderControl::phase_with_draw(
+            handle,
+            move |world, rpass, extra| {
+                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let camera = world.single_fetch::<CurrentCamera>().unwrap();
+                let camera = world.fetch(camera.0).unwrap();
+                let panel_rect = world.fetch(handle).unwrap().rect;
+                let window_size = lnwindow.window.surface_size();
+                let left_up = lnwindow.screen_to_cursor(
+                    camera.world_to_screen_absolute(I64Vec2::q32_from_i32(panel_rect.left_up())),
+                );
+                let right_down = lnwindow.screen_to_cursor(
+                    camera.world_to_screen_absolute(I64Vec2::q32_from_i32(panel_rect.right_down())),
+                );
+                rpass.set_scissor_rect(
+                    (left_up.x as u32).max(0),
+                    (left_up.y as u32).max(0),
+                    (right_down.x as u32).min(window_size.width) - (left_up.x as u32),
+                    (right_down.y as u32).min(window_size.height) - (left_up.y as u32),
+                );
+                world.enter(handle, || {
+                    let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
+                    phase.reorder();
+                    phase.draw(world, rpass, extra);
+                });
+                rpass.set_scissor_rect(0, 0, window_size.width, window_size.height);
+            },
+        ));
+        RenderControl::reorder(Some(isize::MAX), world, control);
+
         world.enter_queue(handle, move |world| {
+            world.insert(RenderPhase::default());
             world.insert(ElemRef(lnwindow.untyped()));
             world.queue(move |world| {
                 let camera = world.insert(camera);
@@ -73,8 +104,16 @@ impl Container {
             });
         });
 
-        let mut status = None;
         world.observer(collider, move |event: &PointerHit, world| {
+            world.trigger(handle, event);
+        });
+
+        world.observer(collider, move |event: &PointerScroll, world| {
+            world.trigger(handle, event);
+        });
+
+        let mut status = None;
+        world.observer(handle, move |event: &PointerHit, world| {
             status = match (status, event.status) {
                 (None, PointerHitStatus::Press | PointerHitStatus::Moving) => {
                     Some(event.pointer.screen)
@@ -100,7 +139,7 @@ impl Container {
             }
         });
 
-        world.observer(collider, move |event: &PointerScroll, world| {
+        world.observer(handle, move |event: &PointerScroll, world| {
             move_camera(world, handle, I64Vec2::q32_from_f64(event.delta));
         });
 

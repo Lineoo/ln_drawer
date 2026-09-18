@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use cosmic_text::{Attrs, Metrics};
-use glam::{I64Vec2, IVec2, UVec2};
+use glam::{IVec2, UVec2};
 use ln_world::{ElemRef, Handle, HandleGeneric, ViewRef, World};
 
 use crate::{
@@ -18,10 +18,12 @@ use crate::{
         transform::{Transform, TransformEdge, TransformValue},
     },
     lnwin::Lnwindow,
-    measures::{FI64Ext, Rectangle},
-    render::{RenderControl, RenderPhase, camera::CurrentCamera},
+    measures::Rectangle,
     theme::Theme,
-    tools::collider::ToolColliderPortal,
+    tools::{
+        collider::ToolColliderPortal,
+        pointer::{PointerHit, PointerScroll},
+    },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         brush_preview::{BrushPreview, BrushPreviewGenerator},
@@ -29,7 +31,7 @@ use crate::{
             ButtonClick, ButtonDrag, ButtonDragStatus, ButtonImage, ButtonSelected,
             SetButtonSelected, ToggleButton, ToggleButtonTheme,
         },
-        container::{Container, move_camera},
+        container::Container,
         echo::Echo,
         renderer::{
             rrect::{RRect, SetRRectColor},
@@ -124,35 +126,6 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         wrapper_instance.brush.layer.clone(),
     ));
     for panel in [list_container, settings_container] {
-        let control = world.insert(RenderControl::phase_with_draw(
-            panel,
-            move |world, rpass, extra| {
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let camera = world.single_fetch::<CurrentCamera>().unwrap();
-                let camera = world.fetch(camera.0).unwrap();
-                let panel_rect = world.fetch(panel).unwrap().rect;
-                let window_size = lnwindow.window.surface_size();
-                let left_up = lnwindow.screen_to_cursor(
-                    camera.world_to_screen_absolute(I64Vec2::q32_from_i32(panel_rect.left_up())),
-                );
-                let right_down = lnwindow.screen_to_cursor(
-                    camera.world_to_screen_absolute(I64Vec2::q32_from_i32(panel_rect.right_down())),
-                );
-                rpass.set_scissor_rect(
-                    (left_up.x as u32).max(0),
-                    (left_up.y as u32).max(0),
-                    (right_down.x as u32).min(window_size.width) - (left_up.x as u32),
-                    (right_down.y as u32).min(window_size.height) - (left_up.y as u32),
-                );
-                world.enter(panel, || {
-                    let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
-                    phase.reorder();
-                    phase.draw(world, rpass, extra);
-                });
-                rpass.set_scissor_rect(0, 0, window_size.width, window_size.height);
-            },
-        ));
-        RenderControl::reorder(Some(isize::MAX), world, control);
         world.enter(lnwindow, || {
             world.insert(ToolColliderPortal(panel.untyped()));
         });
@@ -163,7 +136,6 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
             world.insert(ElemRef(toggle_button.untyped()));
             world.insert(ElemRef(wrapper.untyped()));
             world.insert(ElemRef(generator.untyped()));
-            world.insert(RenderPhase::default());
         });
     }
 
@@ -341,29 +313,33 @@ fn brush_list(
             );
         });
 
-        let mut last = None;
         world.observer(button, move |drag: &ButtonDrag, world| match drag.status {
             ButtonDragStatus::Start => {
-                last = Some(drag.here.pointer.screen);
+                world.trigger(
+                    container,
+                    &PointerHit {
+                        position: drag.here.position,
+                        pointer: drag.here.pointer,
+                        status: drag.from.status,
+                        data: drag.here.data,
+                    },
+                );
             }
-            ButtonDragStatus::Dragging => {
-                let screen = drag.here.pointer.screen;
-                if let Some(prev) = last {
-                    // Convert the screen-space delta with the current camera: a world-space
-                    // delta would include the camera movement we are about to apply, feeding
-                    // back into the next event and making the drag jitter.
-                    let delta = world.enter(container, || {
-                        let camera = world.single_fetch::<CurrentCamera>().unwrap();
-                        let camera = world.fetch(camera.0).unwrap();
-                        camera.screen_to_world_relative(screen - prev)
-                    });
-                    move_camera(world, container, delta);
-                }
-                last = Some(screen);
+            ButtonDragStatus::Dragging | ButtonDragStatus::End => {
+                world.trigger(
+                    container,
+                    &PointerHit {
+                        position: drag.here.position,
+                        pointer: drag.here.pointer,
+                        status: drag.here.status,
+                        data: drag.here.data,
+                    },
+                );
             }
-            ButtonDragStatus::End => {
-                last = None;
-            }
+        });
+
+        world.observer(button, move |scroll: &PointerScroll, world| {
+            world.trigger(container, scroll);
         });
 
         children.push((button.untyped(), LuniChild::default()));

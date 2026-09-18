@@ -11,7 +11,7 @@ use crate::{
     theme::Theme,
     tools::{
         collider::ToolCollider,
-        pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
+        pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus, PointerScroll},
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetHover,
@@ -44,7 +44,6 @@ pub struct ButtonImage {
     pub bytes: Arc<DynamicImage>,
 }
 
-#[expect(unused)]
 pub struct ButtonDrag {
     pub from: PointerHit,
     pub here: PointerHit,
@@ -221,6 +220,10 @@ impl ToggleButton {
                     dragging = false;
                 }
             }
+        });
+
+        world.observer(collider, move |event: &PointerScroll, world| {
+            world.trigger(handle, event);
         });
 
         world.observer(collider, move |event: &PointerHover, world| {
