@@ -80,7 +80,7 @@ impl Element for Camera {
         });
     }
 
-    fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
+    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
         self.queue.write_buffer(
             &self.uniform,
             0,
@@ -92,6 +92,8 @@ impl Element for Camera {
                 zoom_fract: self.zoom.q32_fract(),
             }),
         );
+
+        world.queue_trigger(this, CameraUpdated);
 
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         lnwindow.window.request_redraw();
@@ -394,7 +396,6 @@ impl CameraUtils {
         let mut camera = world.fetch_mut(current_camera.0).unwrap();
         camera.zoom = self.camera_zoom;
         camera.center = self.camera_center;
-        world.queue_trigger(camera.handle(), CameraUpdated);
     }
 
     /// -> camera_center camera_zoom

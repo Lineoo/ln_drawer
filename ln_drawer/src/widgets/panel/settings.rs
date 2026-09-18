@@ -1,10 +1,11 @@
 use cosmic_text::{Attrs, Metrics, Weight};
-use ln_world::{Handle, HandleAny, HandleGeneric, World};
+use ln_world::{ElemRef, Handle, HandleAny, HandleGeneric, ViewRef, World};
 
 use crate::{
     i18n::tr,
     layer::{
         brush::param::{BrushParamKey, BrushValue, BrushValueMut},
+        input::LayerInput,
         wrapper::{BrushConfigurationChanged, LayerWrapper},
     },
     layout::{
@@ -14,8 +15,10 @@ use crate::{
         },
         transform::{Transform, TransformEdge, TransformValue},
     },
+    lnwin::Lnwindow,
     measures::{Axis, Rectangle},
     theme::Theme,
+    tools::collider::ToolColliderPortal,
     widgets::{
         brush_preview::{BrushPreview, BrushPreviewGenerator},
         container::Container,
@@ -25,11 +28,108 @@ use crate::{
     },
 };
 
-pub fn panel_settings(
+pub fn new_panel_settings(
     world: &World,
     panel: Handle<Container>,
     generator: Handle<BrushPreviewGenerator>,
 ) {
+    // Live brush preview //
+    let layer = world.single_fetch::<LayerWrapper>().unwrap();
+    let preview = world.insert(BrushPreview {
+        rect: Rectangle::default(),
+        generator,
+        outdated: false,
+        brush: Some(layer.active().dup()),
+    });
+
+    world.observer(layer.handle(), move |&BrushConfigurationChanged, world| {
+        let mut preview = world.fetch_mut(preview).unwrap();
+        let layer_instance = world.single_fetch::<LayerWrapper>().unwrap();
+        preview.outdated = true;
+        preview.brush = Some(layer_instance.active().dup());
+    });
+
+    let settings = world.insert(Container {
+        rect: Rectangle::default(),
+        inner: Rectangle::default(),
+        inner_transform: TransformValue {
+            left: TransformEdge {
+                anchor: 0.0,
+                offset: 0,
+            },
+            down: TransformEdge {
+                anchor: 1.0,
+                offset: -736,
+            },
+            right: TransformEdge {
+                anchor: 1.0,
+                offset: 0,
+            },
+            up: TransformEdge {
+                anchor: 1.0,
+                offset: 0,
+            },
+        },
+        visible: true,
+    });
+
+    let lnwindow = world.single::<Lnwindow>().unwrap();
+    let input = world.single::<LayerInput>().unwrap();
+    let wrapper = world.single::<LayerWrapper>().unwrap();
+
+    {
+        world.enter(lnwindow, || {
+            world.insert(ToolColliderPortal(settings.untyped()));
+        });
+        world.enter(settings, || {
+            world.insert(ViewRef(lnwindow.untyped()));
+            world.insert(ElemRef(input.untyped()));
+            world.insert(ElemRef(settings.untyped()));
+            world.insert(ElemRef(wrapper.untyped()));
+            world.insert(ElemRef(generator.untyped()));
+        });
+        world.enter_queue(settings, move |world| {
+            panel_settings(world, settings);
+        });
+    }
+
+    world.insert(LuniFlex {
+        parent: (
+            panel.untyped(),
+            LuniParent {
+                axis: LuniAxis::Column,
+                distribution: LuniDistribution::FlexStart,
+                padding: LuniRect {
+                    left: 12,
+                    bottom: 4,
+                    right: 12,
+                    top: 4,
+                },
+                gap: 4,
+                template: LuniChildTemplate::default(),
+            },
+        ),
+        children: vec![
+            (
+                preview.untyped(),
+                LuniChild {
+                    basis: Some(110),
+                    ..Default::default()
+                },
+            ),
+            (
+                settings.untyped(),
+                LuniChild {
+                    basis: Some(200),
+                    grow: Some(1.0),
+                    ..Default::default()
+                },
+            ),
+        ],
+    });
+}
+
+pub fn panel_settings(world: &World, panel: Handle<Container>) {
     let theme = world.single_fetch::<Theme>().unwrap();
 
     let label1_frame = world.insert(EchoWidget);
@@ -50,22 +150,6 @@ pub fn panel_settings(
     });
 
     let layer = world.single::<LayerWrapper>().unwrap();
-
-    // Live brush preview //
-    let layer_instance = world.single_fetch::<LayerWrapper>().unwrap();
-    let preview = world.insert(BrushPreview {
-        rect: Rectangle::default(),
-        generator,
-        outdated: false,
-        brush: Some(layer_instance.active().dup()),
-    });
-
-    world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let mut preview = world.fetch_mut(preview).unwrap();
-        let layer_instance = world.single_fetch::<LayerWrapper>().unwrap();
-        preview.outdated = true;
-        preview.brush = Some(layer_instance.active().dup());
-    });
 
     // Flow //
     let flow_frame = world.insert(EchoWidget);
@@ -259,13 +343,6 @@ pub fn panel_settings(
             },
         ),
         children: vec![
-            (
-                preview.untyped(),
-                LuniChild {
-                    basis: Some(110),
-                    ..Default::default()
-                },
-            ),
             (
                 label1_frame.untyped(),
                 LuniChild {

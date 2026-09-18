@@ -81,24 +81,7 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     let settings_container = world.insert(Container {
         rect: Rectangle::default(),
         inner: Rectangle::default(),
-        inner_transform: TransformValue {
-            left: TransformEdge {
-                anchor: 0.0,
-                offset: 0,
-            },
-            down: TransformEdge {
-                anchor: 1.0,
-                offset: -736,
-            },
-            right: TransformEdge {
-                anchor: 1.0,
-                offset: 0,
-            },
-            up: TransformEdge {
-                anchor: 1.0,
-                offset: 0,
-            },
-        },
+        inner_transform: TransformValue::copy(),
         visible: false,
     });
 
@@ -143,7 +126,7 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         brush_list(world, list_container, generator)
     });
     world.enter_queue(settings_container, move |world| {
-        super::settings::panel_settings(world, settings_container, generator)
+        super::settings::new_panel_settings(world, settings_container, generator)
     });
 
     world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {

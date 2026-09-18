@@ -1,6 +1,9 @@
 pub mod camera;
 
-use std::time::{Duration, Instant};
+use std::{
+    cell::Cell,
+    time::{Duration, Instant},
+};
 
 use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
 use wgpu::{
@@ -88,6 +91,38 @@ pub struct RenderExtra<'a, 'b> {
     pub early_encoder: &'a mut CommandEncoder,
     pub surface_config: &'a SurfaceConfiguration,
     pub diagnosis: &'a mut RenderDiagnosis<'b>,
+    pub scissor: &'a Cell<Option<ScissorRect>>,
+}
+
+/// A pixel scissor rectangle, from the top-left of the surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScissorRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl ScissorRect {
+    /// Intersection of two scissors; `None` when they do not overlap.
+    pub fn intersect(self, other: ScissorRect) -> Option<ScissorRect> {
+        let x = self.x.max(other.x);
+        let y = self.y.max(other.y);
+        let right = self
+            .x
+            .saturating_add(self.width)
+            .min(other.x.saturating_add(other.width));
+        let down = self
+            .y
+            .saturating_add(self.height)
+            .min(other.y.saturating_add(other.height));
+        (right > x && down > y).then_some(ScissorRect {
+            x,
+            y,
+            width: right - x,
+            height: down - y,
+        })
+    }
 }
 
 pub struct RenderDiagnosis<'a> {
@@ -351,7 +386,9 @@ impl Render {
 
         // redraw
 
+        let scissor = Cell::new(None);
         world.foreach_enter::<Camera>(|_| {
+            scissor.set(None);
             let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
             phase.reorder();
             phase.draw(
@@ -363,6 +400,7 @@ impl Render {
                     early_encoder: &mut early_encoder,
                     surface_config: &render.config,
                     diagnosis: &mut diagnosis,
+                    scissor: &scissor,
                 },
             );
         });
@@ -472,6 +510,7 @@ impl RenderPhase {
                 early_encoder: extra.early_encoder,
                 surface_config: extra.surface_config,
                 diagnosis: extra.diagnosis,
+                scissor: extra.scissor,
             };
             world.enter(view, || {
                 let mut control = world.fetch_mut(control).unwrap();
