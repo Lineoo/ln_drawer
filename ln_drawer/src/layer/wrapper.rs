@@ -378,8 +378,7 @@ impl LayerPage {
         let view_rect = camera.world_view_rect();
         let mipmap = (-camera.zoom).q32_floor().max(0) as u8;
         let actual_mipmap = mipmap.min(self.main.mipmap_levels.saturating_sub(1));
-        let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, self.main.chunk_size);
-        let pixel = camera.zoom.q32_as_f64().exp2() > 6.0;
+        let pixel = camera.zoom.q32_as_f64().exp2() > 4.0;
 
         match (self.debug, pixel) {
             (false, false) => rpass.set_pipeline(&self.draw.layer.render_pipelines.over),
@@ -394,6 +393,7 @@ impl LayerPage {
             false => rpass.set_bind_group(1, &self.draw.layer.sampler_group_filtered, &[]),
         }
 
+        let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, self.main.chunk_size);
         for x in src.0..dst.0 {
             for y in src.1..dst.1 {
                 if let Some(merge) = self.merge.chunks.get(&(x, y, actual_mipmap)) {

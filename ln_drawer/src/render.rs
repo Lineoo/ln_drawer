@@ -2,6 +2,10 @@ pub mod camera;
 
 use std::{
     cell::Cell,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -11,8 +15,8 @@ use wgpu::{
     CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device,
     DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, Instance, InstanceDescriptor,
     InstanceFlags, Limits, LoadOp, MapMode, MemoryBudgetThresholds, MemoryHints, MultisampleState,
-    Operations, PollType, PowerPreference, PresentMode, QuerySet, QuerySetDescriptor, QueryType,
-    Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites,
+    Operations, PowerPreference, PresentMode, QuerySet, QuerySetDescriptor, QueryType, Queue,
+    RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites,
     RequestAdapterOptions, StoreOp, Surface, SurfaceColorSpace, SurfaceConfiguration, Texture,
     TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
     TextureViewDescriptor, Trace,
@@ -59,6 +63,7 @@ pub struct Render {
     pub timestamp_resolver: Buffer,
     pub timestamp_mapper: Buffer,
     pub timestamp_query: QuerySet,
+    timestamp_mapped: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -210,6 +215,7 @@ impl Render {
             timestamp_mapper,
             timestamp_resolver,
             timestamp_query,
+            timestamp_mapped: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -409,19 +415,22 @@ impl Render {
 
         // GPU timestamp resolve
 
+        let timestamp_mapped = render.timestamp_mapped.load(Ordering::Acquire);
         encoder.resolve_query_set(
             &render.timestamp_query,
             0..TIMESTAMP_COUNT,
             &render.timestamp_resolver,
             0,
         );
-        encoder.copy_buffer_to_buffer(
-            &render.timestamp_resolver,
-            0,
-            &render.timestamp_mapper,
-            0,
-            TIMESTAMP_BUFFER_SIZE,
-        );
+        if !timestamp_mapped {
+            encoder.copy_buffer_to_buffer(
+                &render.timestamp_resolver,
+                0,
+                &render.timestamp_mapper,
+                0,
+                TIMESTAMP_BUFFER_SIZE,
+            );
+        }
 
         // active refreshing
 
@@ -433,46 +442,62 @@ impl Render {
 
         // GPU profiling
 
-        if render.timestamp_poll {
-            render.timestamp_mapper.map_async(MapMode::Read, .., |_| {});
-            render.device.poll(PollType::wait_indefinitely()).unwrap();
+        if render.timestamp_poll && !timestamp_mapped {
+            let mapper = render.timestamp_mapper.clone();
+            let mapped = render.timestamp_mapped.clone();
+            let cmd = world.commander();
+            let target = world.single::<Render>().unwrap();
+            let slots = std::mem::take(&mut diagnosis.slots);
             let period = render.queue.get_timestamp_period() as u64;
-            let view = render.timestamp_mapper.get_mapped_range(..).unwrap();
-            let (chunks, _) = view.as_chunks::<8>();
-            let mut timestamps = [0u64; TIMESTAMP_COUNT as usize];
-            for (i, &chunk) in chunks.iter().enumerate() {
-                timestamps[i] = u64::from_le_bytes(chunk) * period;
-            }
-            drop(view);
-            render.timestamp_mapper.unmap();
+            let cpu_redraw = now.elapsed();
+            let cpu_frame = render.last_redraw.map(|last| now.duration_since(last));
 
-            let mut pairs = indexmap::IndexMap::<String, Duration>::new();
-            for ((start, end), name) in diagnosis.slots {
-                let duration = pairs.entry(name).or_default();
-                *duration += Duration::from_nanos(timestamps[end] - timestamps[start]);
-            }
+            render.timestamp_mapped.store(true, Ordering::Release);
+            render
+                .timestamp_mapper
+                .map_async(MapMode::Read, .., move |state| {
+                    if state.is_err() {
+                        mapped.store(false, Ordering::Release);
+                        return;
+                    }
 
-            pairs.sort_unstable_keys();
+                    let view = mapper.get_mapped_range(..).unwrap();
+                    let (chunks, _) = view.as_chunks::<8>();
+                    let mut timestamps = [0u64; TIMESTAMP_COUNT as usize];
+                    for (i, &chunk) in chunks.iter().enumerate() {
+                        timestamps[i] = u64::from_le_bytes(chunk) * period;
+                    }
+                    drop(view);
+                    mapper.unmap();
+                    mapped.store(false, Ordering::Release);
 
-            let mut output = String::new();
+                    let mut pairs = indexmap::IndexMap::<String, Duration>::new();
+                    for ((start, end), name) in slots {
+                        let duration = pairs.entry(name).or_default();
+                        *duration += Duration::from_nanos(timestamps[end] - timestamps[start]);
+                    }
 
-            output += &format!(
-                "CPU redraw time: {:.3?}\n",
-                Instant::now().duration_since(now)
-            );
+                    pairs.sort_unstable_keys();
 
-            if let Some(last) = render.last_redraw {
-                output += &format!("CPU frame time: {:.3?}\n", (now - last),)
-            };
+                    let mut output = String::new();
 
-            output += &format!("GPU timestamp period: {} ns\n", period);
+                    output += &format!("CPU redraw time: {:.3?}\n", cpu_redraw);
 
-            for (name, duration) in pairs {
-                let milis = duration.as_secs_f64() * (1e3f64);
-                output += &format!("{name:<30}{milis:>6.3} ms\n");
-            }
+                    if let Some(cpu_frame) = cpu_frame {
+                        output += &format!("CPU frame time: {:.3?}\n", cpu_frame);
+                    };
 
-            world.queue_trigger(world.single::<Render>().unwrap(), output);
+                    output += &format!("GPU timestamp period: {} ns\n", period);
+
+                    for (name, duration) in pairs {
+                        let milis = duration.as_secs_f64() * (1e3f64);
+                        output += &format!("{name:<30}{milis:>6.3} ms\n");
+                    }
+
+                    cmd.queue(move |world| {
+                        world.queue_trigger(target, output);
+                    });
+                });
         }
 
         // CPU time tracing
