@@ -95,12 +95,7 @@ pub fn new_panel_settings(
             LuniParent {
                 axis: LuniAxis::Column,
                 distribution: LuniDistribution::FlexStart,
-                padding: LuniRect {
-                    left: 12,
-                    bottom: 4,
-                    right: 12,
-                    top: 4,
-                },
+                padding: LuniRect::default(),
                 gap: 4,
                 template: LuniChildTemplate::default(),
             },
