@@ -164,7 +164,7 @@ impl LayerWrapper {
                 label: "brush.pen",
                 brush: Box::new(RoundBrush {
                     size: BrushParam::force_index(0.0, 6.0, 1.0),
-                    flow: BrushParam::force_index(0.7, 1.0, 2.0),
+                    flow: BrushParam::force_index(0.9, 1.0, 0.5),
                     softness: BrushParam::constant(0.2),
                     spacing: BrushParam::constant(0.1),
                     color,
@@ -242,7 +242,7 @@ impl LayerWrapper {
             debug: false,
             temp_erase: RoundBrush {
                 size: BrushParam::force_index(5.0, 15.0, 1.0),
-                flow: BrushParam::force_index(0.5, 1.0, 1.0),
+                flow: BrushParam::force_index(0.9, 1.0, 0.5),
                 softness: BrushParam::constant(0.5),
                 spacing: BrushParam::constant(0.1),
                 color: Srgba::new(1.0, 1.0, 1.0, 1.0),

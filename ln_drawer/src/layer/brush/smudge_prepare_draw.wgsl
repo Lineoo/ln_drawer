@@ -35,12 +35,12 @@ fn cs_main() {
     for (var i = 0u; i < draws_length; i++) {
         let draw = draws_array[i];
 
+        let foreground = vec4f(linear_srgb_to_oklab(srgb_to_linear(draw.color).xyz), 1.0) * draw.color.a;
+        smudge = mix(smudge, foreground, draw.color_ratio);
+
         let sampled = sample_disk(draw.position, draw.size * draw.sample_radius);
         let corrected_sampled = painted + sampled * (1.0 - painted.a);
         smudge = mix(smudge, corrected_sampled, draw.sample_rate);
-
-        let foreground = vec4f(linear_srgb_to_oklab(srgb_to_linear(draw.color).xyz), 1.0) * draw.color.a;
-        smudge = mix(smudge, foreground, draw.color_ratio);
 
         draws_state[1 + i] = smudge;
         painted = smudge + painted * (1.0 - smudge.a);
