@@ -28,7 +28,7 @@ use crate::{
 const CHUNK_REAL_CAPS: usize = 512;
 const CHUNK_HARD_CAPS: usize = 1024;
 const CHUNK_BATCH: usize = 8;
-const CHUNK_META0_FORMAT: u32 = 1;
+const CHUNK_META0_FORMAT: u32 = 2;
 
 const TABLE_LAYER_CHUNK: TableDefinition<(u64, ChunkKey), &[u8]> =
     TableDefinition::new("stroke_chunk");
@@ -55,8 +55,6 @@ pub enum ThreadOutput {
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 struct ChunkMeta0 {
     format: u32,
-    /// deprecated
-    _mipmapped: bool,
 }
 
 #[repr(C)]
@@ -319,25 +317,29 @@ fn load(
             let (texture, chunk) = chunk_prepare(config, key)?;
             debug.decode += 1;
 
-            if let Some(meta) = table_meta.get(((config.page, key), 0))?
-                && let Ok(meta0) = postcard::from_bytes::<ChunkMeta0>(meta.value())
-            {
-                if meta0.format > CHUNK_META0_FORMAT {
-                    log::error!(
-                        "Cannot read layer chunk {key:?} from newer version {:?}",
-                        meta0.format
-                    );
-                    continue;
-                } else if meta0.format < CHUNK_META0_FORMAT {
+            if let Some(meta) = table_meta.get(((config.page, key), 0))? {
+                if let Ok(meta0) = postcard::from_bytes::<ChunkMeta0>(meta.value()) {
+                    if meta0.format > CHUNK_META0_FORMAT {
+                        log::error!(
+                            "Cannot read layer chunk {key:?} from newer version {:?}",
+                            meta0.format
+                        );
+                        continue;
+                    } else if meta0.format < CHUNK_META0_FORMAT {
+                        chunk_migration(&mut bytes, key, &meta0)?;
+                        touch_chunk_meta(config, key, meta0)?;
+                    }
+                } else {
+                    // Edge cases: format 1 for meta0 reconstruction
+                    let meta0 = ChunkMeta0 { format: 1 };
+
+                    log::debug!("chunk meta0 reconstruction {key:?}",);
                     chunk_migration(&mut bytes, key, &meta0)?;
                     touch_chunk_meta(config, key, meta0)?;
                 }
             } else {
                 // Edge cases: format 0 for older version that did not add meta0
-                let meta0 = ChunkMeta0 {
-                    format: 0,
-                    _mipmapped: false,
-                };
+                let meta0 = ChunkMeta0 { format: 0 };
 
                 log::warn!("failed to get metadata from chunk {key:?}",);
                 chunk_migration(&mut bytes, key, &meta0)?;
@@ -548,7 +550,6 @@ fn write_chunk_data(
 
         let meta0 = ChunkMeta0 {
             format: CHUNK_META0_FORMAT,
-            _mipmapped: true,
         };
 
         let mut meta_bytes = [0u8; 16];
@@ -675,6 +676,9 @@ fn chunk_migration(
                 }
 
                 log::debug!("gamma fix applied on {key:?}");
+            }
+            1 => {
+                // remove deprecated mipmap field, migration is a no-op
             }
             _ => unimplemented!("unsupported migration {migrate_format}"),
         }
