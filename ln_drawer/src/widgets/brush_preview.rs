@@ -158,8 +158,9 @@ impl BrushPreviewGenerator {
         for (x, color) in bands {
             let brush = RoundBrush {
                 size: BrushParam::constant(radius),
-                flow: BrushParam::constant(0.9),
+                flow: BrushParam::constant(1.0),
                 softness: BrushParam::constant(0.01),
+                spacing: BrushParam::constant(0.1),
                 color,
                 erase: false,
             };

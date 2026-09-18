@@ -74,7 +74,7 @@ pub trait Brush {
     type Draw: Clone + Copy + Pod + Zeroable;
 
     fn process(&self, draw: Draw) -> Self::Draw;
-    fn step(&self, draw: Self::Draw) -> f32;
+    fn step(&self, draw: Draw) -> f32;
     fn dirty(&self, draw: Self::Draw) -> Rectangle;
 
     /// Append the stamps for the segment `from -> to` (excluding `from`) and
@@ -87,14 +87,17 @@ pub trait Brush {
         let from_position = from.position.q32_as_f64();
         let to_position = to.position.q32_as_f64();
         let whole_dist = from_position.distance(to_position);
+        let cap = DRAWS_ARRAY_CAPACITY as usize / size_of::<Self::Draw>();
 
         let mut curr = from;
         let mut curr_position = from_position;
-        while curr_position.distance(to_position) >= self.step(self.process(curr)) as f64
-            && out.len() < DRAWS_ARRAY_CAPACITY as usize / size_of::<Self::Draw>()
-        {
-            let step = self.step(self.process(curr));
-            curr_position = curr_position.move_towards(to_position, step as f64);
+        loop {
+            let step = self.step(curr) as f64;
+            if curr_position.distance(to_position) < step || out.len() >= cap {
+                break;
+            }
+
+            curr_position = curr_position.move_towards(to_position, step);
             curr.position = I64Vec2::q32_from_f64(curr_position);
             let curr_dist = curr_position.distance(to_position);
             let progress = match whole_dist < 1e-6 {
@@ -225,6 +228,7 @@ brush_params!(RoundBrush, {
     Size => Scalar(size),
     Flow => Scalar(flow),
     Softness => Scalar(softness),
+    Spacing => Scalar(spacing),
     Color => Color(color),
     Erase => Toggle(erase),
 });
@@ -232,6 +236,7 @@ brush_params!(RoundBrush, {
 brush_params!(PixelBrush, {
     Size => Scalar(size),
     Flow => Scalar(flow),
+    Spacing => Scalar(spacing),
     Color => Color(color),
     Erase => Toggle(erase),
 });
@@ -240,12 +245,14 @@ brush_params!(BlurBrush, {
     Size => Scalar(size),
     Sigma => Scalar(sigma),
     Softness => Scalar(softness),
+    Spacing => Scalar(spacing),
 });
 
 brush_params!(SmudgeBrush, {
     Size => Scalar(size),
     Flow => Scalar(flow),
     Softness => Scalar(softness),
+    Spacing => Scalar(spacing),
     Color => Color(color),
     ColorRatio => Scalar(color_ratio),
     SampleRadius => Scalar(sample_radius),
@@ -255,6 +262,7 @@ brush_params!(SmudgeBrush, {
 brush_params!(TintBrush, {
     Size => Scalar(size),
     Softness => Scalar(softness),
+    Spacing => Scalar(spacing),
     Color => Color(color),
     Flow => Vec4(flow),
 });

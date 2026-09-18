@@ -6,16 +6,24 @@ use wgpu::{BindGroup, ComputePass};
 use crate::{
     layer::{
         LayerPipeline,
-        brush::{Brush, Draw, param::BrushParam},
+        brush::{
+            Brush, Draw,
+            param::{BrushParam, flow_coeff, overlap, rate_coeff, step_of},
+        },
     },
     measures::{FI64Ext, Rectangle},
 };
+
+/// The smudge pickup/foreground mix is normalized per pixel of travel, so `sample_rate` and
+/// `color_ratio` keep the same strength at any spacing or brush size.
+const SMUDGE_REFERENCE_LENGTH: f32 = 1.0;
 
 #[derive(Clone)]
 pub struct SmudgeBrush {
     pub size: BrushParam<f32>,
     pub flow: BrushParam<f32>,
     pub softness: BrushParam<f32>,
+    pub spacing: BrushParam<f32>,
     pub color: Srgba,
     pub color_ratio: BrushParam<f32>,
     pub sample_radius: BrushParam<f32>,
@@ -41,22 +49,26 @@ impl Brush for SmudgeBrush {
     type Draw = SmudgeDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
+        let size = self.size.get(draw);
+        let step = step_of(size, self.spacing.get(draw));
+        let overlap = overlap(size, step);
+
         SmudgeDraw {
             color: Vec4::from(self.color.into_components()),
             position: draw.position.q32_floor(),
             position_fract: draw.position.q32_fract(),
             softness: self.softness.get(draw),
-            size: self.size.get(draw),
-            flow: self.flow.get(draw),
-            color_ratio: self.color_ratio.get(draw),
+            size,
+            flow: flow_coeff(self.flow.get(draw), overlap),
+            color_ratio: rate_coeff(self.color_ratio.get(draw), step, SMUDGE_REFERENCE_LENGTH),
             sample_radius: self.sample_radius.get(draw),
-            sample_rate: self.sample_rate.get(draw),
+            sample_rate: rate_coeff(self.sample_rate.get(draw), step, SMUDGE_REFERENCE_LENGTH),
             _pad: [0; 2],
         }
     }
 
-    fn step(&self, draw: Self::Draw) -> f32 {
-        draw.size / 5.0
+    fn step(&self, draw: Draw) -> f32 {
+        step_of(self.size.get(draw), self.spacing.get(draw))
     }
 
     fn dirty(&self, draw: Self::Draw) -> Rectangle {

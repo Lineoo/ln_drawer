@@ -5,7 +5,10 @@ use palette::Srgba;
 use crate::{
     layer::{
         LayerPipeline,
-        brush::{Brush, Draw, param::BrushParam},
+        brush::{
+            Brush, Draw,
+            param::{BrushParam, flow_coeff, overlap, step_of},
+        },
     },
     measures::{FI64Ext, Rectangle},
 };
@@ -14,6 +17,7 @@ use crate::{
 pub struct TintBrush {
     pub size: BrushParam<f32>,
     pub softness: BrushParam<f32>,
+    pub spacing: BrushParam<f32>,
     pub color: Srgba,
     pub flow: Vec4,
 }
@@ -34,19 +38,32 @@ impl Brush for TintBrush {
     type Draw = TintDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
+        let size = self.size.get(draw);
+        let step = step_of(size, self.spacing.get(draw));
+        let overlap = overlap(size, step);
+
+        // `flow.a` is the per-dab alpha and `flow.rgb` the under/over mix ratio; both accumulate
+        // geometrically so both are normalized by the overlap count.
+        let flow = Vec4::new(
+            flow_coeff(self.flow.x, overlap),
+            flow_coeff(self.flow.y, overlap),
+            flow_coeff(self.flow.z, overlap),
+            flow_coeff(self.flow.w, overlap),
+        );
+
         TintDraw {
             color: Vec4::from(self.color.into_components()),
-            flow: self.flow,
+            flow,
             position: draw.position.q32_floor(),
             position_fract: draw.position.q32_fract(),
             softness: self.softness.get(draw),
-            size: self.size.get(draw),
+            size,
             _pad: [0; 2],
         }
     }
 
-    fn step(&self, draw: Self::Draw) -> f32 {
-        draw.size / 5.0
+    fn step(&self, draw: Draw) -> f32 {
+        step_of(self.size.get(draw), self.spacing.get(draw))
     }
 
     fn dirty(&self, draw: Self::Draw) -> Rectangle {

@@ -58,7 +58,7 @@ pub fn new_panel_settings(
             },
             down: TransformEdge {
                 anchor: 1.0,
-                offset: -736,
+                offset: -(108 + 4) * 7 - 48 - 8,
             },
             right: TransformEdge {
                 anchor: 1.0,
@@ -183,6 +183,19 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
+    // Spacing //
+    let spacing_frame = world.insert(EchoWidget);
+    let spacing_label = option_label(world, String::new(), spacing_frame.untyped());
+    let spacing_desc = option_desc(world, String::new(), spacing_frame.untyped());
+    let (spacing_slider, spacing_slider_label) = option_slider(world, spacing_frame.untyped());
+    world.observer(spacing_slider, move |&SliderValue(value), world| {
+        let mut layer = world.fetch_mut(layer).unwrap();
+        if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Spacing) {
+            param.scale = value;
+        }
+        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+    });
+
     // Color Ratio //
     let color_ratio_frame = world.insert(EchoWidget);
     let color_ratio_label = option_label(world, String::new(), color_ratio_frame.untyped());
@@ -234,6 +247,8 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         let mut sigma_desc = world.fetch_mut(sigma_desc).unwrap();
         let mut softness_label = world.fetch_mut(softness_label).unwrap();
         let mut softness_desc = world.fetch_mut(softness_desc).unwrap();
+        let mut spacing_label = world.fetch_mut(spacing_label).unwrap();
+        let mut spacing_desc = world.fetch_mut(spacing_desc).unwrap();
         let mut color_ratio_label = world.fetch_mut(color_ratio_label).unwrap();
         let mut color_ratio_desc = world.fetch_mut(color_ratio_desc).unwrap();
         let mut sample_radius_label = world.fetch_mut(sample_radius_label).unwrap();
@@ -273,6 +288,17 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
             .unwrap_or(1.0);
         world.queue_trigger(softness_slider, SetSliderValue(softness));
         world.queue_trigger(softness_slider_label, SetText(format!("{softness:.2}")));
+
+        // Spacing //
+        spacing_label.set_text(tr("settings.brush.spacing.label"));
+        spacing_desc.set_text(tr("settings.brush.spacing.desc"));
+        let spacing = layer
+            .active()
+            .scalar(BrushParamKey::Spacing)
+            .map(|param| param.scale)
+            .unwrap_or(0.1);
+        world.queue_trigger(spacing_slider, SetSliderValue(spacing));
+        world.queue_trigger(spacing_slider_label, SetText(format!("{spacing:.2}")));
 
         // Color Ratio //
         color_ratio_label.set_text(tr("settings.brush.color_ratio.label"));
@@ -357,6 +383,13 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
             ),
             (
                 softness_frame.untyped(),
+                LuniChild {
+                    basis: Some(108),
+                    ..Default::default()
+                },
+            ),
+            (
+                spacing_frame.untyped(),
                 LuniChild {
                     basis: Some(108),
                     ..Default::default()

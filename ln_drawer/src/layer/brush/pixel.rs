@@ -7,7 +7,10 @@ use palette::Srgba;
 use crate::{
     layer::{
         DRAWS_ARRAY_CAPACITY, LayerPipeline,
-        brush::{Brush, Draw, param::BrushParam},
+        brush::{
+            Brush, Draw,
+            param::{BrushParam, flow_coeff, overlap, pixel_step_of},
+        },
     },
     measures::{FI64Ext, Rectangle},
 };
@@ -16,6 +19,7 @@ use crate::{
 pub struct PixelBrush {
     pub size: BrushParam<f32>,
     pub flow: BrushParam<f32>,
+    pub spacing: BrushParam<f32>,
     pub color: Srgba,
     pub erase: bool,
 }
@@ -33,20 +37,25 @@ impl Brush for PixelBrush {
     type Draw = PixelDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
+        let size = self.size.get(draw);
+        let step = pixel_step_of(size, self.spacing.get(draw));
+        let overlap = overlap(size, step);
+
         PixelDraw {
             color: Vec4::from(self.color.into_components()),
             position: draw.position.q32_floor(),
-            size: self.size.get(draw),
-            flow: self.flow.get(draw),
+            size,
+            flow: flow_coeff(self.flow.get(draw), overlap),
         }
     }
 
-    fn step(&self, _draw: Self::Draw) -> f32 {
+    fn step(&self, _draw: Draw) -> f32 {
         1.0
     }
 
     fn interpolate(&self, from: Draw, to: Draw, out: &mut Vec<Self::Draw>) -> Draw {
         let cap = DRAWS_ARRAY_CAPACITY as usize / size_of::<Self::Draw>();
+        let stride = pixel_step_of(self.size.get(from), self.spacing.get(from)) as i64;
 
         let mut pixel = from.position.q32_floor();
         let target = to.position.q32_floor();
@@ -71,10 +80,6 @@ impl Brush for PixelBrush {
                 pixel.y += sy;
             }
 
-            if out.len() >= cap {
-                return curr;
-            }
-
             index += 1;
             curr.position = I64Vec2::q32_from_i32(pixel);
             let progress = match steps {
@@ -82,6 +87,15 @@ impl Brush for PixelBrush {
                 _ => index as f32 / steps as f32,
             };
             curr.force = from.force + (to.force - from.force) * progress;
+
+            if index % stride != 0 {
+                continue;
+            }
+
+            if out.len() >= cap {
+                return curr;
+            }
+
             out.push(self.process(curr));
         }
 

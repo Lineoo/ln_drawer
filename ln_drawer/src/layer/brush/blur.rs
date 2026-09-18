@@ -5,7 +5,10 @@ use wgpu::ComputePass;
 use crate::{
     layer::{
         LayerPipeline,
-        brush::{Brush, Draw, param::BrushParam},
+        brush::{
+            Brush, Draw,
+            param::{BrushParam, mask_sq_integral, step_of},
+        },
     },
     measures::{FI64Ext, Rectangle},
 };
@@ -15,6 +18,7 @@ pub struct BlurBrush {
     pub size: BrushParam<f32>,
     pub sigma: BrushParam<f32>,
     pub softness: BrushParam<f32>,
+    pub spacing: BrushParam<f32>,
 }
 
 #[repr(C)]
@@ -32,18 +36,26 @@ impl Brush for BlurBrush {
     type Draw = BlurDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
+        let size = self.size.get(draw);
+        let softness = self.softness.get(draw);
+        let step = step_of(size, self.spacing.get(draw));
+
+        // Each dab accumulates `(sigma * mask)²`; normalize so the stroke's total variance is the
+        // user sigma regardless of how many dabs overlap.
+        let variance = (mask_sq_integral(size, softness) / step).max(1e-6);
+
         BlurDraw {
             position: draw.position.q32_floor(),
             position_fract: draw.position.q32_fract(),
-            softness: self.softness.get(draw),
-            size: self.size.get(draw),
-            sigma: self.sigma.get(draw),
+            softness,
+            size,
+            sigma: self.sigma.get(draw) / variance.sqrt(),
             _pad: 0,
         }
     }
 
-    fn step(&self, draw: Self::Draw) -> f32 {
-        draw.size / 5.0
+    fn step(&self, draw: Draw) -> f32 {
+        step_of(self.size.get(draw), self.spacing.get(draw))
     }
 
     fn dirty(&self, draw: Self::Draw) -> Rectangle {
