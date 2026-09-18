@@ -1,12 +1,11 @@
 use ln_world::{Element, Handle, World};
 use wgpu::{
-    AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
-    Buffer, BufferBindingType, BufferUsages, ColorTargetState, ColorWrites, FilterMode,
-    FragmentState, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPipeline,
+    AddressMode, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBindingType,
+    BufferUsages, ColorTargetState, ColorWrites, FilterMode, FragmentState,
+    PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPipeline,
     RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, Texture, TextureSampleType, TextureViewDescriptor,
-    TextureViewDimension, VertexState,
+    ShaderSource, ShaderStages, TextureSampleType, TextureView, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -30,9 +29,7 @@ pub struct TextureQuad {
     pub rect: Rectangle,
     pub visible: bool,
     pub order: isize,
-
-    rectangle_uniform: Buffer,
-    bind: BindGroup,
+    pub view: TextureView,
 }
 
 pub struct TextureQuadPipeline {
@@ -41,15 +38,10 @@ pub struct TextureQuadPipeline {
 }
 
 impl TextureQuad {
-    pub fn from_texture(world: &World, texture: &Texture, order: isize) -> Self {
+    pub fn init(&self, world: &World, this: Handle<Self>) {
         let render = world.single_fetch::<Render>().unwrap();
         let pipeline = world.single_fetch::<TextureQuadPipeline>().unwrap();
         let device = &render.device;
-
-        let view = texture.create_view(&TextureViewDescriptor {
-            label: Some("texture_quad_texture_view"),
-            ..Default::default()
-        });
 
         let sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("texture_quad_sampler"),
@@ -80,7 +72,7 @@ impl TextureQuad {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&view),
+                    resource: BindingResource::TextureView(&self.view),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -89,16 +81,6 @@ impl TextureQuad {
             ],
         });
 
-        TextureQuad {
-            rect: Rectangle::default(),
-            visible: false,
-            order,
-            rectangle_uniform,
-            bind,
-        }
-    }
-
-    pub fn init(&self, world: &World, this: Handle<Self>) {
         let control = world.insert(RenderControl {
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
@@ -116,7 +98,7 @@ impl TextureQuad {
 
                 rpass.set_pipeline(&pipeline.pipeline);
                 rpass.set_bind_group(0, &camera.bind, &[]);
-                rpass.set_bind_group(1, &quad.bind, &[]);
+                rpass.set_bind_group(1, &bind, &[]);
                 rpass.draw(0..4, 0..1);
 
                 extra.diagnosis.write(rpass, end);
@@ -131,7 +113,7 @@ impl TextureQuad {
 
             let render = world.single_fetch::<Render>().unwrap();
             render.queue.write_buffer(
-                &this.rectangle_uniform,
+                &rectangle_uniform,
                 0,
                 bytemuck::bytes_of(&RectangleUniform {
                     origin: rect.origin.into(),

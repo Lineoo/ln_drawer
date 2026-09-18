@@ -3,6 +3,7 @@ use std::sync::Arc;
 use glam::{DVec2, I64Vec2, IVec2};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
+use wgpu::TextureViewDescriptor;
 
 use crate::{
     layer::{
@@ -14,14 +15,61 @@ use crate::{
     widgets::{SetWidgetRectangle, SetWidgetVisible, renderer::texture_quad::TextureQuad},
 };
 
+/// A widget that displays an engine-rendered brush preview.
+///
+/// It is agnostic of where the brush comes from: callers invoke [`BrushPreview::paint`] from
+/// their own observers when the brush or its settings change.
+pub struct BrushPreview {
+    pub canvas: Standalone,
+    pub generator: Handle<BrushPreviewGenerator>,
+    pub brush: Option<Box<dyn BrushParams>>,
+    pub outdated: bool,
+}
+
 /// Bakes a real brush stroke into a small offscreen [`Standalone`] canvas.
 ///
 /// Uses a dedicated [`DrawPipeline`] so the live stroke and undo state of the drawing engine are
 /// never touched, and draws into the canvas directly through [`DrawPipeline::draw_standalone`]
 /// instead of the scratch layer.
 pub struct BrushPreviewGenerator {
-    layer: Arc<LayerPipeline>,
-    pipe: DrawPipeline,
+    pub layer: Arc<LayerPipeline>,
+    pub pipe: DrawPipeline,
+}
+
+impl BrushPreview {
+    fn init(&self, world: &World, this: Handle<Self>) {
+        let view = self
+            .canvas
+            .chunk
+            .texture
+            .create_view(&TextureViewDescriptor::default());
+        let quad = world.insert(TextureQuad {
+            rect: Rectangle::default(),
+            visible: true,
+            order: 50,
+            view,
+        });
+        world.insert(RenderControl {
+            prepare: Some(Box::new(move |world| {
+                let mut this = world.fetch_mut(this).unwrap();
+                if let Some(brush) = &this.brush
+                    && this.outdated
+                {
+                    let mut generator = world.fetch_mut(this.generator).unwrap();
+                    generator.paint(&this.canvas, brush.as_ref());
+                    this.outdated = false;
+                }
+                None
+            })),
+            draw: None,
+        });
+        world.observer(this, move |&SetWidgetRectangle(rect), world| {
+            world.queue_trigger(quad, SetWidgetRectangle(rect));
+        });
+        world.observer(this, move |&SetWidgetVisible(visible), world| {
+            world.queue_trigger(quad, SetWidgetVisible(visible));
+        });
+    }
 }
 
 impl BrushPreviewGenerator {
@@ -66,7 +114,7 @@ impl BrushPreviewGenerator {
             let brush = RoundBrush {
                 size: BrushParam::constant(DEFAULT_CHUNK_SIZE as f32 * 0.22),
                 flow: BrushParam::constant(0.9),
-                softness: BrushParam::constant(0.7),
+                softness: BrushParam::constant(0.01),
                 color: colors[i % colors.len()],
                 erase: false,
             };
@@ -95,84 +143,29 @@ impl BrushPreviewGenerator {
     /// A gentle S-curve with a pressure ramp, drawn with the previewed brush.
     fn paint_stroke(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
         let c = DEFAULT_CHUNK_SIZE as f32;
-        let steps = 8;
+        let steps = 24;
         for i in 0..=steps {
             let t = i as f32 / steps as f32;
             let x = c * (0.18 + 0.64 * t);
             let y = c * (0.5 + 0.28 * (t * std::f32::consts::TAU).sin());
+            let f = 4. * t * (1. - t);
 
             brush.draw_standalone(
                 &mut self.pipe,
                 canvas,
                 Draw {
                     position: I64Vec2::q32_from_f64(DVec2::new(x as f64, y as f64)),
-                    force: 0.25 + 0.75 * t,
+                    force: 0.25 + 0.75 * f,
                 },
             );
         }
     }
 }
 
-impl Element for BrushPreviewGenerator {}
-
-/// A widget that displays an engine-rendered brush preview.
-///
-/// It is agnostic of where the brush comes from: callers invoke [`BrushPreview::paint`] from
-/// their own observers when the brush or its settings change.
-pub struct BrushPreview {
-    canvas: Standalone,
-    generator: Handle<BrushPreviewGenerator>,
-    quad: Handle<TextureQuad>,
-}
-
-impl BrushPreview {
-    pub fn build(
-        world: &World,
-        generator: Handle<BrushPreviewGenerator>,
-        order: isize,
-    ) -> Handle<Self> {
-        let generator_instance = world.fetch(generator).unwrap();
-        let canvas = generator_instance
-            .layer
-            .create_standalone(Rectangle::new_extend(
-                0,
-                0,
-                DEFAULT_CHUNK_SIZE,
-                DEFAULT_CHUNK_SIZE,
-            ));
-        let quad = world.insert(TextureQuad::from_texture(
-            world,
-            &canvas.chunk.texture,
-            order,
-        ));
-
-        world.insert(BrushPreview {
-            canvas,
-            generator,
-            quad,
-        })
-    }
-
-    /// Repaint this preview with `brush` and schedule a redraw.
-    pub fn paint(world: &World, this: Handle<Self>, brush: &dyn BrushParams) {
-        let preview = world.fetch(this).unwrap();
-        let generator = preview.generator;
-        let canvas = &preview.canvas;
-
-        world.fetch_mut(generator).unwrap().paint(canvas, brush);
-
-        RenderControl::request_redraw(world);
-    }
-}
-
 impl Element for BrushPreview {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let quad = self.quad;
-        world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            world.queue_trigger(quad, SetWidgetRectangle(rect));
-        });
-        world.observer(this, move |&SetWidgetVisible(visible), world| {
-            world.queue_trigger(quad, SetWidgetVisible(visible));
-        });
+        self.init(world, this);
     }
 }
+
+impl Element for BrushPreviewGenerator {}

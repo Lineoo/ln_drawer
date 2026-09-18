@@ -288,17 +288,22 @@ fn brush_list(
             target: label.untyped(),
         });
 
-        let preview = BrushPreview::build(world, generator, 10);
+        let wrapper_instance = world.fetch(wrapper).unwrap();
+        let generator_instance = world.fetch(generator).unwrap();
+        let preview_canvas = generator_instance
+            .layer
+            .create_standalone(Rectangle::new_extend(0, 0, 512, 512));
+        let preview = world.insert(BrushPreview {
+            canvas: preview_canvas,
+            generator,
+            outdated: true,
+            brush: wrapper_instance.brushes.get(i).map(|x| x.brush.dup()),
+        });
+
         world.insert(Transform {
             value: TransformValue::anchor((1.0, 0.5), Rectangle::new_extend(-56, -20, 40, 40)),
             source: button.untyped(),
             target: preview.untyped(),
-        });
-        world.queue(move |world| {
-            let wrapper = world.single_fetch::<LayerWrapper>().unwrap();
-            if let Some(preset) = wrapper.brushes.get(i) {
-                BrushPreview::paint(world, preview, preset.brush.as_ref());
-            }
         });
 
         world.observer(button, move |&ButtonClick, world| {

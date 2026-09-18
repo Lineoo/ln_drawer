@@ -52,21 +52,23 @@ pub fn panel_settings(
     let layer = world.single::<LayerWrapper>().unwrap();
 
     // Live brush preview //
-    let preview_frame = world.insert(EchoWidget);
-    let preview = BrushPreview::build(world, generator, 1000);
-    world.insert(Transform {
-        value: TransformValue::shrink(0, 0),
-        source: preview_frame.untyped(),
-        target: preview.untyped(),
+    let layer_instance = world.single_fetch::<LayerWrapper>().unwrap();
+    let generator_instance = world.fetch(generator).unwrap();
+    let preview_canvas = generator_instance
+        .layer
+        .create_standalone(Rectangle::new_extend(0, 0, 512, 512));
+    let preview = world.insert(BrushPreview {
+        canvas: preview_canvas,
+        generator,
+        outdated: false,
+        brush: Some(layer_instance.active().dup()),
     });
 
-    world.queue(move |world| {
-        let layer = world.single_fetch::<LayerWrapper>().unwrap();
-        BrushPreview::paint(world, preview, layer.active());
-    });
     world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let layer = world.fetch(layer).unwrap();
-        BrushPreview::paint(world, preview, layer.active());
+        let mut preview = world.fetch_mut(preview).unwrap();
+        let layer_instance = world.single_fetch::<LayerWrapper>().unwrap();
+        preview.outdated = true;
+        preview.brush = Some(layer_instance.active().dup());
     });
 
     // Flow //
@@ -262,7 +264,7 @@ pub fn panel_settings(
         ),
         children: vec![
             (
-                preview_frame.untyped(),
+                preview.untyped(),
                 LuniChild {
                     basis: Some(110),
                     ..Default::default()
