@@ -18,7 +18,6 @@ use crate::{
     lnwin::Lnwindow,
     measures::{Axis, Rectangle},
     theme::Theme,
-    tools::collider::ToolColliderPortal,
     widgets::{
         brush_preview::{BrushPreview, BrushPreviewGenerator},
         container::Container,
@@ -78,9 +77,6 @@ pub fn new_panel_settings(
     let wrapper = world.single::<LayerWrapper>().unwrap();
 
     {
-        world.enter(lnwindow, || {
-            world.insert(ToolColliderPortal(settings.untyped()));
-        });
         world.enter(settings, || {
             world.insert(ViewRef(lnwindow.untyped()));
             world.insert(ElemRef(input.untyped()));

@@ -13,7 +13,6 @@ use crate::{
     lnwin::Lnwindow,
     measures::Rectangle,
     theme::Theme,
-    tools::collider::ToolColliderPortal,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
@@ -156,9 +155,6 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         tab_layer_selection,
         tab_debug,
     ] {
-        world.enter(lnwindow, || {
-            world.insert(ToolColliderPortal(panel.untyped()));
-        });
         world.enter(panel, || {
             world.insert(ViewRef(lnwindow.untyped()));
             world.insert(ElemRef(input.untyped()));

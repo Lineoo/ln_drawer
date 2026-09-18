@@ -66,25 +66,21 @@ impl MultiTouchTool {
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
-                let Some(&(target, view)) = ToolCollider::intersect(world, screen).first() else {
+                let Some(hit) = ToolCollider::intersect(world, screen) else {
                     return;
                 };
 
-                let position = world.enter(view, || {
-                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
-                    let camera = world.fetch(current_camera.0).unwrap();
-                    camera.screen_to_world_absolute(screen)
-                });
-
                 let touch = MultiTouch {
-                    position,
+                    position: hit.position,
                     screen,
-                    view,
+                    view: hit.view,
                     status: MultiTouchStatus::Press,
                     data: MultiTouchTool::button_to_data(button),
                     pointer: kind,
                 };
 
+                let target = hit.collider;
+                let view = hit.view;
                 let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
                 let replaced = tool.touches.insert(kind, target);
                 if let Some(replaced_target) = replaced {
@@ -97,7 +93,7 @@ impl MultiTouchTool {
                         .unwrap();
 
                     *touch = MultiTouch {
-                        position,
+                        position: hit.position,
                         screen,
                         view: touch.view,
                         status: MultiTouchStatus::Release,

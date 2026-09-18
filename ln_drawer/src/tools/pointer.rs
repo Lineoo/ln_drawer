@@ -423,20 +423,13 @@ impl Pointer {
                     handle: hovering.handle,
                 }),
             );
-        } else if let Some(&(each, view)) = ToolCollider::intersect(world, self.data.screen).first()
-        {
-            let position = world.enter(view, || {
-                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
-                let camera = world.fetch(current_camera.0).unwrap();
-                camera.screen_to_world_absolute(self.data.screen)
-            });
-
+        } else if let Some(hit) = ToolCollider::intersect(world, self.data.screen) {
             self.update_hovering(
                 world,
                 Some(Hover {
-                    position,
-                    view,
-                    handle: each,
+                    position: hit.position,
+                    view: hit.view,
+                    handle: hit.collider,
                 }),
             );
         } else {

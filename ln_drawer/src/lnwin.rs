@@ -23,10 +23,7 @@ use crate::{
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     theme::Theme,
     tools::{
-        collider::{ToolColliderDispatcher, ToolColliderPortal},
-        focus::FocusTool,
-        mouse::MouseTool,
-        pointer::PointerTool,
+        collider::ToolColliderDispatcher, focus::FocusTool, mouse::MouseTool, pointer::PointerTool,
         touch::MultiTouchTool,
     },
     widgets::{
@@ -186,8 +183,6 @@ impl Element for Lnwindow {
             world.enter(ui_camera, || world.insert(CurrentCamera(ui_camera)));
             world.enter(main_camera, || world.insert(ViewRef(this.untyped())));
             world.enter(ui_camera, || world.insert(ViewRef(this.untyped())));
-            world.insert(ToolColliderPortal(main_camera.untyped()));
-            world.insert(ToolColliderPortal(ui_camera.untyped()));
 
             world.flush();
 

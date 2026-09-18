@@ -20,10 +20,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::Rectangle,
     theme::Theme,
-    tools::{
-        collider::ToolColliderPortal,
-        pointer::{PointerHit, PointerScroll},
-    },
+    tools::pointer::{PointerHit, PointerScroll},
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         brush_preview::{BrushPreview, BrushPreviewGenerator},
@@ -109,9 +106,6 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         wrapper_instance.brush.layer.clone(),
     ));
     for panel in [list_container, settings_container] {
-        world.enter(lnwindow, || {
-            world.insert(ToolColliderPortal(panel.untyped()));
-        });
         world.enter(panel, || {
             world.insert(ViewRef(lnwindow.untyped()));
             world.insert(ElemRef(input.untyped()));

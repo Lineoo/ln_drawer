@@ -5,7 +5,7 @@ use winit::event::{ButtonSource, ElementState, MouseButton, PointerSource, Windo
 use crate::{
     lnwin::Lnwindow,
     measures::FI64Ext,
-    render::camera::{CameraUtils, CurrentCamera, MainCamera},
+    render::camera::{CameraUtils, MainCamera},
     tools::collider::ToolCollider,
 };
 
@@ -35,15 +35,12 @@ impl Element for MouseTool {
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
-                let Some(&(target, view)) = ToolCollider::intersect(world, screen).first() else {
+                let Some(hit) = ToolCollider::intersect(world, screen) else {
                     return;
                 };
 
-                world.enter(view, || {
-                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
-                    let camera = world.fetch(current_camera.0).unwrap();
-                    let position = camera.screen_to_world_absolute(screen).q32_floor();
-                    world.queue_trigger(target, MouseMenu(position));
+                world.enter(hit.view, || {
+                    world.queue_trigger(hit.collider, MouseMenu(hit.position.q32_floor()));
                 });
             }
 
