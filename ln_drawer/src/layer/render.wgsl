@@ -28,42 +28,13 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
-    let dims = vec2f(textureDimensions(texture));
-    
-    let coord = vertex.uv * dims - 0.5;
-    let base = vec2i(floor(coord));
-    let frac = fract(coord);
-
-    let min_idx = vec2i(0, 0);
-    let max_idx = vec2i(dims) - vec2i(1, 1);
-
-    let idx_00 = clamp(base + vec2i(0, 0), min_idx, max_idx);
-    let idx_10 = clamp(base + vec2i(1, 0), min_idx, max_idx);
-    let idx_01 = clamp(base + vec2i(0, 1), min_idx, max_idx);
-    let idx_11 = clamp(base + vec2i(1, 1), min_idx, max_idx);
-
-    let c00_ump = srgb_to_linear(textureLoad(texture, idx_00, 0));
-    let c10_ump = srgb_to_linear(textureLoad(texture, idx_10, 0));
-    let c01_ump = srgb_to_linear(textureLoad(texture, idx_01, 0));
-    let c11_ump = srgb_to_linear(textureLoad(texture, idx_11, 0));
-
-    let c00 = vec4f(c00_ump.rgb, 1) * c00_ump.a;
-    let c10 = vec4f(c10_ump.rgb, 1) * c10_ump.a;
-    let c01 = vec4f(c01_ump.rgb, 1) * c01_ump.a;
-    let c11 = vec4f(c11_ump.rgb, 1) * c11_ump.a;
-
-    return mix(mix(c00, c10, frac.x), mix(c01, c11, frac.x), frac.y);
+    let color = mul_alpha(srgb_gamma_encode(demul_alpha(textureSample(texture, texture_sampler, vertex.uv))));
+    return srgb_gamma_decode(color + vec4f(1) * (1 - color.a));
 }
 
 @fragment
-fn fs_fast(vertex: VertexOutput) -> @location(0) vec4f {
-    let color = srgb_to_linear(textureSample(texture, texture_sampler, vertex.uv));
-    return vec4f(color.rgb, 1) * color.a;
-}
-
-@fragment
-fn fs_debug0(vertex: VertexOutput) -> @location(0) vec4f {
-    let color = srgb_to_linear(textureSample(texture, texture_sampler, vertex.uv));
+fn fs_debug(vertex: VertexOutput) -> @location(0) vec4f {
+    let color = mul_alpha(srgb_gamma_encode(demul_alpha(textureSample(texture, texture_sampler, vertex.uv))));
     let grid = max(1 - step(vec2f(5. / 512), vertex.uv), step(vec2f(1 - 5. / 512), vertex.uv));
     let grid_float = max(grid.x, grid.y);
 
@@ -73,5 +44,5 @@ fn fs_debug0(vertex: VertexOutput) -> @location(0) vec4f {
 
     let ab = a * (1 - b.a) + b;
     let abc = ab * (1 - c.a) + c;
-    return abc;
+    return abc + vec4f(1) * (1 - color.a);
 }

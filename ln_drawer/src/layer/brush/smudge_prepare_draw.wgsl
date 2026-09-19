@@ -34,15 +34,16 @@ fn cs_main() {
 
     for (var i = 0u; i < draws_length; i++) {
         let draw = draws_array[i];
+        let sample = sample_disk(draw.position, draw.size * draw.sample_radius);
 
-        let foreground = vec4f(linear_srgb_to_oklab(srgb_to_linear(draw.color).xyz), 1.0) * draw.color.a;
+        let foreground = mul_alpha(vec4f(linear_srgb_to_oklab(srgb_gamma_decode(draw.color).xyz), draw.color.a));
         smudge = mix(smudge, foreground, draw.color_ratio);
 
-        let sampled = sample_disk(draw.position, draw.size * draw.sample_radius);
+        let sampled = mul_alpha(vec4f(linear_srgb_to_oklab(demul_alpha(sample).xyz), sample.a));
         let corrected_sampled = painted + sampled * (1.0 - painted.a);
         smudge = mix(smudge, corrected_sampled, draw.sample_rate);
 
-        draws_state[1 + i] = smudge;
+        draws_state[1 + i] = srgb_gamma_encode(vec4f(oklab_to_linear_srgb(demul_alpha(smudge).xyz), smudge.a));
         painted = smudge + painted * (1.0 - smudge.a);
     }
 
@@ -57,14 +58,12 @@ fn sample_disk(center: vec2i, radius: f32) -> vec4f {
     var count = 0.0;
     for (var y = -r; y <= r; y++) {
         for (var x = -r; x <= r; x++) {
-            if f32(x * x + y * y) > radius * radius { continue; }
             let p = center + vec2i(x, y);
-            if !rectangle_contains(destination, p) { continue; }
-            let c = textureLoad(destination_texture, p - destination.coords);
-            let oklab = linear_srgb_to_oklab(srgb_to_linear(c).xyz);
-            let priority = gaussian_2d(vec2i(x, y), f32(r * r) / 9.0);
-            sum += vec4f(oklab * c.a, c.a) * priority;
-            count += priority;
+            let flag = f32(x * x + y * y) > radius * radius & rectangle_contains(destination, p);
+            let k = select(0, gaussian_2d(vec2i(x, y), f32(r * r) / 9.0), flag);
+            let c = srgb_gamma_decode(textureLoad(destination_texture, p - destination.coords));
+            sum += c * k;
+            count += k;
         }
     }
     return sum / max(count, 1e-6);

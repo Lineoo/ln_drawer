@@ -1,4 +1,4 @@
-#lib_constant #lib_rectangle #lib_math
+#lib_constant #lib_rectangle #lib_math #lib_colorspace
 
 struct Draw {
     position: vec2i,
@@ -28,10 +28,10 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
     let dst_coords = position - destination.coords;
     let swp_coords = position - swap.coords;
 
-    intermediate[lid.x][lid.y] = textureLoad(destination_texture, dst_coords + vec2i(-8, -8));
-    intermediate[lid.x][lid.y + 16] = textureLoad(destination_texture, dst_coords + vec2i(-8, 8));
-    intermediate[lid.x + 16][lid.y] = textureLoad(destination_texture, dst_coords + vec2i(8, -8));
-    intermediate[lid.x + 16][lid.y + 16] = textureLoad(destination_texture, dst_coords + vec2i(8, 8));
+    intermediate[lid.x][lid.y] = srgb_gamma_decode(textureLoad(destination_texture, dst_coords + vec2i(-8, -8)));
+    intermediate[lid.x][lid.y + 16] = srgb_gamma_decode(textureLoad(destination_texture, dst_coords + vec2i(-8, 8)));
+    intermediate[lid.x + 16][lid.y] = srgb_gamma_decode(textureLoad(destination_texture, dst_coords + vec2i(8, -8)));
+    intermediate[lid.x + 16][lid.y + 16] = srgb_gamma_decode(textureLoad(destination_texture, dst_coords + vec2i(8, 8)));
 
     // barrier BEFORE validation
     workgroupBarrier();
@@ -57,19 +57,14 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
         for (var y = i32(round(-radius)); y <= i32(round(radius)); y++) {
             let cnv = position + vec2i(x, y);
             let cnv_coords = vec2i(lid.xy) + vec2i(8, 8) + vec2i(x, y);
-
-            if !rectangle_contains(destination, cnv) { continue; }
-
-            let k = gaussian_2d(vec2i(x, y), variance);
-            let dst_ump = intermediate[cnv_coords.x][cnv_coords.y];
-
+            let k = select(0, gaussian_2d(vec2i(x, y), variance), rectangle_contains(destination, cnv));
             k_sum += k;
-            dst += vec4f(dst_ump.rgb, 1) * dst_ump.a * k;
+            dst += intermediate[cnv_coords.x][cnv_coords.y] * k;
         } 
     }
 
     // Normalize before storage
     dst /= max(k_sum, 1e-6);
 
-    textureStore(swap_texture, swp_coords, select(vec4f(dst.rgb / dst.a, dst.a), vec4f(), dst.a < 1e-6));
+    textureStore(swap_texture, swp_coords, srgb_gamma_encode(dst));
 }

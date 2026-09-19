@@ -122,8 +122,7 @@ struct ChunkLayout {
 
 struct RenderPipelines {
     over: RenderPipeline,
-    over_fast: RenderPipeline,
-    over_debug: RenderPipeline,
+    debug: RenderPipeline,
 }
 
 struct MergePipelines {
@@ -966,7 +965,7 @@ fn create_chunk_texture(device: &Device, size: UVec2) -> Texture {
             | TextureUsages::COPY_DST
             | TextureUsages::TEXTURE_BINDING
             | TextureUsages::STORAGE_BINDING,
-        view_formats: &[],
+        view_formats: &[TextureFormat::Rgba8UnormSrgb],
     })
 }
 
@@ -984,7 +983,7 @@ fn create_chunk(
 
     let texture_fragment_view = texture.create_view(&TextureViewDescriptor {
         label: Some("layer_chunk_texture_view"),
-        format: Some(CHUNK_TEXTURE_FORMAT),
+        format: Some(TextureFormat::Rgba8UnormSrgb),
         usage: Some(TextureUsages::TEXTURE_BINDING),
         ..Default::default()
     });
@@ -1153,19 +1152,14 @@ fn render_pipelines(
 
     RenderPipelines {
         over: new_pipeline(
-            BlendState::PREMULTIPLIED_ALPHA_BLENDING,
+            BlendState::REPLACE,
             "layer_chunk_over",
             "fs_main",
         ),
-        over_fast: new_pipeline(
-            BlendState::PREMULTIPLIED_ALPHA_BLENDING,
-            "layer_chunk_over",
-            "fs_fast",
-        ),
-        over_debug: new_pipeline(
-            BlendState::PREMULTIPLIED_ALPHA_BLENDING,
+        debug: new_pipeline(
+            BlendState::REPLACE,
             "layer_chunk_over_debug",
-            "fs_debug0",
+            "fs_debug",
         ),
     }
 }
@@ -1400,7 +1394,7 @@ fn brush_pipelines(
             "smudge",
             include_str!("layer/brush/smudge.wgsl"),
             &constants_bridge,
-            "",
+            COMPOSITE_OVER,
             "cs_main",
         ),
         smudge_prepare_draw: general_brush_pipeline(

@@ -27,9 +27,6 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-    // Layer chunks store sRGB encoded, premultiplied data; decode to linear here and let the sRGB
-    // surface re-encode on write.
-    let color = textureSample(texture, texture_sampler, uv);
-    let linear = srgb_to_linear(color);
-    return vec4f(linear.rgb * color.a, color.a);
+    let color = mul_alpha(srgb_gamma_encode(demul_alpha(textureSample(texture, texture_sampler, uv))));
+    return srgb_gamma_decode(color + vec4f(1) * (1 - color.a));
 }

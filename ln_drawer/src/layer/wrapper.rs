@@ -206,7 +206,7 @@ impl LayerPage {
                     softness: BrushParam::constant(0.5),
                     spacing: BrushParam::constant(0.1),
                     color,
-                    color_ratio: BrushParam::constant(0.044),
+                    color_ratio: BrushParam::constant(0.4),
                     sample_radius: BrushParam::constant(0.5),
                     sample_rate: BrushParam::constant(0.07),
                 }),
@@ -215,7 +215,7 @@ impl LayerPage {
                 label: "brush.tint",
                 brush: Box::new(TintBrush {
                     size: BrushParam::force_index(10.0, 30.0, 1.0),
-                    flow: Vec4::new(0.05, 0.7, 0.7, 1.0),
+                    flow: Vec4::new(0.2, 0.7, 0.7, 1.0),
                     softness: BrushParam::constant(0.5),
                     spacing: BrushParam::constant(0.1),
                     color,
@@ -393,10 +393,9 @@ impl LayerPage {
         let actual_mipmap = mipmap.min(self.main.mipmap_levels.saturating_sub(1));
         let pixel = camera.zoom.q32_as_f64().exp2() > 4.0;
 
-        match (self.debug, pixel) {
-            (false, false) => rpass.set_pipeline(&self.draw.layer.render_pipelines.over),
-            (false, true) => rpass.set_pipeline(&self.draw.layer.render_pipelines.over_fast),
-            (true, _) => rpass.set_pipeline(&self.draw.layer.render_pipelines.over_debug),
+        match self.debug {
+            false => rpass.set_pipeline(&self.draw.layer.render_pipelines.over),
+            true => rpass.set_pipeline(&self.draw.layer.render_pipelines.debug),
         }
 
         rpass.set_bind_group(0, &camera.bind, &[]);
