@@ -309,7 +309,6 @@ impl LayerPage {
 
         self.draw
             .submit(&mut self.main, Some(&self.thread_tx), &mut cpass);
-        self.merge.chunks.clear();
         self.draw.recycle_all(&mut self.merge, &mut cpass);
 
         drop(cpass);
@@ -317,7 +316,21 @@ impl LayerPage {
     }
 
     pub fn discard(&mut self) {
-        self.draw.discard();
+        let mut encoder =
+            (self.draw.layer.device).create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("page_discard"),
+            });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("page_discard"),
+            timestamp_writes: None,
+        });
+
+        self.draw.discard(&mut cpass);
+        self.draw.recycle_all(&mut self.merge, &mut cpass);
+
+        drop(cpass);
+        self.draw.layer.queue.submit([encoder.finish()]);
     }
 
     /// Copy the preset at `index` into the temporary working brush.

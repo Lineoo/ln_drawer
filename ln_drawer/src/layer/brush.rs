@@ -903,26 +903,14 @@ impl DrawPipeline {
         }
     }
 
-    pub fn discard(&mut self) {
+    pub fn discard(&mut self, cpass: &mut ComputePass) {
         self.prev = None;
         let Some(stroke) = self.stroke.take() else {
             return;
         };
 
-        let mut encoder = (self.layer.device).create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("layer_discard"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_discard"),
-            timestamp_writes: None,
-        });
-
         write_dispatch(&self.layer.queue, &self.layer.dispatch, 0, stroke.dirty);
-        self.recycle_scratch(&stroke, &mut cpass);
-
-        drop(cpass);
-        self.layer.queue.submit([encoder.finish()]);
+        self.recycle_scratch(&stroke, cpass);
     }
 
     /// Drop any in-progress stroke without touching the scratch.

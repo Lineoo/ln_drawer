@@ -10,7 +10,7 @@ use winit::{
 
 use crate::{
     layer::{
-        brush::Draw,
+        brush::{Draw, param::BrushParamKey},
         wrapper::{BrushConfigurationChanged, LayerPage},
     },
     lnwin::Lnwindow,
@@ -114,15 +114,22 @@ impl LayerInput {
 
             match KeyCode::from(event.physical_key) {
                 KeyCode::KeyZ if press && ctrl => {
-                    let mut wrapper = world.single_fetch_mut::<LayerPage>().unwrap();
+                    let mut page = world.single_fetch_mut::<LayerPage>().unwrap();
 
                     if !shift {
-                        wrapper.undo();
+                        page.undo();
                     } else {
-                        wrapper.redo();
+                        page.redo();
                     }
 
                     lnwindow.window.request_redraw();
+                }
+                KeyCode::KeyE if press => {
+                    let mut page = world.single_fetch_mut::<LayerPage>().unwrap();
+                    let active = page.active_mut();
+                    let is_erase = active.toggle(BrushParamKey::Erase).unwrap_or_default();
+                    active.set_toggle(BrushParamKey::Erase, !is_erase);
+                    world.queue_trigger(page.handle(), BrushConfigurationChanged);
                 }
                 KeyCode::Space => {
                     this.space = press;
