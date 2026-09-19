@@ -19,6 +19,7 @@ use wgpu::{
 use winit::window::Window;
 
 use crate::{
+    color::srgb::{srgb_gamma_decode, srgb_gamma_encode},
     layer::{Chunk, ChunkKey, LayerPipeline, chunk_to_rect},
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
@@ -28,7 +29,9 @@ use crate::{
 const CHUNK_REAL_CAPS: usize = 512;
 const CHUNK_HARD_CAPS: usize = 1024;
 const CHUNK_BATCH: usize = 8;
-const CHUNK_META0_FORMAT: u32 = 2;
+/// last version used
+/// `2`: 0.4.0
+const CHUNK_META0_FORMAT: u32 = 3;
 
 const TABLE_LAYER_CHUNK: TableDefinition<(u64, ChunkKey), &[u8]> =
     TableDefinition::new("stroke_chunk");
@@ -55,13 +58,6 @@ pub enum ThreadOutput {
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 struct ChunkMeta0 {
     format: u32,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct ChunkUniform {
-    chunk: [i32; 3],
-    _pad: u32,
 }
 
 pub struct StreamConfig {
@@ -181,7 +177,7 @@ pub fn loading_thread(
             }
             Some(ThreadInput::RequestReal(key)) => {
                 if base.active.get(&key).is_some_and(|x| x.is_none()) {
-                    let (texture, chunk) = chunk_prepare(&config, key)?;
+                    let (texture, chunk) = chunk_prepare(&config, key);
                     base.active.insert(key, Some(texture));
                     base.unsaved.insert(key);
                     base.real_cnt += 1;
@@ -312,38 +308,32 @@ fn load(
     let table_chunk = read.open_table(TABLE_LAYER_CHUNK)?;
     let table_meta = read.open_table(TABLE_LAYER_CHUNK_META)?;
     for key in staging.active.drain(..) {
-        if let Some(data) = table_chunk.get((config.page, key))? {
-            let mut bytes = zstd::decode_all(data.value())?;
-            let (texture, chunk) = chunk_prepare(config, key)?;
+        if let Some(data) = table_chunk.get((config.page, key))?
+            && let Ok(mut bytes) = zstd::decode_all(data.value())
+        {
+            let (texture, chunk) = chunk_prepare(config, key);
             debug.decode += 1;
 
-            if let Some(meta) = table_meta.get(((config.page, key), 0))? {
-                if let Ok(meta0) = postcard::from_bytes::<ChunkMeta0>(meta.value()) {
-                    if meta0.format > CHUNK_META0_FORMAT {
-                        log::error!(
-                            "Cannot read layer chunk {key:?} from newer version {:?}",
-                            meta0.format
-                        );
-                        continue;
-                    } else if meta0.format < CHUNK_META0_FORMAT {
-                        chunk_migration(&mut bytes, key, &meta0)?;
-                        touch_chunk_meta(config, key, meta0)?;
-                    }
-                } else {
-                    // Edge cases: format 1 for meta0 reconstruction
-                    let meta0 = ChunkMeta0 { format: 1 };
-
-                    log::debug!("chunk meta0 reconstruction {key:?}",);
-                    chunk_migration(&mut bytes, key, &meta0)?;
-                    touch_chunk_meta(config, key, meta0)?;
+            if let Some(meta) = table_meta.get(((config.page, key), 0))?
+                && let Ok(meta0) = postcard::from_bytes::<ChunkMeta0>(meta.value())
+            {
+                if meta0.format > CHUNK_META0_FORMAT {
+                    log::error!(
+                        "Cannot read layer chunk {key:?} from newer version {:?}",
+                        meta0.format
+                    );
+                    continue;
+                } else if meta0.format < CHUNK_META0_FORMAT {
+                    chunk_migration(config, debug, key, &mut bytes, meta0)?;
                 }
             } else {
-                // Edge cases: format 0 for older version that did not add meta0
-                let meta0 = ChunkMeta0 { format: 0 };
+                // cannot read meta0, try to directly read it
+                let meta0 = ChunkMeta0 {
+                    format: CHUNK_META0_FORMAT,
+                };
 
-                log::warn!("failed to get metadata from chunk {key:?}",);
-                chunk_migration(&mut bytes, key, &meta0)?;
-                touch_chunk_meta(config, key, meta0)?;
+                log::debug!("corrupted chunk recovered {key:?}");
+                chunk_migration(config, debug, key, &mut bytes, meta0)?;
             }
 
             chunk_write(config, &bytes, &texture);
@@ -397,15 +387,14 @@ fn unload(
             config.device.poll(PollType::wait_indefinitely()).unwrap();
             let bytes = rx.recv().unwrap();
             write_chunk_data(
-                base,
                 debug,
                 &mut table_chunk,
                 &mut table_meta,
                 config.page,
                 key,
-                bytes,
-            )
-            .unwrap();
+                &bytes,
+            )?;
+            base.unsaved.remove(&key);
         }
 
         if texture.is_some() {
@@ -444,15 +433,14 @@ fn unload_all(
             config.device.poll(PollType::wait_indefinitely()).unwrap();
             let bytes = rx.recv().unwrap();
             write_chunk_data(
-                base,
                 debug,
                 &mut table_chunk,
                 &mut table_meta,
                 config.page,
                 key,
-                bytes,
-            )
-            .unwrap();
+                &bytes,
+            )?;
+            base.unsaved.clear();
         }
 
         if texture.is_some() {
@@ -500,19 +488,20 @@ fn autosave(
     for (key, rx) in tasks {
         let bytes = rx.recv().unwrap();
         write_chunk_data(
-            base,
             debug,
             &mut table_chunk,
             &mut table_meta,
             config.page,
             key,
-            bytes,
+            &bytes,
         )?;
     }
     drop(table_chunk);
     drop(table_meta);
 
     write.commit()?;
+
+    base.unsaved.clear();
 
     log::info!(
         "Layer stream autosave finished in {:?}",
@@ -523,16 +512,15 @@ fn autosave(
 }
 
 fn write_chunk_data(
-    texel: &mut StreamBase,
     debug: &mut DebugInfo,
     table_chunk: &mut redb::Table<(u64, ChunkKey), &[u8]>,
     table_meta: &mut redb::Table<((u64, ChunkKey), u32), &[u8]>,
     page: u64,
     key: ChunkKey,
-    bytes: Vec<u8>,
+    bytes: &[u8],
 ) -> Result<(), Box<dyn Error + 'static>> {
     let mut transparent = true;
-    for &byte in &bytes {
+    for &byte in bytes {
         if byte != 0x00 {
             transparent = false;
             break;
@@ -547,25 +535,12 @@ fn write_chunk_data(
         let compressed = zstd::encode_all(&bytes[..], 0)?;
         table_chunk.insert((page, key), &compressed[..])?;
         debug.encode += 1;
-
-        let meta0 = ChunkMeta0 {
-            format: CHUNK_META0_FORMAT,
-        };
-
-        let mut meta_bytes = [0u8; 16];
-        postcard::to_slice(&meta0, &mut meta_bytes).unwrap();
-        table_meta.insert(((page, key), 0), &meta_bytes[..])?;
     }
-
-    texel.unsaved.remove(&key);
 
     Ok(())
 }
 
-fn chunk_prepare(
-    config: &StreamConfig,
-    key: (i32, i32, u8),
-) -> Result<(Texture, Chunk), Box<dyn Error + 'static>> {
+fn chunk_prepare(config: &StreamConfig, key: (i32, i32, u8)) -> (Texture, Chunk) {
     let texture = super::create_chunk_texture(&config.device, UVec2::splat(config.chunk_size));
     let chunk = super::create_chunk(
         &config.device,
@@ -574,7 +549,7 @@ fn chunk_prepare(
         chunk_to_rect(key, config.chunk_size),
     );
 
-    Ok((texture, chunk))
+    (texture, chunk)
 }
 
 fn chunk_write(config: &StreamConfig, bytes: &[u8], texture: &Texture) {
@@ -654,49 +629,64 @@ fn chunk_readback(
 }
 
 fn chunk_migration(
-    bytes: &mut [u8],
+    config: &StreamConfig,
+    debug: &mut DebugInfo,
     key: ChunkKey,
-    meta0: &ChunkMeta0,
+    bytes: &mut [u8],
+    mut meta0: ChunkMeta0,
 ) -> Result<(), Box<dyn Error + 'static>> {
+    let mut chunk_changed = false;
     for migrate_format in meta0.format..CHUNK_META0_FORMAT {
         match migrate_format {
             0 => {
-                fn linear_to_srgb(v: f32) -> f32 {
-                    return match v < 0.0031308 {
-                        true => 1.055 * v.powf(1.0 / 2.4) - 0.055,
-                        false => v * 12.92,
-                    };
-                }
-
                 let (chunks, _) = bytes.as_chunks_mut();
                 for [r, g, b, _] in chunks {
-                    *r = (linear_to_srgb(*r as f32 / 255.) * 255.) as u8;
-                    *g = (linear_to_srgb(*g as f32 / 255.) * 255.) as u8;
-                    *b = (linear_to_srgb(*b as f32 / 255.) * 255.) as u8;
+                    *r = (srgb_gamma_encode(*r as f32 / 255.) * 255.) as u8;
+                    *g = (srgb_gamma_encode(*g as f32 / 255.) * 255.) as u8;
+                    *b = (srgb_gamma_encode(*b as f32 / 255.) * 255.) as u8;
                 }
-
-                log::debug!("gamma fix applied on {key:?}");
+                chunk_changed = true;
             }
             1 => {
                 // remove deprecated mipmap field, migration is a no-op
+            }
+            2 => {
+                let (chunks, _) = bytes.as_chunks_mut();
+                for [r, g, b, a] in chunks {
+                    *r = (srgb_gamma_encode(
+                        srgb_gamma_decode(*r as f32 / 255.) * (*a as f32 / 255.),
+                    ) * 255.) as u8;
+                    *g = (srgb_gamma_encode(
+                        srgb_gamma_decode(*g as f32 / 255.) * (*a as f32 / 255.),
+                    ) * 255.) as u8;
+                    *b = (srgb_gamma_encode(
+                        srgb_gamma_decode(*b as f32 / 255.) * (*a as f32 / 255.),
+                    ) * 255.) as u8;
+                }
+                chunk_changed = true;
             }
             _ => unimplemented!("unsupported migration {migrate_format}"),
         }
     }
 
-    Ok(())
-}
-
-fn touch_chunk_meta(
-    config: &StreamConfig,
-    chunk_id: (i32, i32, u8),
-    mut meta0: ChunkMeta0,
-) -> Result<(), Box<dyn Error + 'static>> {
     meta0.format = CHUNK_META0_FORMAT;
+
     let write = config.database.0.begin_write()?;
+    let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
-    let bytes = postcard::to_stdvec(&meta0)?;
-    table_meta.insert(((config.page, chunk_id), 0), &bytes[..])?;
+    let meta_bytes = postcard::to_stdvec(&meta0)?;
+    table_meta.insert(((config.page, key), 0), &meta_bytes[..])?;
+    if chunk_changed {
+        write_chunk_data(
+            debug,
+            &mut table_chunk,
+            &mut table_meta,
+            config.page,
+            key,
+            bytes,
+        )?;
+    }
+    drop(table_chunk);
     drop(table_meta);
     write.commit()?;
 

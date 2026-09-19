@@ -1,5 +1,6 @@
 mod animation;
-pub mod i18n;
+mod color;
+mod i18n;
 mod layer;
 mod layout;
 mod lnwin;
