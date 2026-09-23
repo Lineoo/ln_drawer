@@ -1,4 +1,4 @@
-use glam::{DVec2, I64Vec2, UVec2};
+use glam::{DVec2, I64Vec2, Mat2, UVec2, Vec2};
 use ln_world::{Descriptor, Element, Handle, World};
 use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 use wgpu::{
@@ -49,11 +49,10 @@ pub struct CameraDescriptor {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct CameraUniform {
-    size: [u32; 2],
     center: [i32; 2],
     center_fract: [u32; 2],
-    zoom: i32,
-    zoom_fract: u32,
+    transform: Mat2,
+    inverse: Mat2,
 }
 
 impl Descriptor for CameraDescriptor {
@@ -81,15 +80,18 @@ impl Element for Camera {
     }
 
     fn when_modify(&mut self, world: &World, this: Handle<Self>) {
+        let transform = Mat2::from_scale_angle(
+            Vec2::splat(self.zoom.q32_as_f64().exp2() as f32) / self.size.as_vec2() * 2.0,
+            0.0,
+        );
         self.queue.write_buffer(
             &self.uniform,
             0,
             bytemuck::bytes_of(&CameraUniform {
-                size: UVec2::new(self.size.x.max(1), self.size.y.max(1)).into(),
                 center: self.center.q32_floor().into(),
                 center_fract: self.center.q32_fract().into(),
-                zoom: self.zoom.q32_floor(),
-                zoom_fract: self.zoom.q32_fract(),
+                transform,
+                inverse: transform.inverse(),
             }),
         );
 
@@ -116,14 +118,18 @@ impl Camera {
     ) -> Camera {
         let device = &render.device;
 
+        let transform = Mat2::from_scale_angle(
+            Vec2::splat(descriptor.zoom.q32_as_f64().exp2() as f32) / descriptor.size.as_vec2()
+                * 2.0,
+            0.0,
+        );
         let uniform = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("camera_uniform"),
             contents: bytemuck::bytes_of(&CameraUniform {
-                size: descriptor.size.into(),
                 center: descriptor.center.q32_floor().into(),
                 center_fract: descriptor.center.q32_fract().into(),
-                zoom: descriptor.zoom.q32_floor(),
-                zoom_fract: descriptor.zoom.q32_fract(),
+                transform,
+                inverse: transform.inverse(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
