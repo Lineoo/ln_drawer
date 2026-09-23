@@ -25,7 +25,7 @@ pub struct PixelDraw {
     pub color: Vec4,
     pub position: IVec2,
     pub size: f32,
-    pub _pad: u32
+    pub _pad: u32,
 }
 
 impl Brush for PixelBrush {

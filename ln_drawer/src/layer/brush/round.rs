@@ -7,7 +7,7 @@ use crate::{
         LayerPipeline,
         brush::{
             Brush, Draw,
-            param::{BrushParam, rate_coeff, overlap, step_of},
+            param::{BrushParam, overlap, rate_coeff, step_of},
         },
     },
     measures::{FI64Ext, Rectangle},

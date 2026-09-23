@@ -1151,16 +1151,8 @@ fn render_pipelines(
     };
 
     RenderPipelines {
-        over: new_pipeline(
-            BlendState::REPLACE,
-            "layer_chunk_over",
-            "fs_main",
-        ),
-        debug: new_pipeline(
-            BlendState::REPLACE,
-            "layer_chunk_over_debug",
-            "fs_debug",
-        ),
+        over: new_pipeline(BlendState::REPLACE, "layer_chunk_over", "fs_main"),
+        debug: new_pipeline(BlendState::REPLACE, "layer_chunk_over_debug", "fs_debug"),
     }
 }
 
