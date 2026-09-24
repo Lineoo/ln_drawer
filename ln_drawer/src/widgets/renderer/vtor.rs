@@ -12,10 +12,7 @@ use wgpu::{
 
 use crate::{
     measures::Rectangle,
-    render::{
-        MSAA_STATE, Render, RenderControl,
-        camera::{CameraBind, CurrentCamera},
-    },
+    render::{MSAA_STATE, Render, RenderControl, camera::CameraBind},
     widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::shader_compile},
 };
 
@@ -123,8 +120,7 @@ impl Vtor {
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
                 let pipeline = world.single_fetch::<VtorPipeline>().unwrap();
-                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
-                let camera = world.fetch(current_camera.0).unwrap();
+                let camera = extra.camera;
 
                 let key = format!("main > vtor");
                 let (start, end) = extra.diagnosis.assign_string(key);

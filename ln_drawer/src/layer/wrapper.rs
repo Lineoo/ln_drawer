@@ -27,7 +27,7 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{
         Render, RenderControl, RenderExtra, RenderInformation,
-        camera::{Camera, CameraBind, CameraUpdated, MainCamera, UICamera},
+        camera::{CameraBind, CameraUpdated, MainCamera, UICamera},
     },
     save::{Autosave, SaveDatabase},
     widgets::renderer::rrect::RRect,
@@ -384,10 +384,11 @@ impl LayerPage {
         }
     }
 
-    fn render(&mut self, camera: &Camera, rpass: &mut RenderPass, extra: RenderExtra) {
+    fn render(&mut self, rpass: &mut RenderPass, extra: RenderExtra) {
         let (start, end) = extra.diagnosis.assign("main > layers");
         extra.diagnosis.write(rpass, start);
 
+        let camera = extra.camera;
         let view_rect = camera.src_view_rect();
         let mipmap = (-camera.src_zoom).q32_floor().max(0) as u8;
         let actual_mipmap = mipmap.min(self.main.mipmap_levels.saturating_sub(1));
@@ -527,8 +528,7 @@ impl Element for LayerPage {
             })),
             draw: Some(Box::new(move |world, rpass, extra| {
                 let mut this = world.single_fetch_mut::<LayerPage>().unwrap();
-                let camera = world.fetch(main_camera).unwrap();
-                this.render(&camera, rpass, extra);
+                this.render(rpass, extra);
             })),
         });
 

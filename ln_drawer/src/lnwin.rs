@@ -17,7 +17,7 @@ use crate::{
     layer::{input::LayerInput, wrapper::LayerPage},
     measures::{FI64Ext, Rectangle},
     render::{
-        Render, RenderPhase,
+        Render,
         camera::{Camera, CameraDescriptor, CameraUtils, CurrentCamera, MainCamera, UICamera},
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
@@ -191,8 +191,6 @@ impl Element for Lnwindow {
 
             world.enter(main_camera, || {
                 let camera = world.fetch(main_camera).unwrap();
-
-                world.insert(RenderPhase::default());
                 world.insert(CameraUtils::new(&camera));
 
                 world.observer(this, move |event: &WindowEvent, world| {
@@ -207,8 +205,6 @@ impl Element for Lnwindow {
 
             world.enter(ui_camera, || {
                 let camera = world.fetch(ui_camera).unwrap();
-
-                world.insert(RenderPhase::default());
                 world.insert(CameraUtils::new(&camera));
 
                 world.observer(this, move |event: &WindowEvent, world| {

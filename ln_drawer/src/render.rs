@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 use wgpu::{
     Adapter, BackendOptions, Backends, Buffer, BufferDescriptor, BufferUsages, Color,
     CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device,
@@ -23,7 +23,10 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
-use crate::{lnwin::Lnwindow, render::camera::Camera};
+use crate::{
+    lnwin::Lnwindow,
+    render::camera::{Camera, CurrentCamera},
+};
 
 pub const MSAA_SAMPLE_COUNT: u32 = 1;
 pub const MSAA_STATE: MultisampleState = MultisampleState {
@@ -66,13 +69,6 @@ pub struct Render {
     timestamp_mapped: Arc<AtomicBool>,
 }
 
-#[derive(Default)]
-pub struct RenderPhase {
-    seq_dirty: Vec<(Handle<RenderControl>, HandleAny, isize)>,
-    seq_remove: Vec<Handle<RenderControl>>,
-    sequence: Vec<(Handle<RenderControl>, HandleAny, isize)>,
-}
-
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation> + Send>;
 type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, RenderExtra<'_, '_>) + Send>;
 
@@ -93,6 +89,7 @@ pub struct RenderInformation {
 pub struct RenderExtra<'a, 'b> {
     pub device: &'a Device,
     pub queue: &'a Queue,
+    pub camera: &'a Camera,
     pub early_encoder: &'a mut CommandEncoder,
     pub surface_config: &'a SurfaceConfiguration,
     pub diagnosis: &'a mut RenderDiagnosis<'b>,
@@ -394,14 +391,16 @@ impl Render {
         let scissor = Cell::new(None);
         world.foreach_enter::<Camera>(|_| {
             scissor.set(None);
-            let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
-            phase.reorder();
-            phase.draw(
+            let curr = world.single_fetch::<CurrentCamera>().unwrap();
+            let camera = &mut *world.fetch_mut(curr.0).unwrap();
+            camera.reorder();
+            camera.draw(
                 world,
                 &mut rpass,
                 RenderExtra {
                     device: &render.device,
                     queue: &render.queue,
+                    camera: &camera,
                     early_encoder: &mut early_encoder,
                     surface_config: &render.config,
                     diagnosis: &mut diagnosis,
@@ -502,47 +501,6 @@ impl Render {
         // CPU time tracing
 
         render.last_redraw = Some(now);
-    }
-}
-
-impl RenderPhase {
-    pub fn reorder(&mut self) {
-        'r: for (dirty, view, ord) in self.seq_dirty.drain(..) {
-            for (control, old_view, old_ord) in &mut self.sequence {
-                if *control == dirty {
-                    *old_view = view;
-                    *old_ord = ord;
-                    continue 'r;
-                }
-            }
-
-            // if new
-            self.sequence.push((dirty, view, ord));
-        }
-
-        (self.sequence).retain(|(control, ..)| !self.seq_remove.contains(control));
-        self.seq_remove.clear();
-
-        self.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
-    }
-
-    pub fn draw(&mut self, world: &World, rpass: &mut RenderPass, extra: RenderExtra) {
-        for &(control, view, _) in &self.sequence {
-            let extra = RenderExtra {
-                device: extra.device,
-                queue: extra.queue,
-                early_encoder: extra.early_encoder,
-                surface_config: extra.surface_config,
-                diagnosis: extra.diagnosis,
-                scissor: extra.scissor,
-            };
-            world.enter(view, || {
-                let mut control = world.fetch_mut(control).unwrap();
-                if let Some(draw) = &mut control.draw {
-                    draw(world, rpass, extra);
-                }
-            });
-        }
     }
 }
 
@@ -649,13 +607,14 @@ impl RenderControl {
     }
 
     pub fn reorder(order: Option<isize>, world: &World, handle: Handle<Self>) {
-        let mut phase = world.single_fetch_mut::<RenderPhase>().unwrap();
+        let curr = world.single_fetch::<CurrentCamera>().unwrap();
+        let camera = &mut *world.fetch_mut(curr.0).unwrap();
 
         if let Some(order) = order {
-            phase.seq_dirty.push((handle, world.here(), order));
-            phase.seq_remove.retain(|&x| x != handle);
+            camera.seq_dirty.push((handle, world.here(), order));
+            camera.seq_remove.retain(|&x| x != handle);
         } else {
-            phase.seq_remove.push(handle);
+            camera.seq_remove.push(handle);
         }
     }
 }
@@ -708,12 +667,11 @@ impl Element for Render {
     }
 }
 
-impl Element for RenderPhase {}
-
 impl Element for RenderControl {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let phase = world.single::<RenderPhase>().unwrap();
-        world.dependency(this, phase);
+        let curr = world.single_fetch::<CurrentCamera>().unwrap();
+        world.dependency(this, curr.handle());
+        world.dependency(this, curr.0);
     }
 
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {

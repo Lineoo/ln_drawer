@@ -7,7 +7,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{
-        Render, RenderControl, RenderPhase, ScissorRect,
+        Render, RenderControl, ScissorRect,
         camera::{Camera, CameraBind, CameraDescriptor, CameraUpdated, CurrentCamera},
     },
     theme::Theme,
@@ -101,7 +101,6 @@ impl Container {
         });
 
         world.enter_queue(handle, move |world| {
-            world.insert(RenderPhase::default());
             world.insert(ElemRef(lnwindow.untyped()));
             world.queue(move |world| {
                 let camera = world.insert(camera);
@@ -113,8 +112,7 @@ impl Container {
             handle,
             move |world, rpass, extra| {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let camera = world.single_fetch::<CurrentCamera>().unwrap();
-                let camera = world.fetch(camera.0).unwrap();
+                let camera = extra.camera;
                 let panel_rect = world.fetch(handle).unwrap().rect;
                 let window_size = lnwindow.window.surface_size();
 
@@ -138,9 +136,10 @@ impl Container {
                 if clipped.width > 0 && clipped.height > 0 {
                     rpass.set_scissor_rect(clipped.x, clipped.y, clipped.width, clipped.height);
                     world.enter(handle, || {
-                        let phase = &mut *world.single_fetch_mut::<RenderPhase>().unwrap();
-                        phase.reorder();
-                        phase.draw(world, rpass, extra);
+                        let curr = world.single_fetch::<CurrentCamera>().unwrap();
+                        let camera = &mut *world.fetch_mut(curr.0).unwrap();
+                        camera.reorder();
+                        camera.draw(world, rpass, extra);
                     });
                 }
 
@@ -286,11 +285,10 @@ fn scissor_rect(
     rect: Rectangle,
     window_size: PhysicalSize<u32>,
 ) -> ScissorRect {
-    let left_up = lnwindow
-        .screen_to_cursor(camera.src_to_dst(I64Vec2::q32_from_i32(rect.left_up())));
-    let right_down = lnwindow.screen_to_cursor(
-        camera.src_to_dst(I64Vec2::q32_from_i32(rect.right_down())),
-    );
+    let left_up =
+        lnwindow.screen_to_cursor(camera.src_to_dst(I64Vec2::q32_from_i32(rect.left_up())));
+    let right_down =
+        lnwindow.screen_to_cursor(camera.src_to_dst(I64Vec2::q32_from_i32(rect.right_down())));
 
     let x = (left_up.x.max(0.0) as u32).min(window_size.width);
     let y = (left_up.y.max(0.0) as u32).min(window_size.height);

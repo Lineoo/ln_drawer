@@ -17,10 +17,7 @@ use wgpu::{
 
 use crate::{
     measures::Rectangle,
-    render::{
-        MSAA_STATE, Render, RenderControl,
-        camera::{CameraBind, CurrentCamera},
-    },
+    render::{MSAA_STATE, Render, RenderControl, camera::CameraBind},
     widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::shader_compile},
 };
 
@@ -76,8 +73,7 @@ impl Canvas {
             draw: Some(Box::new(move |world, rpass, extra| {
                 let instance = world.fetch(instance).unwrap();
                 let pipeline = world.single_fetch::<CanvasPipeline>().unwrap();
-                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
-                let camera = world.fetch(current_camera.0).unwrap();
+                let camera = extra.camera;
 
                 let (start, end) = extra.diagnosis.assign("main > canvas");
                 extra.diagnosis.write(rpass, start);

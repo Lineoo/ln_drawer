@@ -1,5 +1,5 @@
 use glam::{DVec2, I64Vec2, Mat2, UVec2, Vec2};
-use ln_world::{Descriptor, Element, Handle, World};
+use ln_world::{Descriptor, Element, Handle, HandleAny, World};
 use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -10,7 +10,7 @@ use winit::event::WindowEvent;
 use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
-    render::Render,
+    render::{Render, RenderControl, RenderExtra},
     save::{Autosave, SaveDatabase},
 };
 
@@ -27,6 +27,10 @@ pub struct Camera {
 
     pub bind: BindGroup,
     pub uniform: Buffer,
+
+    pub seq_dirty: Vec<(Handle<RenderControl>, HandleAny, isize)>,
+    pub seq_remove: Vec<Handle<RenderControl>>,
+    pub sequence: Vec<(Handle<RenderControl>, HandleAny, isize)>,
 
     queue: Queue,
 }
@@ -175,9 +179,52 @@ impl Camera {
             src_size: desc.src_size,
             src_center: desc.src_center,
             src_zoom: desc.src_zoom,
+            seq_dirty: Vec::new(),
+            seq_remove: Vec::new(),
+            sequence: Vec::new(),
             bind,
             uniform,
             queue: render.queue.clone(),
+        }
+    }
+
+    pub fn reorder(&mut self) {
+        'r: for (dirty, view, ord) in self.seq_dirty.drain(..) {
+            for (control, old_view, old_ord) in &mut self.sequence {
+                if *control == dirty {
+                    *old_view = view;
+                    *old_ord = ord;
+                    continue 'r;
+                }
+            }
+
+            // if new
+            self.sequence.push((dirty, view, ord));
+        }
+
+        (self.sequence).retain(|(control, ..)| !self.seq_remove.contains(control));
+        self.seq_remove.clear();
+
+        self.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
+    }
+
+    pub fn draw(&self, world: &World, rpass: &mut RenderPass, extra: RenderExtra) {
+        for &(control, view, _) in &self.sequence {
+            let extra = RenderExtra {
+                device: extra.device,
+                queue: extra.queue,
+                camera: extra.camera,
+                early_encoder: extra.early_encoder,
+                surface_config: extra.surface_config,
+                diagnosis: extra.diagnosis,
+                scissor: extra.scissor,
+            };
+            world.enter(view, || {
+                let mut control = world.fetch_mut(control).unwrap();
+                if let Some(draw) = &mut control.draw {
+                    draw(world, rpass, extra);
+                }
+            });
         }
     }
 
