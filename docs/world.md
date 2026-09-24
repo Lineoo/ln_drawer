@@ -175,36 +175,34 @@ that.trigger(that, ElementUpdate);
 
 ### 典型用法
 
+
 ```
 |                  INITELEM                     |
 |-----------------------------------------------|
 |            LnAndroid (on Mobile)              |
 |               Lnwindow (Main)                 |
 |---------------vvvvvvvvvvvvvvv-----------------|
-|              Render, PointerTool              |
-|                                               |
-|   Camera (Paint)          Camera (UI)         |
-|---vvvvvvvvvvvvv----|------vvvvvvvvvvvvv-------|
-|   RenderPhase      |      RenderPhase         |
-|   RenderControl    |      RenderControl       |
-|   RenderControl    |      ToolCollider        |
-|   ToolCollider     |      Container (普通元素) |
-|                    |      : 父相机=UI          |
-|                    |      : 子相机------------|
-|                    |   Camera (Sub)            |
-|                    |   RenderControl ...       |
-|--------------------|---------------------------|
+|   Render, Tools, Theme, Pipelines             |
+|   Camera (Paint)     Camera (UI)              |
+|   MainCameraUtils                             |
+|   LayerPage, LayerInput                       |
+|   RenderControl ...  RenderControl ...        |
+|   ToolCollider       ToolCollider             |
+|   Container                                   |
+|       Camera (Sub)                            |
+|       RenderControl ...                       |
+|-----------------------------------------------|
 ```
 
 ### 独立相机与子界面
 
-`Container` 拥有**独立相机**，但不再创建子视图：子相机与容器内容都插入在同一个根视图里，
-`Container::parent` 指回父相机、`Container::camera` 是其子相机。内部渲染与交互都显式使用
-这台子相机（渲染图元、`RenderControl`、`ToolCollider` 均携带 `Handle<Camera>`）。
+`Container` 拥有**独立相机**，但不创建子视图：子相机与容器内容都插入在同一个 `Lnwindow`
+视图里，`Container::parent` 指回父相机、`Container::camera` 是其子相机。内部渲染与交互都
+显式使用这台子相机（渲染图元、`RenderControl`、`ToolCollider` 均携带 `Handle<Camera>`）。
 
 这样坐标系就与外层解耦：内容按本地坐标布局，移动子界面只需移动子相机，子元素不必重排或
-重新上传。子相机位于根视图内、对窗口视图不可见，因此不会参与顶层相机遍历，也不会被重复
-绘制，只由容器的 portal 渲染控制负责绘制与裁剪。逐视图的 `CurrentCamera` 单例已移除。
+重新上传。子相机同样是普通元素，只由容器的 portal 渲染控制负责绘制与裁剪。逐视图的
+`CurrentCamera` 单例已移除；绘画相机的 `CameraUtils` 通过 `MainCameraUtils` 单例包装暴露。
 
 ## 管理保证 ##
 

@@ -137,9 +137,10 @@ impl Container {
             set_camera_center(world, camera, compose_center(parent_center, scroll));
         });
 
-        let control = world.insert(RenderControl::phase_with_draw(
-            parent,
-            move |world, rpass, extra| {
+        let control = world.insert(RenderControl {
+            camera: Some(parent),
+            prepare: None,
+            draw: Some(Box::new(move |world, rpass, extra| {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let parent_camera = extra.camera;
                 let panel_rect = world.fetch(handle).unwrap().rect;
@@ -177,8 +178,8 @@ impl Container {
                     height: window_size.height,
                 });
                 rpass.set_scissor_rect(restore.x, restore.y, restore.width, restore.height);
-            },
-        ));
+            })),
+        });
         RenderControl::reorder(parent, Some(isize::MAX), world, control);
         world.dependency(control, handle);
 

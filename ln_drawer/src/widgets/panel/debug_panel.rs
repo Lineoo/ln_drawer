@@ -10,7 +10,7 @@ use crate::{
     measures::Rectangle,
     render::{
         Render,
-        camera::{Camera, CameraUtils, MainCamera},
+        camera::{Camera, MainCamera, MainCameraUtils},
     },
     save::SaveDatabase,
     theme::Theme,
@@ -80,16 +80,13 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>, camera: Handle<Cam
 
     let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
     world.observer(compass, move |&ButtonClick, world| {
-        let main_camera = world.single_fetch::<MainCamera>().unwrap();
-        let mut camera = world
-            .enter_single_fetch_mut::<CameraUtils>(main_camera.0)
-            .unwrap();
+        let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
+        let utils = world.single_fetch::<MainCameraUtils>().unwrap().0;
+        let mut camera = world.fetch_mut(utils).unwrap();
         camera.force_clear();
         camera.force_camera_center(I64Vec2::ZERO);
         camera.force_camera_zoom(0);
-        world.enter(main_camera.0, || {
-            camera.apply_to_camera(world, main_camera.0);
-        });
+        camera.apply_to_camera(world, main_camera);
     });
 
     let render_profile = docker_button(include_bytes!("../../../res/interface/timer.svg"));

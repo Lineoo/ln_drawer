@@ -13,7 +13,6 @@ use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition, WriteTran
 use crate::lnwin::LnAndroid;
 use crate::{
     lnwin::Lnwindow,
-    render::camera::Camera,
     tools::timer::{Timer, TimerHit},
 };
 
@@ -283,14 +282,12 @@ impl Autosave {
     pub fn autosave_all(world: &World) {
         let start = Instant::now();
 
-        world.foreach_enter::<Camera>(|_| {
-            let db = world.single_fetch::<SaveDatabase>().unwrap();
-            let write = SaveDatabase::begin_clean_write(&db.0).unwrap();
-            world.foreach_fetch_mut::<Autosave>(|mut task| {
-                (task.0)(world, &write);
-            });
-            write.commit().unwrap();
+        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        let write = SaveDatabase::begin_clean_write(&db.0).unwrap();
+        world.foreach_fetch_mut::<Autosave>(|mut task| {
+            (task.0)(world, &write);
         });
+        write.commit().unwrap();
 
         let duration = Instant::now().duration_since(start);
         log::debug!("autosave request finished in {duration:?}");

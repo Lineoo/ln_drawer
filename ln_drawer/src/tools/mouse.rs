@@ -5,7 +5,7 @@ use winit::event::{ButtonSource, ElementState, MouseButton, PointerSource, Windo
 use crate::{
     lnwin::Lnwindow,
     measures::FI64Ext,
-    render::camera::{CameraUtils, MainCamera},
+    render::camera::{MainCamera, MainCameraUtils},
     tools::collider::ToolCollider,
 };
 
@@ -39,9 +39,7 @@ impl Element for MouseTool {
                     return;
                 };
 
-                world.enter(hit.view, || {
-                    world.queue_trigger(hit.collider, MouseMenu(hit.position.q32_floor()));
-                });
+                world.queue_trigger(hit.collider, MouseMenu(hit.position.q32_floor()));
             }
 
             // middle-click //
@@ -51,16 +49,14 @@ impl Element for MouseTool {
                 button: ButtonSource::Mouse(MouseButton::Middle),
                 ..
             } => {
-                let main = world.single_fetch::<MainCamera>().unwrap();
+                let utils = world.single_fetch::<MainCameraUtils>().unwrap().0;
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let cursor = lnwindow.cursor_to_screen(*position);
                 middle = true;
 
-                world.enter(main.0, || {
-                    let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-                    camera_utils.anchor_cursor(DVec2::ZERO);
-                    camera_utils.camera_cursor_by_anchor_center(cursor);
-                });
+                let mut camera_utils = world.fetch_mut(utils).unwrap();
+                camera_utils.anchor_cursor(DVec2::ZERO);
+                camera_utils.camera_cursor_by_anchor_center(cursor);
             }
 
             WindowEvent::PointerMoved {
@@ -68,17 +64,17 @@ impl Element for MouseTool {
                 source: PointerSource::Mouse,
                 ..
             } => {
-                let main = world.single_fetch::<MainCamera>().unwrap();
+                let main = world.single_fetch::<MainCamera>().unwrap().0;
+                let utils = world.single_fetch::<MainCameraUtils>().unwrap().0;
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
                 let cursor = lnwindow.cursor_to_screen(*position);
+                drop(lnwindow);
 
-                world.enter(main.0, || {
-                    let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
-                    if middle {
-                        camera_utils.camera_cursor_by_camera_center(cursor);
-                        camera_utils.apply_to_camera(world, main.0);
-                    }
-                });
+                let mut camera_utils = world.fetch_mut(utils).unwrap();
+                if middle {
+                    camera_utils.camera_cursor_by_camera_center(cursor);
+                    camera_utils.apply_to_camera(world, main);
+                }
             }
 
             WindowEvent::PointerButton {

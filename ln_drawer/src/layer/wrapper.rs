@@ -135,27 +135,25 @@ impl LayerPage {
             loading_thread(stream_config, input_rx, output_tx).unwrap();
         });
 
-        let ui_camera = world.single_fetch::<UICamera>().unwrap();
-        let (brush_preview, brush_preview_shadow) = world.enter(ui_camera.0, || {
-            let preview = world.insert(RRect {
-                rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
-                order: -10,
-                color: Srgba::new(0.5, 0.5, 0.5, 0.4),
-                radius: 0.5,
-                width: 0.0,
-                enabled: false,
-                camera: ui_camera.0,
-            });
-            let preview_shadow = world.insert(RRect {
-                rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
-                order: -11,
-                color: Srgba::new(0.0, 0.0, 0.0, 0.3),
-                radius: 0.5,
-                width: BRUSH_PREVIEW_SHADOW_BLUR as f32,
-                enabled: false,
-                camera: ui_camera.0,
-            });
-            (preview, preview_shadow)
+        let ui_camera = world.single_fetch::<UICamera>().unwrap().0;
+
+        let brush_preview = world.insert(RRect {
+            rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
+            order: -10,
+            color: Srgba::new(0.5, 0.5, 0.5, 0.4),
+            radius: 0.5,
+            width: 0.0,
+            enabled: false,
+            camera: ui_camera,
+        });
+        let brush_preview_shadow = world.insert(RRect {
+            rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
+            order: -11,
+            color: Srgba::new(0.0, 0.0, 0.0, 0.3),
+            radius: 0.5,
+            width: BRUSH_PREVIEW_SHADOW_BLUR as f32,
+            enabled: false,
+            camera: ui_camera,
         });
 
         let color = Srgba::new(0.0, 0.0, 0.0, 1.0);

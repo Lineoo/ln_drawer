@@ -1,5 +1,5 @@
 use glam::{DVec2, I64Vec2, IVec2, UVec2};
-use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
@@ -25,7 +25,6 @@ pub struct ToolCollider {
 pub struct ToolHit {
     pub collider: Handle<ToolCollider>,
     pub camera: Handle<Camera>,
-    pub view: HandleAny,
     pub position: I64Vec2,
 }
 
@@ -61,14 +60,7 @@ impl ToolCollider {
         let mut visited = Vec::new();
         // UI draws over the painting canvas, so test it first.
         for camera in [ui, main] {
-            if let Some(hit) = hit_camera(
-                world,
-                camera,
-                camera.untyped(),
-                screen,
-                HitClip::FULL,
-                &mut visited,
-            ) {
+            if let Some(hit) = hit_camera(world, camera, screen, HitClip::FULL, &mut visited) {
                 return Some(hit);
             }
         }
@@ -130,7 +122,6 @@ fn projected(camera: &Camera, rect: Rectangle) -> HitClip {
 fn hit_camera(
     world: &World,
     camera: Handle<Camera>,
-    view: HandleAny,
     screen: DVec2,
     clip: HitClip,
     visited: &mut Vec<Handle<Camera>>,
@@ -140,66 +131,63 @@ fn hit_camera(
     }
     visited.push(camera);
 
-    world.enter(view, || {
-        let camera_ref = world.fetch(camera).ok()?;
+    let camera_ref = world.fetch(camera).ok()?;
 
-        // Nested containers draw after the rest of the camera, so their content sits on top.
-        let mut containers = Vec::new();
-        world.foreach_fetch::<Container>(|container| {
-            if container.parent == camera {
-                containers.push(container.handle());
-            }
-        });
+    // Nested containers draw after the rest of the camera, so their content sits on top.
+    let mut containers = Vec::new();
+    world.foreach_fetch::<Container>(|container| {
+        if container.parent == camera {
+            containers.push(container.handle());
+        }
+    });
 
-        for container in containers.into_iter().rev() {
-            let Ok(entry) = world.fetch(container) else {
-                continue;
-            };
-            let visible = entry.visible;
-            let rect = entry.rect;
-            let child_camera = entry.camera;
-            drop(entry);
+    for container in containers.into_iter().rev() {
+        let Ok(entry) = world.fetch(container) else {
+            continue;
+        };
+        let visible = entry.visible;
+        let rect = entry.rect;
+        let child_camera = entry.camera;
+        drop(entry);
 
-            if !visible {
-                continue;
-            }
-
-            let child = clip.intersect(projected(&camera_ref, rect));
-            if let Some(hit) = hit_camera(world, child_camera, view, screen, child, visited) {
-                return Some(hit);
-            }
+        if !visible {
+            continue;
         }
 
-        // Then the camera's own colliders: highest `order`, and latest inserted, first.
-        let position = camera_ref.dst_to_src(screen);
-        let flat = position.q32_floor();
-
-        let mut colliders = Vec::new();
-        world.foreach_fetch::<ToolCollider>(|collider| {
-            if collider.camera == camera {
-                colliders.push((
-                    collider.order,
-                    collider.handle(),
-                    collider.rect,
-                    collider.enabled,
-                ));
-            }
-        });
-        colliders.sort_by_key(|entry| entry.0);
-
-        for (_, collider, rect, enabled) in colliders.into_iter().rev() {
-            if enabled && rect.contains(flat) {
-                return Some(ToolHit {
-                    collider,
-                    camera,
-                    view,
-                    position,
-                });
-            }
+        let child = clip.intersect(projected(&camera_ref, rect));
+        if let Some(hit) = hit_camera(world, child_camera, screen, child, visited) {
+            return Some(hit);
         }
+    }
 
-        None
-    })
+    // Then the camera's own colliders: highest `order`, and latest inserted, first.
+    let position = camera_ref.dst_to_src(screen);
+    let flat = position.q32_floor();
+
+    let mut colliders = Vec::new();
+    world.foreach_fetch::<ToolCollider>(|collider| {
+        if collider.camera == camera {
+            colliders.push((
+                collider.order,
+                collider.handle(),
+                collider.rect,
+                collider.enabled,
+            ));
+        }
+    });
+    colliders.sort_by_key(|entry| entry.0);
+
+    for (_, collider, rect, enabled) in colliders.into_iter().rev() {
+        if enabled && rect.contains(flat) {
+            return Some(ToolHit {
+                collider,
+                camera,
+                position,
+            });
+        }
+    }
+
+    None
 }
 
 impl Element for ToolCollider {

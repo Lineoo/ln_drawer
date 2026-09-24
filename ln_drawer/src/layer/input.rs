@@ -15,7 +15,7 @@ use crate::{
     },
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
-    render::camera::{CameraUtils, MainCamera, UICamera},
+    render::camera::{MainCamera, MainCameraUtils, UICamera},
     tools::{
         collider::ToolCollider,
         pointer::{PointerHover, PointerHoverStatus, PointerScroll},
@@ -66,33 +66,31 @@ impl LayerInput {
                 return;
             }
 
-            let ui_camera = world.single_fetch::<UICamera>().unwrap();
-            world.enter(ui_camera.0, || {
-                let camera = world.fetch(ui_camera.0).unwrap();
-                let wrapper = world.single_fetch::<LayerPage>().unwrap();
-                let brush_rect = Rectangle::new_half(
-                    camera.dst_to_src(event.pointer.screen).q32_round(),
-                    UVec2::new(1, 1),
-                );
-                let shadow_rect = brush_rect + (event.pointer.tilt * 48.0).as_ivec2();
-                world.queue_trigger(wrapper.brush_preview, SetWidgetRectangle(brush_rect));
-                world.queue_trigger(
-                    wrapper.brush_preview_shadow,
-                    SetWidgetRectangle(shadow_rect),
-                );
+            let ui_camera = world.single_fetch::<UICamera>().unwrap().0;
+            let camera = world.fetch(ui_camera).unwrap();
+            let wrapper = world.single_fetch::<LayerPage>().unwrap();
+            let brush_rect = Rectangle::new_half(
+                camera.dst_to_src(event.pointer.screen).q32_round(),
+                UVec2::new(1, 1),
+            );
+            let shadow_rect = brush_rect + (event.pointer.tilt * 48.0).as_ivec2();
+            world.queue_trigger(wrapper.brush_preview, SetWidgetRectangle(brush_rect));
+            world.queue_trigger(
+                wrapper.brush_preview_shadow,
+                SetWidgetRectangle(shadow_rect),
+            );
 
-                match event.status {
-                    PointerHoverStatus::Enter => {
-                        world.queue_trigger(wrapper.brush_preview, SetWidgetVisible(true));
-                        world.queue_trigger(wrapper.brush_preview_shadow, SetWidgetVisible(true));
-                    }
-                    PointerHoverStatus::Moving => {}
-                    PointerHoverStatus::Leave => {
-                        world.queue_trigger(wrapper.brush_preview, SetWidgetVisible(false));
-                        world.queue_trigger(wrapper.brush_preview_shadow, SetWidgetVisible(false));
-                    }
+            match event.status {
+                PointerHoverStatus::Enter => {
+                    world.queue_trigger(wrapper.brush_preview, SetWidgetVisible(true));
+                    world.queue_trigger(wrapper.brush_preview_shadow, SetWidgetVisible(true));
                 }
-            });
+                PointerHoverStatus::Moving => {}
+                PointerHoverStatus::Leave => {
+                    world.queue_trigger(wrapper.brush_preview, SetWidgetVisible(false));
+                    world.queue_trigger(wrapper.brush_preview_shadow, SetWidgetVisible(false));
+                }
+            }
         });
 
         let lnwindow = world.single::<Lnwindow>().unwrap();
@@ -146,31 +144,31 @@ impl LayerInput {
         });
 
         world.observer(collider, move |event: &PointerScroll, world| {
-            let main = world.single_fetch::<MainCamera>().unwrap();
-            world.enter(main.0, || {
-                let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
+            let main = world.single_fetch::<MainCamera>().unwrap().0;
+            let utils = world.single_fetch::<MainCameraUtils>().unwrap().0;
+            let mut camera_utils = world.fetch_mut(utils).unwrap();
 
-                let zoom_delta = -event.delta.y;
-                camera_utils.anchor_cursor(DVec2::ZERO);
-                camera_utils.camera_cursor_by_anchor_center(event.pointer.screen);
-                camera_utils.anchor_distance(200.0);
-                if zoom_delta > 0.0 {
-                    camera_utils.camera_distance_by_anchor_zoom_cursor(200.0);
-                    camera_utils.camera_distance_by_camera_zoom_center(200.0 + zoom_delta);
-                } else {
-                    camera_utils.camera_distance_by_anchor_zoom_cursor(200.0 - zoom_delta);
-                    camera_utils.camera_distance_by_camera_zoom_center(200.0);
-                }
-                camera_utils.apply_to_camera(world, main.0);
-            });
+            let zoom_delta = -event.delta.y;
+            camera_utils.anchor_cursor(DVec2::ZERO);
+            camera_utils.camera_cursor_by_anchor_center(event.pointer.screen);
+            camera_utils.anchor_distance(200.0);
+            if zoom_delta > 0.0 {
+                camera_utils.camera_distance_by_anchor_zoom_cursor(200.0);
+                camera_utils.camera_distance_by_camera_zoom_center(200.0 + zoom_delta);
+            } else {
+                camera_utils.camera_distance_by_anchor_zoom_cursor(200.0 - zoom_delta);
+                camera_utils.camera_distance_by_camera_zoom_center(200.0);
+            }
+            camera_utils.apply_to_camera(world, main);
         });
 
         let mut state = LayerInputState::None;
         world.observer(collider, move |event: &MultiTouchGroup, world| {
             let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
+            let utils = world.single_fetch::<MainCameraUtils>().unwrap().0;
             let mut this = world.fetch_mut(this).unwrap();
             let lnwindow = world.fetch(lnwindow).unwrap();
-            let camera_utils = &mut *world.single_fetch_mut::<CameraUtils>().unwrap();
+            let camera_utils = &mut *world.fetch_mut(utils).unwrap();
             let page = &mut *world.single_fetch_mut::<LayerPage>().unwrap();
             let center = touch_center(event);
             let pinch = touch_pinch(event);

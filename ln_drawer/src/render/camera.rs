@@ -54,6 +54,13 @@ pub struct MainCamera(pub Handle<Camera>);
 
 pub struct UICamera(pub Handle<Camera>);
 
+/// Singleton wrapper for the painting camera's [`CameraUtils`].
+///
+/// Cameras no longer own ECS views, so `CameraUtils` cannot be a per-view singleton anymore.
+/// Everything lives in one view, and the two cameras are told apart by explicit handles; only the
+/// painting camera needs gesture state, so it is exposed through this singleton wrapper.
+pub struct MainCameraUtils(pub Handle<CameraUtils>);
+
 pub struct CameraUpdated;
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -374,12 +381,6 @@ impl CameraUtils {
         }
     }
 
-    pub fn update_from(&mut self, camera: &Camera) {
-        self.camera_center = camera.src_center;
-        self.camera_zoom = camera.src_zoom;
-        self.camera_size = camera.src_size;
-    }
-
     pub fn force_camera_center(&mut self, center: I64Vec2) {
         self.camera_center = center;
     }
@@ -522,6 +523,7 @@ impl CameraUtils {
 
 impl Element for MainCamera {}
 impl Element for UICamera {}
+impl Element for MainCameraUtils {}
 impl Element for CameraUtils {}
 
 #[cfg(test)]

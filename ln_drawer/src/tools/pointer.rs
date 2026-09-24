@@ -1,5 +1,5 @@
 use glam::{DVec2, I8Vec2, I64Vec2, Vec2};
-use ln_world::{Element, Handle, HandleAny, World};
+use ln_world::{Element, Handle, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, MouseScrollDelta, PointerKind, PointerSource,
     WindowEvent,
@@ -78,7 +78,6 @@ struct Pointer {
 #[derive(Clone, Copy)]
 struct Hover {
     position: I64Vec2,
-    view: HandleAny,
     camera: Handle<Camera>,
     handle: Handle<ToolCollider>,
 }
@@ -246,16 +245,14 @@ impl Element for PointerTool {
                         MouseScrollDelta::PixelDelta(delta) => DVec2::new(delta.x, -delta.y),
                     };
 
-                    world.enter(hover.view, || {
-                        world.queue_trigger(
-                            hover.handle,
-                            PointerScroll {
-                                delta,
-                                position: hover.position,
-                                pointer: pointer.data,
-                            },
-                        )
-                    })
+                    world.queue_trigger(
+                        hover.handle,
+                        PointerScroll {
+                            delta,
+                            position: hover.position,
+                            pointer: pointer.data,
+                        },
+                    )
                 }
 
                 WindowEvent::PointerEntered { position, kind, .. } => {
@@ -314,31 +311,27 @@ impl Pointer {
 
         if let Some(hovering) = self.hovering {
             if let Some(pressed) = self.pressed {
-                world.enter(hovering.view, || {
-                    world.queue_trigger(
-                        hovering.handle,
-                        PointerHit {
-                            position: hovering.position,
-                            pointer: self.data,
-                            status: PointerHitStatus::Moving,
-                            data: PointerHitData {
-                                force: pressed.force,
-                            },
-                        },
-                    );
-                });
-            }
-
-            world.enter(hovering.view, || {
                 world.queue_trigger(
                     hovering.handle,
-                    PointerHover {
+                    PointerHit {
                         position: hovering.position,
                         pointer: self.data,
-                        status: PointerHoverStatus::Moving,
+                        status: PointerHitStatus::Moving,
+                        data: PointerHitData {
+                            force: pressed.force,
+                        },
                     },
                 );
-            });
+            }
+
+            world.queue_trigger(
+                hovering.handle,
+                PointerHover {
+                    position: hovering.position,
+                    pointer: self.data,
+                    status: PointerHoverStatus::Moving,
+                },
+            );
         }
     }
 
@@ -361,9 +354,7 @@ impl Pointer {
             };
 
             if let Some(hit) = hit {
-                world.enter(hovering.view, || {
-                    world.queue_trigger(hovering.handle, hit);
-                });
+                world.queue_trigger(hovering.handle, hit);
             }
         }
 
@@ -380,46 +371,38 @@ impl Pointer {
         }
 
         if let Some(previous) = previous {
-            world.enter(previous.view, || {
-                world.queue_trigger(
-                    previous.handle,
-                    PointerHover {
-                        position: previous.position,
-                        pointer: self.data,
-                        status: PointerHoverStatus::Leave,
-                    },
-                );
-            });
+            world.queue_trigger(
+                previous.handle,
+                PointerHover {
+                    position: previous.position,
+                    pointer: self.data,
+                    status: PointerHoverStatus::Leave,
+                },
+            );
         }
 
         if let Some(hovering) = hovering {
-            world.enter(hovering.view, || {
-                world.queue_trigger(
-                    hovering.handle,
-                    PointerHover {
-                        position: hovering.position,
-                        pointer: self.data,
-                        status: PointerHoverStatus::Enter,
-                    },
-                );
-            });
+            world.queue_trigger(
+                hovering.handle,
+                PointerHover {
+                    position: hovering.position,
+                    pointer: self.data,
+                    status: PointerHoverStatus::Enter,
+                },
+            );
         }
     }
 
     fn recalculate_hovering(&mut self, world: &World) {
         if self.pressed.is_some() {
             let hovering = self.hovering.unwrap();
-            let camera_handle = hovering.camera;
-            let position = world.enter(hovering.view, || {
-                let camera = world.fetch(camera_handle).unwrap();
-                camera.dst_to_src(self.data.screen)
-            });
+            let camera = world.fetch(hovering.camera).unwrap();
+            let position = camera.dst_to_src(self.data.screen);
 
             self.update_hovering(
                 world,
                 Some(Hover {
                     position,
-                    view: hovering.view,
                     camera: hovering.camera,
                     handle: hovering.handle,
                 }),
@@ -429,7 +412,6 @@ impl Pointer {
                 world,
                 Some(Hover {
                     position: hit.position,
-                    view: hit.view,
                     camera: hit.camera,
                     handle: hit.collider,
                 }),

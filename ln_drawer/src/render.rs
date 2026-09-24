@@ -23,7 +23,10 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
-use crate::{lnwin::Lnwindow, render::camera::Camera};
+use crate::{
+    lnwin::Lnwindow,
+    render::camera::{Camera, MainCamera, UICamera},
+};
 
 pub const MSAA_SAMPLE_COUNT: u32 = 1;
 pub const MSAA_STATE: MultisampleState = MultisampleState {
@@ -321,18 +324,16 @@ impl Render {
         drop(render);
 
         let mut refreshing = false;
-        world.foreach_enter::<Camera>(|_| {
-            world.foreach_fetch_mut::<RenderControl>(|mut control| {
-                if let Some(prepare) = &mut control.prepare
-                    && let Some(info) = prepare(world)
-                {
-                    refreshing |= info.keep_redrawing;
-                };
-            });
-            if world.queue_cache::<RenderControl>() {
-                log::debug!("control cached");
-            }
+        world.foreach_fetch_mut::<RenderControl>(|mut control| {
+            if let Some(prepare) = &mut control.prepare
+                && let Some(info) = prepare(world)
+            {
+                refreshing |= info.keep_redrawing;
+            };
         });
+        if world.queue_cache::<RenderControl>() {
+            log::debug!("control cached");
+        }
 
         let mut render = world.single_fetch_mut::<Render>().unwrap();
         render.preparing = false;
@@ -392,8 +393,12 @@ impl Render {
 
         // redraw
 
+        let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
+        let ui_camera = world.single_fetch::<UICamera>().unwrap().0;
+
         let scissor = Cell::new(None);
-        world.foreach_enter::<Camera>(|camera_handle| {
+        // The painting camera draws first, the interface camera over it.
+        for camera_handle in [main_camera, ui_camera] {
             scissor.set(None);
             let camera = &mut *world.fetch_mut(camera_handle).unwrap();
             camera.reorder();
@@ -410,7 +415,7 @@ impl Render {
                     scissor: &scissor,
                 },
             );
-        });
+        }
 
         drop(rpass);
 
@@ -566,25 +571,6 @@ fn plain_rpass<'encoder>(
 }
 
 impl RenderControl {
-    /// A portal render control that draws a nested camera's contents.
-    ///
-    /// `draw` invokes the callback in the control's own camera, so the caller can set up outer
-    /// render state (such as a scissor rect) before drawing the nested camera. Preparation of the
-    /// nested controls already happens with the rest of the root view's controls, so this control
-    /// needs no `prepare` step.
-    pub fn phase_with_draw(
-        camera: Handle<Camera>,
-        mut f: impl FnMut(&World, &mut RenderPass, RenderExtra) + Send + 'static,
-    ) -> Self {
-        RenderControl {
-            camera: Some(camera),
-            prepare: None,
-            draw: Some(Box::new(move |world, rpass, extra| {
-                f(world, rpass, extra);
-            })),
-        }
-    }
-
     /// Safer functions to request redraw.
     pub fn request_redraw(world: &World) {
         let render = world.single_fetch::<Render>().unwrap();

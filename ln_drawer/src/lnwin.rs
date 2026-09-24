@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use glam::{DVec2, I64Vec2, IVec2, UVec2};
 use hashbrown::HashMap;
-use ln_world::{ElemRef, Element, Handle, HandleGeneric, ViewRef, World};
+use ln_world::{Element, Handle, ViewRef, World};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 use winit::{
@@ -18,7 +18,7 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{
         Render,
-        camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, UICamera},
+        camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, MainCameraUtils, UICamera},
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     theme::Theme,
@@ -182,72 +182,51 @@ impl Element for Lnwindow {
 
             world.insert(MainCamera(main_camera));
             world.insert(UICamera(ui_camera));
-            world.enter(main_camera, || world.insert(ViewRef(this.untyped())));
-            world.enter(ui_camera, || world.insert(ViewRef(this.untyped())));
 
             world.flush();
 
-            world.enter(main_camera, || {
-                let camera = world.fetch(main_camera).unwrap();
-                world.insert(CameraUtils::new(&camera));
+            let camera = world.fetch(main_camera).unwrap();
+            let main_camera_utils = world.insert(CameraUtils::new(&camera));
+            world.insert(MainCameraUtils(main_camera_utils));
 
-                world.observer(this, move |event: &WindowEvent, world| {
-                    if let WindowEvent::SurfaceResized(size) = event {
-                        let mut camera = world.single_fetch_mut::<CameraUtils>().unwrap();
-                        camera.camera_size(UVec2::new(size.width, size.height));
-                    }
-                });
+            world.observer(this, move |event: &WindowEvent, world| {
+                if let WindowEvent::SurfaceResized(size) = event {
+                    let mut camera = world.fetch_mut(main_camera_utils).unwrap();
+                    camera.camera_size(UVec2::new(size.width, size.height));
+                }
             });
 
-            world.flush();
+            world.observer(this, move |event: &WindowEvent, world| {
+                if let WindowEvent::SurfaceResized(size) = event {
+                    let lnwindow = world.fetch(this).unwrap();
+                    let mut camera = world.fetch_mut(ui_camera).unwrap();
 
-            world.enter(ui_camera, || {
-                let camera = world.fetch(ui_camera).unwrap();
-                world.insert(CameraUtils::new(&camera));
+                    let scale = lnwindow.window.scale_factor();
+                    world.queue_trigger(
+                        lnwindow.handle(),
+                        WidgetRectangle(Rectangle::new_half(
+                            IVec2::ZERO,
+                            (UVec2::new(size.width / 2, size.height / 2).as_dvec2() / scale)
+                                .round()
+                                .as_uvec2(),
+                        )),
+                    );
 
-                world.observer(this, move |event: &WindowEvent, world| {
-                    if let WindowEvent::SurfaceResized(size) = event {
-                        let lnwindow = world.fetch(this).unwrap();
-                        let mut camera2 = world.fetch_mut(ui_camera).unwrap();
-                        let mut camera = world.single_fetch_mut::<CameraUtils>().unwrap();
-
-                        let scale = lnwindow.window.scale_factor();
-                        world.queue_trigger(
-                            lnwindow.handle(),
-                            WidgetRectangle(Rectangle::new_half(
-                                IVec2::ZERO,
-                                (UVec2::new(size.width / 2, size.height / 2).as_dvec2() / scale)
-                                    .round()
-                                    .as_uvec2(),
-                            )),
-                        );
-
-                        camera2.src_zoom = i64::q32_from_f64(scale.log2());
-                        camera.update_from(&camera2);
-                    }
-                });
+                    camera.src_zoom = i64::q32_from_f64(scale.log2());
+                }
             });
 
+            drop(camera);
             world.flush();
 
             // Setup interface components
 
-            world.enter_queue(main_camera, |world| {
+            world.queue(move |world| {
                 world.insert(LayerPage::new(world));
                 world.insert(LayerInput::default());
             });
 
-            world.enter_queue(ui_camera, move |world| {
-                let stroke = world.enter(main_camera, || world.single::<LayerPage>().unwrap());
-                let input = world.enter(main_camera, || world.single::<LayerInput>().unwrap());
-
-                world.insert(ElemRef(stroke.untyped()));
-                world.insert(ElemRef(input.untyped()));
-
-                world.flush();
-
-                side_docker(world, ui_camera);
-            });
+            world.queue(move |world| side_docker(world, ui_camera));
 
             world.flush();
         });
