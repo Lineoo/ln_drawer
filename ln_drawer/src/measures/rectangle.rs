@@ -1,6 +1,6 @@
 use std::{fmt, ops};
 
-use glam::{IVec2, UVec2};
+use glam::{I64Vec2, IVec2, UVec2};
 
 use crate::measures::Axis;
 
@@ -209,6 +209,14 @@ impl Rectangle {
             self.extend.x as i32 / 2,
             self.extend.y as i32 / 2,
         ))
+    }
+
+    #[inline]
+    pub const fn q32_center(self) -> I64Vec2 {
+        I64Vec2::new(
+            ((self.origin.x as i64) << 32).wrapping_add((self.extend.x as i64) << 31),
+            ((self.origin.y as i64) << 32).wrapping_add((self.extend.y as i64) << 31),
+        )
     }
 
     #[inline]

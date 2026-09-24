@@ -148,11 +148,12 @@ impl Camera {
                 * desc.dst_size.as_vec2(),
             0.0,
         );
+        let translate = desc.src_center - desc.dst_center;
         let uniform = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("camera_uniform"),
             contents: bytemuck::bytes_of(&CameraUniform {
-                center: desc.src_center.q32_floor().into(),
-                center_fract: desc.src_center.q32_fract().into(),
+                center: translate.q32_floor().into(),
+                center_fract: translate.q32_fract().into(),
                 transform,
                 inverse: transform.inverse(),
             }),

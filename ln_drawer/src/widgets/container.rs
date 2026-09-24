@@ -66,19 +66,18 @@ impl Container {
         let camera_bind = world.single_fetch::<CameraBind>().unwrap();
         let lnwindow = world.single::<Lnwindow>().unwrap();
         let parent_camera = world.single_fetch::<CurrentCamera>().unwrap().0;
-        let descriptor = {
-            let parent = world.fetch(parent_camera).unwrap();
-            CameraDescriptor {
-                src_size: parent.src_size,
-                src_center: parent.src_center,
-                src_zoom: parent.src_zoom,
-                dst_size: UVec2::splat(2),
-                dst_center: I64Vec2::ZERO,
-                dst_zoom: 0,
-            }
+        let parent = world.fetch(parent_camera).unwrap();
+        let descriptor = CameraDescriptor {
+            src_size: parent.src_size,
+            src_center: parent.src_center,
+            src_zoom: parent.src_zoom,
+            dst_size: UVec2::splat(2),
+            dst_center: self.rect.q32_center(),
+            dst_zoom: 0,
         };
         let camera = Camera::from_descriptor(descriptor, &render, &camera_bind.layout);
         drop(camera_bind);
+        drop(parent);
         drop(render);
 
         let state = world.insert(ContainerState {
