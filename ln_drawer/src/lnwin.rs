@@ -170,12 +170,9 @@ impl Element for Lnwindow {
             let main_camera = Camera::build_from_save(world, "camera1");
 
             let ui_camera = world.build(CameraDescriptor {
-                dst_size: UVec2::splat(2),
-                dst_center: I64Vec2::ZERO,
-                dst_zoom: 0,
-                src_size: UVec2::new(size.width, size.height),
-                src_center: I64Vec2::ZERO,
-                src_zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
+                size: UVec2::new(size.width, size.height),
+                center: I64Vec2::ZERO,
+                zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
             });
 
             drop(lnwindow);
@@ -212,7 +209,7 @@ impl Element for Lnwindow {
                         )),
                     );
 
-                    camera.src_zoom = i64::q32_from_f64(scale.log2());
+                    camera.zoom = i64::q32_from_f64(scale.log2());
                 }
             });
 

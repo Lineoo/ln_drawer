@@ -397,7 +397,7 @@ impl Pointer {
         if self.pressed.is_some() {
             let hovering = self.hovering.unwrap();
             let camera = world.fetch(hovering.camera).unwrap();
-            let position = camera.dst_to_src(self.data.screen);
+            let position = camera.screen_to_world(self.data.screen);
 
             self.update_hovering(
                 world,

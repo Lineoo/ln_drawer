@@ -106,8 +106,8 @@ impl HitClip {
 
 /// Project a rectangle from `camera`'s world space into normalized device coordinates.
 fn projected(camera: &Camera, rect: Rectangle) -> HitClip {
-    let low = camera.src_to_dst(I64Vec2::q32_from_i32(rect.left_down()));
-    let high = camera.src_to_dst(I64Vec2::q32_from_i32(rect.right_up()));
+    let low = camera.world_to_screen(I64Vec2::q32_from_i32(rect.left_down()));
+    let high = camera.world_to_screen(I64Vec2::q32_from_i32(rect.right_up()));
 
     HitClip {
         min: low.min(high),
@@ -161,7 +161,7 @@ fn hit_camera(
     }
 
     // Then the camera's own colliders: highest `order`, and latest inserted, first.
-    let position = camera_ref.dst_to_src(screen);
+    let position = camera_ref.screen_to_world(screen);
     let flat = position.q32_floor();
 
     let mut colliders = Vec::new();

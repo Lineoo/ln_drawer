@@ -45,12 +45,9 @@ impl Descriptor for ContainerDescriptor {
         let camera_bind = world.single_fetch::<CameraBind>().unwrap();
         let parent = world.fetch(self.parent).unwrap();
         let descriptor = CameraDescriptor {
-            src_size: parent.src_size,
-            src_center: parent.src_center,
-            src_zoom: parent.src_zoom,
-            dst_size: UVec2::splat(2),
-            dst_center: self.rect.q32_center(),
-            dst_zoom: 0,
+            size: parent.size,
+            center: parent.center,
+            zoom: parent.zoom,
         };
         let camera = Camera::from_descriptor(descriptor, &render, &camera_bind.layout);
         drop(parent);
@@ -129,7 +126,7 @@ impl Container {
                 return;
             };
             let parent_center = match world.fetch(state.parent) {
-                Ok(parent) => parent.src_center,
+                Ok(parent) => parent.center,
                 Err(_) => return,
             };
             let scroll = state.scroll;
@@ -201,14 +198,16 @@ impl Container {
                 (Some(_), PointerHitStatus::Press) => Some(event.pointer.screen),
                 (Some(position), PointerHitStatus::Moving) => {
                     let parent_camera = world.fetch(parent).unwrap();
-                    let delta = parent_camera.dst_to_src_relative(event.pointer.screen - position);
+                    let delta =
+                        parent_camera.screen_to_world_relative(event.pointer.screen - position);
                     drop(parent_camera);
                     move_camera(world, camera, handle, state, delta);
                     Some(event.pointer.screen)
                 }
                 (Some(position), PointerHitStatus::Release) => {
                     let parent_camera = world.fetch(parent).unwrap();
-                    let delta = parent_camera.dst_to_src_relative(event.pointer.screen - position);
+                    let delta =
+                        parent_camera.screen_to_world_relative(event.pointer.screen - position);
                     drop(parent_camera);
                     move_camera(world, camera, handle, state, delta);
                     None
@@ -278,7 +277,7 @@ fn move_camera(
 ) {
     let parent_center = {
         let state = world.fetch(state).unwrap();
-        world.fetch(state.parent).unwrap().src_center
+        world.fetch(state.parent).unwrap().center
     };
 
     let mut state = world.fetch_mut(state).unwrap();
@@ -302,8 +301,8 @@ fn set_camera_center(world: &World, camera: Handle<Camera>, center: I64Vec2) {
     let Ok(mut camera) = world.fetch_mut(camera) else {
         return;
     };
-    if camera.src_center != center {
-        camera.src_center = center;
+    if camera.center != center {
+        camera.center = center;
     }
 }
 
@@ -315,9 +314,9 @@ fn scissor_rect(
     window_size: PhysicalSize<u32>,
 ) -> ScissorRect {
     let left_up =
-        lnwindow.screen_to_cursor(camera.src_to_dst(I64Vec2::q32_from_i32(rect.left_up())));
+        lnwindow.screen_to_cursor(camera.world_to_screen(I64Vec2::q32_from_i32(rect.left_up())));
     let right_down =
-        lnwindow.screen_to_cursor(camera.src_to_dst(I64Vec2::q32_from_i32(rect.right_down())));
+        lnwindow.screen_to_cursor(camera.world_to_screen(I64Vec2::q32_from_i32(rect.right_down())));
 
     let x = (left_up.x.max(0.0) as u32).min(window_size.width);
     let y = (left_up.y.max(0.0) as u32).min(window_size.height);

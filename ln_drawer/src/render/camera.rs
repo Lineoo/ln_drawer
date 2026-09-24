@@ -17,13 +17,9 @@ use crate::{
 const TABLE_CAMERA: TableDefinition<&str, &[u8]> = TableDefinition::new("camera");
 
 pub struct Camera {
-    pub dst_size: UVec2,
-    pub dst_center: I64Vec2,
-    pub dst_zoom: i64,
-
-    pub src_size: UVec2,
-    pub src_center: I64Vec2,
-    pub src_zoom: i64,
+    pub size: UVec2,
+    pub center: I64Vec2,
+    pub zoom: i64,
 
     pub bind: BindGroup,
     pub uniform: Buffer,
@@ -37,13 +33,9 @@ pub struct Camera {
 
 #[derive(Debug)]
 pub struct CameraDescriptor {
-    pub dst_size: UVec2,
-    pub dst_center: I64Vec2,
-    pub dst_zoom: i64,
-
-    pub src_size: UVec2,
-    pub src_center: I64Vec2,
-    pub src_zoom: i64,
+    pub size: UVec2,
+    pub center: I64Vec2,
+    pub zoom: i64,
 }
 
 pub struct CameraBind {
@@ -97,21 +89,18 @@ impl Element for Camera {
             if let WindowEvent::SurfaceResized(size) = event {
                 let mut camera = world.fetch_mut(this).unwrap();
 
-                camera.src_size.x = size.width;
-                camera.src_size.y = size.height;
+                camera.size.x = size.width;
+                camera.size.y = size.height;
             }
         });
     }
 
     fn when_modify(&mut self, world: &World, this: Handle<Self>) {
         let transform = Mat2::from_scale_angle(
-            Vec2::splat(self.src_zoom.q32_as_f64().exp2() as f32)
-                / Vec2::splat(self.dst_zoom.q32_as_f64().exp2() as f32)
-                / self.src_size.as_vec2()
-                * self.dst_size.as_vec2(),
+            Vec2::splat(self.zoom.q32_as_f64().exp2() as f32) * 2. / self.size.as_vec2(),
             0.0,
         );
-        let translate = self.src_center - self.dst_center;
+        let translate = self.center;
         self.queue.write_buffer(
             &self.uniform,
             0,
@@ -147,13 +136,10 @@ impl Camera {
         let device = &render.device;
 
         let transform = Mat2::from_scale_angle(
-            Vec2::splat(desc.src_zoom.q32_as_f64().exp2() as f32)
-                / Vec2::splat(desc.dst_zoom.q32_as_f64().exp2() as f32)
-                / desc.src_size.as_vec2()
-                * desc.dst_size.as_vec2(),
+            Vec2::splat(desc.zoom.q32_as_f64().exp2() as f32) * 2. / desc.size.as_vec2(),
             0.0,
         );
-        let translate = desc.src_center - desc.dst_center;
+        let translate = desc.center;
         let uniform = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("camera_uniform"),
             contents: bytemuck::bytes_of(&CameraUniform {
@@ -179,12 +165,9 @@ impl Camera {
         });
 
         Camera {
-            dst_size: desc.dst_size,
-            dst_center: desc.dst_center,
-            dst_zoom: desc.dst_zoom,
-            src_size: desc.src_size,
-            src_center: desc.src_center,
-            src_zoom: desc.src_zoom,
+            size: desc.size,
+            center: desc.center,
+            zoom: desc.zoom,
             seq_dirty: Vec::new(),
             seq_remove: Vec::new(),
             sequence: Vec::new(),
@@ -235,28 +218,28 @@ impl Camera {
     }
 
     #[inline]
-    pub fn dst_to_src(&self, point: DVec2) -> I64Vec2 {
-        self.src_center + self.dst_to_src_relative(point)
+    pub fn screen_to_world(&self, point: DVec2) -> I64Vec2 {
+        self.center + self.screen_to_world_relative(point)
     }
 
-    pub fn dst_to_src_relative(&self, delta: DVec2) -> I64Vec2 {
-        let scale = self.src_zoom.q32_as_f64().exp2();
-        let pf = delta / scale * self.src_size.as_dvec2() / 2.0;
+    pub fn screen_to_world_relative(&self, delta: DVec2) -> I64Vec2 {
+        let scale = self.zoom.q32_as_f64().exp2();
+        let pf = delta / scale * self.size.as_dvec2() / 2.0;
         I64Vec2::q32_from_f64(pf)
     }
 
-    pub fn src_to_dst(&self, point: I64Vec2) -> DVec2 {
-        self.src_to_dst_relative(point - self.src_center)
+    pub fn world_to_screen(&self, point: I64Vec2) -> DVec2 {
+        self.world_to_screen_relative(point - self.center)
     }
 
-    pub fn src_to_dst_relative(&self, point: I64Vec2) -> DVec2 {
-        let scale = self.src_zoom.q32_as_f64().exp2();
-        let pf = point.q32_as_f64() * 2.0 / self.src_size.as_dvec2() * scale;
+    pub fn world_to_screen_relative(&self, point: I64Vec2) -> DVec2 {
+        let scale = self.zoom.q32_as_f64().exp2();
+        let pf = point.q32_as_f64() * 2.0 / self.size.as_dvec2() * scale;
         pf.into()
     }
 
-    pub fn src_view_rect(&self) -> Rectangle {
-        Self::view_rect(self.src_zoom, self.src_size, self.src_center)
+    pub fn world_view_rect(&self) -> Rectangle {
+        Self::view_rect(self.zoom, self.size, self.center)
     }
 
     pub fn view_rect(zoom: i64, size: UVec2, center: I64Vec2) -> Rectangle {
@@ -302,12 +285,9 @@ impl Camera {
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         let size = lnwindow.window.surface_size();
         let camera = world.build(CameraDescriptor {
-            src_size: UVec2::new(size.width, size.height),
-            src_center: camera_desc.center,
-            src_zoom: camera_desc.zoom,
-            dst_size: UVec2::splat(2),
-            dst_center: I64Vec2::ZERO,
-            dst_zoom: 0,
+            size: UVec2::new(size.width, size.height),
+            center: camera_desc.center,
+            zoom: camera_desc.zoom,
         });
 
         world.insert(Camera::autosave(camera, name));
@@ -338,9 +318,9 @@ impl Camera {
             let camera = world.fetch(camera).unwrap();
 
             let bytes = postcard::to_stdvec(&RootCameraDescriptor {
-                size: camera.src_size,
-                center: camera.src_center,
-                zoom: camera.src_zoom,
+                size: camera.size,
+                center: camera.center,
+                zoom: camera.zoom,
             })
             .unwrap();
 
@@ -368,15 +348,15 @@ pub struct CameraUtils {
 impl CameraUtils {
     pub fn new(camera: &Camera) -> CameraUtils {
         CameraUtils {
-            camera_center: camera.src_center,
-            camera_zoom: camera.src_zoom,
+            camera_center: camera.center,
+            camera_zoom: camera.zoom,
             camera_cursor: DVec2::ZERO,
             camera_distance: 1.0,
             anchor_center: I64Vec2::ZERO,
             anchor_zoom: 0,
             anchor_cursor: DVec2::ZERO,
             anchor_distance: 1.0,
-            camera_size: camera.src_size,
+            camera_size: camera.size,
             anchor_lock: false,
         }
     }
@@ -474,8 +454,8 @@ impl CameraUtils {
 
     pub fn apply_to_camera(&self, world: &World, camera: Handle<Camera>) {
         let mut camera = world.fetch_mut(camera).unwrap();
-        camera.src_zoom = self.camera_zoom;
-        camera.src_center = self.camera_center;
+        camera.zoom = self.camera_zoom;
+        camera.center = self.camera_center;
     }
 
     /// -> camera_center camera_zoom

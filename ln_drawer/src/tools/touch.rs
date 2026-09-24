@@ -145,7 +145,7 @@ impl MultiTouchTool {
                 drop(lnwindow);
 
                 let camera = world.fetch(touch.camera).unwrap();
-                let position = camera.dst_to_src(screen);
+                let position = camera.screen_to_world(screen);
 
                 *touch = MultiTouch {
                     position,
@@ -194,7 +194,7 @@ impl MultiTouchTool {
                 drop(lnwindow);
 
                 let camera = world.fetch(touch.camera).unwrap();
-                let position = camera.dst_to_src(screen);
+                let position = camera.screen_to_world(screen);
 
                 let active = MultiTouch {
                     position,

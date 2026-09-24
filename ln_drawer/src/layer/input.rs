@@ -70,7 +70,7 @@ impl LayerInput {
             let camera = world.fetch(ui_camera).unwrap();
             let wrapper = world.single_fetch::<LayerPage>().unwrap();
             let brush_rect = Rectangle::new_half(
-                camera.dst_to_src(event.pointer.screen).q32_round(),
+                camera.screen_to_world(event.pointer.screen).q32_round(),
                 UVec2::new(1, 1),
             );
             let shadow_rect = brush_rect + (event.pointer.tilt * 48.0).as_ivec2();
