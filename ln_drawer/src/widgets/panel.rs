@@ -10,6 +10,7 @@ use ln_world::{Element, Handle, World};
 use crate::{
     animation::{AnimationDescriptor, AnimationType, SimpleAnimationDescriptor},
     measures::Rectangle,
+    render::camera::Camera,
     theme::Theme,
     tools::collider::ToolCollider,
     widgets::{
@@ -22,6 +23,7 @@ pub struct Panel {
     pub rect: Rectangle,
     pub visible: bool,
     pub shadow: bool,
+    pub camera: Handle<Camera>,
 }
 
 impl Panel {
@@ -39,6 +41,7 @@ impl Panel {
             radius: roundness,
             width: 0.0,
             enabled: self.visible,
+            camera: self.camera,
         });
 
         let back_shadow = match self.shadow {
@@ -49,6 +52,7 @@ impl Panel {
                 radius: roundness,
                 width: shadow_blur,
                 enabled: self.visible,
+                camera: self.camera,
             })),
             false => None,
         };
@@ -68,6 +72,7 @@ impl Panel {
             rect: self.rect,
             order: 0,
             enabled: self.visible,
+            camera: self.camera,
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {

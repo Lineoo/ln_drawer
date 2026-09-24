@@ -1,5 +1,5 @@
 use glam::{I64Vec2, UVec2};
-use ln_world::{ElemRef, Element, Handle, HandleGeneric, World};
+use ln_world::{Descriptor, Element, Handle, World};
 use winit::dpi::PhysicalSize;
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{
         Render, RenderControl, ScissorRect,
-        camera::{Camera, CameraBind, CameraDescriptor, CameraUpdated, CurrentCamera},
+        camera::{Camera, CameraBind, CameraDescriptor, CameraUpdated},
     },
     theme::Theme,
     tools::{
@@ -21,7 +21,61 @@ use crate::{
     },
 };
 
+/// Builds a container together with its dedicated child camera.
+///
+/// A container is an embedded sub-interface with its own local coordinates and camera, but it no
+/// longer owns an ECS view: the child camera is an ordinary element inserted next to its parent,
+/// and the camera tree (`Camera::parent`) records the nesting. This keeps every element in a
+/// single root view while still allowing independent scroll/zoom.
+///
+/// The returned child camera must be threaded explicitly into whatever is built inside the
+/// container.
+pub struct ContainerDescriptor {
+    pub parent: Handle<Camera>,
+    pub rect: Rectangle,
+    pub inner_transform: TransformValue,
+    pub visible: bool,
+}
+
+impl Descriptor for ContainerDescriptor {
+    type Target = (Handle<Container>, Handle<Camera>);
+
+    fn when_build(self, world: &World) -> Self::Target {
+        let render = world.single_fetch::<Render>().unwrap();
+        let camera_bind = world.single_fetch::<CameraBind>().unwrap();
+        let parent = world.fetch(self.parent).unwrap();
+        let descriptor = CameraDescriptor {
+            src_size: parent.src_size,
+            src_center: parent.src_center,
+            src_zoom: parent.src_zoom,
+            dst_size: UVec2::splat(2),
+            dst_center: self.rect.q32_center(),
+            dst_zoom: 0,
+        };
+        let camera = Camera::from_descriptor(descriptor, &render, &camera_bind.layout);
+        drop(parent);
+        drop(camera_bind);
+        drop(render);
+
+        let camera = world.insert(camera);
+        let container = world.insert(Container {
+            parent: self.parent,
+            camera,
+            rect: self.rect,
+            inner: Rectangle::default(),
+            inner_transform: self.inner_transform,
+            visible: self.visible,
+        });
+
+        (container, camera)
+    }
+}
+
 pub struct Container {
+    /// The camera this container renders into and is positioned by.
+    pub parent: Handle<Camera>,
+    /// The container's own camera; contents built inside use this and are laid out locally.
+    pub camera: Handle<Camera>,
     pub rect: Rectangle,
     pub inner: Rectangle,
     pub inner_transform: TransformValue,
@@ -30,9 +84,9 @@ pub struct Container {
 
 /// Per-container state that survives across the container's own lifetime.
 ///
-/// `parent` is the camera of the view the container was inserted into. `scroll` is the position
-/// of the container's local origin in that parent's coordinate space; the container camera is
-/// always `parent.center - scroll`, so nested containers compose correctly.
+/// `scroll` is the position of the container's local origin in the parent's coordinate space;
+/// the container camera is always `parent.center - scroll`, so nested containers compose
+/// correctly.
 struct ContainerState {
     parent: Handle<Camera>,
     scroll: I64Vec2,
@@ -43,6 +97,8 @@ impl Element for ContainerState {}
 impl Container {
     pub fn init(&mut self, world: &World, handle: Handle<Self>) {
         let theme = world.single_fetch::<Theme>().unwrap();
+        let parent = self.parent;
+        let camera = self.camera;
 
         let back = world.insert(RRect {
             rect: self.rect,
@@ -51,42 +107,24 @@ impl Container {
             radius: theme.roundness,
             width: 0.0,
             enabled: self.visible,
+            camera: parent,
         });
 
         let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: 0,
             enabled: self.visible,
+            camera: parent,
         });
 
-        // Contents of a container are laid out in the container's own local space and rendered
-        // through a dedicated camera. Moving or scrolling the container only updates this
-        // camera, so the children never have to be relaid out or re-uploaded to the GPU.
-        let render = world.single_fetch::<Render>().unwrap();
-        let camera_bind = world.single_fetch::<CameraBind>().unwrap();
-        let lnwindow = world.single::<Lnwindow>().unwrap();
-        let parent_camera = world.single_fetch::<CurrentCamera>().unwrap().0;
-        let parent = world.fetch(parent_camera).unwrap();
-        let descriptor = CameraDescriptor {
-            src_size: parent.src_size,
-            src_center: parent.src_center,
-            src_zoom: parent.src_zoom,
-            dst_size: UVec2::splat(2),
-            dst_center: self.rect.q32_center(),
-            dst_zoom: 0,
-        };
-        let camera = Camera::from_descriptor(descriptor, &render, &camera_bind.layout);
-        drop(camera_bind);
-        drop(parent);
-        drop(render);
-
         let state = world.insert(ContainerState {
-            parent: parent_camera,
+            parent,
             scroll: I64Vec2::ZERO,
         });
         world.dependency(state, handle);
+        world.dependency(camera, handle);
 
-        world.observer(parent_camera, move |&CameraUpdated, world| {
+        world.observer(parent, move |&CameraUpdated, world| {
             let Ok(state) = world.fetch(state) else {
                 return;
             };
@@ -96,28 +134,20 @@ impl Container {
             };
             let scroll = state.scroll;
             drop(state);
-            set_camera_center(world, handle, compose_center(parent_center, scroll));
-        });
-
-        world.enter_queue(handle, move |world| {
-            world.insert(ElemRef(lnwindow.untyped()));
-            world.queue(move |world| {
-                let camera = world.insert(camera);
-                world.insert(CurrentCamera(camera));
-            });
+            set_camera_center(world, camera, compose_center(parent_center, scroll));
         });
 
         let control = world.insert(RenderControl::phase_with_draw(
-            handle,
+            parent,
             move |world, rpass, extra| {
                 let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-                let camera = extra.camera;
+                let parent_camera = extra.camera;
                 let panel_rect = world.fetch(handle).unwrap().rect;
                 let window_size = lnwindow.window.surface_size();
 
                 let scissor = extra.scissor;
                 let enclosing = scissor.get();
-                let own = scissor_rect(&lnwindow, &camera, panel_rect, window_size);
+                let own = scissor_rect(&lnwindow, parent_camera, panel_rect, window_size);
 
                 // A container clips to its own rect, intersected with whatever clip is already
                 // active so nested containers cannot leak outside their parent.
@@ -134,12 +164,9 @@ impl Container {
 
                 if clipped.width > 0 && clipped.height > 0 {
                     rpass.set_scissor_rect(clipped.x, clipped.y, clipped.width, clipped.height);
-                    world.enter(handle, || {
-                        let curr = world.single_fetch::<CurrentCamera>().unwrap();
-                        let camera = &mut *world.fetch_mut(curr.0).unwrap();
-                        camera.reorder();
-                        camera.draw(world, rpass, extra);
-                    });
+                    let mut child = world.fetch_mut(camera).unwrap();
+                    child.reorder();
+                    child.draw(world, rpass, extra);
                 }
 
                 scissor.set(enclosing);
@@ -152,7 +179,8 @@ impl Container {
                 rpass.set_scissor_rect(restore.x, restore.y, restore.width, restore.height);
             },
         ));
-        RenderControl::reorder(Some(isize::MAX), world, control);
+        RenderControl::reorder(parent, Some(isize::MAX), world, control);
+        world.dependency(control, handle);
 
         world.observer(collider, move |event: &PointerHit, world| {
             world.trigger(handle, event);
@@ -171,26 +199,30 @@ impl Container {
                 (None, PointerHitStatus::Release) => None,
                 (Some(_), PointerHitStatus::Press) => Some(event.pointer.screen),
                 (Some(position), PointerHitStatus::Moving) => {
-                    let current = world.single_fetch::<CurrentCamera>().unwrap();
-                    let camera = world.fetch(current.0).unwrap();
-                    let delta = camera.dst_to_src_relative(event.pointer.screen - position);
-                    drop(camera);
-                    move_camera(world, handle, state, delta);
+                    let parent_camera = world.fetch(parent).unwrap();
+                    let delta = parent_camera.dst_to_src_relative(event.pointer.screen - position);
+                    drop(parent_camera);
+                    move_camera(world, camera, handle, state, delta);
                     Some(event.pointer.screen)
                 }
                 (Some(position), PointerHitStatus::Release) => {
-                    let current = world.single_fetch::<CurrentCamera>().unwrap();
-                    let camera = world.fetch(current.0).unwrap();
-                    let delta = camera.dst_to_src_relative(event.pointer.screen - position);
-                    drop(camera);
-                    move_camera(world, handle, state, delta);
+                    let parent_camera = world.fetch(parent).unwrap();
+                    let delta = parent_camera.dst_to_src_relative(event.pointer.screen - position);
+                    drop(parent_camera);
+                    move_camera(world, camera, handle, state, delta);
                     None
                 }
             }
         });
 
         world.observer(handle, move |event: &PointerScroll, world| {
-            move_camera(world, handle, state, I64Vec2::q32_from_f64(event.delta));
+            move_camera(
+                world,
+                camera,
+                handle,
+                state,
+                I64Vec2::q32_from_f64(event.delta),
+            );
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
@@ -213,6 +245,7 @@ impl Container {
             drop(this);
             move_camera(
                 world,
+                camera,
                 handle,
                 state,
                 I64Vec2::q32_from_i32(rect.origin - old_origin),
@@ -237,6 +270,7 @@ impl Container {
 /// absolute camera center through the parent camera so nested containers compose.
 fn move_camera(
     world: &World,
+    camera: Handle<Camera>,
     handle: Handle<Container>,
     state: Handle<ContainerState>,
     delta: I64Vec2,
@@ -253,7 +287,7 @@ fn move_camera(
     drop(this);
     drop(state);
 
-    set_camera_center(world, handle, center);
+    set_camera_center(world, camera, center);
 }
 
 /// Absolute camera center for a container whose parent camera is centered at `parent_center` and
@@ -262,19 +296,14 @@ fn compose_center(parent_center: I64Vec2, scroll: I64Vec2) -> I64Vec2 {
     parent_center - scroll
 }
 
-/// Point the container's own camera at `center` (absolute, in the parent camera's space).
-fn set_camera_center(world: &World, handle: Handle<Container>, center: I64Vec2) {
-    world.enter(handle, || {
-        let Ok(current) = world.single_fetch::<CurrentCamera>() else {
-            return;
-        };
-        let Ok(mut camera) = world.fetch_mut(current.0) else {
-            return;
-        };
-        if camera.src_center != center {
-            camera.src_center = center;
-        }
-    });
+/// Point a camera at `center` (absolute, in its parent camera's space).
+fn set_camera_center(world: &World, camera: Handle<Camera>, center: I64Vec2) {
+    let Ok(mut camera) = world.fetch_mut(camera) else {
+        return;
+    };
+    if camera.src_center != center {
+        camera.src_center = center;
+    }
 }
 
 /// Convert a rectangle in the parent camera's space into a pixel scissor clamped to the window.

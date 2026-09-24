@@ -7,7 +7,7 @@ use swash::scale::image::Content;
 use crate::{
     lnwin::Lnwindow,
     measures::Rectangle,
-    render::RenderControl,
+    render::{RenderControl, camera::Camera},
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         renderer::canvas::{Canvas, RemakeCanvasTexture, UploadCanvasData},
@@ -24,6 +24,8 @@ pub struct Text {
     pub extra_upscale: f32,
     pub order: isize,
     pub visible: bool,
+    /// Owning camera. `None` falls back to the ambient camera at insert time.
+    pub camera: Option<Handle<Camera>>,
     /// will delay text draw to next render prepare phase
     pub outdated: bool,
     pub canvas_outdated: bool,
@@ -48,6 +50,7 @@ impl Default for Text {
             extra_upscale: 1.0,
             order: 100,
             visible: true,
+            camera: None,
             outdated: true,
             canvas_outdated: false,
         }
@@ -56,6 +59,8 @@ impl Default for Text {
 
 impl Text {
     pub fn init(&mut self, world: &World, this: Handle<Text>) {
+        let camera = self.camera.expect("Text must be given an owning camera");
+
         let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
         let canvas = world.insert(self.fresh_canvas(self.upscaled_rect(&lnwindow)));
 
@@ -64,6 +69,7 @@ impl Text {
         let mut buffer = Buffer::new(&mut pipeline.font_system, upscale_metrics);
 
         let control = world.insert(RenderControl {
+            camera: Some(camera),
             prepare: Some(Box::new(move |world| {
                 let mut this = world.fetch_mut(this).unwrap();
 
@@ -74,7 +80,7 @@ impl Text {
             draw: None,
         });
 
-        RenderControl::reorder(Some(0), world, control);
+        RenderControl::reorder(camera, Some(0), world, control);
 
         world.observer(this, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(this).unwrap();
@@ -234,7 +240,13 @@ impl Text {
     }
 
     fn fresh_canvas(&self, size: UVec2) -> Canvas {
-        Canvas::transparent(self.rect, self.order, self.visible, size)
+        Canvas::transparent(
+            self.rect,
+            self.order,
+            self.visible,
+            self.camera.unwrap(),
+            size,
+        )
     }
 }
 

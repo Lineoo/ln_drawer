@@ -7,7 +7,7 @@ use winit::event::{
 
 use crate::{
     lnwin::Lnwindow,
-    render::camera::CurrentCamera,
+    render::camera::Camera,
     tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
 };
 
@@ -79,6 +79,7 @@ struct Pointer {
 struct Hover {
     position: I64Vec2,
     view: HandleAny,
+    camera: Handle<Camera>,
     handle: Handle<ToolCollider>,
 }
 
@@ -408,9 +409,9 @@ impl Pointer {
     fn recalculate_hovering(&mut self, world: &World) {
         if self.pressed.is_some() {
             let hovering = self.hovering.unwrap();
+            let camera_handle = hovering.camera;
             let position = world.enter(hovering.view, || {
-                let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
-                let camera = world.fetch(current_camera.0).unwrap();
+                let camera = world.fetch(camera_handle).unwrap();
                 camera.dst_to_src(self.data.screen)
             });
 
@@ -419,6 +420,7 @@ impl Pointer {
                 Some(Hover {
                     position,
                     view: hovering.view,
+                    camera: hovering.camera,
                     handle: hovering.handle,
                 }),
             );
@@ -428,6 +430,7 @@ impl Pointer {
                 Some(Hover {
                     position: hit.position,
                     view: hit.view,
+                    camera: hit.camera,
                     handle: hit.collider,
                 }),
             );

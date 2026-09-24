@@ -57,7 +57,8 @@ enum LayerInputState {
 
 impl LayerInput {
     fn init(&mut self, world: &World, this: Handle<Self>) {
-        let collider = world.insert(ToolCollider::fullscreen(-100));
+        let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
+        let collider = world.insert(ToolCollider::fullscreen(-100, main_camera));
         world.dependency(collider, this);
 
         world.observer(collider, move |event: &PointerHover, world| {
@@ -160,12 +161,13 @@ impl LayerInput {
                     camera_utils.camera_distance_by_anchor_zoom_cursor(200.0 - zoom_delta);
                     camera_utils.camera_distance_by_camera_zoom_center(200.0);
                 }
-                camera_utils.apply_to_camera(world);
+                camera_utils.apply_to_camera(world, main.0);
             });
         });
 
         let mut state = LayerInputState::None;
         world.observer(collider, move |event: &MultiTouchGroup, world| {
+            let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
             let mut this = world.fetch_mut(this).unwrap();
             let lnwindow = world.fetch(lnwindow).unwrap();
             let camera_utils = &mut *world.single_fetch_mut::<CameraUtils>().unwrap();
@@ -232,7 +234,7 @@ impl LayerInput {
                     if let Some(distance) = pinch {
                         camera_utils.camera_distance_by_camera_zoom_center(distance);
                     }
-                    camera_utils.apply_to_camera(world);
+                    camera_utils.apply_to_camera(world, main_camera);
 
                     if this.ctrl {
                         camera_utils.camera_cursor_by_anchor_center(center);
@@ -276,7 +278,7 @@ impl LayerInput {
                             (center - start_position).element_sum().exp2(),
                         );
                     }
-                    camera_utils.apply_to_camera(world);
+                    camera_utils.apply_to_camera(world, main_camera);
 
                     if this.ctrl {
                         LayerInputState::Scale { start_position }

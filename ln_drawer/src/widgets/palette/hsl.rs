@@ -4,6 +4,7 @@ use palette::{Hsla, RgbHue};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
+    render::camera::Camera,
     tools::{
         collider::ToolCollider,
         pointer::{PointerHit, PointerHitStatus},
@@ -25,6 +26,7 @@ pub struct HslPanel {
     pub rect: Rectangle,
     pub color: Hsla,
     pub enabled: bool,
+    pub camera: Handle<Camera>,
 }
 
 #[repr(C)]
@@ -47,6 +49,7 @@ impl HslPanel {
             rect: self.rect,
             visible: self.enabled,
             order: 60,
+            camera: self.camera,
             material: HslPanelMaterial {
                 band_width: BAND_WIDTH,
                 main_knob_size: 0.015,
@@ -61,6 +64,7 @@ impl HslPanel {
             rect: self.rect,
             order: 100,
             enabled: self.enabled,
+            camera: self.camera,
         });
 
         world.dependency(collider, this);

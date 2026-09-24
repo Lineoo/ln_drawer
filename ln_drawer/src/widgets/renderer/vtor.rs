@@ -12,7 +12,10 @@ use wgpu::{
 
 use crate::{
     measures::Rectangle,
-    render::{MSAA_STATE, Render, RenderControl, camera::CameraBind},
+    render::{
+        MSAA_STATE, Render, RenderControl,
+        camera::{Camera, CameraBind},
+    },
     widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::shader_compile},
 };
 
@@ -28,6 +31,7 @@ pub struct Vtor {
     pub rect: Rectangle,
     pub visible: bool,
     pub order: isize,
+    pub camera: Handle<Camera>,
 }
 
 impl Vtor {
@@ -116,7 +120,9 @@ impl Vtor {
             }],
         });
 
+        let camera = self.camera;
         let control = world.insert(RenderControl {
+            camera: Some(camera),
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
                 let pipeline = world.single_fetch::<VtorPipeline>().unwrap();
@@ -137,7 +143,7 @@ impl Vtor {
             })),
         });
 
-        RenderControl::reorder(self.visible.then_some(self.order), world, control);
+        RenderControl::reorder(camera, self.visible.then_some(self.order), world, control);
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
@@ -151,7 +157,7 @@ impl Vtor {
         world.observer(this, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.visible = visible;
-            RenderControl::reorder(visible.then_some(this.order), world, control);
+            RenderControl::reorder(camera, visible.then_some(this.order), world, control);
             RenderControl::request_redraw(world);
         });
     }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use glam::{IVec2, UVec2};
-use ln_world::{ElemRef, Handle, HandleGeneric, ViewRef, World};
+use ln_world::{Handle, HandleGeneric, World};
 use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
 use crate::{
@@ -10,13 +10,13 @@ use crate::{
         wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::transform::{Transform, TransformValue},
-    lnwin::Lnwindow,
     measures::Rectangle,
+    render::camera::Camera,
     theme::Theme,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
-        container::Container,
+        container::{Container, ContainerDescriptor},
         palette::{
             hsl::{ColorHsla, HslPanel, SetColorHsla},
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
@@ -33,7 +33,11 @@ use crate::{
 const PANEL_WIDTH: i32 = 384;
 const PANEL_HEIGHT: i32 = 320;
 
-pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
+pub fn color_picker_panel(
+    world: &World,
+    toggle_button: Handle<ToggleButton>,
+    camera: Handle<Camera>,
+) {
     let toggle_button_color_icon = world.insert(RRect {
         rect: Rectangle::default(),
         order: 21,
@@ -41,6 +45,7 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         radius: 10.0,
         width: 0.0,
         enabled: true,
+        camera,
     });
 
     world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
@@ -58,30 +63,30 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         world.queue_trigger(toggle_button_color_icon, SetWidgetRectangle(target));
     });
 
-    let tab_palette_hsl = world.insert(Container {
+    let (tab_palette_hsl, cam_palette_hsl) = world.build(ContainerDescriptor {
+        parent: camera,
         rect: Rectangle::default(),
-        inner: Rectangle::default(),
         inner_transform: TransformValue::copy(),
         visible: false,
     });
 
-    let tab_palette_oklch = world.insert(Container {
+    let (tab_palette_oklch, cam_palette_oklch) = world.build(ContainerDescriptor {
+        parent: camera,
         rect: Rectangle::default(),
-        inner: Rectangle::default(),
         inner_transform: TransformValue::copy(),
         visible: false,
     });
 
-    let tab_layer_selection = world.insert(Container {
+    let (tab_layer_selection, cam_layer_selection) = world.build(ContainerDescriptor {
+        parent: camera,
         rect: Rectangle::default(),
-        inner: Rectangle::default(),
         inner_transform: TransformValue::copy(),
         visible: false,
     });
 
-    let tab_debug = world.insert(Container {
+    let (tab_debug, cam_debug) = world.build(ContainerDescriptor {
+        parent: camera,
         rect: Rectangle::default(),
-        inner: Rectangle::default(),
         inner_transform: TransformValue::copy(),
         visible: false,
     });
@@ -144,38 +149,17 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
                 tab_debug.untyped(),
             ),
         ],
+        camera,
     });
 
-    let lnwindow = world.single::<Lnwindow>().unwrap();
-    let input = world.single::<LayerInput>().unwrap();
-    let wrapper = world.single::<LayerPage>().unwrap();
-    for panel in [
-        tab_palette_hsl,
-        tab_palette_oklch,
-        tab_layer_selection,
-        tab_debug,
-    ] {
-        world.enter(panel, || {
-            world.insert(ViewRef(lnwindow.untyped()));
-            world.insert(ElemRef(input.untyped()));
-            world.insert(ElemRef(panel.untyped()));
-            world.insert(ElemRef(toggle_button.untyped()));
-            world.insert(ElemRef(wrapper.untyped()));
-        });
-    }
-
-    world.enter_queue(tab_palette_hsl, move |world| {
-        palette_hsl(world, tab_palette_hsl)
+    world.queue(move |world| palette_hsl(world, tab_palette_hsl, cam_palette_hsl));
+    world.queue(move |world| {
+        palette_oklab(world, tab_palette_oklch, cam_palette_oklch, toggle_button)
     });
-    world.enter_queue(tab_palette_oklch, move |world| {
-        palette_oklab(world, tab_palette_oklch, toggle_button)
+    world.queue(move |world| {
+        super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection)
     });
-    world.enter_queue(tab_layer_selection, move |world| {
-        super::layer_selection::layer_selection(world, tab_layer_selection)
-    });
-    world.enter_queue(tab_debug, move |world| {
-        super::debug_panel::debug_panel(world, tab_debug)
-    });
+    world.queue(move |world| super::debug_panel::debug_panel(world, tab_debug, cam_debug));
 
     // initialize layout
     world.queue(move |world| {
@@ -211,11 +195,12 @@ pub fn color_picker_panel(world: &World, toggle_button: Handle<ToggleButton>) {
     });
 }
 
-fn palette_hsl(world: &World, bg: Handle<Container>) {
+fn palette_hsl(world: &World, bg: Handle<Container>, camera: Handle<Camera>) {
     let panel = world.insert(HslPanel {
         rect: Rectangle::default(),
         color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
         enabled: true,
+        camera,
     });
 
     world.insert(Transform {
@@ -240,20 +225,27 @@ fn palette_hsl(world: &World, bg: Handle<Container>) {
     });
 }
 
-fn palette_oklab(world: &World, bg: Handle<Container>, toggle_button: Handle<ToggleButton>) {
+fn palette_oklab(
+    world: &World,
+    bg: Handle<Container>,
+    camera: Handle<Camera>,
+    toggle_button: Handle<ToggleButton>,
+) {
     let polar = world.insert(OklabPolar {
         rect: Rectangle::default(),
         color: Oklab::default(),
         enabled: true,
+        camera,
     });
     let bar = world.insert(OklabBar {
         rect: Rectangle::default(),
         color: Oklab::default(),
         enabled: true,
+        camera,
     });
 
     let theme = world.single_fetch::<Theme>().unwrap();
-    let docker_button = docker_button(world, &theme);
+    let docker_button = docker_button(world, &theme, camera);
     let pick = docker_button(include_bytes!("../../../res/interface/pipette.svg"));
 
     world.insert(Transform {

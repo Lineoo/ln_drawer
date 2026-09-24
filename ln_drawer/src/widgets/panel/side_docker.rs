@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use glam::{IVec2, UVec2};
-use ln_world::{HandleGeneric, World};
+use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
     layer::{
@@ -15,6 +15,7 @@ use crate::{
     },
     lnwin::Lnwindow,
     measures::{Axis, Rectangle},
+    render::camera::Camera,
     theme::Theme,
     widgets::{
         button::{
@@ -27,7 +28,7 @@ use crate::{
     },
 };
 
-pub fn side_docker(world: &World) {
+pub fn side_docker(world: &World, camera: Handle<Camera>) {
     let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
     let theme = world.single_fetch::<Theme>().unwrap();
     let layer = world.single::<LayerPage>().unwrap();
@@ -36,6 +37,7 @@ pub fn side_docker(world: &World) {
         rect: Rectangle::default(),
         visible: true,
         shadow: true,
+        camera,
     });
 
     let docker_button = |image_bytes| {
@@ -57,6 +59,7 @@ pub fn side_docker(world: &World) {
             selected: false,
             visible: true,
             hovering: false,
+            camera,
         })
     };
 
@@ -79,10 +82,11 @@ pub fn side_docker(world: &World) {
         selected: false,
         visible: true,
         hovering: false,
+        camera,
     });
 
-    color_picker_panel(world, color_picker);
-    brush_panel(world, brush_menu);
+    color_picker_panel(world, color_picker, camera);
+    brush_panel(world, brush_menu, camera);
 
     // Only one popup may be open at a time, otherwise the overlapping panels cross.
     world.observer(brush_menu, move |&ButtonSelected(selected), world| {
@@ -104,6 +108,7 @@ pub fn side_docker(world: &World) {
         axis: Axis::Up,
         value: 0.67,
         pressed: false,
+        camera,
     });
 
     let slider_label = world.insert(SliderLabel {
@@ -112,6 +117,7 @@ pub fn side_docker(world: &World) {
         source: slider,
         hover: false,
         visible: true,
+        camera,
     });
 
     world.observer(eraser, move |&ButtonSelected(val), world| {

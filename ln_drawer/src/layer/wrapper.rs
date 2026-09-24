@@ -144,6 +144,7 @@ impl LayerPage {
                 radius: 0.5,
                 width: 0.0,
                 enabled: false,
+                camera: ui_camera.0,
             });
             let preview_shadow = world.insert(RRect {
                 rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
@@ -152,6 +153,7 @@ impl LayerPage {
                 radius: 0.5,
                 width: BRUSH_PREVIEW_SHADOW_BLUR as f32,
                 enabled: false,
+                camera: ui_camera.0,
             });
             (preview, preview_shadow)
         });
@@ -518,6 +520,7 @@ impl Element for LayerPage {
         });
 
         let control = world.insert(RenderControl {
+            camera: Some(main_camera),
             prepare: Some(Box::new(move |world| {
                 let this = &mut *world.fetch_mut(this).unwrap();
                 this.process_stream(world);
@@ -532,7 +535,7 @@ impl Element for LayerPage {
             })),
         });
 
-        RenderControl::reorder(Some(-100), world, control);
+        RenderControl::reorder(main_camera, Some(-100), world, control);
         world.dependency(control, this);
     }
 }

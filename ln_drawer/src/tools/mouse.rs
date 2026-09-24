@@ -76,7 +76,7 @@ impl Element for MouseTool {
                     let mut camera_utils = world.single_fetch_mut::<CameraUtils>().unwrap();
                     if middle {
                         camera_utils.camera_cursor_by_camera_center(cursor);
-                        camera_utils.apply_to_camera(world);
+                        camera_utils.apply_to_camera(world, main.0);
                     }
                 });
             }

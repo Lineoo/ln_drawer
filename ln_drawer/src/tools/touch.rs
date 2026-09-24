@@ -5,7 +5,7 @@ use winit::event::{
     ButtonSource, ElementState, MouseButton, PointerKind, PointerSource, WindowEvent,
 };
 
-use crate::{lnwin::Lnwindow, render::camera::CurrentCamera, tools::collider::ToolCollider};
+use crate::{lnwin::Lnwindow, render::camera::Camera, tools::collider::ToolCollider};
 
 /// Multi touch actions that allow inputs with more points than [`PointerTool`] but no hovering
 #[derive(Default)]
@@ -25,6 +25,7 @@ pub struct MultiTouch {
     pub position: I64Vec2,
     pub screen: DVec2,
     pub view: HandleAny,
+    pub camera: Handle<Camera>,
     pub status: MultiTouchStatus,
     pub data: MultiTouchData,
     pub pointer: PointerKind,
@@ -74,6 +75,7 @@ impl MultiTouchTool {
                     position: hit.position,
                     screen,
                     view: hit.view,
+                    camera: hit.camera,
                     status: MultiTouchStatus::Press,
                     data: MultiTouchTool::button_to_data(button),
                     pointer: kind,
@@ -96,6 +98,7 @@ impl MultiTouchTool {
                         position: hit.position,
                         screen,
                         view: touch.view,
+                        camera: touch.camera,
                         status: MultiTouchStatus::Release,
                         data: MultiTouchTool::button_to_data(button),
                         pointer: kind,
@@ -149,9 +152,9 @@ impl MultiTouchTool {
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
+                let camera_handle = touch.camera;
                 let position = world.enter(touch.view, || {
-                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
-                    let camera = world.fetch(current_camera.0).unwrap();
+                    let camera = world.fetch(camera_handle).unwrap();
                     camera.dst_to_src(screen)
                 });
 
@@ -159,6 +162,7 @@ impl MultiTouchTool {
                     position,
                     screen,
                     view: touch.view,
+                    camera: touch.camera,
                     status: MultiTouchStatus::Holding,
                     data: MultiTouchTool::pointer_to_data(source),
                     pointer: kind,
@@ -204,9 +208,9 @@ impl MultiTouchTool {
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
+                let camera_handle = touch.camera;
                 let position = world.enter(touch.view, || {
-                    let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
-                    let camera = world.fetch(current_camera.0).unwrap();
+                    let camera = world.fetch(camera_handle).unwrap();
                     camera.dst_to_src(screen)
                 });
 
@@ -214,6 +218,7 @@ impl MultiTouchTool {
                     position,
                     screen,
                     view: touch.view,
+                    camera: touch.camera,
                     status: MultiTouchStatus::Release,
                     data: MultiTouchTool::button_to_data(button),
                     pointer: kind,

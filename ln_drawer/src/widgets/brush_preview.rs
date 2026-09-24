@@ -12,7 +12,7 @@ use crate::{
         wrapper::LayerPage,
     },
     measures::{FI64Ext, Rectangle},
-    render::RenderControl,
+    render::{RenderControl, camera::Camera},
     widgets::{SetWidgetRectangle, SetWidgetVisible, renderer::texture_quad::TextureQuad},
 };
 
@@ -26,6 +26,7 @@ pub struct BrushPreview {
     pub brush: Option<Box<dyn BrushParams>>,
     pub outdated: bool,
     pub visible: bool,
+    pub camera: Handle<Camera>,
 }
 
 struct BrushPreviewInstance {
@@ -62,13 +63,15 @@ impl BrushPreview {
             rect: Rectangle::default(),
             visible: true,
             order: 50,
+            camera: self.camera,
             view,
         });
         let instance = world.insert(BrushPreviewInstance {
             quad,
             preview_canvas,
         });
-        world.insert(RenderControl {
+        let control = world.insert(RenderControl {
+            camera: None,
             prepare: Some(Box::new(move |world| {
                 let mut this = world.fetch_mut(this).unwrap();
                 let instance = world.fetch(instance).unwrap();
@@ -84,6 +87,9 @@ impl BrushPreview {
             })),
             draw: None,
         });
+        world.dependency(control, this);
+
+        let camera = self.camera;
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
             let mut instance = world.fetch_mut(instance).unwrap();
@@ -110,6 +116,7 @@ impl BrushPreview {
                     rect,
                     visible: old_visible,
                     order: 50,
+                    camera,
                     view,
                 });
                 instance.quad = quad;

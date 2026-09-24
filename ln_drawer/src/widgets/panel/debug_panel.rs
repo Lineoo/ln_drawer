@@ -10,7 +10,7 @@ use crate::{
     measures::Rectangle,
     render::{
         Render,
-        camera::{CameraUtils, MainCamera},
+        camera::{Camera, CameraUtils, MainCamera},
     },
     save::SaveDatabase,
     theme::Theme,
@@ -25,7 +25,7 @@ use crate::{
     },
 };
 
-pub fn debug_panel(world: &World, submenu: Handle<Container>) {
+pub fn debug_panel(world: &World, submenu: Handle<Container>, camera: Handle<Camera>) {
     let debug_text = world.insert(Text {
         text: "Hi there".into(),
         rect: Rectangle::new_half(IVec2::ZERO, UVec2::ONE),
@@ -33,6 +33,7 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>) {
         attrs: Attrs::new().family(Family::Monospace),
         order: 50,
         visible: false,
+        camera: Some(camera),
         ..Default::default()
     });
 
@@ -75,7 +76,7 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>) {
     );
 
     let theme = world.single_fetch::<Theme>().unwrap();
-    let docker_button = docker_button(world, &theme);
+    let docker_button = docker_button(world, &theme, camera);
 
     let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
     world.observer(compass, move |&ButtonClick, world| {
@@ -87,7 +88,7 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>) {
         camera.force_camera_center(I64Vec2::ZERO);
         camera.force_camera_zoom(0);
         world.enter(main_camera.0, || {
-            camera.apply_to_camera(world);
+            camera.apply_to_camera(world, main_camera.0);
         });
     });
 
@@ -123,8 +124,12 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>) {
     });
 }
 
-pub fn docker_button(world: &World, theme: &Theme) -> impl Fn(&[u8]) -> Handle<ToggleButton> {
-    |image_bytes| {
+pub fn docker_button(
+    world: &World,
+    theme: &Theme,
+    camera: Handle<Camera>,
+) -> impl Fn(&[u8]) -> Handle<ToggleButton> {
+    move |image_bytes| {
         world.insert(ToggleButton {
             rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(16)),
             theme: ToggleButtonTheme {
@@ -143,6 +148,7 @@ pub fn docker_button(world: &World, theme: &Theme) -> impl Fn(&[u8]) -> Handle<T
             selected: false,
             visible: true,
             hovering: false,
+            camera,
         })
     }
 }

@@ -154,6 +154,7 @@ where
 impl<T: AnimationType> Element for Animation<T> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let control = world.insert(RenderControl {
+            camera: None,
             prepare: Some(Box::new(move |world| {
                 let mut this = world.fetch_mut(this).unwrap();
 

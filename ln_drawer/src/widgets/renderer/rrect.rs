@@ -4,6 +4,7 @@ use palette::Srgba;
 
 use crate::{
     measures::Rectangle,
+    render::camera::Camera,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         renderer::quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
@@ -18,6 +19,7 @@ pub struct RRect {
     pub radius: f32,
     pub width: f32,
     pub enabled: bool,
+    pub camera: Handle<Camera>,
 }
 
 #[repr(C)]
@@ -37,6 +39,7 @@ impl RRect {
             rect: self.rect,
             visible: self.enabled,
             order: self.order,
+            camera: self.camera,
             material: RRectMaterial {
                 color: Vec4::from(self.color.into_linear().into_components()),
                 radius: self.radius,

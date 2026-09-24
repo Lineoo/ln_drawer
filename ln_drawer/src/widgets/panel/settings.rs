@@ -1,11 +1,10 @@
 use cosmic_text::{Attrs, Metrics, Weight};
-use ln_world::{ElemRef, Handle, HandleAny, HandleGeneric, ViewRef, World};
+use ln_world::{Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
     i18n::tr,
     layer::{
         brush::param::{BrushParamKey, BrushValue, BrushValueMut},
-        input::LayerInput,
         wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::{
@@ -15,12 +14,12 @@ use crate::{
         },
         transform::{Transform, TransformEdge, TransformValue},
     },
-    lnwin::Lnwindow,
     measures::{Axis, Rectangle},
+    render::camera::Camera,
     theme::Theme,
     widgets::{
         brush_preview::{BrushPreview, BrushPreviewGenerator},
-        container::Container,
+        container::{Container, ContainerDescriptor},
         echo::EchoWidget,
         renderer::text::{SetText, Text},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
@@ -31,6 +30,7 @@ pub fn new_panel_settings(
     world: &World,
     panel: Handle<Container>,
     generator: Handle<BrushPreviewGenerator>,
+    camera: Handle<Camera>,
 ) {
     // Live brush preview //
     let layer = world.single_fetch::<LayerPage>().unwrap();
@@ -40,6 +40,7 @@ pub fn new_panel_settings(
         outdated: false,
         brush: Some(layer.active().dup()),
         visible: false,
+        camera,
     });
 
     world.observer(layer.handle(), move |&BrushConfigurationChanged, world| {
@@ -49,9 +50,9 @@ pub fn new_panel_settings(
         preview.brush = Some(layer_instance.active().dup());
     });
 
-    let settings = world.insert(Container {
+    let (settings, cam_settings) = world.build(ContainerDescriptor {
+        parent: camera,
         rect: Rectangle::default(),
-        inner: Rectangle::default(),
         inner_transform: TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
@@ -73,22 +74,7 @@ pub fn new_panel_settings(
         visible: true,
     });
 
-    let lnwindow = world.single::<Lnwindow>().unwrap();
-    let input = world.single::<LayerInput>().unwrap();
-    let wrapper = world.single::<LayerPage>().unwrap();
-
-    {
-        world.enter(settings, || {
-            world.insert(ViewRef(lnwindow.untyped()));
-            world.insert(ElemRef(input.untyped()));
-            world.insert(ElemRef(settings.untyped()));
-            world.insert(ElemRef(wrapper.untyped()));
-            world.insert(ElemRef(generator.untyped()));
-        });
-        world.enter_queue(settings, move |world| {
-            panel_settings(world, settings);
-        });
-    }
+    world.queue(move |world| panel_settings(world, settings, cam_settings));
 
     world.insert(LuniFlex {
         parent: (
@@ -121,8 +107,14 @@ pub fn new_panel_settings(
     });
 }
 
-pub fn panel_settings(world: &World, panel: Handle<Container>) {
+pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Camera>) {
     let theme = world.single_fetch::<Theme>().unwrap();
+
+    let option_label =
+        |_: &World, text: String, frame: HandleAny| self::option_label(world, text, frame, camera);
+    let option_desc =
+        |_: &World, text: String, frame: HandleAny| self::option_desc(world, text, frame, camera);
+    let option_slider = |_: &World, frame: HandleAny| self::option_slider(world, frame, camera);
 
     let label1_frame = world.insert(EchoWidget);
     let label1 = world.insert(Text {
@@ -133,6 +125,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
         },
         attrs: Attrs::new().weight(Weight::BOLD),
         color: theme.significant_color,
+        camera: Some(camera),
         ..Default::default()
     });
     world.insert(Transform {
@@ -421,7 +414,12 @@ pub fn panel_settings(world: &World, panel: Handle<Container>) {
     });
 }
 
-fn option_label(world: &World, text: String, option1_frame: HandleAny) -> Handle<Text> {
+fn option_label(
+    world: &World,
+    text: String,
+    option1_frame: HandleAny,
+    camera: Handle<Camera>,
+) -> Handle<Text> {
     let theme = world.single_fetch::<Theme>().unwrap();
 
     let label = world.insert(Text {
@@ -431,6 +429,7 @@ fn option_label(world: &World, text: String, option1_frame: HandleAny) -> Handle
             line_height: 20.0,
         },
         color: theme.symbolic_color,
+        camera: Some(camera),
         ..Default::default()
     });
 
@@ -460,7 +459,12 @@ fn option_label(world: &World, text: String, option1_frame: HandleAny) -> Handle
     label
 }
 
-fn option_desc(world: &World, text: String, option1_frame: HandleAny) -> Handle<Text> {
+fn option_desc(
+    world: &World,
+    text: String,
+    option1_frame: HandleAny,
+    camera: Handle<Camera>,
+) -> Handle<Text> {
     let theme = world.single_fetch::<Theme>().unwrap();
 
     let label = world.insert(Text {
@@ -470,6 +474,7 @@ fn option_desc(world: &World, text: String, option1_frame: HandleAny) -> Handle<
             line_height: 14.0,
         },
         color: theme.significant_color,
+        camera: Some(camera),
         ..Default::default()
     });
 
@@ -499,12 +504,17 @@ fn option_desc(world: &World, text: String, option1_frame: HandleAny) -> Handle<
     label
 }
 
-fn option_slider(world: &World, option1_frame: HandleAny) -> (Handle<Slider>, Handle<SliderLabel>) {
+fn option_slider(
+    world: &World,
+    option1_frame: HandleAny,
+    camera: Handle<Camera>,
+) -> (Handle<Slider>, Handle<SliderLabel>) {
     let slider = world.insert(Slider {
         value: 0.5,
         axis: Axis::Right,
         rect: Rectangle::default(),
         pressed: false,
+        camera,
     });
 
     world.insert(Transform {
@@ -536,6 +546,7 @@ fn option_slider(world: &World, option1_frame: HandleAny) -> (Handle<Slider>, Ha
         source: slider,
         hover: false,
         visible: true,
+        camera,
     });
 
     (slider, slider_label)

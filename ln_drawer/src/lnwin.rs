@@ -18,7 +18,7 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{
         Render,
-        camera::{Camera, CameraDescriptor, CameraUtils, CurrentCamera, MainCamera, UICamera},
+        camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, UICamera},
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     theme::Theme,
@@ -182,8 +182,6 @@ impl Element for Lnwindow {
 
             world.insert(MainCamera(main_camera));
             world.insert(UICamera(ui_camera));
-            world.enter(main_camera, || world.insert(CurrentCamera(main_camera)));
-            world.enter(ui_camera, || world.insert(CurrentCamera(ui_camera)));
             world.enter(main_camera, || world.insert(ViewRef(this.untyped())));
             world.enter(ui_camera, || world.insert(ViewRef(this.untyped())));
 
@@ -248,7 +246,7 @@ impl Element for Lnwindow {
 
                 world.flush();
 
-                side_docker(world);
+                side_docker(world, ui_camera);
             });
 
             world.flush();

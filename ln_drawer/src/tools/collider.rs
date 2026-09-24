@@ -3,7 +3,7 @@ use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
-    render::camera::{Camera, CurrentCamera},
+    render::camera::{Camera, MainCamera, UICamera},
     widgets::{SetWidgetRectangle, container::Container},
 };
 
@@ -12,15 +12,19 @@ pub struct ToolCollider {
     pub rect: Rectangle,
     pub order: isize,
     pub enabled: bool,
+    /// The camera this collider lives in; drive the whole hit test through the camera tree.
+    pub camera: Handle<Camera>,
 }
 
 /// The topmost [`ToolCollider`] under a screen point.
 ///
-/// `view` is the view the collider lives in; `position` is `screen` converted into that view's
-/// world space, so callers do not have to look the camera up again.
+/// `camera` is the collider's own camera (its local coordinate system) and `view` is the root ECS
+/// view it lives in, so callers can enter `view` to deliver events. `position` is `screen`
+/// converted into `camera`'s world space.
 #[derive(Clone, Copy)]
 pub struct ToolHit {
     pub collider: Handle<ToolCollider>,
+    pub camera: Handle<Camera>,
     pub view: HandleAny,
     pub position: I64Vec2,
 }
@@ -30,7 +34,7 @@ pub struct ToolColliderDispatcher;
 pub struct ToolColliderChanged(pub Handle<ToolCollider>);
 
 impl ToolCollider {
-    pub const fn fullscreen(order: isize) -> ToolCollider {
+    pub const fn fullscreen(order: isize, camera: Handle<Camera>) -> ToolCollider {
         ToolCollider {
             rect: Rectangle {
                 origin: IVec2::MIN,
@@ -38,26 +42,33 @@ impl ToolCollider {
             },
             order,
             enabled: true,
+            camera,
         }
     }
 
     /// Find the topmost collider under `screen`, called from the window view.
     ///
-    /// The search mirrors the render hierarchy instead of flattening every camera into a portal.
-    /// It walks the root cameras from top to bottom, and inside each view it first descends into
-    /// nested [`Container`] views (their contents draw last, so they sit above their siblings)
-    /// before testing the view's own colliders by `order`. The clip rectangle is narrowed at every
-    /// container on the way down, so content scrolled or clipped outside a container no longer
-    /// reacts to the pointer, and hidden containers hide their whole subtree.
+    /// The search mirrors the camera tree instead of ECS views. It walks the root cameras from top
+    /// to bottom, and inside each camera it first descends into nested [`Container`] cameras
+    /// (their contents draw last, so they sit above their siblings) before testing the camera's
+    /// own colliders by `order`. The clip rectangle is narrowed at every container on the way down,
+    /// so content scrolled or clipped outside a container no longer reacts to the pointer, and
+    /// hidden containers hide their whole subtree.
     pub fn intersect(world: &World, screen: DVec2) -> Option<ToolHit> {
-        let mut roots = Vec::new();
-        world.foreach_fetch::<Camera>(|camera| roots.push(camera.handle()));
+        let main = world.single_fetch::<MainCamera>().ok()?.0;
+        let ui = world.single_fetch::<UICamera>().ok()?.0;
 
         let mut visited = Vec::new();
-        for camera in roots.into_iter().rev() {
-            if let Some(hit) =
-                hit_view(world, camera.untyped(), screen, HitClip::FULL, &mut visited)
-            {
+        // UI draws over the painting canvas, so test it first.
+        for camera in [ui, main] {
+            if let Some(hit) = hit_camera(
+                world,
+                camera,
+                camera.untyped(),
+                screen,
+                HitClip::FULL,
+                &mut visited,
+            ) {
                 return Some(hit);
             }
         }
@@ -112,28 +123,33 @@ fn projected(camera: &Camera, rect: Rectangle) -> HitClip {
     }
 }
 
-/// Recursively test one view, topmost collider first.
-fn hit_view(
+/// Recursively test one camera, topmost collider first.
+///
+/// `view` is the root ECS view the whole camera subtree lives in; entering it makes the cameras,
+/// containers and colliders of this subtree visible.
+fn hit_camera(
     world: &World,
+    camera: Handle<Camera>,
     view: HandleAny,
     screen: DVec2,
     clip: HitClip,
-    visited: &mut Vec<HandleAny>,
+    visited: &mut Vec<Handle<Camera>>,
 ) -> Option<ToolHit> {
-    if !clip.contains(screen) || visited.contains(&view) {
+    if !clip.contains(screen) || visited.contains(&camera) {
         return None;
     }
-    visited.push(view);
+    visited.push(camera);
 
     world.enter(view, || {
-        let Ok(current) = world.single_fetch::<CurrentCamera>() else {
-            return None;
-        };
-        let camera = world.fetch(current.0).ok()?;
+        let camera_ref = world.fetch(camera).ok()?;
 
-        // Nested containers draw after the rest of the view, so their content sits on top.
+        // Nested containers draw after the rest of the camera, so their content sits on top.
         let mut containers = Vec::new();
-        world.foreach_fetch::<Container>(|container| containers.push(container.handle()));
+        world.foreach_fetch::<Container>(|container| {
+            if container.parent == camera {
+                containers.push(container.handle());
+            }
+        });
 
         for container in containers.into_iter().rev() {
             let Ok(entry) = world.fetch(container) else {
@@ -141,30 +157,33 @@ fn hit_view(
             };
             let visible = entry.visible;
             let rect = entry.rect;
+            let child_camera = entry.camera;
             drop(entry);
 
             if !visible {
                 continue;
             }
 
-            let child = clip.intersect(projected(&camera, rect));
-            if let Some(hit) = hit_view(world, container.untyped(), screen, child, visited) {
+            let child = clip.intersect(projected(&camera_ref, rect));
+            if let Some(hit) = hit_camera(world, child_camera, view, screen, child, visited) {
                 return Some(hit);
             }
         }
 
-        // Then the view's own colliders: highest `order`, and latest inserted, first.
-        let position = camera.dst_to_src(screen);
+        // Then the camera's own colliders: highest `order`, and latest inserted, first.
+        let position = camera_ref.dst_to_src(screen);
         let flat = position.q32_floor();
 
         let mut colliders = Vec::new();
         world.foreach_fetch::<ToolCollider>(|collider| {
-            colliders.push((
-                collider.order,
-                collider.handle(),
-                collider.rect,
-                collider.enabled,
-            ));
+            if collider.camera == camera {
+                colliders.push((
+                    collider.order,
+                    collider.handle(),
+                    collider.rect,
+                    collider.enabled,
+                ));
+            }
         });
         colliders.sort_by_key(|entry| entry.0);
 
@@ -172,6 +191,7 @@ fn hit_view(
             if enabled && rect.contains(flat) {
                 return Some(ToolHit {
                     collider,
+                    camera,
                     view,
                     position,
                 });

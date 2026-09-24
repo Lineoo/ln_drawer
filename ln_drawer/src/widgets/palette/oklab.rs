@@ -4,6 +4,7 @@ use palette::{IntoColor, Oklab, Srgba};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
+    render::camera::Camera,
     tools::{collider::ToolCollider, pointer::PointerHit},
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
@@ -22,12 +23,14 @@ pub struct OklabPolar {
     pub rect: Rectangle,
     pub color: Oklab,
     pub enabled: bool,
+    pub camera: Handle<Camera>,
 }
 
 pub struct OklabBar {
     pub rect: Rectangle,
     pub color: Oklab,
     pub enabled: bool,
+    pub camera: Handle<Camera>,
 }
 
 #[repr(C)]
@@ -51,6 +54,7 @@ impl OklabPolar {
             rect: self.rect,
             visible: self.enabled,
             order: 60,
+            camera: self.camera,
             material: OklabPolarMaterial {
                 oklab: Vec3A::new(self.color.l, self.color.a, self.color.b),
             },
@@ -63,6 +67,7 @@ impl OklabPolar {
             radius: THUMB_RADIUS,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let thumb_light = world.insert(RRect {
@@ -72,6 +77,7 @@ impl OklabPolar {
             radius: THUMB_RADIUS + 1.0,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let thumb_shadow = world.insert(RRect {
@@ -81,12 +87,14 @@ impl OklabPolar {
             radius: THUMB_RADIUS + 2.0,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: 100,
             enabled: self.enabled,
+            camera: self.camera,
         });
 
         world.dependency(collider, this);
@@ -163,6 +171,7 @@ impl OklabBar {
             rect: self.rect,
             visible: self.enabled,
             order: 60,
+            camera: self.camera,
             material: OklabBarMaterial {
                 oklab: Vec3A::new(self.color.l, self.color.a, self.color.b),
             },
@@ -175,6 +184,7 @@ impl OklabBar {
             radius: THUMB_RADIUS,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let thumb_light = world.insert(RRect {
@@ -184,6 +194,7 @@ impl OklabBar {
             radius: THUMB_RADIUS + 1.0,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let thumb_shadow = world.insert(RRect {
@@ -193,12 +204,14 @@ impl OklabBar {
             radius: THUMB_RADIUS + 2.0,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let collider = world.insert(ToolCollider {
             rect: self.rect,
             order: 100,
             enabled: self.enabled,
+            camera: self.camera,
         });
 
         world.dependency(collider, this);

@@ -10,6 +10,7 @@ use crate::{
         transform::{Transform, TransformValue},
     },
     measures::Rectangle,
+    render::camera::Camera,
     theme::Theme,
     tools::collider::ToolCollider,
     widgets::{
@@ -32,6 +33,7 @@ pub struct Tabs {
     pub visible: bool,
     pub tabs: Vec<(ButtonImage, HandleAny)>,
     pub active: usize,
+    pub camera: Handle<Camera>,
 }
 
 #[derive(Clone)]
@@ -55,6 +57,7 @@ impl Tabs {
             radius: roundness,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let back_shadow = world.insert(RRect {
@@ -64,6 +67,7 @@ impl Tabs {
             radius: roundness,
             width: shadow_blur,
             enabled: true,
+            camera: self.camera,
         });
 
         let mut children = Vec::new();
@@ -81,6 +85,7 @@ impl Tabs {
                 selected: false,
                 visible: true,
                 hovering: false,
+                camera: self.camera,
             });
 
             Echo::new(world, button).widget_rectangle();
@@ -92,6 +97,7 @@ impl Tabs {
                 radius: 0.0,
                 width: 0.0,
                 enabled: false,
+                camera: self.camera,
             });
 
             world.insert(Transform {
@@ -112,6 +118,7 @@ impl Tabs {
             rect: self.rect,
             order: -10,
             enabled: self.visible,
+            camera: self.camera,
         });
 
         let side = world.insert(());

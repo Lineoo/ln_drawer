@@ -8,6 +8,7 @@ use crate::{
     animation::{AnimationDescriptor, SetAnimationDst, SimpleAnimationDescriptor},
     layout::transform::TransformValue,
     measures::Rectangle,
+    render::camera::Camera,
     theme::Theme,
     tools::{
         collider::ToolCollider,
@@ -29,6 +30,7 @@ pub struct ToggleButton {
     pub selected: bool,
     pub visible: bool,
     pub hovering: bool,
+    pub camera: Handle<Camera>,
 }
 
 pub struct ToggleButtonTheme {
@@ -83,6 +85,7 @@ impl ToggleButton {
             radius: theme.roundness,
             width: 0.0,
             enabled: self.visible,
+            camera: self.camera,
         });
 
         let frame_anim_color = world.build(SimpleAnimationDescriptor {
@@ -97,6 +100,7 @@ impl ToggleButton {
             rect: self.rect,
             order: 10,
             enabled: self.visible,
+            camera: self.camera,
         });
 
         let canvas = if let Some(image) = &self.image {
@@ -107,6 +111,7 @@ impl ToggleButton {
                 rect: image.transform.compute(self.rect),
                 order: 11,
                 visible: self.visible,
+                camera: self.camera,
                 data: data.into_raw(),
                 color: theme.symbolic_color,
             });

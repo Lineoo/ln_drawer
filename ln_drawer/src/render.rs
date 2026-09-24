@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ln_world::{Element, Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 use wgpu::{
     Adapter, BackendOptions, Backends, Buffer, BufferDescriptor, BufferUsages, Color,
     CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device,
@@ -23,10 +23,7 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
-use crate::{
-    lnwin::Lnwindow,
-    render::camera::{Camera, CurrentCamera},
-};
+use crate::{lnwin::Lnwindow, render::camera::Camera};
 
 pub const MSAA_SAMPLE_COUNT: u32 = 1;
 pub const MSAA_STATE: MultisampleState = MultisampleState {
@@ -74,6 +71,13 @@ type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, RenderExtra<
 
 /// Need to call `RenderControl::reorder` before it can render normally.
 pub struct RenderControl {
+    /// The camera this control draws into.
+    ///
+    /// `Some` for anything registered in a camera sequence (drawables and ordered prepare
+    /// ticks); `None` for controls that only need a `prepare` pass and are cleaned up through
+    /// their owner, such as animations.
+    pub camera: Option<Handle<Camera>>,
+
     /// prepare to render and give related information
     pub prepare: Option<RenderPrepareCommand>,
 
@@ -389,10 +393,9 @@ impl Render {
         // redraw
 
         let scissor = Cell::new(None);
-        world.foreach_enter::<Camera>(|_| {
+        world.foreach_enter::<Camera>(|camera_handle| {
             scissor.set(None);
-            let curr = world.single_fetch::<CurrentCamera>().unwrap();
-            let camera = &mut *world.fetch_mut(curr.0).unwrap();
+            let camera = &mut *world.fetch_mut(camera_handle).unwrap();
             camera.reorder();
             camera.draw(
                 world,
@@ -563,33 +566,19 @@ fn plain_rpass<'encoder>(
 }
 
 impl RenderControl {
-    /// A render control that groups a nested [`RenderPhase`] living under `view`.
+    /// A portal render control that draws a nested camera's contents.
     ///
-    /// `prepare` descends into `view` to prepare the nested controls. `draw` invokes the
-    /// callback in the control's own view, so the caller can set up outer render state (such
-    /// as a scissor rect) before entering `view` itself to draw the nested phase.
+    /// `draw` invokes the callback in the control's own camera, so the caller can set up outer
+    /// render state (such as a scissor rect) before drawing the nested camera. Preparation of the
+    /// nested controls already happens with the rest of the root view's controls, so this control
+    /// needs no `prepare` step.
     pub fn phase_with_draw(
-        view: impl HandleGeneric,
+        camera: Handle<Camera>,
         mut f: impl FnMut(&World, &mut RenderPass, RenderExtra) + Send + 'static,
     ) -> Self {
-        let view = view.untyped();
         RenderControl {
-            prepare: Some(Box::new(move |world| {
-                world.enter(view, || {
-                    let mut keep_redrawing = false;
-                    world.foreach_fetch_mut::<RenderControl>(|mut control| {
-                        if let Some(prepare) = &mut control.prepare
-                            && let Some(info) = prepare(world)
-                        {
-                            keep_redrawing |= info.keep_redrawing;
-                        };
-                    });
-                    if world.queue_cache::<RenderControl>() {
-                        log::debug!("control cached");
-                    }
-                    Some(RenderInformation { keep_redrawing })
-                })
-            })),
+            camera: Some(camera),
+            prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
                 f(world, rpass, extra);
             })),
@@ -606,9 +595,13 @@ impl RenderControl {
         }
     }
 
-    pub fn reorder(order: Option<isize>, world: &World, handle: Handle<Self>) {
-        let curr = world.single_fetch::<CurrentCamera>().unwrap();
-        let camera = &mut *world.fetch_mut(curr.0).unwrap();
+    pub fn reorder(
+        camera: Handle<Camera>,
+        order: Option<isize>,
+        world: &World,
+        handle: Handle<Self>,
+    ) {
+        let camera = &mut *world.fetch_mut(camera).unwrap();
 
         if let Some(order) = order {
             camera.seq_dirty.push((handle, world.here(), order));
@@ -669,12 +662,14 @@ impl Element for Render {
 
 impl Element for RenderControl {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let curr = world.single_fetch::<CurrentCamera>().unwrap();
-        world.dependency(this, curr.handle());
-        world.dependency(this, curr.0);
+        if let Some(camera) = self.camera {
+            world.dependency(this, camera);
+        }
     }
 
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {
-        Self::reorder(None, world, this);
+        if let Some(camera) = self.camera {
+            Self::reorder(camera, None, world, this);
+        }
     }
 }

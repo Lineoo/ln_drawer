@@ -17,7 +17,10 @@ use wgpu::{
 
 use crate::{
     measures::Rectangle,
-    render::{MSAA_STATE, Render, RenderControl, camera::CameraBind},
+    render::{
+        MSAA_STATE, Render, RenderControl,
+        camera::{Camera, CameraBind},
+    },
     widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::shader_compile},
 };
 
@@ -25,6 +28,7 @@ pub struct Canvas {
     pub rect: Rectangle,
     pub order: isize,
     pub visible: bool,
+    pub camera: Handle<Camera>,
     pub color: Srgba,
 
     pub data: Vec<u8>,
@@ -68,7 +72,9 @@ impl Canvas {
         let instance = world.insert(self.instantiate(&render, &pipeline));
         drop(render);
 
+        let camera = self.camera;
         let control = world.insert(RenderControl {
+            camera: Some(camera),
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
                 let instance = world.fetch(instance).unwrap();
@@ -87,7 +93,7 @@ impl Canvas {
             })),
         });
 
-        RenderControl::reorder(self.visible.then_some(self.order), world, control);
+        RenderControl::reorder(camera, self.visible.then_some(self.order), world, control);
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this).unwrap();
@@ -109,7 +115,7 @@ impl Canvas {
         world.observer(this, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(this).unwrap();
             this.visible = visible;
-            RenderControl::reorder(this.visible.then_some(this.order), world, control);
+            RenderControl::reorder(camera, this.visible.then_some(this.order), world, control);
         });
 
         world.observer(this, move |&SetCanvasColor(color), world| {
@@ -140,11 +146,18 @@ impl Canvas {
         });
     }
 
-    pub fn transparent(rect: Rectangle, order: isize, visible: bool, size: UVec2) -> Self {
+    pub fn transparent(
+        rect: Rectangle,
+        order: isize,
+        visible: bool,
+        camera: Handle<Camera>,
+        size: UVec2,
+    ) -> Self {
         Self {
             rect,
             order,
             visible,
+            camera,
             color: Srgba::new(1.0, 1.0, 1.0, 1.0),
             data: vec![0u8; (size.x * size.y * 4) as usize],
             data_width: size.x,

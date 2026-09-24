@@ -50,8 +50,6 @@ pub struct CameraBind {
     pub layout: BindGroupLayout,
 }
 
-pub struct CurrentCamera(pub Handle<Camera>);
-
 pub struct MainCamera(pub Handle<Camera>);
 
 pub struct UICamera(pub Handle<Camera>);
@@ -214,7 +212,7 @@ impl Camera {
             let extra = RenderExtra {
                 device: extra.device,
                 queue: extra.queue,
-                camera: extra.camera,
+                camera: self,
                 early_encoder: extra.early_encoder,
                 surface_config: extra.surface_config,
                 diagnosis: extra.diagnosis,
@@ -473,9 +471,8 @@ impl CameraUtils {
         self.anchor_lock = false;
     }
 
-    pub fn apply_to_camera(&self, world: &World) {
-        let current_camera = world.single_fetch::<CurrentCamera>().unwrap();
-        let mut camera = world.fetch_mut(current_camera.0).unwrap();
+    pub fn apply_to_camera(&self, world: &World, camera: Handle<Camera>) {
+        let mut camera = world.fetch_mut(camera).unwrap();
         camera.src_zoom = self.camera_zoom;
         camera.src_center = self.camera_center;
     }
@@ -523,7 +520,6 @@ impl CameraUtils {
     }
 }
 
-impl Element for CurrentCamera {}
 impl Element for MainCamera {}
 impl Element for UICamera {}
 impl Element for CameraUtils {}

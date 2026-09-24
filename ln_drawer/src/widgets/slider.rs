@@ -7,6 +7,7 @@ use crate::{
         Animation, AnimationDescriptor, AnimationType, SetAnimationDst, SimpleAnimationDescriptor,
     },
     measures::{Axis, FI64Ext, Rectangle},
+    render::camera::Camera,
     theme::Theme,
     tools::{
         collider::ToolCollider,
@@ -29,6 +30,7 @@ pub struct Slider {
     pub axis: Axis,
     pub rect: Rectangle,
     pub pressed: bool,
+    pub camera: Handle<Camera>,
 }
 
 pub struct SliderLabel {
@@ -37,6 +39,7 @@ pub struct SliderLabel {
     pub source: Handle<Slider>,
     pub hover: bool,
     pub visible: bool,
+    pub camera: Handle<Camera>,
 }
 
 impl Slider {
@@ -50,6 +53,7 @@ impl Slider {
             radius: theme.roundness,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let position = into_position(self.rect, self.axis, self.value);
@@ -61,6 +65,7 @@ impl Slider {
             radius: theme.roundness,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let knob = world.insert(RRect {
@@ -70,6 +75,7 @@ impl Slider {
             radius: theme.roundness,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let knob_split = world.insert(RRect {
@@ -79,6 +85,7 @@ impl Slider {
             radius: 2.0,
             width: 0.0,
             enabled: true,
+            camera: self.camera,
         });
 
         let back_rect_anim = world.build(SimpleAnimationDescriptor {
@@ -109,6 +116,7 @@ impl Slider {
             rect: self.rect,
             order: 10,
             enabled: true,
+            camera: self.camera,
         });
 
         world.observer(handle, move |&SetSliderValue(value), world| {
@@ -266,6 +274,7 @@ impl SliderLabel {
             radius: LABEL_HALF.y as f32,
             width: 0.0,
             enabled: self.visible && self.hover,
+            camera: self.camera,
         });
 
         let label = world.insert(Text {
@@ -274,6 +283,7 @@ impl SliderLabel {
             metrics: Metrics::new(12., 2. * LABEL_HALF.y as f32),
             align: Align::Center,
             visible: self.visible && self.hover,
+            camera: Some(self.camera),
             ..Default::default()
         });
 

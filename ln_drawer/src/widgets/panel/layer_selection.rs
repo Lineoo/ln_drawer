@@ -6,6 +6,7 @@ use crate::{
     layer::wrapper::LayerPage,
     layout::transform::{Transform, TransformEdge, TransformValue},
     measures::Rectangle,
+    render::camera::Camera,
     theme::Theme,
     widgets::{
         button::{ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
@@ -17,7 +18,7 @@ use crate::{
 
 struct LayerChosen(u64);
 
-pub fn layer_selection(world: &World, panel: Handle<Container>) {
+pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<Camera>) {
     let theme = world.single_fetch::<Theme>().unwrap();
 
     let doc_label = world.insert(Text {
@@ -28,6 +29,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>) {
         },
         attrs: Attrs::new(),
         color: theme.symbolic_color,
+        camera: Some(camera),
         ..Default::default()
     });
 
@@ -38,6 +40,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>) {
         radius: 0.0,
         width: 0.0,
         enabled: true,
+        camera,
     });
 
     let layer_label = world.insert(Text {
@@ -48,6 +51,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>) {
         },
         attrs: Attrs::new(),
         color: theme.symbolic_color,
+        camera: Some(camera),
         ..Default::default()
     });
 
@@ -100,6 +104,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>) {
             selected: i == 0,
             visible: true,
             hovering: false,
+            camera,
         });
 
         let layer0_name = world.insert(Text {
@@ -113,6 +118,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>) {
             },
             attrs: Attrs::new(),
             color: theme.symbolic_color,
+            camera: Some(camera),
             ..Default::default()
         });
 

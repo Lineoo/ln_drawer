@@ -2,14 +2,11 @@ use std::sync::Arc;
 
 use cosmic_text::{Attrs, Metrics};
 use glam::{IVec2, UVec2};
-use ln_world::{ElemRef, Handle, HandleGeneric, ViewRef, World};
+use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
     i18n::tr,
-    layer::{
-        input::LayerInput,
-        wrapper::{BrushConfigurationChanged, LayerPage},
-    },
+    layer::wrapper::{BrushConfigurationChanged, LayerPage},
     layout::{
         luni::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
@@ -17,8 +14,8 @@ use crate::{
         },
         transform::{Transform, TransformEdge, TransformValue},
     },
-    lnwin::Lnwindow,
     measures::Rectangle,
+    render::camera::Camera,
     theme::Theme,
     tools::pointer::{PointerHit, PointerScroll},
     widgets::{
@@ -28,7 +25,7 @@ use crate::{
             ButtonClick, ButtonDrag, ButtonDragStatus, ButtonImage, ButtonSelected,
             SetButtonSelected, ToggleButton, ToggleButtonTheme,
         },
-        container::Container,
+        container::{Container, ContainerDescriptor},
         echo::Echo,
         renderer::{
             rrect::{RRect, SetRRectColor},
@@ -45,15 +42,15 @@ const ITEM_HEIGHT: i32 = 80;
 const ITEM_GAP: i32 = 6;
 const LIST_PADDING: i32 = 8;
 
-pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
+pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: Handle<Camera>) {
     let count = world.single_fetch::<LayerPage>().unwrap().brushes.len();
 
     let content_height =
         count as i32 * ITEM_HEIGHT + (count as i32 - 1).max(0) * ITEM_GAP + LIST_PADDING * 2;
 
-    let list_container = world.insert(Container {
+    let (list_container, cam_list) = world.build(ContainerDescriptor {
+        parent: camera,
         rect: Rectangle::default(),
-        inner: Rectangle::default(),
         inner_transform: TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
@@ -75,9 +72,9 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
         visible: false,
     });
 
-    let settings_container = world.insert(Container {
+    let (settings_container, cam_settings) = world.build(ContainerDescriptor {
+        parent: camera,
         rect: Rectangle::default(),
-        inner: Rectangle::default(),
         inner_transform: TransformValue::copy(),
         visible: false,
     });
@@ -96,31 +93,18 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>) {
                 settings_container.untyped(),
             ),
         ],
+        camera,
     });
 
-    let lnwindow = world.single::<Lnwindow>().unwrap();
-    let input = world.single::<LayerInput>().unwrap();
     let wrapper = world.single::<LayerPage>().unwrap();
     let wrapper_instance = world.fetch(wrapper).unwrap();
     let generator = world.insert(BrushPreviewGenerator::new(
         wrapper_instance.draw.layer.clone(),
     ));
-    for panel in [list_container, settings_container] {
-        world.enter(panel, || {
-            world.insert(ViewRef(lnwindow.untyped()));
-            world.insert(ElemRef(input.untyped()));
-            world.insert(ElemRef(panel.untyped()));
-            world.insert(ElemRef(toggle_button.untyped()));
-            world.insert(ElemRef(wrapper.untyped()));
-            world.insert(ElemRef(generator.untyped()));
-        });
-    }
 
-    world.enter_queue(list_container, move |world| {
-        brush_list(world, list_container, generator)
-    });
-    world.enter_queue(settings_container, move |world| {
-        super::settings::new_panel_settings(world, settings_container, generator)
+    world.queue(move |world| brush_list(world, list_container, generator, cam_list));
+    world.queue(move |world| {
+        super::settings::new_panel_settings(world, settings_container, generator, cam_settings)
     });
 
     world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
@@ -153,6 +137,7 @@ fn brush_list(
     world: &World,
     container: Handle<Container>,
     generator: Handle<BrushPreviewGenerator>,
+    camera: Handle<Camera>,
 ) {
     let theme = world.single_fetch::<Theme>().unwrap();
     let wrapper = world.single::<LayerPage>().unwrap();
@@ -184,6 +169,7 @@ fn brush_list(
             selected: i == active,
             visible: true,
             hovering: false,
+            camera,
         });
 
         Echo::new(world, button).widget_rectangle().widget_visible();
@@ -195,6 +181,7 @@ fn brush_list(
             radius: theme.roundness,
             width: 0.0,
             enabled: true,
+            camera,
         });
 
         world.insert(Transform {
@@ -211,6 +198,7 @@ fn brush_list(
             },
             attrs: Attrs::new(),
             color: symbolic,
+            camera: Some(camera),
             ..Default::default()
         });
 
@@ -244,6 +232,7 @@ fn brush_list(
             outdated: true,
             brush: wrapper_instance.brushes.get(i).map(|x| x.brush.dup()),
             visible: false,
+            camera,
         });
 
         world.insert(Transform {
