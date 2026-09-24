@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use glam::{DVec2, IVec2, UVec2};
+use glam::{DVec2, I64Vec2, IVec2, UVec2};
 use hashbrown::HashMap;
 use ln_world::{ElemRef, Element, Handle, HandleGeneric, ViewRef, World};
 #[cfg(target_os = "android")]
@@ -170,9 +170,12 @@ impl Element for Lnwindow {
             let main_camera = Camera::build_from_save(world, "camera1");
 
             let ui_camera = world.build(CameraDescriptor {
-                size: UVec2::new(size.width, size.height),
-                zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
-                ..Default::default()
+                dst_size: UVec2::splat(2),
+                dst_center: I64Vec2::ZERO,
+                dst_zoom: 0,
+                src_size: UVec2::new(size.width, size.height),
+                src_center: I64Vec2::ZERO,
+                src_zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
             });
 
             drop(lnwindow);
@@ -225,7 +228,7 @@ impl Element for Lnwindow {
                             )),
                         );
 
-                        camera2.zoom = i64::q32_from_f64(scale.log2());
+                        camera2.src_zoom = i64::q32_from_f64(scale.log2());
                         camera.update_from(&camera2);
                     }
                 });

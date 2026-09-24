@@ -71,7 +71,7 @@ impl LayerInput {
                 let wrapper = world.single_fetch::<LayerPage>().unwrap();
                 let brush_rect = Rectangle::new_half(
                     camera
-                        .screen_to_world_absolute(event.pointer.screen)
+                        .dst_to_src(event.pointer.screen)
                         .q32_round(),
                     UVec2::new(1, 1),
                 );

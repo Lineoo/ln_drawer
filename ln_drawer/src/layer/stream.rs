@@ -160,7 +160,7 @@ pub fn loading_thread(
                 camera.outdated = true;
             }
             Some(ThreadInput::SetStreamCamera(zoom, size, center)) => {
-                camera.rect = Camera::manual_view_rect(zoom, size, center);
+                camera.rect = Camera::view_rect(zoom, size, center);
                 let stream_center_new = chunk_of(center.q32_round(), zoom, config.chunk_size);
                 let stream_range_new =
                     super::rect_to_chunks(camera.rect, stream_center_new.2, config.chunk_size);

@@ -125,9 +125,9 @@ impl LayerPage {
         let camera = world.fetch(main_camera.0).unwrap();
         input_tx
             .send(ThreadInput::SetStreamCamera(
-                camera.zoom,
-                camera.size,
-                camera.center,
+                camera.src_zoom,
+                camera.src_size,
+                camera.src_center,
             ))
             .unwrap();
 
@@ -388,10 +388,10 @@ impl LayerPage {
         let (start, end) = extra.diagnosis.assign("main > layers");
         extra.diagnosis.write(rpass, start);
 
-        let view_rect = camera.world_view_rect();
-        let mipmap = (-camera.zoom).q32_floor().max(0) as u8;
+        let view_rect = camera.src_view_rect();
+        let mipmap = (-camera.src_zoom).q32_floor().max(0) as u8;
         let actual_mipmap = mipmap.min(self.main.mipmap_levels.saturating_sub(1));
-        let pixel = camera.zoom.q32_as_f64().exp2() > 4.0;
+        let pixel = camera.src_zoom.q32_as_f64().exp2() > 4.0;
 
         match self.debug {
             false => rpass.set_pipeline(&self.draw.layer.render_pipelines.over),
@@ -509,9 +509,9 @@ impl Element for LayerPage {
 
             this.thread_tx
                 .send(ThreadInput::SetStreamCamera(
-                    camera.zoom,
-                    camera.size,
-                    camera.center,
+                    camera.src_zoom,
+                    camera.src_size,
+                    camera.src_center,
                 ))
                 .unwrap();
         });
