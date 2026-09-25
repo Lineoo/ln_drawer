@@ -70,6 +70,9 @@ impl Tabs {
             camera: self.camera,
         });
 
+        world.dependency(back, handle);
+        world.dependency(back_shadow, handle);
+
         let mut children = Vec::new();
         let mut luni_children = Vec::new();
         for (entry, _) in &self.tabs {
@@ -99,6 +102,8 @@ impl Tabs {
                 enabled: false,
                 camera: self.camera,
             });
+            world.dependency(edge, handle);
+            world.dependency(button, handle);
 
             world.insert(Transform {
                 value: TransformValue::anchor(
@@ -109,7 +114,7 @@ impl Tabs {
                 target: edge.untyped(),
             });
 
-            children.push(TabButton { button, edge });
+            children.push(TabButton { button, edge }); 
 
             luni_children.push((button.untyped(), LuniChild::default()));
         }
@@ -120,6 +125,7 @@ impl Tabs {
             enabled: self.visible,
             camera: self.camera,
         });
+        world.dependency(collider, handle);
 
         let side = world.insert(());
 

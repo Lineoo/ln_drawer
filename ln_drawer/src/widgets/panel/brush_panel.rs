@@ -102,6 +102,11 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
         wrapper_instance.draw.layer.clone(),
     ));
 
+    world.dependency(list_container, toggle_button);
+    world.dependency(settings_container, toggle_button);
+    world.dependency(tabs, toggle_button);
+    world.dependency(generator, toggle_button);
+
     world.queue(move |world| brush_list(world, list_container, generator, cam_list));
     world.queue(move |world| {
         super::settings::new_panel_settings(world, settings_container, generator, cam_settings)
@@ -257,6 +262,11 @@ fn brush_list(
             source: button.untyped(),
             target: preview.untyped(),
         });
+
+        world.dependency(button, container);
+        world.dependency(outline, container);
+        world.dependency(label, container);
+        world.dependency(preview, container);
 
         world.observer(button, move |&ButtonClick, world| {
             let mut wrapper = world.fetch_mut(wrapper).unwrap();

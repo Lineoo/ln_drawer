@@ -88,6 +88,11 @@ impl Slider {
             camera: self.camera,
         });
 
+        world.dependency(back, handle);
+        world.dependency(front, handle);
+        world.dependency(knob, handle);
+        world.dependency(knob_split, handle);
+
         let back_rect_anim = world.build(SimpleAnimationDescriptor {
             animation: AnimationDescriptor::new(back_rect(self.rect, self.axis), theme.anim_factor),
             widget: back,
@@ -118,6 +123,7 @@ impl Slider {
             enabled: true,
             camera: self.camera,
         });
+        world.dependency(collider, handle);
 
         world.observer(handle, move |&SetSliderValue(value), world| {
             let mut this = world.fetch_mut(handle).unwrap();

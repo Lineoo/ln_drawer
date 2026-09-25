@@ -67,6 +67,7 @@ impl HslPanel {
             camera: self.camera,
         });
 
+        world.dependency(quad, this);
         world.dependency(collider, this);
 
         let mut lock = 0;
@@ -130,8 +131,6 @@ impl HslPanel {
                 }),
             );
         });
-
-        world.dependency(quad, this);
     }
 }
 

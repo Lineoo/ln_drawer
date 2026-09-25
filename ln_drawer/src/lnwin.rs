@@ -216,14 +216,11 @@ impl Element for Lnwindow {
             drop(camera);
             world.flush();
 
-            // Setup interface components
+            world.insert(LayerPage::new(world));
+            world.insert(LayerInput::default());
+            world.flush();
 
-            world.queue(move |world| {
-                world.insert(LayerPage::new(world));
-                world.insert(LayerInput::default());
-            });
-
-            world.queue(move |world| side_docker(world, ui_camera));
+            side_docker(world, ui_camera);
 
             world.flush();
         });

@@ -85,7 +85,7 @@ impl Descriptor for CameraDescriptor {
 impl Element for Camera {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>().unwrap();
-        world.observer(lnwindow, move |event: &WindowEvent, world| {
+        let obs = world.observer(lnwindow, move |event: &WindowEvent, world| {
             if let WindowEvent::SurfaceResized(size) = event {
                 let mut camera = world.fetch_mut(this).unwrap();
 
@@ -93,6 +93,7 @@ impl Element for Camera {
                 camera.size.y = size.height;
             }
         });
+        world.dependency(obs, this);
     }
 
     fn when_modify(&mut self, world: &World, this: Handle<Self>) {

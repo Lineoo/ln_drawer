@@ -43,7 +43,7 @@ pub fn new_panel_settings(
         camera,
     });
 
-    world.observer(layer.handle(), move |&BrushConfigurationChanged, world| {
+    let ob = world.observer(layer.handle(), move |&BrushConfigurationChanged, world| {
         let mut preview = world.fetch_mut(preview).unwrap();
         let layer_instance = world.single_fetch::<LayerPage>().unwrap();
         preview.outdated = true;
@@ -73,6 +73,10 @@ pub fn new_panel_settings(
         },
         visible: true,
     });
+
+    world.dependency(preview, panel);
+    world.dependency(ob, panel);
+    world.dependency(settings, panel);
 
     world.queue(move |world| panel_settings(world, settings, cam_settings));
 
@@ -232,7 +236,17 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
-    world.observer(layer, move |&BrushConfigurationChanged, world| {
+    world.dependency(label1_frame, panel);
+    world.dependency(label1, panel);
+    world.dependency(flow_frame, panel);
+    world.dependency(sigma_frame, panel);
+    world.dependency(softness_frame, panel);
+    world.dependency(spacing_frame, panel);
+    world.dependency(color_ratio_frame, panel);
+    world.dependency(sample_radius_frame, panel);
+    world.dependency(sample_rate_frame, panel);
+
+    let ob = world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
 
         let mut flow_label = world.fetch_mut(flow_label).unwrap();
@@ -336,6 +350,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
             SetText(format!("{sample_rate:.2}")),
         );
     });
+    world.dependency(ob, panel);
 
     world.insert(LuniFlex {
         parent: (
@@ -417,7 +432,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
 fn option_label(
     world: &World,
     text: String,
-    option1_frame: HandleAny,
+    frame: HandleAny,
     camera: Handle<Camera>,
 ) -> Handle<Text> {
     let theme = world.single_fetch::<Theme>().unwrap();
@@ -432,6 +447,8 @@ fn option_label(
         camera: Some(camera),
         ..Default::default()
     });
+
+    world.dependency(label, frame);
 
     world.insert(Transform {
         value: TransformValue {
@@ -452,7 +469,7 @@ fn option_label(
                 offset: -16,
             },
         },
-        source: option1_frame,
+        source: frame,
         target: label.untyped(),
     });
 
@@ -462,7 +479,7 @@ fn option_label(
 fn option_desc(
     world: &World,
     text: String,
-    option1_frame: HandleAny,
+    frame: HandleAny,
     camera: Handle<Camera>,
 ) -> Handle<Text> {
     let theme = world.single_fetch::<Theme>().unwrap();
@@ -477,6 +494,8 @@ fn option_desc(
         camera: Some(camera),
         ..Default::default()
     });
+
+    world.dependency(label, frame);
 
     world.insert(Transform {
         value: TransformValue {
@@ -497,7 +516,7 @@ fn option_desc(
                 offset: -36,
             },
         },
-        source: option1_frame,
+        source: frame,
         target: label.untyped(),
     });
 
@@ -506,7 +525,7 @@ fn option_desc(
 
 fn option_slider(
     world: &World,
-    option1_frame: HandleAny,
+    frame: HandleAny,
     camera: Handle<Camera>,
 ) -> (Handle<Slider>, Handle<SliderLabel>) {
     let slider = world.insert(Slider {
@@ -536,7 +555,7 @@ fn option_slider(
                 offset: -72,
             },
         },
-        source: option1_frame,
+        source: frame,
         target: slider.untyped(),
     });
 
@@ -548,6 +567,9 @@ fn option_slider(
         visible: true,
         camera,
     });
+
+    world.dependency(slider, frame);
+    world.dependency(slider_label, frame);
 
     (slider, slider_label)
 }

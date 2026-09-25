@@ -87,6 +87,7 @@ impl ToggleButton {
             enabled: self.visible,
             camera: self.camera,
         });
+        world.dependency(frame, handle);
 
         let frame_anim_color = world.build(SimpleAnimationDescriptor {
             animation: AnimationDescriptor::new(theme.primary_color, theme.anim_factor),
@@ -102,6 +103,7 @@ impl ToggleButton {
             enabled: self.visible,
             camera: self.camera,
         });
+        world.dependency(collider, handle);
 
         let canvas = if let Some(image) = &self.image {
             let data = image.bytes.to_rgba8();
@@ -115,6 +117,7 @@ impl ToggleButton {
                 data: data.into_raw(),
                 color: theme.symbolic_color,
             });
+            world.dependency(canvas, handle);
             Some(canvas)
         } else {
             None

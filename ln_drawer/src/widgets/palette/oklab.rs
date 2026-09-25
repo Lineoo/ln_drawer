@@ -97,6 +97,10 @@ impl OklabPolar {
             camera: self.camera,
         });
 
+        world.dependency(quad, this);
+        world.dependency(thumb, this);
+        world.dependency(thumb_light, this);
+        world.dependency(thumb_shadow, this);
         world.dependency(collider, this);
 
         world.observer(collider, move |event: &PointerHit, world| {
@@ -160,8 +164,6 @@ impl OklabPolar {
             world.queue_trigger(thumb_shadow, SetWidgetRectangle(thumb_rect.expand(2)));
             world.queue_trigger(thumb, SetRRectColor(color.into_color()));
         });
-
-        world.dependency(quad, this);
     }
 }
 

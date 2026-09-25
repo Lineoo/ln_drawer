@@ -202,7 +202,7 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
         target: side_panel.untyped(),
     });
 
-    world.insert(LuniFlex {
+    let luni = world.insert(LuniFlex {
         parent: (
             side_panel.untyped(),
             LuniParent {
@@ -255,6 +255,17 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
             (pipette.untyped(), LuniChild::default()),
         ],
     });
+
+    world.dependency(brush_menu, side_panel);
+    world.dependency(eraser, side_panel);
+    world.dependency(color_picker, side_panel);
+    world.dependency(undo, side_panel);
+    world.dependency(redo, side_panel);
+    world.dependency(elastic_blank, side_panel);
+    world.dependency(slider, side_panel);
+    world.dependency(touch, side_panel);
+    world.dependency(pipette, side_panel);
+    world.dependency(luni, side_panel);
 
     world.queue_trigger(layer, BrushConfigurationChanged);
 }

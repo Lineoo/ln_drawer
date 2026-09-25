@@ -118,7 +118,10 @@ impl Container {
             parent,
             scroll: I64Vec2::ZERO,
         });
+
+        world.dependency(back, handle);
         world.dependency(state, handle);
+        world.dependency(collider, handle);
         world.dependency(camera, handle);
 
         world.observer(parent, move |&CameraUpdated, world| {

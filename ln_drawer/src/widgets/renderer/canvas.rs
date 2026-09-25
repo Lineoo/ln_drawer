@@ -92,6 +92,7 @@ impl Canvas {
                 extra.diagnosis.write(rpass, end);
             })),
         });
+        world.dependency(control, this);
 
         RenderControl::reorder(camera, self.visible.then_some(self.order), world, control);
 

@@ -149,6 +149,8 @@ impl<M: QuadMaterial> QuadMesh<M> {
                 .write_buffer(&material_buffer, 0, bytemuck::bytes_of(&mat));
             RenderControl::request_redraw(world);
         });
+
+        world.dependency(control, this);
     }
 }
 

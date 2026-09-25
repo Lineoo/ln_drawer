@@ -97,6 +97,12 @@ impl Panel {
             collider.enabled = enabled;
             world.queue_trigger(handle, WidgetVisible(enabled));
         });
+
+        world.dependency(collider, handle);
+        world.dependency(back, handle);
+        if let Some(back_shadow) = back_shadow {
+            world.dependency(back_shadow, handle);
+        }
     }
 }
 

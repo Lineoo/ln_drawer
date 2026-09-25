@@ -47,6 +47,7 @@ pub fn color_picker_panel(
         enabled: true,
         camera,
     });
+    world.dependency(toggle_button_color_icon, toggle_button);
 
     world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
         let transform = Transform {
@@ -152,6 +153,12 @@ pub fn color_picker_panel(
         camera,
     });
 
+    world.dependency(tab_palette_hsl, toggle_button);
+    world.dependency(tab_palette_oklch, toggle_button);
+    world.dependency(tab_layer_selection, toggle_button);
+    world.dependency(tab_debug, toggle_button);
+    world.dependency(tabs, toggle_button);
+
     world.queue(move |world| palette_hsl(world, tab_palette_hsl, cam_palette_hsl));
     world.queue(move |world| {
         palette_oklab(world, tab_palette_oklch, cam_palette_oklch, toggle_button)
@@ -203,6 +210,8 @@ fn palette_hsl(world: &World, bg: Handle<Container>, camera: Handle<Camera>) {
         camera,
     });
 
+    world.dependency(panel, bg);
+
     world.insert(Transform {
         value: TransformValue::anchor(
             (0.5, 0.5),
@@ -247,6 +256,10 @@ fn palette_oklab(
     let theme = world.single_fetch::<Theme>().unwrap();
     let docker_button = docker_button(world, &theme, camera);
     let pick = docker_button(include_bytes!("../../../res/interface/pipette.svg"));
+
+    world.dependency(polar, bg);
+    world.dependency(bar, bg);
+    world.dependency(pick, bg);
 
     world.insert(Transform {
         value: TransformValue::anchor(
