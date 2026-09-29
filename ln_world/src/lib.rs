@@ -519,11 +519,11 @@ impl World {
     }
 
     // return if a new cache is established
-    pub fn cache<T: Element>(&mut self) -> bool {
+    pub fn cache<T: Element>(&self) -> bool {
         let tid = TypeId::of::<T>();
         let here = self.location.get();
 
-        let cache = self.cache.get_mut();
+        let mut cache = self.cache.borrow_mut();
         if cache.contains_key(&(tid, here)) {
             return false;
         }
@@ -545,7 +545,6 @@ impl World {
             cached.push(i);
         }
 
-        let cache = self.cache.get_mut();
         cache.insert((tid, here), cached);
 
         return true;
