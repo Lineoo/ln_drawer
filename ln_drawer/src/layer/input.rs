@@ -137,6 +137,9 @@ impl LayerInput {
                 KeyCode::ShiftLeft => {
                     this.shift = press;
                 }
+                KeyCode::F8 if press => {
+                    log::debug!("{}", world.stat_deps());
+                }
                 _ => (),
             }
 

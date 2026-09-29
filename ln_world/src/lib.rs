@@ -980,6 +980,36 @@ impl World {
                 .unwrap_or("invalid"),
         )
     }
+
+    pub fn stat_deps(&self) -> String {
+        let dependencies = self.dependencies.borrow_mut();
+        let mut result = String::new();
+        let mut cnt = 0;
+
+        result += "==== dependencies statistics ====\n";
+        for &handle in self.indices.keys() {
+            let Some(deps) = dependencies.0.get(&handle) else {
+                result.push_str(&format!(
+                    "- orphan node {:?} (no children) \n",
+                    self.info(handle)
+                ));
+                cnt += 1;
+                continue;
+            };
+
+            if deps.parents.is_empty() {
+                result.push_str(&format!("- orphan node {:?}\n", self.info(handle)));
+                cnt += 1;
+                continue;
+            }
+        }
+
+        if cnt == 0 {
+            result.push_str("everything is fine\n");
+        }
+
+        return result;
+    }
 }
 
 impl Default for World {
