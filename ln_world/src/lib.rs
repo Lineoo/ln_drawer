@@ -836,27 +836,6 @@ impl World {
 
     // iteration //
 
-    /// The actual number of element would be equal or less than this number.
-    pub fn size_hint<T: Element>(&self) -> usize {
-        let tid = TypeId::of::<T>();
-        let here = self.location.get();
-
-        let cache = self.cache.borrow();
-        if let Some(cached) = cache.get(&(tid, here)) {
-            cached.len()
-        } else {
-            (self.storages)
-                .get(&tid)
-                .map(|storage| {
-                    let storage = (storage.as_ref() as &dyn Any)
-                        .downcast_ref::<Storage<T>>()
-                        .unwrap();
-                    storage.0.len()
-                })
-                .unwrap_or_default()
-        }
-    }
-
     pub fn foreach<T: Element>(&self, mut f: impl FnMut(Handle<T>)) {
         let tid = TypeId::of::<T>();
         let here = self.location.get();
