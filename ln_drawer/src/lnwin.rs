@@ -113,6 +113,7 @@ pub struct Lnwindow {
 
 impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.named("lnwindow");
         let here = world.here();
         world.enter(this, || world.insert(ViewRef(here)));
         world.enter_queue(this, move |world| {

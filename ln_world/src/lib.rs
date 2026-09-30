@@ -177,7 +177,7 @@ pub struct World {
     inserted: RefCell<HashSet<HandleAny>>,
     removed: RefCell<HashSet<HandleAny>>,
 
-    label: Cow<'static, str>,
+    label: Cell<Cow<'static, str>>,
     location: Cell<HandleAny>,
     dependencies: RefCell<Dependencies>,
 
@@ -282,7 +282,7 @@ impl World {
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
-            label: "init".into(),
+            label: Cell::new("init".into()),
             location: Cell::new(INITELEM),
             dependencies: RefCell::default(),
             queue,
@@ -330,9 +330,9 @@ impl World {
 
         // delay execution
         let location = self.location.get();
-        let trace = self.label.clone();
+        let trace = self.label();
         let label = format!("{} > insert {}", trace, handle);
-        self.queue_with(label, move |world| {
+        self.queue_named(label, move |world| {
             // get type table ready
             let storage = world.storages.entry(TypeId::of::<T>()).or_insert_with(|| {
                 log::trace!("register elements: {}", type_name::<T>());
@@ -435,8 +435,8 @@ impl World {
         cache.retain(|(t, _), _| *t != tid);
         drop(cache);
 
-        let label = format!("remove {}", handle);
-        self.queue_with(label, move |world| {
+        let label = format!("{} > remove {}", self.label(), handle);
+        self.queue_named(label, move |world| {
             // update typetable
             world.indices.remove(&handle.untyped());
 
@@ -571,11 +571,17 @@ impl World {
         }
     }
 
-    pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
-        self.queue_with(self.label.clone(), f);
+    pub fn named(&self, label: impl Into<Cow<'static, str>>) {
+        self.label.set(label.into());
     }
 
-    pub fn queue_with(
+    pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
+        let label = self.label.take();
+        self.label.set(label.clone());
+        self.queue_named(label, f);
+    }
+
+    pub fn queue_named(
         &self,
         label: impl Into<Cow<'static, str>>,
         f: impl FnOnce(&mut World) + Send + 'static,
@@ -594,11 +600,11 @@ impl World {
         let origin = self.location.get();
         let buf = self.queue.try_iter().collect::<Vec<_>>();
         for cmd in buf {
-            let orig = std::mem::replace(&mut self.label, cmd.label);
+            let orig = self.label.replace(cmd.label);
             self.location.set(cmd.location);
             (cmd.action)(self);
             self.flush();
-            self.label = orig;
+            self.label.set(orig);
         }
         self.location.set(origin);
     }
@@ -923,7 +929,7 @@ impl World {
     pub fn trigger<E: Send + 'static>(&self, target: impl HandleGeneric, event: &E) -> usize {
         if let Err(e) = self.validate(target) {
             // TODO silent return
-            log::warn!("{e} [{}]", self.label);
+            log::warn!("{e} [{}]", self.label());
             return 0;
         }
 
@@ -957,7 +963,7 @@ impl World {
             && !matches!(e, WorldError::JustInserted(_) | WorldError::Invisible(..))
         {
             let err = WorldError::ToxicDependency(self.info(child), self.info(parent));
-            log::error!("failed to attach dependency: {err:?} [{}]", self.label);
+            log::error!("failed to attach dependency: {err:?} [{}]", self.label());
             return;
         }
 
@@ -984,7 +990,9 @@ impl World {
     }
 
     pub fn label(&self) -> Cow<'static, str> {
-        self.label.clone()
+        let label = self.label.take();
+        self.label.set(label.clone());
+        label
     }
 
     pub fn stat_deps(&self) -> String {
@@ -1227,10 +1235,10 @@ pub struct Commander {
 
 impl Commander {
     pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
-        self.queue_with(self.label.clone(), f);
+        self.queue_named(self.label.clone(), f);
     }
 
-    pub fn queue_with(
+    pub fn queue_named(
         &self,
         label: impl Into<Cow<'static, str>>,
         f: impl FnOnce(&mut World) + Send + 'static,
