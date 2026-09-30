@@ -128,6 +128,7 @@ impl Tabs {
         world.dependency(collider, handle);
 
         let side = world.insert(());
+        world.dependency(side, handle);
 
         world.insert(LuniFlex {
             parent: (

@@ -332,6 +332,9 @@ impl SliderLabel {
             world.trigger(label, val);
         });
 
+        world.dependency(label, this);
+        world.dependency(back, this);
+
         world.queue_trigger(this, SetSliderValue(slider.value));
     }
 }

@@ -87,7 +87,6 @@ impl BrushPreview {
             })),
             draw: None,
         });
-        world.dependency(control, this);
 
         let camera = self.camera;
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
@@ -130,6 +129,8 @@ impl BrushPreview {
             this.visible = visible;
             world.queue_trigger(instance.quad, SetWidgetVisible(visible));
         });
+        world.dependency(control, this);
+        world.dependency(instance, this);
     }
 }
 

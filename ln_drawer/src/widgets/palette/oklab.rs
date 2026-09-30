@@ -216,8 +216,6 @@ impl OklabBar {
             camera: self.camera,
         });
 
-        world.dependency(collider, this);
-
         world.observer(collider, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this).unwrap();
             let delta = event.position - I64Vec2::q32_from_i32(this.rect.origin);
@@ -280,6 +278,10 @@ impl OklabBar {
         });
 
         world.dependency(quad, this);
+        world.dependency(thumb, this);
+        world.dependency(thumb_light, this);
+        world.dependency(thumb_shadow, this);
+        world.dependency(collider, this);
     }
 }
 

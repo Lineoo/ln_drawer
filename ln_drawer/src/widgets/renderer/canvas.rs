@@ -92,7 +92,6 @@ impl Canvas {
                 extra.diagnosis.write(rpass, end);
             })),
         });
-        world.dependency(control, this);
 
         RenderControl::reorder(camera, self.visible.then_some(self.order), world, control);
 
@@ -145,6 +144,9 @@ impl Canvas {
             let render = world.single_fetch::<Render>().unwrap();
             *instance = this.instantiate(&render, &pipeline)
         });
+
+        world.dependency(instance, this);
+        world.dependency(control, this);
     }
 
     pub fn transparent(

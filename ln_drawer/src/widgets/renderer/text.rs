@@ -102,6 +102,9 @@ impl Text {
             this.set_text(&text[..]);
         });
 
+        world.dependency(canvas, this);
+        world.dependency(control, this);
+
         self.outdated = true;
     }
 

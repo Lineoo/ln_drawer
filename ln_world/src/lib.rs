@@ -964,6 +964,7 @@ impl World {
         let handle = self.enter(INITELEM, || {
             self.insert(Observer {
                 action: Box::new(action),
+                label: self.label(),
                 view: here,
                 target: target.untyped(),
             })
@@ -985,10 +986,17 @@ impl World {
             if let Ok(observers) = self.single_fetch::<Observers<E>>()
                 && let Some(observers) = observers.members.get(&target.untyped())
             {
+                let trg_label = self.label();
                 for mut observer in observers.iter().filter_map(|x| self.fetch_mut(*x).ok()) {
+                    // This will help user to see the trigger chain as well.
+                    // For example, `init [lnwindow] [brush]` means the event had crossed two observers
+                    // in order, which are separately added in `lnwindow` scope and `brush` scope, while
+                    // the event itself is triggered in `init` scope.
+                    self.named(format!("{} [{}]", trg_label, observer.label));
                     self.enter(observer.view, || (observer.action)(event, self));
                     cnt += 1;
                 }
+                self.named(trg_label);
             }
         });
 
@@ -1303,6 +1311,7 @@ struct Observers<E: Send + 'static> {
 #[expect(clippy::type_complexity)]
 struct Observer<E: Send + 'static> {
     action: Box<dyn FnMut(&E, &World) + Send>,
+    label: Cow<'static, str>,
     view: HandleAny,
     target: HandleAny,
 }
