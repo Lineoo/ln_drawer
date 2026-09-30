@@ -1,5 +1,6 @@
 use std::{
     any::{Any, TypeId, type_name},
+    borrow::Cow,
     cell::{Cell, RefCell},
     fmt,
     hash::{Hash, Hasher},
@@ -138,24 +139,26 @@ impl HandleGeneric for HandleAny {
 }
 
 /// Handle with debug information.
-#[derive(Clone, Copy)]
-pub struct HandleInfo(HandleAny, &'static str);
+#[derive(Clone)]
+pub struct HandleInfo {
+    handle: HandleAny,
+    class: &'static str,
+    trace: Cow<'static, str>,
+}
 
 impl fmt::Debug for HandleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Handle<{}>({}:{})", self.1, self.0.0, self.0.1)
+        write!(
+            f,
+            "Handle<{}>({}:{} [{}])",
+            self.class, self.handle.0, self.handle.1, self.trace
+        )
     }
 }
 
 impl fmt::Display for HandleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{}:{}", self.0.0, self.0.1)
-    }
-}
-
-impl<T: Element> From<Handle<T>> for HandleInfo {
-    fn from(value: Handle<T>) -> Self {
-        HandleInfo(value.untyped(), type_name::<T>())
+        self.handle.fmt(f)
     }
 }
 
@@ -174,6 +177,7 @@ pub struct World {
     inserted: RefCell<HashSet<HandleAny>>,
     removed: RefCell<HashSet<HandleAny>>,
 
+    label: Cow<'static, str>,
     location: Cell<HandleAny>,
     dependencies: RefCell<Dependencies>,
 
@@ -184,6 +188,7 @@ pub struct World {
 struct HandleIndex {
     tid: TypeId,
     view: HandleAny,
+    trace: Cow<'static, str>,
     elemrefs: Vec<HandleAny>,
     viewrefs: Vec<HandleAny>,
 }
@@ -262,6 +267,7 @@ impl World {
             view: INITELEM,
             elemrefs: Vec::new(),
             viewrefs: Vec::new(),
+            trace: "INITELEM".into(),
         };
 
         let mut indices = HashMap::new();
@@ -276,6 +282,7 @@ impl World {
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
+            label: "init".into(),
             location: Cell::new(INITELEM),
             dependencies: RefCell::default(),
             queue,
@@ -323,7 +330,9 @@ impl World {
 
         // delay execution
         let location = self.location.get();
-        self.queue(move |world| {
+        let trace = self.label.clone();
+        let label = format!("{} > insert {}", trace, handle);
+        self.queue_with(label, move |world| {
             // get type table ready
             let storage = world.storages.entry(TypeId::of::<T>()).or_insert_with(|| {
                 log::trace!("register elements: {}", type_name::<T>());
@@ -342,6 +351,7 @@ impl World {
                 HandleIndex {
                     tid: TypeId::of::<T>(),
                     view: location,
+                    trace,
                     elemrefs: Vec::new(),
                     viewrefs: Vec::new(),
                 },
@@ -425,7 +435,8 @@ impl World {
         cache.retain(|(t, _), _| *t != tid);
         drop(cache);
 
-        self.queue(move |world| {
+        let label = format!("remove {}", handle);
+        self.queue_with(label, move |world| {
             // update typetable
             world.indices.remove(&handle.untyped());
 
@@ -552,15 +563,25 @@ impl World {
 
     // commands //
 
-    pub fn commander(&self) -> Commander {
+    pub fn commander(&self, label: impl Into<Cow<'static, str>>) -> Commander {
         Commander {
+            label: label.into(),
             location: self.location.get(),
             inner: self.commander.clone(),
         }
     }
 
     pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
+        self.queue_with(self.label.clone(), f);
+    }
+
+    pub fn queue_with(
+        &self,
+        label: impl Into<Cow<'static, str>>,
+        f: impl FnOnce(&mut World) + Send + 'static,
+    ) {
         let result = self.commander.send(WorldCommand {
+            label: label.into(),
             location: self.location.get(),
             action: Box::new(f),
         });
@@ -573,9 +594,11 @@ impl World {
         let origin = self.location.get();
         let buf = self.queue.try_iter().collect::<Vec<_>>();
         for cmd in buf {
+            let orig = std::mem::replace(&mut self.label, cmd.label);
             self.location.set(cmd.location);
             (cmd.action)(self);
             self.flush();
+            self.label = orig;
         }
         self.location.set(origin);
     }
@@ -900,7 +923,7 @@ impl World {
     pub fn trigger<E: Send + 'static>(&self, target: impl HandleGeneric, event: &E) -> usize {
         if let Err(e) = self.validate(target) {
             // TODO silent return
-            log::warn!("{e}");
+            log::warn!("{e} [{}]", self.label);
             return 0;
         }
 
@@ -934,7 +957,7 @@ impl World {
             && !matches!(e, WorldError::JustInserted(_) | WorldError::Invisible(..))
         {
             let err = WorldError::ToxicDependency(self.info(child), self.info(parent));
-            log::error!("failed to attach dependency: {err:?}");
+            log::error!("failed to attach dependency: {err:?} [{}]", self.label);
             return;
         }
 
@@ -949,14 +972,19 @@ impl World {
     }
 
     pub fn info(&self, value: impl HandleGeneric) -> HandleInfo {
-        HandleInfo(
-            value.untyped(),
-            self.indices
-                .get(&value.untyped())
+        let index = self.indices.get(&value.untyped());
+        HandleInfo {
+            handle: value.untyped(),
+            class: index
                 .and_then(|x| self.storages.get(&x.tid))
                 .map(|x| x.name())
                 .unwrap_or("invalid"),
-        )
+            trace: index.map(|x| x.trace.clone()).unwrap_or("invalid".into()),
+        }
+    }
+
+    pub fn label(&self) -> Cow<'static, str> {
+        self.label.clone()
     }
 
     pub fn stat_deps(&self) -> String {
@@ -1184,6 +1212,7 @@ impl Element for () {}
 // Commander //
 
 struct WorldCommand {
+    label: Cow<'static, str>,
     location: HandleAny,
     action: Box<dyn FnOnce(&mut World) + Send>,
 }
@@ -1191,17 +1220,26 @@ struct WorldCommand {
 /// A flexible command access to world.
 #[derive(Debug, Clone)]
 pub struct Commander {
+    label: Cow<'static, str>,
     location: HandleAny,
     inner: Sender<WorldCommand>,
 }
 
 impl Commander {
     pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
+        self.queue_with(self.label.clone(), f);
+    }
+
+    pub fn queue_with(
+        &self,
+        label: impl Into<Cow<'static, str>>,
+        f: impl FnOnce(&mut World) + Send + 'static,
+    ) {
         let result = self.inner.send(WorldCommand {
+            label: label.into(),
             location: self.location,
             action: Box::new(f),
         });
-
         if let Err(err) = result {
             log::error!("error in world queue ops: {err}");
         }

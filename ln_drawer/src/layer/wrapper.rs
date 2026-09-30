@@ -353,7 +353,7 @@ impl LayerPage {
     }
 
     pub fn pick_color(&mut self, cursor: I64Vec2, world: &World) {
-        let cmd = world.commander();
+        let cmd = world.commander("async_color_pick");
         self.draw
             .layer
             .pick_color(&self.main, cursor.q32_floor(), move |color| {

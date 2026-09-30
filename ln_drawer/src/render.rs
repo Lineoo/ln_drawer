@@ -451,7 +451,7 @@ impl Render {
         if render.timestamp_poll && !timestamp_mapped {
             let mapper = render.timestamp_mapper.clone();
             let mapped = render.timestamp_mapped.clone();
-            let cmd = world.commander();
+            let cmd = world.commander("render_timestamp_poll");
             let target = world.single::<Render>().unwrap();
             let slots = std::mem::take(&mut diagnosis.slots);
             let period = render.queue.get_timestamp_period() as u64;
@@ -501,7 +501,7 @@ impl Render {
                     }
 
                     cmd.queue(move |world| {
-                        world.queue_trigger(target, output);
+                        world.trigger(target, &output);
                     });
                 });
         }
