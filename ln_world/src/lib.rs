@@ -66,7 +66,13 @@ impl<T: Element> Hash for Handle<T> {
 
 impl<T: Element> fmt::Debug for Handle<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Handle<{}>({}v{})", type_name::<T>(), self.0, self.1)
+        write!(
+            f,
+            "Handle<{}>({}v{})",
+            shorter_type(type_name::<T>()),
+            self.0,
+            self.1
+        )
     }
 }
 
@@ -151,7 +157,10 @@ impl fmt::Debug for HandleInfo {
         write!(
             f,
             "Handle<{}>({}v{})\x1b[2m[{}]\x1b[0m",
-            self.class, self.handle.0, self.handle.1, self.trace
+            shorter_type(self.class),
+            self.handle.0,
+            self.handle.1,
+            self.trace
         )
     }
 }
@@ -160,6 +169,53 @@ impl fmt::Display for HandleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.handle.fmt(f)
     }
+}
+
+fn shorter_type(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut cnt = 0;
+    let mut pattern = String::new();
+
+    for ch in s.chars() {
+        if ch == ':' {
+            cnt += 1;
+            if cnt == 2 {
+                pattern.clear();
+                cnt = 0;
+            }
+        } else {
+            if cnt == 1 {
+                if !pattern.is_empty() {
+                    out.push_str(&pattern);
+                    pattern.clear();
+                }
+                out.push(':');
+                cnt = 0;
+            }
+
+            if ch.is_alphanumeric() || ch == '_' || ch == '#' {
+                pattern.push(ch);
+            } else {
+                if !pattern.is_empty() {
+                    out.push_str(&pattern);
+                    pattern.clear();
+                }
+                out.push(ch);
+            }
+        }
+    }
+
+    if cnt == 1 {
+        if !pattern.is_empty() {
+            out.push_str(&pattern);
+            pattern.clear();
+        }
+        out.push(':');
+    } else if !pattern.is_empty() {
+        out.push_str(&pattern);
+    }
+
+    out
 }
 
 // World Management //
