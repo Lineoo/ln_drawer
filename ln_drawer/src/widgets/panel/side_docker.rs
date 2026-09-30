@@ -84,10 +84,6 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
         hovering: false,
         camera,
     });
-
-    color_picker_panel(world, color_picker, camera);
-    brush_panel(world, brush_menu, camera);
-
     // Only one popup may be open at a time, otherwise the overlapping panels cross.
     world.observer(brush_menu, move |&ButtonSelected(selected), world| {
         if selected {
@@ -267,5 +263,12 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
     world.dependency(pipette, side_panel);
     world.dependency(luni, side_panel);
 
+    world.named("color_picker_panel");
+    color_picker_panel(world, color_picker, camera);
+
+    world.named("brush_panel");
+    brush_panel(world, brush_menu, camera);
+
+    world.named("layer_init");
     world.queue_trigger(layer, BrushConfigurationChanged);
 }

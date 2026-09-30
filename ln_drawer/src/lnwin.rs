@@ -217,12 +217,13 @@ impl Element for Lnwindow {
             drop(camera);
             world.flush();
 
+            world.named("page");
             world.insert(LayerPage::new(world));
             world.insert(LayerInput::default());
             world.flush();
 
+            world.named("side_docker");
             side_docker(world, ui_camera);
-
             world.flush();
         });
     }

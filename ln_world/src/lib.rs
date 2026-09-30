@@ -150,7 +150,7 @@ impl fmt::Debug for HandleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Handle<{}>({}v{} [{}])",
+            "Handle<{}>({}v{})\x1b[2m[{}]\x1b[0m",
             self.class, self.handle.0, self.handle.1, self.trace
         )
     }
@@ -331,8 +331,10 @@ impl World {
         // delay execution
         let location = self.location.get();
         let trace = self.label();
-        let label = format!("{} > insert {}", trace, handle);
-        self.queue_named(label, move |world| {
+        let label = format!("{} {:?}", trace, handle);
+        self.queue(move |world| {
+            world.named(label);
+
             // get type table ready
             let storage = world.storages.entry(TypeId::of::<T>()).or_insert_with(|| {
                 log::trace!("register elements: {}", type_name::<T>());
@@ -435,8 +437,7 @@ impl World {
         cache.retain(|(t, _), _| *t != tid);
         drop(cache);
 
-        let label = format!("{} > remove {}", self.label(), handle);
-        self.queue_named(label, move |world| {
+        self.queue(move |world| {
             // update typetable
             world.indices.remove(&handle.untyped());
 
@@ -576,18 +577,8 @@ impl World {
     }
 
     pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
-        let label = self.label.take();
-        self.label.set(label.clone());
-        self.queue_named(label, f);
-    }
-
-    pub fn queue_named(
-        &self,
-        label: impl Into<Cow<'static, str>>,
-        f: impl FnOnce(&mut World) + Send + 'static,
-    ) {
         let result = self.commander.send(WorldCommand {
-            label: label.into(),
+            label: self.label(),
             location: self.location.get(),
             action: Box::new(f),
         });
@@ -1235,16 +1226,8 @@ pub struct Commander {
 
 impl Commander {
     pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
-        self.queue_named(self.label.clone(), f);
-    }
-
-    pub fn queue_named(
-        &self,
-        label: impl Into<Cow<'static, str>>,
-        f: impl FnOnce(&mut World) + Send + 'static,
-    ) {
         let result = self.inner.send(WorldCommand {
-            label: label.into(),
+            label: self.label.clone(),
             location: self.location,
             action: Box::new(f),
         });
