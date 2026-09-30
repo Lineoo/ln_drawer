@@ -26,7 +26,7 @@ use crate::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
         },
-        tabs::{SetTabsActive, Tabs},
+        tabs::Tabs,
     },
 };
 
@@ -47,7 +47,6 @@ pub fn color_picker_panel(
         enabled: true,
         camera,
     });
-    world.dependency(toggle_button_color_icon, toggle_button);
 
     world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
         let transform = Transform {
@@ -153,29 +152,6 @@ pub fn color_picker_panel(
         camera,
     });
 
-    world.dependency(tab_palette_hsl, toggle_button);
-    world.dependency(tab_palette_oklch, toggle_button);
-    world.dependency(tab_layer_selection, toggle_button);
-    world.dependency(tab_debug, toggle_button);
-    world.dependency(tabs, toggle_button);
-
-    world.queue(move |world| palette_hsl(world, tab_palette_hsl, cam_palette_hsl));
-    world.queue(move |world| {
-        palette_oklab(world, tab_palette_oklch, cam_palette_oklch, toggle_button)
-    });
-    world.queue(move |world| {
-        super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection)
-    });
-    world.queue(move |world| super::debug_panel::debug_panel(world, tab_debug, cam_debug));
-
-    // initialize layout
-    world.queue(move |world| {
-        let this = world.fetch(tabs).unwrap();
-        world.queue_trigger(tabs, SetWidgetRectangle(this.rect));
-        world.queue_trigger(tabs, SetWidgetVisible(this.visible));
-        world.queue_trigger(tabs, SetTabsActive(this.active));
-    });
-
     let layer = world.single::<LayerPage>().unwrap();
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let layer = world.fetch(layer).unwrap();
@@ -200,13 +176,29 @@ pub fn color_picker_panel(
     world.observer(toggle_button, move |&SetButtonSelected(selected), world| {
         world.queue_trigger(tabs, SetWidgetVisible(selected));
     });
+
+    world.dependency(toggle_button_color_icon, toggle_button);
+    world.dependency(tab_palette_hsl, toggle_button);
+    world.dependency(tab_palette_oklch, toggle_button);
+    world.dependency(tab_layer_selection, toggle_button);
+    world.dependency(tab_debug, toggle_button);
+    world.dependency(tabs, toggle_button);
+
+    world.named("palette_hsl");
+    palette_hsl(world, tab_palette_hsl, cam_palette_hsl);
+    world.named("palette_oklab");
+    palette_oklab(world, tab_palette_oklch, cam_palette_oklch, toggle_button);
+    world.named("layer_selection");
+    super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection);
+    world.named("debug_panel");
+    super::debug_panel::debug_panel(world, tab_debug, cam_debug);
 }
 
 fn palette_hsl(world: &World, bg: Handle<Container>, camera: Handle<Camera>) {
     let panel = world.insert(HslPanel {
         rect: Rectangle::default(),
         color: Hsla::new(RgbHue::from_degrees(0.3), 0.5, 0.5, 1.0),
-        enabled: true,
+        enabled: false,
         camera,
     });
 
@@ -243,13 +235,13 @@ fn palette_oklab(
     let polar = world.insert(OklabPolar {
         rect: Rectangle::default(),
         color: Oklab::default(),
-        enabled: true,
+        enabled: false,
         camera,
     });
     let bar = world.insert(OklabBar {
         rect: Rectangle::default(),
         color: Oklab::default(),
-        enabled: true,
+        enabled: false,
         camera,
     });
 

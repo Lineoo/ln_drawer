@@ -118,6 +118,7 @@ impl BrushPreview {
                     camera,
                     view,
                 });
+                world.dependency(quad, this.handle());
                 instance.quad = quad;
             }
             this.rect = rect;

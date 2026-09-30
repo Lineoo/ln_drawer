@@ -66,7 +66,7 @@ impl OklabPolar {
             color: self.color.into_color(),
             radius: THUMB_RADIUS,
             width: 0.0,
-            enabled: true,
+            enabled: self.enabled,
             camera: self.camera,
         });
 
@@ -76,7 +76,7 @@ impl OklabPolar {
             color: Srgba::new(1.0, 1.0, 1.0, 1.0),
             radius: THUMB_RADIUS + 1.0,
             width: 0.0,
-            enabled: true,
+            enabled: self.enabled,
             camera: self.camera,
         });
 
@@ -86,7 +86,7 @@ impl OklabPolar {
             color: Srgba::new(0.0, 0.0, 0.0, 1.0),
             radius: THUMB_RADIUS + 2.0,
             width: 0.0,
-            enabled: true,
+            enabled: self.enabled,
             camera: self.camera,
         });
 
@@ -185,7 +185,7 @@ impl OklabBar {
             color: self.color.into_color(),
             radius: THUMB_RADIUS,
             width: 0.0,
-            enabled: true,
+            enabled: self.enabled,
             camera: self.camera,
         });
 
@@ -195,7 +195,7 @@ impl OklabBar {
             color: Srgba::new(1.0, 1.0, 1.0, 1.0),
             radius: THUMB_RADIUS + 1.0,
             width: 0.0,
-            enabled: true,
+            enabled: self.enabled,
             camera: self.camera,
         });
 
@@ -205,7 +205,7 @@ impl OklabBar {
             color: Srgba::new(0.0, 0.0, 0.0, 1.0),
             radius: THUMB_RADIUS + 2.0,
             width: 0.0,
-            enabled: true,
+            enabled: self.enabled,
             camera: self.camera,
         });
 

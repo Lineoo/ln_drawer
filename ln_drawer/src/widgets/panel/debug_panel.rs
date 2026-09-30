@@ -119,6 +119,11 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>, camera: Handle<Cam
         source: submenu.untyped(),
         target: compact.untyped(),
     });
+
+    world.dependency(debug_text, submenu);
+    world.dependency(render_profile, submenu);
+    world.dependency(compass, submenu);
+    world.dependency(compact, submenu);
 }
 
 pub fn docker_button(
@@ -143,7 +148,7 @@ pub fn docker_button(
                 bytes: Arc::new(image::DynamicImage::from(svg_render(image_bytes, 1.0))),
             }),
             selected: false,
-            visible: true,
+            visible: false,
             hovering: false,
             camera,
         })

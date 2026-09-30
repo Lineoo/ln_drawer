@@ -56,7 +56,7 @@ impl Tabs {
             color: theme.secondary_color,
             radius: roundness,
             width: 0.0,
-            enabled: true,
+            enabled: self.visible,
             camera: self.camera,
         });
 
@@ -66,7 +66,7 @@ impl Tabs {
             color: theme.shadow_color,
             radius: roundness,
             width: shadow_blur,
-            enabled: true,
+            enabled: self.visible,
             camera: self.camera,
         });
 
@@ -75,7 +75,7 @@ impl Tabs {
 
         let mut children = Vec::new();
         let mut luni_children = Vec::new();
-        for (entry, _) in &self.tabs {
+        for (i, (entry, _)) in self.tabs.iter().enumerate() {
             let button = world.insert(ToggleButton {
                 rect: self.rect,
                 theme: ToggleButtonTheme {
@@ -85,8 +85,8 @@ impl Tabs {
                     selected_color: theme.blank_color,
                 },
                 image: Some(entry.clone()),
-                selected: false,
-                visible: true,
+                selected: i == self.active,
+                visible: self.visible,
                 hovering: false,
                 camera: self.camera,
             });
@@ -99,7 +99,7 @@ impl Tabs {
                 color: theme.theme_color,
                 radius: 0.0,
                 width: 0.0,
-                enabled: false,
+                enabled: self.visible,
                 camera: self.camera,
             });
             world.dependency(edge, handle);
@@ -114,7 +114,7 @@ impl Tabs {
                 target: edge.untyped(),
             });
 
-            children.push(TabButton { button, edge }); 
+            children.push(TabButton { button, edge });
 
             luni_children.push((button.untyped(), LuniChild::default()));
         }

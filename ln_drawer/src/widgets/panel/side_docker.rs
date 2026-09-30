@@ -84,6 +84,7 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
         hovering: false,
         camera,
     });
+
     // Only one popup may be open at a time, otherwise the overlapping panels cross.
     world.observer(brush_menu, move |&ButtonSelected(selected), world| {
         if selected {

@@ -30,6 +30,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<C
         attrs: Attrs::new(),
         color: theme.symbolic_color,
         camera: Some(camera),
+        visible: false,
         ..Default::default()
     });
 
@@ -39,7 +40,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<C
         color: theme.secondary_color,
         radius: 0.0,
         width: 0.0,
-        enabled: true,
+        enabled: false,
         camera,
     });
 
@@ -52,6 +53,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<C
         attrs: Attrs::new(),
         color: theme.symbolic_color,
         camera: Some(camera),
+        visible: false,
         ..Default::default()
     });
 
@@ -102,7 +104,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<C
             },
             image: None,
             selected: i == 0,
-            visible: true,
+            visible: false,
             hovering: false,
             camera,
         });
@@ -119,6 +121,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<C
             attrs: Attrs::new(),
             color: theme.symbolic_color,
             camera: Some(camera),
+            visible: false,
             ..Default::default()
         });
 
@@ -183,5 +186,13 @@ pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<C
             source: layer0_button.untyped(),
             target: layer0_name.untyped(),
         });
+
+        world.dependency(layer0_button, panel);
+        world.dependency(layer0_name, panel);
     }
+
+    world.dependency(doc_label, panel);
+    world.dependency(doc_label_div, panel);
+    world.dependency(layer_label, panel);
+    world.dependency(layers_node, panel);
 }
