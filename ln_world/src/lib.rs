@@ -66,13 +66,13 @@ impl<T: Element> Hash for Handle<T> {
 
 impl<T: Element> fmt::Debug for Handle<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Handle<{}>({}:{})", type_name::<T>(), self.0, self.1)
+        write!(f, "Handle<{}>({}v{})", type_name::<T>(), self.0, self.1)
     }
 }
 
 impl<T: Element> fmt::Display for Handle<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{}:{}", self.0, self.1)
+        write!(f, "#{}v{}", self.0, self.1)
     }
 }
 
@@ -81,13 +81,13 @@ pub struct HandleAny(u32, u32);
 
 impl fmt::Debug for HandleAny {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Handle({}:{})", self.0, self.1)
+        write!(f, "Handle({}v{})", self.0, self.1)
     }
 }
 
 impl fmt::Display for HandleAny {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{}:{}", self.0, self.1)
+        write!(f, "#{}v{}", self.0, self.1)
     }
 }
 
@@ -150,7 +150,7 @@ impl fmt::Debug for HandleInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Handle<{}>({}:{} [{}])",
+            "Handle<{}>({}v{} [{}])",
             self.class, self.handle.0, self.handle.1, self.trace
         )
     }
