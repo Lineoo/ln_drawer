@@ -2,6 +2,7 @@ use crate::measures::Rectangle;
 
 pub mod brush_preview;
 pub mod button;
+pub mod common;
 pub mod container;
 pub mod echo;
 pub mod palette;

@@ -28,11 +28,12 @@ use crate::{
     },
     widgets::{
         WidgetRectangle,
+        common::WidgetCommon,
         palette::{
             hsl::HslPanelMaterial,
             oklab::{OklabBarMaterial, OklabPolarMaterial},
         },
-        panel::side_docker::side_docker,
+        panel::{desktop_ui::DesktopUi, side_docker::side_docker},
         renderer::{
             canvas::CanvasPipeline, quad::QuadMeshPipeline, rrect::RRectMaterial,
             text::TextPipeline, texture_quad::TextureQuadPipeline, vtor::VtorPipeline,
@@ -224,6 +225,15 @@ impl Element for Lnwindow {
 
             world.named("side_docker");
             side_docker(world, ui_camera);
+            world.flush();
+
+            world.named("desktop_ui");
+            world.insert(DesktopUi {
+                common: WidgetCommon {
+                    camera: ui_camera,
+                    visible: true,
+                },
+            });
             world.flush();
         });
     }

@@ -1,27 +1,24 @@
 use std::sync::Arc;
 
 use glam::{IVec2, UVec2};
-use ln_world::{Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
 use crate::{
-    layer::{
-        input::LayerInput,
-        wrapper::{BrushConfigurationChanged, LayerPage},
-    },
+    layer::wrapper::{BrushConfigurationChanged, LayerPage},
     layout::transform::{Transform, TransformValue},
     measures::Rectangle,
     render::camera::Camera,
-    theme::Theme,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
+        common::WidgetCommon,
         container::{Container, ContainerDescriptor},
+        echo::Echo,
         palette::{
             hsl::{ColorHsla, HslPanel, SetColorHsla},
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
-        panel::debug_panel::docker_button,
         renderer::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
@@ -187,7 +184,7 @@ pub fn color_picker_panel(
     world.named("palette_hsl");
     palette_hsl(world, tab_palette_hsl, cam_palette_hsl);
     world.named("palette_oklab");
-    palette_oklab(world, tab_palette_oklch, cam_palette_oklch, toggle_button);
+    palette_oklab(world, tab_palette_oklch, cam_palette_oklch);
     world.named("layer_selection");
     super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection);
     world.named("debug_panel");
@@ -226,12 +223,7 @@ fn palette_hsl(world: &World, bg: Handle<Container>, camera: Handle<Camera>) {
     });
 }
 
-fn palette_oklab(
-    world: &World,
-    bg: Handle<Container>,
-    camera: Handle<Camera>,
-    toggle_button: Handle<ToggleButton>,
-) {
+fn palette_oklab(world: &World, bg: Handle<Container>, camera: Handle<Camera>) {
     let polar = world.insert(OklabPolar {
         rect: Rectangle::default(),
         color: Oklab::default(),
@@ -245,13 +237,8 @@ fn palette_oklab(
         camera,
     });
 
-    let theme = world.single_fetch::<Theme>().unwrap();
-    let docker_button = docker_button(world, &theme, camera);
-    let pick = docker_button(include_bytes!("../../../res/interface/pipette.svg"));
-
     world.dependency(polar, bg);
     world.dependency(bar, bg);
-    world.dependency(pick, bg);
 
     world.insert(Transform {
         value: TransformValue::anchor(
@@ -268,20 +255,6 @@ fn palette_oklab(
         ),
         source: bg.untyped(),
         target: bar.untyped(),
-    });
-    world.insert(Transform {
-        value: TransformValue::anchor(
-            (1.0, 1.0),
-            Rectangle::new_half(IVec2::new(-30, -30), UVec2::new(10, 10)),
-        ),
-        source: bg.untyped(),
-        target: pick.untyped(),
-    });
-
-    world.observer(pick, move |&ButtonSelected(_), world| {
-        let mut input = world.single_fetch_mut::<LayerInput>().unwrap();
-        input.pick = true;
-        world.queue_trigger(toggle_button, ButtonSelected(false));
     });
 
     let layer = world.single::<LayerPage>().unwrap();
@@ -301,4 +274,65 @@ fn palette_oklab(
         world.trigger(polar, &SetColorOklab(oklab));
         world.trigger(bar, &SetColorOklab(oklab));
     });
+}
+
+pub struct LayerOklabPalette {
+    pub common: WidgetCommon,
+}
+
+impl Element for LayerOklabPalette {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let polar = world.insert(OklabPolar {
+            rect: Rectangle::default(),
+            color: Oklab::default(),
+            enabled: self.common.visible,
+            camera: self.common.camera,
+        });
+        let bar = world.insert(OklabBar {
+            rect: Rectangle::default(),
+            color: Oklab::default(),
+            enabled: self.common.visible,
+            camera: self.common.camera,
+        });
+
+        world.dependency(polar, this);
+        world.dependency(bar, this);
+
+        world.insert(Transform {
+            value: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(IVec2::new(-30, 0), UVec2::splat(100)),
+            ),
+            source: this.untyped(),
+            target: polar.untyped(),
+        });
+        world.insert(Transform {
+            value: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(IVec2::new(110, 0), UVec2::new(20, 100)),
+            ),
+            source: this.untyped(),
+            target: bar.untyped(),
+        });
+
+        let layer = world.single::<LayerPage>().unwrap();
+        world.observer(polar, move |&ColorOklab(color), world| {
+            let mut layer = world.fetch_mut(layer).unwrap();
+            layer.set_color(color.into_color());
+            world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+        });
+        world.observer(bar, move |&ColorOklab(color), world| {
+            let mut layer = world.fetch_mut(layer).unwrap();
+            layer.set_color(color.into_color());
+            world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+        });
+        world.observer(layer, move |&BrushConfigurationChanged, world| {
+            let layer = world.fetch(layer).unwrap();
+            let oklab = layer.color().into_color();
+            world.trigger(polar, &SetColorOklab(oklab));
+            world.trigger(bar, &SetColorOklab(oklab));
+        });
+
+        Echo::new(world, this).widget_rectangle().widget_visible();
+    }
 }
