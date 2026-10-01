@@ -23,7 +23,7 @@ use crate::{
             UICamera,
         },
     },
-    save::{Autosave, AutosaveScheduler, SaveDatabase},
+    save::{Autosave, AutosaveScheduler, Save},
     theme::Theme,
     tools::{
         collider::ToolColliderDispatcher, focus::FocusTool, mouse::MouseTool, pointer::PointerTool,
@@ -102,8 +102,8 @@ impl ApplicationHandler for Lnwin {
 
         // Record the allocator state on disk so that if the process is killed
         // while backgrounded, the next open can skip the full checksum scan.
-        if let Ok(db) = self.world.try_single_fetch::<SaveDatabase>()
-            && let Err(err) = SaveDatabase::begin_clean_write(&db.0).and_then(|x| Ok(x.commit()?))
+        if let Ok(save) = self.world.try_single_fetch::<Save>()
+            && let Err(err) = Save::begin_clean_write(&save.db).and_then(|x| Ok(x.commit()?))
         {
             log::warn!("failed to finalize database before suspend: {err}");
         }
@@ -136,7 +136,7 @@ impl Element for Lnwindow {
             world.insert(pollster::block_on(Render::new(&lnwindow)));
             drop(lnwindow);
 
-            SaveDatabase::init(world);
+            Save::init(world);
             world.insert(AutosaveScheduler {
                 autosave_duration: Duration::from_secs(180),
             });

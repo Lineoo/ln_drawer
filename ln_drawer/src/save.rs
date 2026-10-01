@@ -43,7 +43,9 @@ const TABLE_METADATA: TableDefinition<u32, &[u8]> = TableDefinition::new("metada
 /// | `stroke_chunk_meta`   | `((u64, ChunkKey), u32)`  | `&[u8]`   |
 /// | `camera`              | ` &str`                   | `&[u8]`   |
 #[derive(Clone)]
-pub struct SaveDatabase(pub Arc<Database>);
+pub struct Save {
+    pub db: Arc<Database>,
+}
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, bytemuck::AnyBitPattern, bytemuck::NoUninit)]
@@ -57,24 +59,24 @@ pub struct SaveMetadata1 {
     pub compact_on_startup: bool,
 }
 
-impl SaveDatabase {
+impl Save {
     pub fn init(world: &World) {
-        let Err(WorldError::SingletonNoSuch(_)) = world.try_single::<SaveDatabase>() else {
+        let Err(WorldError::SingletonNoSuch(_)) = world.try_single::<Save>() else {
             log::warn!("duplicated database initialization!");
             return;
         };
 
         let file = get_file_path(world, "world.lndb");
         std::fs::create_dir_all(&file.parent().unwrap()).unwrap();
-        SaveDatabase::create_backup(&file, "old", true, BACKUP_SLOT);
+        Save::create_backup(&file, "old", true, BACKUP_SLOT);
         if let Ok(mut db) = Database::open(&file) {
-            SaveDatabase::touch(&mut db, &file).unwrap();
-            world.insert(SaveDatabase(Arc::new(db)));
+            Save::touch(&mut db, &file).unwrap();
+            world.insert(Save { db: Arc::new(db) });
             log::debug!("database loaded");
         } else {
             let db = Database::create(&file).unwrap();
-            SaveDatabase::fresh(&db).unwrap();
-            world.insert(SaveDatabase(Arc::new(db)));
+            Save::fresh(&db).unwrap();
+            world.insert(Save { db: Arc::new(db) });
             log::debug!("database created");
         }
     }
@@ -132,7 +134,7 @@ impl SaveDatabase {
             return Ok(());
         }
 
-        SaveDatabase::create_backup(file, "migration", false, 256);
+        Save::create_backup(file, "migration", false, 256);
         log::info!("start migration from {from_format} to {FORMAT_VERSION}");
 
         for migrate_format in from_format..FORMAT_VERSION {
@@ -282,8 +284,8 @@ impl Autosave {
     pub fn autosave_all(world: &World) {
         let start = Instant::now();
 
-        let db = world.single_fetch::<SaveDatabase>();
-        let write = SaveDatabase::begin_clean_write(&db.0).unwrap();
+        let save = world.single_fetch::<Save>();
+        let write = Save::begin_clean_write(&save.db).unwrap();
         world.foreach_fetch_mut::<Autosave>(|mut task| {
             (task.0)(world, &write);
         });
@@ -326,4 +328,4 @@ impl Element for AutosaveScheduler {
     }
 }
 
-impl Element for SaveDatabase {}
+impl Element for Save {}

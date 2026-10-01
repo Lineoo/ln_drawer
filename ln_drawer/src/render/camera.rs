@@ -11,7 +11,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{Render, RenderControl, RenderExtra},
-    save::{Autosave, SaveDatabase},
+    save::{Autosave, Save},
 };
 
 const TABLE_CAMERA: TableDefinition<&str, &[u8]> = TableDefinition::new("camera");
@@ -258,10 +258,10 @@ impl Camera {
     }
 
     fn try_build_from_save(world: &World, name: &str) -> Result<Handle<Camera>, redb::Error> {
-        let db = world.single_fetch::<SaveDatabase>();
-        Camera::build_default_if_empty(&db, name)?;
+        let save = world.single_fetch::<Save>();
+        Camera::build_default_if_empty(&save, name)?;
 
-        let read = db.0.begin_read()?;
+        let read = save.db.begin_read()?;
         let table = read.open_table(TABLE_CAMERA)?;
         let bytes = table.get(name)?.unwrap();
         let camera_desc = postcard::from_bytes::<RootCameraDescriptor>(bytes.value()).unwrap();
@@ -279,8 +279,8 @@ impl Camera {
         Ok(camera)
     }
 
-    fn build_default_if_empty(db: &SaveDatabase, name: &str) -> Result<(), redb::Error> {
-        let write = db.0.begin_write()?;
+    fn build_default_if_empty(save: &Save, name: &str) -> Result<(), redb::Error> {
+        let write = save.db.begin_write()?;
         {
             let mut table = write.open_table(TABLE_CAMERA)?;
             if table.get(name)?.is_some() {

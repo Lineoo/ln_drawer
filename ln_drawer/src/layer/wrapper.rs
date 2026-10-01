@@ -29,7 +29,7 @@ use crate::{
         Render, RenderControl, RenderExtra, RenderInformation,
         camera::{CameraBind, CameraUpdated, MainCamera, UICamera},
     },
-    save::{Autosave, SaveDatabase},
+    save::{Autosave, Save},
     widgets::renderer::rrect::RRect,
 };
 
@@ -104,14 +104,14 @@ impl LayerPage {
         let draw = DrawPipeline::new(layer.clone());
         let traveler = Traveler::new(layer.clone());
 
-        let database = world.single_fetch::<SaveDatabase>().clone();
+        let database = world.single_fetch::<Save>().clone();
         let window = world.single_fetch::<Lnwindow>().window.clone();
 
         let (input_tx, input_rx) = channel();
         let (output_tx, output_rx) = channel();
 
         let stream_config = StreamConfig {
-            database,
+            save: database,
             device: render.device.clone(),
             queue: render.queue.clone(),
             page: 0,
