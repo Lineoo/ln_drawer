@@ -422,15 +422,19 @@ impl World {
             drop(cache);
 
             // when_insert
-            let mut element = world.fetch_mut(handle).unwrap();
+            let mut element = world.fetch_mut(handle);
             element.when_insert(world, handle);
         });
 
         handle
     }
 
+    pub fn remove(&self, handle: impl HandleGeneric) -> usize {
+        self.unwrap(self.try_remove(handle))
+    }
+
     /// Cell-mode removal cannot access the element immediately so we can't return the owned value of removed element.
-    pub fn remove(&self, handle: impl HandleGeneric) -> Result<usize, WorldError> {
+    pub fn try_remove(&self, handle: impl HandleGeneric) -> Result<usize, WorldError> {
         let handle = handle.untyped();
 
         self.available_mut(handle)?;
@@ -475,7 +479,7 @@ impl World {
             drop(dependencies);
 
             let child_view = self.indices.get(&child).unwrap().view;
-            cnt += self.enter(child_view, || self.remove(child))?;
+            cnt += self.enter(child_view, || self.try_remove(child))?;
 
             // TODO proper ops
             // cnt += self.remove(child)?;
@@ -527,25 +531,25 @@ impl World {
         self.enter(view, || self.insert(element))
     }
 
-    pub fn enter_single_fetch<T: Element>(
+    pub fn enter_try_single_fetch<T: Element>(
         &self,
         view: impl HandleGeneric,
     ) -> Result<Ref<'_, T>, WorldError> {
-        self.enter(view, || self.single_fetch())
+        self.enter(view, || self.try_single_fetch())
     }
 
-    pub fn enter_single_fetch_mut<T: Element>(
+    pub fn enter_try_single_fetch_mut<T: Element>(
         &self,
         view: impl HandleGeneric,
     ) -> Result<RefMut<'_, T>, WorldError> {
-        self.enter(view, || self.single_fetch_mut())
+        self.enter(view, || self.try_single_fetch_mut())
     }
 
-    pub fn enter_single_remove<T: Element>(
+    pub fn enter_try_single_remove<T: Element>(
         &self,
         view: impl HandleGeneric,
     ) -> Result<usize, WorldError> {
-        self.enter(view, || self.single_remove::<T>())
+        self.enter(view, || self.try_single_remove::<T>())
     }
 
     pub fn enter_queue(
@@ -568,7 +572,7 @@ impl World {
                 continue;
             }
 
-            cnt += self.remove(handle).unwrap();
+            cnt += self.remove(handle);
         }
 
         cnt
@@ -782,12 +786,16 @@ impl World {
 
     // fetch //
 
-    pub fn fetch<T: Element>(&self, handle: Handle<T>) -> Result<Ref<'_, T>, WorldError> {
-        self.validate(handle)?;
-        self.fetch_unchecked(handle)
+    pub fn fetch<T: Element>(&self, handle: Handle<T>) -> Ref<'_, T> {
+        self.unwrap(self.try_fetch(handle))
     }
 
-    fn fetch_unchecked<T: Element>(&self, handle: Handle<T>) -> Result<Ref<'_, T>, WorldError> {
+    pub fn try_fetch<T: Element>(&self, handle: Handle<T>) -> Result<Ref<'_, T>, WorldError> {
+        self.validate(handle)?;
+        self.try_fetch_unchecked(handle)
+    }
+
+    fn try_fetch_unchecked<T: Element>(&self, handle: Handle<T>) -> Result<Ref<'_, T>, WorldError> {
         self.available_unchecked(handle)?;
 
         let mut occupied = self.occupied.borrow_mut();
@@ -810,12 +818,19 @@ impl World {
         })
     }
 
-    pub fn fetch_mut<T: Element>(&self, handle: Handle<T>) -> Result<RefMut<'_, T>, WorldError> {
-        self.validate(handle)?;
-        self.fetch_mut_unchecked(handle)
+    pub fn fetch_mut<T: Element>(&self, handle: Handle<T>) -> RefMut<'_, T> {
+        self.unwrap(self.try_fetch_mut(handle))
     }
 
-    fn fetch_mut_unchecked<T: Element>(
+    pub fn try_fetch_mut<T: Element>(
+        &self,
+        handle: Handle<T>,
+    ) -> Result<RefMut<'_, T>, WorldError> {
+        self.validate(handle)?;
+        self.try_fetch_mut_unchecked(handle)
+    }
+
+    fn try_fetch_mut_unchecked<T: Element>(
         &self,
         handle: Handle<T>,
     ) -> Result<RefMut<'_, T>, WorldError> {
@@ -845,7 +860,23 @@ impl World {
 
     // singleton //
 
-    pub fn single<T: Element>(&self) -> Result<Handle<T>, WorldError> {
+    pub fn single<T: Element>(&self) -> Handle<T> {
+        self.unwrap(self.try_single())
+    }
+
+    pub fn single_fetch<T: Element>(&self) -> Ref<'_, T> {
+        self.unwrap(self.try_single_fetch())
+    }
+
+    pub fn single_fetch_mut<T: Element>(&self) -> RefMut<'_, T> {
+        self.unwrap(self.try_single_fetch_mut())
+    }
+
+    pub fn single_remove<T: Element>(&self) -> usize {
+        self.unwrap(self.try_single_remove::<T>())
+    }
+
+    pub fn try_single<T: Element>(&self) -> Result<Handle<T>, WorldError> {
         let tid = TypeId::of::<T>();
         let here = self.location.get();
 
@@ -897,16 +928,16 @@ impl World {
         Ok(ret.cast())
     }
 
-    pub fn single_fetch<T: Element>(&self) -> Result<Ref<'_, T>, WorldError> {
-        self.fetch_unchecked(self.single::<T>()?)
+    pub fn try_single_fetch<T: Element>(&self) -> Result<Ref<'_, T>, WorldError> {
+        self.try_fetch_unchecked(self.try_single::<T>()?)
     }
 
-    pub fn single_fetch_mut<T: Element>(&self) -> Result<RefMut<'_, T>, WorldError> {
-        self.fetch_mut_unchecked(self.single::<T>()?)
+    pub fn try_single_fetch_mut<T: Element>(&self) -> Result<RefMut<'_, T>, WorldError> {
+        self.try_fetch_mut_unchecked(self.try_single::<T>()?)
     }
 
-    pub fn single_remove<T: Element>(&self) -> Result<usize, WorldError> {
-        self.remove(self.single::<T>()?)
+    pub fn try_single_remove<T: Element>(&self) -> Result<usize, WorldError> {
+        self.try_remove(self.try_single::<T>()?)
     }
 
     // iteration //
@@ -946,11 +977,11 @@ impl World {
     }
 
     pub fn foreach_fetch<T: Element>(&self, mut f: impl FnMut(Ref<T>)) {
-        self.foreach::<T>(|handle| f(self.fetch_unchecked(handle).unwrap()))
+        self.foreach::<T>(|handle| f(self.try_fetch_unchecked(handle).unwrap()))
     }
 
     pub fn foreach_fetch_mut<T: Element>(&self, mut f: impl FnMut(RefMut<T>)) {
-        self.foreach::<T>(|handle| f(self.fetch_mut_unchecked(handle).unwrap()))
+        self.foreach::<T>(|handle| f(self.try_fetch_mut_unchecked(handle).unwrap()))
     }
 
     // observer & trigger //
@@ -983,11 +1014,11 @@ impl World {
 
         let mut cnt = 0;
         self.enter(INITELEM, || {
-            if let Ok(observers) = self.single_fetch::<Observers<E>>()
+            if let Ok(observers) = self.try_single_fetch::<Observers<E>>()
                 && let Some(observers) = observers.members.get(&target.untyped())
             {
                 let trg_label = self.label();
-                for mut observer in observers.iter().filter_map(|x| self.fetch_mut(*x).ok()) {
+                for mut observer in observers.iter().filter_map(|x| self.try_fetch_mut(*x).ok()) {
                     // This will help user to see the trigger chain as well.
                     // For example, `init [lnwindow] [brush]` means the event had crossed two observers
                     // in order, which are separately added in `lnwindow` scope and `brush` scope, while
@@ -1078,6 +1109,20 @@ impl World {
         }
 
         return result;
+    }
+
+    fn unwrap<R>(&self, val: Result<R, WorldError>) -> R {
+        match val {
+            Ok(ret) => return ret,
+            Err(err) => {
+                panic!(
+                    "world panic: {} [{} (in view {})]",
+                    err,
+                    self.label(),
+                    self.here()
+                )
+            }
+        }
     }
 }
 
@@ -1320,7 +1365,7 @@ impl<E: Send + 'static> Element for Observers<E> {}
 
 impl<E: Send + 'static> Element for Observer<E> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        match world.single_fetch_mut::<Observers<E>>() {
+        match world.try_single_fetch_mut::<Observers<E>>() {
             Ok(mut observers) => {
                 let observers = observers.members.entry(self.target).or_default();
                 observers.push(this);
@@ -1385,9 +1430,9 @@ mod test {
 
         world.flush();
 
-        let mut tester1 = world.fetch_mut(tester1h).unwrap();
-        let mut tester2 = world.fetch_mut(tester2h).unwrap();
-        let tester3 = world.fetch(tester3h).unwrap();
+        let mut tester1 = world.fetch_mut(tester1h);
+        let mut tester2 = world.fetch_mut(tester2h);
+        let tester3 = world.fetch(tester3h);
 
         tester2.0 = 0xCC02;
         tester1.0 = tester3.0;
@@ -1396,11 +1441,11 @@ mod test {
         drop(tester2);
         drop(tester3);
 
-        world.remove(tester3h).unwrap();
+        world.remove(tester3h);
 
         assert!(world.validate(tester3h).is_err());
-        assert_eq!(world.fetch(tester1h).unwrap().0, 0xFB03);
-        assert_eq!(world.fetch(tester2h).unwrap().0, 0xCC02);
+        assert_eq!(world.fetch(tester1h).0, 0xFB03);
+        assert_eq!(world.fetch(tester2h).0, 0xCC02);
     }
 
     #[test]
@@ -1410,8 +1455,8 @@ mod test {
         let tester1h = world.insert(TestInserter(0xFC01));
         world.flush();
 
-        let _inserter1 = world.fetch_mut(tester1h).unwrap();
-        let _inserter2 = world.fetch(tester1h).unwrap();
+        let _inserter1 = world.fetch_mut(tester1h);
+        let _inserter2 = world.fetch(tester1h);
     }
 
     #[test]
@@ -1429,7 +1474,7 @@ mod test {
         world.dependency(right, left);
         world.dependency(right_now, right);
 
-        world.remove(left).unwrap();
+        world.remove(left);
 
         world.flush();
 
@@ -1454,7 +1499,7 @@ mod test {
         world.dependency(child2, parent);
         world.dependency(child3, parent);
 
-        world.remove(parent).unwrap();
+        world.remove(parent);
 
         world.flush();
 
@@ -1481,8 +1526,8 @@ mod test {
         world.dependency(child, parent3);
         world.dependency(child3, parent3);
 
-        world.remove(parent1).unwrap();
-        world.remove(parent3).unwrap();
+        world.remove(parent1);
+        world.remove(parent3);
 
         world.flush();
 
@@ -1507,7 +1552,7 @@ mod test {
         world.dependency(child, parent);
         world.dependency(child, grand_parent);
 
-        world.remove(grand_parent).unwrap();
+        world.remove(grand_parent);
 
         world.flush();
 
@@ -1553,7 +1598,7 @@ mod test {
 
         world.flush();
 
-        world.enter(view1, || world.remove(node1).unwrap());
+        world.enter(view1, || world.remove(node1));
 
         world.flush();
 
@@ -1639,12 +1684,12 @@ mod test {
         world.flush();
 
         world.observer(left, move |TestEvent(i), world| {
-            let mut this = world.fetch_mut(left).unwrap();
+            let mut this = world.fetch_mut(left);
             this.0 += i;
         });
 
         world.observer(left, move |TestEvent(i), world| {
-            let mut this = world.fetch_mut(right).unwrap();
+            let mut this = world.fetch_mut(right);
             this.0 += i;
         });
 
@@ -1652,8 +1697,8 @@ mod test {
 
         world.trigger(left, &TestEvent(10));
 
-        assert_eq!(&*world.fetch(left).unwrap(), &TestInserter(11));
-        assert_eq!(&*world.fetch(right).unwrap(), &TestGoodInserter(12));
+        assert_eq!(&*world.fetch(left), &TestInserter(11));
+        assert_eq!(&*world.fetch(right), &TestGoodInserter(12));
     }
 
     #[test]
@@ -1663,7 +1708,7 @@ mod test {
         let old = world.insert(TestInserter(1));
         world.flush();
 
-        world.remove(old).unwrap();
+        world.remove(old);
         world.flush();
 
         assert!(world.validate(old).is_err());
@@ -1675,6 +1720,6 @@ mod test {
         assert_eq!(new.1, old.1 + 1);
         assert!(world.validate(old).is_err());
         assert!(world.validate(new).is_ok());
-        assert_eq!(&*world.fetch(new).unwrap(), &TestInserter(2));
+        assert_eq!(&*world.fetch(new), &TestInserter(2));
     }
 }

@@ -136,10 +136,10 @@ impl PointerTool {
 
 impl Element for PointerTool {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
+        let lnwindow = world.single::<Lnwindow>();
         world.observer(lnwindow, move |event: &WindowEvent, world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            let mut this = world.fetch_mut(this);
+            let lnwindow = world.single_fetch::<Lnwindow>();
 
             match event {
                 WindowEvent::PointerMoved {
@@ -288,9 +288,9 @@ impl Element for PointerTool {
             }
         });
 
-        let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
+        let dispatcher = world.single::<ToolColliderDispatcher>();
         let ob = world.observer(dispatcher, |&ToolColliderChanged(collider), world| {
-            let mut tool = world.single_fetch_mut::<PointerTool>().unwrap();
+            let mut tool = world.single_fetch_mut::<PointerTool>();
             if let Some(pointer) = &mut tool.pointer
                 && pointer.hovering.is_some_and(|x| x.handle == collider)
             {
@@ -396,7 +396,7 @@ impl Pointer {
     fn recalculate_hovering(&mut self, world: &World) {
         if self.pressed.is_some() {
             let hovering = self.hovering.unwrap();
-            let camera = world.fetch(hovering.camera).unwrap();
+            let camera = world.fetch(hovering.camera);
             let position = camera.screen_to_world(self.data.screen);
 
             self.update_hovering(

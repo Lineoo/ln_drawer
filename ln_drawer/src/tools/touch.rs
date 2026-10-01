@@ -50,7 +50,7 @@ pub struct MultiTouchData {
 
 impl MultiTouchTool {
     fn listening_window_event(&mut self, world: &World, _this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
+        let lnwindow = world.single::<Lnwindow>();
         world.observer(lnwindow, |event, world| match event {
             WindowEvent::PointerButton {
                 state: ElementState::Pressed,
@@ -62,7 +62,7 @@ impl MultiTouchTool {
                     return;
                 };
 
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let lnwindow = world.single_fetch::<Lnwindow>();
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
@@ -80,7 +80,7 @@ impl MultiTouchTool {
                 };
 
                 let target = hit.collider;
-                let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
+                let tool = &mut *world.single_fetch_mut::<MultiTouchTool>();
                 let replaced = tool.touches.insert(kind, target);
                 if let Some(replaced_target) = replaced {
                     // Edge-cases: duplicated TouchId is pressed
@@ -132,7 +132,7 @@ impl MultiTouchTool {
             } => {
                 let kind = PointerKind::from(source.clone());
 
-                let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
+                let tool = &mut *world.single_fetch_mut::<MultiTouchTool>();
                 let Some(&target) = tool.touches.get(&kind) else {
                     return;
                 };
@@ -140,11 +140,11 @@ impl MultiTouchTool {
                 let list = tool.groups.get_mut(&target).unwrap();
                 let touch = list.iter_mut().find(|x| x.pointer == kind).unwrap();
 
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let lnwindow = world.single_fetch::<Lnwindow>();
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
-                let camera = world.fetch(touch.camera).unwrap();
+                let camera = world.fetch(touch.camera);
                 let position = camera.screen_to_world(screen);
 
                 *touch = MultiTouch {
@@ -177,7 +177,7 @@ impl MultiTouchTool {
                     return;
                 };
 
-                let tool = &mut *world.single_fetch_mut::<MultiTouchTool>().unwrap();
+                let tool = &mut *world.single_fetch_mut::<MultiTouchTool>();
                 let Some(&target) = tool.touches.get(&kind) else {
                     return;
                 };
@@ -189,11 +189,11 @@ impl MultiTouchTool {
                     .find(|(_, touch)| touch.pointer == kind)
                     .unwrap();
 
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let lnwindow = world.single_fetch::<Lnwindow>();
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
-                let camera = world.fetch(touch.camera).unwrap();
+                let camera = world.fetch(touch.camera);
                 let position = camera.screen_to_world(screen);
 
                 let active = MultiTouch {

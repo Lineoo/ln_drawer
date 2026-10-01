@@ -16,7 +16,7 @@ pub struct DesktopUi {
 
 impl Element for DesktopUi {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
+        let lnwindow = world.single::<Lnwindow>();
 
         let back = world.insert(Panel {
             rect: Rectangle::default(),

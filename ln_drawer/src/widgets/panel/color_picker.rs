@@ -149,9 +149,9 @@ pub fn color_picker_panel(
         camera,
     });
 
-    let layer = world.single::<LayerPage>().unwrap();
+    let layer = world.single::<LayerPage>();
     world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let layer = world.fetch(layer).unwrap();
+        let layer = world.fetch(layer);
         let color = layer.color();
         world.queue_trigger(toggle_button_color_icon, SetRRectColor(color.into_color()));
         // trigger palette_hsl SetPaletteHsl
@@ -210,14 +210,14 @@ fn palette_hsl(world: &World, bg: Handle<Container>, camera: Handle<Camera>) {
         target: panel.untyped(),
     });
 
-    let layer = world.single::<LayerPage>().unwrap();
+    let layer = world.single::<LayerPage>();
     world.observer(panel, move |&ColorHsla(color), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         layer.set_color(color.into_color());
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
     world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let layer = world.fetch(layer).unwrap();
+        let layer = world.fetch(layer);
         let hsla = layer.color().into_color();
         world.trigger(panel, &SetColorHsla(hsla));
     });
@@ -257,19 +257,19 @@ fn palette_oklab(world: &World, bg: Handle<Container>, camera: Handle<Camera>) {
         target: bar.untyped(),
     });
 
-    let layer = world.single::<LayerPage>().unwrap();
+    let layer = world.single::<LayerPage>();
     world.observer(polar, move |&ColorOklab(color), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         layer.set_color(color.into_color());
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
     world.observer(bar, move |&ColorOklab(color), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         layer.set_color(color.into_color());
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
     world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let layer = world.fetch(layer).unwrap();
+        let layer = world.fetch(layer);
         let oklab = layer.color().into_color();
         world.trigger(polar, &SetColorOklab(oklab));
         world.trigger(bar, &SetColorOklab(oklab));
@@ -315,19 +315,19 @@ impl Element for LayerOklabPalette {
             target: bar.untyped(),
         });
 
-        let layer = world.single::<LayerPage>().unwrap();
+        let layer = world.single::<LayerPage>();
         world.observer(polar, move |&ColorOklab(color), world| {
-            let mut layer = world.fetch_mut(layer).unwrap();
+            let mut layer = world.fetch_mut(layer);
             layer.set_color(color.into_color());
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
         });
         world.observer(bar, move |&ColorOklab(color), world| {
-            let mut layer = world.fetch_mut(layer).unwrap();
+            let mut layer = world.fetch_mut(layer);
             layer.set_color(color.into_color());
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
         });
         world.observer(layer, move |&BrushConfigurationChanged, world| {
-            let layer = world.fetch(layer).unwrap();
+            let layer = world.fetch(layer);
             let oklab = layer.color().into_color();
             world.trigger(polar, &SetColorOklab(oklab));
             world.trigger(bar, &SetColorOklab(oklab));

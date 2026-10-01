@@ -37,8 +37,8 @@ pub struct Vtor {
 impl Vtor {
     #[expect(unused)]
     pub fn init(&self, world: &World, this: Handle<Self>) {
-        let render = world.single_fetch::<Render>().unwrap();
-        let pipeline = world.single_fetch::<VtorPipeline>().unwrap();
+        let render = world.single_fetch::<Render>();
+        let pipeline = world.single_fetch::<VtorPipeline>();
         let device = &render.device;
 
         let mut builder = Path::svg_builder();
@@ -125,7 +125,7 @@ impl Vtor {
             camera: Some(camera),
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
-                let pipeline = world.single_fetch::<VtorPipeline>().unwrap();
+                let pipeline = world.single_fetch::<VtorPipeline>();
                 let camera = extra.camera;
 
                 let key = format!("main > vtor");
@@ -146,8 +146,8 @@ impl Vtor {
         RenderControl::reorder(camera, self.visible.then_some(self.order), world, control);
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let render = world.single_fetch::<Render>().unwrap();
+            let mut this = world.fetch_mut(this);
+            let render = world.single_fetch::<Render>();
             this.rect = rect;
             let bytes = bytemuck::bytes_of(&rect);
             render.queue.write_buffer(&rect_uniform, 0, bytes);
@@ -155,7 +155,7 @@ impl Vtor {
         });
 
         world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.visible = visible;
             RenderControl::reorder(camera, visible.then_some(this.order), world, control);
             RenderControl::request_redraw(world);
@@ -165,8 +165,8 @@ impl Vtor {
 
 impl VtorPipeline {
     pub fn from_world(world: &World) -> Self {
-        let render = world.single_fetch::<Render>().unwrap();
-        let camera = world.single_fetch::<CameraBind>().unwrap();
+        let render = world.single_fetch::<Render>();
+        let camera = world.single_fetch::<CameraBind>();
         let device = &render.device;
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {

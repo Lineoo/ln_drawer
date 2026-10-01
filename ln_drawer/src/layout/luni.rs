@@ -320,7 +320,7 @@ impl LuniChild {
 impl Element for LuniFlex {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let ob = world.observer(self.parent.0, move |&WidgetRectangle(rect), world| {
-            let this = world.fetch(this).unwrap();
+            let this = world.fetch(this);
             let targets = this.compute(rect);
 
             for (child, target) in targets {

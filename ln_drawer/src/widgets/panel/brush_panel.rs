@@ -43,7 +43,7 @@ const ITEM_GAP: i32 = 6;
 const LIST_PADDING: i32 = 8;
 
 pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: Handle<Camera>) {
-    let count = world.single_fetch::<LayerPage>().unwrap().brushes.len();
+    let count = world.single_fetch::<LayerPage>().brushes.len();
 
     let content_height =
         count as i32 * ITEM_HEIGHT + (count as i32 - 1).max(0) * ITEM_GAP + LIST_PADDING * 2;
@@ -96,8 +96,8 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
         camera,
     });
 
-    let wrapper = world.single::<LayerPage>().unwrap();
-    let wrapper_instance = world.fetch(wrapper).unwrap();
+    let wrapper = world.single::<LayerPage>();
+    let wrapper_instance = world.fetch(wrapper);
     let generator = world.insert(BrushPreviewGenerator::new(
         wrapper_instance.draw.layer.clone(),
     ));
@@ -131,7 +131,7 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
 
     // initialize layout
     world.queue(move |world| {
-        let this = world.fetch(tabs).unwrap();
+        let this = world.fetch(tabs);
         world.queue_trigger(tabs, SetWidgetRectangle(this.rect));
         world.queue_trigger(tabs, SetWidgetVisible(this.visible));
         world.queue_trigger(tabs, SetTabsActive(this.active));
@@ -144,10 +144,10 @@ fn brush_list(
     generator: Handle<BrushPreviewGenerator>,
     camera: Handle<Camera>,
 ) {
-    let theme = world.single_fetch::<Theme>().unwrap();
-    let wrapper = world.single::<LayerPage>().unwrap();
+    let theme = world.single_fetch::<Theme>();
+    let wrapper = world.single::<LayerPage>();
     let (count, active, labels) = {
-        let layer = world.single_fetch::<LayerPage>().unwrap();
+        let layer = world.single_fetch::<LayerPage>();
         let labels = layer
             .brushes
             .iter()
@@ -230,7 +230,7 @@ fn brush_list(
             target: label.untyped(),
         });
 
-        let wrapper_instance = world.fetch(wrapper).unwrap();
+        let wrapper_instance = world.fetch(wrapper);
         let preview = world.insert(BrushPreview {
             rect: Rectangle::default(),
             generator,
@@ -269,7 +269,7 @@ fn brush_list(
         world.dependency(preview, container);
 
         world.observer(button, move |&ButtonClick, world| {
-            let mut wrapper = world.fetch_mut(wrapper).unwrap();
+            let mut wrapper = world.fetch_mut(wrapper);
             if wrapper.active_brush == i {
                 return;
             }
@@ -278,7 +278,7 @@ fn brush_list(
         });
 
         world.observer(wrapper, move |&BrushConfigurationChanged, world| {
-            let active = world.fetch(wrapper).unwrap().active_brush;
+            let active = world.fetch(wrapper).active_brush;
             let selected = i == active;
             world.queue_trigger(button, SetButtonSelected(selected));
             world.queue_trigger(

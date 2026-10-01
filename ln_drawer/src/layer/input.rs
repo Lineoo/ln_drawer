@@ -57,7 +57,7 @@ enum LayerInputState {
 
 impl LayerInput {
     fn init(&mut self, world: &World, this: Handle<Self>) {
-        let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
+        let main_camera = world.single_fetch::<MainCamera>().0;
         let collider = world.insert(ToolCollider::fullscreen(-100, main_camera));
         world.dependency(collider, this);
 
@@ -66,9 +66,9 @@ impl LayerInput {
                 return;
             }
 
-            let ui_camera = world.single_fetch::<UICamera>().unwrap().0;
-            let camera = world.fetch(ui_camera).unwrap();
-            let wrapper = world.single_fetch::<LayerPage>().unwrap();
+            let ui_camera = world.single_fetch::<UICamera>().0;
+            let camera = world.fetch(ui_camera);
+            let wrapper = world.single_fetch::<LayerPage>();
             let brush_rect = Rectangle::new_half(
                 camera.screen_to_world(event.pointer.screen).q32_round(),
                 UVec2::new(1, 1),
@@ -93,7 +93,7 @@ impl LayerInput {
             }
         });
 
-        let lnwindow = world.single::<Lnwindow>().unwrap();
+        let lnwindow = world.single::<Lnwindow>();
         world.observer(lnwindow, move |event: &WindowEvent, world| {
             let WindowEvent::KeyboardInput { event, .. } = event else {
                 return;
@@ -103,15 +103,15 @@ impl LayerInput {
                 return;
             }
 
-            let mut this = world.fetch_mut(this).unwrap();
-            let lnwindow = world.fetch(lnwindow).unwrap();
+            let mut this = world.fetch_mut(this);
+            let lnwindow = world.fetch(lnwindow);
             let ctrl = this.ctrl;
             let shift = this.shift;
             let press = event.state == ElementState::Pressed;
 
             match KeyCode::from(event.physical_key) {
                 KeyCode::KeyZ if press && ctrl => {
-                    let mut page = world.single_fetch_mut::<LayerPage>().unwrap();
+                    let mut page = world.single_fetch_mut::<LayerPage>();
 
                     if !shift {
                         page.undo();
@@ -122,7 +122,7 @@ impl LayerInput {
                     lnwindow.window.request_redraw();
                 }
                 KeyCode::KeyE if press => {
-                    let mut page = world.single_fetch_mut::<LayerPage>().unwrap();
+                    let mut page = world.single_fetch_mut::<LayerPage>();
                     let active = page.active_mut();
                     let is_erase = active.toggle(BrushParamKey::Erase).unwrap_or_default();
                     active.set_toggle(BrushParamKey::Erase, !is_erase);
@@ -147,9 +147,9 @@ impl LayerInput {
         });
 
         world.observer(collider, move |event: &PointerScroll, world| {
-            let main = world.single_fetch::<MainCamera>().unwrap().0;
-            let utils = world.single_fetch::<MainCameraUtils>().unwrap().0;
-            let mut camera_utils = world.fetch_mut(utils).unwrap();
+            let main = world.single_fetch::<MainCamera>().0;
+            let utils = world.single_fetch::<MainCameraUtils>().0;
+            let mut camera_utils = world.fetch_mut(utils);
 
             let zoom_delta = -event.delta.y;
             camera_utils.anchor_cursor(DVec2::ZERO);
@@ -167,12 +167,12 @@ impl LayerInput {
 
         let mut state = LayerInputState::None;
         world.observer(collider, move |event: &MultiTouchGroup, world| {
-            let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
-            let utils = world.single_fetch::<MainCameraUtils>().unwrap().0;
-            let mut this = world.fetch_mut(this).unwrap();
-            let lnwindow = world.fetch(lnwindow).unwrap();
-            let camera_utils = &mut *world.fetch_mut(utils).unwrap();
-            let page = &mut *world.single_fetch_mut::<LayerPage>().unwrap();
+            let main_camera = world.single_fetch::<MainCamera>().0;
+            let utils = world.single_fetch::<MainCameraUtils>().0;
+            let mut this = world.fetch_mut(this);
+            let lnwindow = world.fetch(lnwindow);
+            let camera_utils = &mut *world.fetch_mut(utils);
+            let page = &mut *world.single_fetch_mut::<LayerPage>();
             let center = touch_center(event);
             let pinch = touch_pinch(event);
 
@@ -304,7 +304,7 @@ impl LayerInput {
 
                     page.draw_active(draw);
 
-                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                    let lnwindow = world.single_fetch::<Lnwindow>();
                     lnwindow.window.request_redraw();
 
                     LayerInputState::Paint {
@@ -344,7 +344,7 @@ impl LayerInput {
 
                     page.draw_active(draw);
 
-                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                    let lnwindow = world.single_fetch::<Lnwindow>();
                     lnwindow.window.request_redraw();
 
                     if event.active.screen.distance(start_position) > DRAG_DISTANCE {
@@ -371,7 +371,7 @@ impl LayerInput {
 
                     page.draw_active(draw);
 
-                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                    let lnwindow = world.single_fetch::<Lnwindow>();
                     lnwindow.window.request_redraw();
 
                     LayerInputState::PaintNoErase
@@ -384,7 +384,7 @@ impl LayerInput {
 
                     page.draw_erase(draw);
 
-                    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                    let lnwindow = world.single_fetch::<Lnwindow>();
                     lnwindow.window.request_redraw();
 
                     LayerInputState::PaintErase
@@ -413,10 +413,7 @@ impl LayerInput {
                 (LayerInputState::PickColor, MultiTouchStatus::Release) => {
                     page.pick_color(event.active.position, world);
                     this.pick = false;
-                    world.queue_trigger(
-                        world.single::<LayerPage>().unwrap(),
-                        BrushConfigurationChanged,
-                    );
+                    world.queue_trigger(world.single::<LayerPage>(), BrushConfigurationChanged);
                     LayerInputState::None
                 }
 

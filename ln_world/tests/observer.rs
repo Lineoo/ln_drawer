@@ -27,7 +27,7 @@ fn cross_view_observer_removed_with_target() {
     let observer = world.enter(ui, || world.observer(target, move |_: &Tick, _: &World| {}));
     world.flush();
 
-    world.enter(main, || world.remove(target).unwrap());
+    world.enter(main, || world.remove(target));
     world.flush();
 
     assert!(world.validate(observer).is_err());

@@ -46,7 +46,7 @@ pub struct BrushPreviewGenerator {
 
 impl BrushPreview {
     fn init(&self, world: &World, this: Handle<Self>) {
-        let generator_instance = world.fetch(self.generator).unwrap();
+        let generator_instance = world.fetch(self.generator);
         let preview_canvas = generator_instance
             .layer
             .create_standalone(Rectangle::new_extend(
@@ -73,13 +73,13 @@ impl BrushPreview {
         let control = world.insert(RenderControl {
             camera: None,
             prepare: Some(Box::new(move |world| {
-                let mut this = world.fetch_mut(this).unwrap();
-                let instance = world.fetch(instance).unwrap();
+                let mut this = world.fetch_mut(this);
+                let instance = world.fetch(instance);
                 if let Some(brush) = &this.brush
                     && this.outdated
                     && this.visible
                 {
-                    let mut generator = world.fetch_mut(this.generator).unwrap();
+                    let mut generator = world.fetch_mut(this.generator);
                     generator.paint(&instance.preview_canvas, brush.as_ref());
                     this.outdated = false;
                 }
@@ -90,14 +90,14 @@ impl BrushPreview {
 
         let camera = self.camera;
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let mut instance = world.fetch_mut(instance).unwrap();
+            let mut this = world.fetch_mut(this);
+            let mut instance = world.fetch_mut(instance);
             if rect.extend != instance.preview_canvas.rect.extend {
-                let quad = world.fetch(instance.quad).unwrap();
+                let quad = world.fetch(instance.quad);
                 let old_visible = quad.visible;
                 drop(quad);
-                world.remove(instance.quad).unwrap();
-                let wrapper = world.single_fetch::<LayerPage>().unwrap();
+                world.remove(instance.quad);
+                let wrapper = world.single_fetch::<LayerPage>();
                 instance.preview_canvas =
                     wrapper.draw.layer.create_standalone(Rectangle::new_extend(
                         0,
@@ -125,8 +125,8 @@ impl BrushPreview {
             world.queue_trigger(instance.quad, SetWidgetRectangle(rect));
         });
         world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let instance = world.fetch(instance).unwrap();
+            let mut this = world.fetch_mut(this);
+            let instance = world.fetch(instance);
             this.visible = visible;
             world.queue_trigger(instance.quad, SetWidgetVisible(visible));
         });

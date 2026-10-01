@@ -33,7 +33,7 @@ pub fn new_panel_settings(
     camera: Handle<Camera>,
 ) {
     // Live brush preview //
-    let layer = world.single_fetch::<LayerPage>().unwrap();
+    let layer = world.single_fetch::<LayerPage>();
     let preview = world.insert(BrushPreview {
         rect: Rectangle::default(),
         generator,
@@ -44,8 +44,8 @@ pub fn new_panel_settings(
     });
 
     let ob = world.observer(layer.handle(), move |&BrushConfigurationChanged, world| {
-        let mut preview = world.fetch_mut(preview).unwrap();
-        let layer_instance = world.single_fetch::<LayerPage>().unwrap();
+        let mut preview = world.fetch_mut(preview);
+        let layer_instance = world.single_fetch::<LayerPage>();
         preview.outdated = true;
         preview.brush = Some(layer_instance.active().dup());
     });
@@ -112,7 +112,7 @@ pub fn new_panel_settings(
 }
 
 pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Camera>) {
-    let theme = world.single_fetch::<Theme>().unwrap();
+    let theme = world.single_fetch::<Theme>();
 
     let option_label =
         |_: &World, text: String, frame: HandleAny| self::option_label(world, text, frame, camera);
@@ -138,7 +138,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
         target: label1.untyped(),
     });
 
-    let layer = world.single::<LayerPage>().unwrap();
+    let layer = world.single::<LayerPage>();
 
     // Flow //
     let flow_frame = world.insert(EchoWidget);
@@ -146,7 +146,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
     let flow_desc = option_desc(world, String::new(), flow_frame.untyped());
     let (flow_slider, flow_slider_label) = option_slider(world, flow_frame.untyped());
     world.observer(flow_slider, move |&SliderValue(value), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         match layer.active_mut().param_mut(BrushParamKey::Flow) {
             Some(BrushValueMut::Scalar(param)) => param.scale = value,
             Some(BrushValueMut::Vec4(flow)) => flow.w = value,
@@ -161,7 +161,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
     let sigma_desc = option_desc(world, String::new(), sigma_frame.untyped());
     let (sigma_slider, sigma_slider_label) = option_slider(world, sigma_frame.untyped());
     world.observer(sigma_slider, move |&SliderValue(value), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Sigma) {
             param.scale = value * 3.0;
         }
@@ -174,7 +174,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
     let softness_desc = option_desc(world, String::new(), softness_frame.untyped());
     let (softness_slider, softness_slider_label) = option_slider(world, softness_frame.untyped());
     world.observer(softness_slider, move |&SliderValue(value), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Softness) {
             param.scale = 1. - value;
         }
@@ -187,7 +187,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
     let spacing_desc = option_desc(world, String::new(), spacing_frame.untyped());
     let (spacing_slider, spacing_slider_label) = option_slider(world, spacing_frame.untyped());
     world.observer(spacing_slider, move |&SliderValue(value), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Spacing) {
             param.scale = value;
         }
@@ -201,7 +201,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
     let (color_ratio_slider, color_ratio_slider_label) =
         option_slider(world, color_ratio_frame.untyped());
     world.observer(color_ratio_slider, move |&SliderValue(value), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::ColorRatio) {
             param.scale = value;
         }
@@ -215,7 +215,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
     let (sample_radius_slider, sample_radius_slider_label) =
         option_slider(world, sample_radius_frame.untyped());
     world.observer(sample_radius_slider, move |&SliderValue(value), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::SampleRadius) {
             param.scale = value;
         }
@@ -229,7 +229,7 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
     let (sample_rate_slider, sample_rate_slider_label) =
         option_slider(world, sample_rate_frame.untyped());
     world.observer(sample_rate_slider, move |&SliderValue(value), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::SampleRate) {
             param.scale = value;
         }
@@ -247,22 +247,22 @@ pub fn panel_settings(world: &World, panel: Handle<Container>, camera: Handle<Ca
     world.dependency(sample_rate_frame, panel);
 
     let ob = world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let layer = world.fetch(layer).unwrap();
+        let layer = world.fetch(layer);
 
-        let mut flow_label = world.fetch_mut(flow_label).unwrap();
-        let mut flow_desc = world.fetch_mut(flow_desc).unwrap();
-        let mut sigma_label = world.fetch_mut(sigma_label).unwrap();
-        let mut sigma_desc = world.fetch_mut(sigma_desc).unwrap();
-        let mut softness_label = world.fetch_mut(softness_label).unwrap();
-        let mut softness_desc = world.fetch_mut(softness_desc).unwrap();
-        let mut spacing_label = world.fetch_mut(spacing_label).unwrap();
-        let mut spacing_desc = world.fetch_mut(spacing_desc).unwrap();
-        let mut color_ratio_label = world.fetch_mut(color_ratio_label).unwrap();
-        let mut color_ratio_desc = world.fetch_mut(color_ratio_desc).unwrap();
-        let mut sample_radius_label = world.fetch_mut(sample_radius_label).unwrap();
-        let mut sample_radius_desc = world.fetch_mut(sample_radius_desc).unwrap();
-        let mut sample_rate_label = world.fetch_mut(sample_rate_label).unwrap();
-        let mut sample_rate_desc = world.fetch_mut(sample_rate_desc).unwrap();
+        let mut flow_label = world.fetch_mut(flow_label);
+        let mut flow_desc = world.fetch_mut(flow_desc);
+        let mut sigma_label = world.fetch_mut(sigma_label);
+        let mut sigma_desc = world.fetch_mut(sigma_desc);
+        let mut softness_label = world.fetch_mut(softness_label);
+        let mut softness_desc = world.fetch_mut(softness_desc);
+        let mut spacing_label = world.fetch_mut(spacing_label);
+        let mut spacing_desc = world.fetch_mut(spacing_desc);
+        let mut color_ratio_label = world.fetch_mut(color_ratio_label);
+        let mut color_ratio_desc = world.fetch_mut(color_ratio_desc);
+        let mut sample_radius_label = world.fetch_mut(sample_radius_label);
+        let mut sample_radius_desc = world.fetch_mut(sample_radius_desc);
+        let mut sample_rate_label = world.fetch_mut(sample_rate_label);
+        let mut sample_rate_desc = world.fetch_mut(sample_rate_desc);
 
         // Flow //
         flow_label.set_text(tr("settings.brush.flow.label"));
@@ -435,7 +435,7 @@ fn option_label(
     frame: HandleAny,
     camera: Handle<Camera>,
 ) -> Handle<Text> {
-    let theme = world.single_fetch::<Theme>().unwrap();
+    let theme = world.single_fetch::<Theme>();
 
     let label = world.insert(Text {
         text,
@@ -482,7 +482,7 @@ fn option_desc(
     frame: HandleAny,
     camera: Handle<Camera>,
 ) -> Handle<Text> {
-    let theme = world.single_fetch::<Theme>().unwrap();
+    let theme = world.single_fetch::<Theme>();
 
     let label = world.insert(Text {
         text,

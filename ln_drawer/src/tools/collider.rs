@@ -54,8 +54,8 @@ impl ToolCollider {
     /// so content scrolled or clipped outside a container no longer reacts to the pointer, and
     /// hidden containers hide their whole subtree.
     pub fn intersect(world: &World, screen: DVec2) -> Option<ToolHit> {
-        let main = world.single_fetch::<MainCamera>().ok()?.0;
-        let ui = world.single_fetch::<UICamera>().ok()?.0;
+        let main = world.try_single_fetch::<MainCamera>().ok()?.0;
+        let ui = world.try_single_fetch::<UICamera>().ok()?.0;
 
         let mut visited = Vec::new();
         // UI draws over the painting canvas, so test it first.
@@ -70,7 +70,7 @@ impl ToolCollider {
 
     fn attach_layout(&mut self, world: &World, this: Handle<Self>) {
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.rect = rect;
         });
     }
@@ -131,7 +131,7 @@ fn hit_camera(
     }
     visited.push(camera);
 
-    let camera_ref = world.fetch(camera).ok()?;
+    let camera_ref = world.try_fetch(camera).ok()?;
 
     // Nested containers draw after the rest of the camera, so their content sits on top.
     let mut containers = Vec::new();
@@ -142,7 +142,7 @@ fn hit_camera(
     });
 
     for container in containers.into_iter().rev() {
-        let Ok(entry) = world.fetch(container) else {
+        let Ok(entry) = world.try_fetch(container) else {
             continue;
         };
         let visible = entry.visible;
@@ -193,18 +193,18 @@ fn hit_camera(
 impl Element for ToolCollider {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.attach_layout(world, this);
-        let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
+        let dispatcher = world.single::<ToolColliderDispatcher>();
         world.queue_trigger(dispatcher, ToolColliderChanged(this));
         world.dependency(this, dispatcher);
     }
 
     fn when_modify(&mut self, world: &World, this: Handle<Self>) {
-        let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
+        let dispatcher = world.single::<ToolColliderDispatcher>();
         world.queue_trigger(dispatcher, ToolColliderChanged(this));
     }
 
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {
-        let dispatcher = world.single::<ToolColliderDispatcher>().unwrap();
+        let dispatcher = world.single::<ToolColliderDispatcher>();
         world.queue_trigger(dispatcher, ToolColliderChanged(this));
     }
 }

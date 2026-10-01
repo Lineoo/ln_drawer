@@ -61,17 +61,17 @@ impl Text {
     pub fn init(&mut self, world: &World, this: Handle<Text>) {
         let camera = self.camera.expect("Text must be given an owning camera");
 
-        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        let lnwindow = world.single_fetch::<Lnwindow>();
         let canvas = world.insert(self.fresh_canvas(self.upscaled_rect(&lnwindow)));
 
         let upscale_metrics = self.metrics.scale(self.upscale(&lnwindow));
-        let pipeline = &mut *world.single_fetch_mut::<TextPipeline>().unwrap();
+        let pipeline = &mut *world.single_fetch_mut::<TextPipeline>();
         let mut buffer = Buffer::new(&mut pipeline.font_system, upscale_metrics);
 
         let control = world.insert(RenderControl {
             camera: Some(camera),
             prepare: Some(Box::new(move |world| {
-                let mut this = world.fetch_mut(this).unwrap();
+                let mut this = world.fetch_mut(this);
 
                 this.prepare(&mut buffer, world, canvas);
 
@@ -83,13 +83,13 @@ impl Text {
         RenderControl::reorder(camera, Some(0), world, control);
 
         world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.visible = visible;
             world.queue_trigger(canvas, SetWidgetVisible(visible));
         });
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             if this.rect.extend != rect.extend {
                 this.canvas_outdated = true;
             }
@@ -98,7 +98,7 @@ impl Text {
         });
 
         world.observer(this, move |SetText(text), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.set_text(&text[..]);
         });
 
@@ -109,9 +109,9 @@ impl Text {
     }
 
     fn prepare(&mut self, buffer: &mut Buffer, world: &World, canvas: Handle<Canvas>) {
-        let mut canvas = world.fetch_mut(canvas).unwrap();
-        let mut pipeline = world.single_fetch_mut::<TextPipeline>().unwrap();
-        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        let mut canvas = world.fetch_mut(canvas);
+        let mut pipeline = world.single_fetch_mut::<TextPipeline>();
+        let lnwindow = world.single_fetch::<Lnwindow>();
 
         if self.visible {
             if self.canvas_outdated {

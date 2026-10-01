@@ -75,8 +75,8 @@ impl Descriptor for CameraDescriptor {
     type Target = Handle<Camera>;
 
     fn when_build(self, world: &World) -> Self::Target {
-        let render = world.single_fetch::<Render>().unwrap();
-        let binding = world.single_fetch::<CameraBind>().unwrap();
+        let render = world.single_fetch::<Render>();
+        let binding = world.single_fetch::<CameraBind>();
 
         world.insert(Camera::from_descriptor(self, &render, &binding.layout))
     }
@@ -84,10 +84,10 @@ impl Descriptor for CameraDescriptor {
 
 impl Element for Camera {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
+        let lnwindow = world.single::<Lnwindow>();
         let obs = world.observer(lnwindow, move |event: &WindowEvent, world| {
             if let WindowEvent::SurfaceResized(size) = event {
-                let mut camera = world.fetch_mut(this).unwrap();
+                let mut camera = world.fetch_mut(this);
 
                 camera.size.x = size.width;
                 camera.size.y = size.height;
@@ -95,8 +95,8 @@ impl Element for Camera {
         });
         world.dependency(obs, this);
         world.observer(this, move |&CameraUpdated, world| {
-            let this = world.fetch(this).unwrap();
-            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            let this = world.fetch(this);
+            let lnwindow = world.single_fetch::<Lnwindow>();
             this.upload();
             lnwindow.window.request_redraw();
         });
@@ -193,7 +193,7 @@ impl Camera {
                 scissor: extra.scissor,
             };
             world.enter(view, || {
-                let mut control = world.fetch_mut(control).unwrap();
+                let mut control = world.fetch_mut(control);
                 if let Some(draw) = &mut control.draw {
                     draw(world, rpass, extra);
                 }
@@ -233,7 +233,7 @@ impl Camera {
     }
 
     pub fn init(world: &World) {
-        let render = world.single_fetch::<Render>().unwrap();
+        let render = world.single_fetch::<Render>();
         let device = &render.device;
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -258,7 +258,7 @@ impl Camera {
     }
 
     fn try_build_from_save(world: &World, name: &str) -> Result<Handle<Camera>, redb::Error> {
-        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        let db = world.single_fetch::<SaveDatabase>();
         Camera::build_default_if_empty(&db, name)?;
 
         let read = db.0.begin_read()?;
@@ -266,7 +266,7 @@ impl Camera {
         let bytes = table.get(name)?.unwrap();
         let camera_desc = postcard::from_bytes::<RootCameraDescriptor>(bytes.value()).unwrap();
 
-        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        let lnwindow = world.single_fetch::<Lnwindow>();
         let size = lnwindow.window.surface_size();
         let camera = world.build(CameraDescriptor {
             size: UVec2::new(size.width, size.height),
@@ -299,7 +299,7 @@ impl Camera {
     fn autosave(camera: Handle<Camera>, name: &str) -> Autosave {
         let name_owned = String::from(name);
         Autosave(Box::new(move |world, write| {
-            let camera = world.fetch(camera).unwrap();
+            let camera = world.fetch(camera);
 
             let bytes = postcard::to_stdvec(&RootCameraDescriptor {
                 size: camera.size,
@@ -456,7 +456,7 @@ impl CameraUtils {
 
     pub fn apply_to_camera(&self, world: &World, camera: Handle<Camera>) {
         world.queue_trigger(camera, CameraUpdated);
-        let mut camera = world.fetch_mut(camera).unwrap();
+        let mut camera = world.fetch_mut(camera);
         camera.zoom = self.camera_zoom;
         camera.center = self.camera_center;
     }

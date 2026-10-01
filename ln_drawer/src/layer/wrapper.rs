@@ -90,8 +90,8 @@ pub struct LayerPage {
 
 impl LayerPage {
     pub fn new(world: &World) -> Self {
-        let render = world.single_fetch::<Render>().unwrap();
-        let camera_bind = world.single_fetch::<CameraBind>().unwrap();
+        let render = world.single_fetch::<Render>();
+        let camera_bind = world.single_fetch::<CameraBind>();
 
         let layer = Arc::new(LayerPipeline::new(
             render.adapter.clone(),
@@ -104,8 +104,8 @@ impl LayerPage {
         let draw = DrawPipeline::new(layer.clone());
         let traveler = Traveler::new(layer.clone());
 
-        let database = world.single_fetch::<SaveDatabase>().unwrap().clone();
-        let window = world.single_fetch::<Lnwindow>().unwrap().window.clone();
+        let database = world.single_fetch::<SaveDatabase>().clone();
+        let window = world.single_fetch::<Lnwindow>().window.clone();
 
         let (input_tx, input_rx) = channel();
         let (output_tx, output_rx) = channel();
@@ -121,8 +121,8 @@ impl LayerPage {
             window,
         };
 
-        let main_camera = world.single_fetch::<MainCamera>().unwrap();
-        let camera = world.fetch(main_camera.0).unwrap();
+        let main_camera = world.single_fetch::<MainCamera>();
+        let camera = world.fetch(main_camera.0);
         input_tx
             .send(ThreadInput::SetStreamCamera(
                 camera.zoom,
@@ -135,7 +135,7 @@ impl LayerPage {
             loading_thread(stream_config, input_rx, output_tx).unwrap();
         });
 
-        let ui_camera = world.single_fetch::<UICamera>().unwrap().0;
+        let ui_camera = world.single_fetch::<UICamera>().0;
 
         let brush_preview = world.insert(RRect {
             rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
@@ -358,7 +358,7 @@ impl LayerPage {
             .layer
             .pick_color(&self.main, cursor.q32_floor(), move |color| {
                 cmd.queue(move |world| {
-                    let mut wrapper = world.single_fetch_mut::<LayerPage>().unwrap();
+                    let mut wrapper = world.single_fetch_mut::<LayerPage>();
                     wrapper.set_color(color.into_color());
                     world.queue_trigger(wrapper.handle(), BrushConfigurationChanged);
                 });
@@ -369,10 +369,7 @@ impl LayerPage {
         while let Ok(output) = self.thread_rx.try_recv() {
             match output {
                 ThreadOutput::ThreadDebugMessage(msg) => {
-                    world.queue_trigger(
-                        world.single::<LayerPage>().unwrap(),
-                        LayerDebugMessage(msg),
-                    );
+                    world.queue_trigger(world.single::<LayerPage>(), LayerDebugMessage(msg));
                 }
                 ThreadOutput::Insert(key, chunk_bind) => {
                     self.main.chunks.insert(key, chunk_bind);
@@ -494,19 +491,19 @@ impl Drop for LayerPage {
 
 impl Element for LayerPage {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.single::<LayerPage>().unwrap();
+        world.single::<LayerPage>();
 
         let save = world.insert(Autosave(Box::new(move |world, _write| {
-            let this = world.single_fetch::<LayerPage>().unwrap();
+            let this = world.single_fetch::<LayerPage>();
             this.thread_tx.send(ThreadInput::Autosave).unwrap();
         })));
 
         world.dependency(save, this);
 
-        let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
+        let main_camera = world.single_fetch::<MainCamera>().0;
         world.observer(main_camera, move |&CameraUpdated, world| {
-            let this = world.single_fetch::<LayerPage>().unwrap();
-            let camera = world.fetch(main_camera).unwrap();
+            let this = world.single_fetch::<LayerPage>();
+            let camera = world.fetch(main_camera);
 
             this.thread_tx
                 .send(ThreadInput::SetStreamCamera(
@@ -520,7 +517,7 @@ impl Element for LayerPage {
         let control = world.insert(RenderControl {
             camera: Some(main_camera),
             prepare: Some(Box::new(move |world| {
-                let this = &mut *world.fetch_mut(this).unwrap();
+                let this = &mut *world.fetch_mut(this);
                 this.process_stream(world);
 
                 Some(RenderInformation {
@@ -528,7 +525,7 @@ impl Element for LayerPage {
                 })
             })),
             draw: Some(Box::new(move |world, rpass, extra| {
-                let mut this = world.single_fetch_mut::<LayerPage>().unwrap();
+                let mut this = world.single_fetch_mut::<LayerPage>();
                 this.render(rpass, extra);
             })),
         });

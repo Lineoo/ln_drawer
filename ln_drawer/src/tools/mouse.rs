@@ -20,7 +20,7 @@ pub struct MouseMenu(pub IVec2);
 
 impl Element for MouseTool {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
+        let lnwindow = world.single::<Lnwindow>();
 
         let mut middle = false;
         world.observer(lnwindow, move |event: &WindowEvent, world| match event {
@@ -31,7 +31,7 @@ impl Element for MouseTool {
                 state: ElementState::Pressed,
                 ..
             } => {
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let lnwindow = world.single_fetch::<Lnwindow>();
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
@@ -49,12 +49,12 @@ impl Element for MouseTool {
                 button: ButtonSource::Mouse(MouseButton::Middle),
                 ..
             } => {
-                let utils = world.single_fetch::<MainCameraUtils>().unwrap().0;
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let utils = world.single_fetch::<MainCameraUtils>().0;
+                let lnwindow = world.single_fetch::<Lnwindow>();
                 let cursor = lnwindow.cursor_to_screen(*position);
                 middle = true;
 
-                let mut camera_utils = world.fetch_mut(utils).unwrap();
+                let mut camera_utils = world.fetch_mut(utils);
                 camera_utils.anchor_cursor(DVec2::ZERO);
                 camera_utils.camera_cursor_by_anchor_center(cursor);
             }
@@ -64,13 +64,13 @@ impl Element for MouseTool {
                 source: PointerSource::Mouse,
                 ..
             } => {
-                let main = world.single_fetch::<MainCamera>().unwrap().0;
-                let utils = world.single_fetch::<MainCameraUtils>().unwrap().0;
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let main = world.single_fetch::<MainCamera>().0;
+                let utils = world.single_fetch::<MainCameraUtils>().0;
+                let lnwindow = world.single_fetch::<Lnwindow>();
                 let cursor = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
-                let mut camera_utils = world.fetch_mut(utils).unwrap();
+                let mut camera_utils = world.fetch_mut(utils);
                 if middle {
                     camera_utils.camera_cursor_by_camera_center(cursor);
                     camera_utils.apply_to_camera(world, main);

@@ -29,7 +29,7 @@ pub struct Panel {
 
 impl Panel {
     pub fn init(&mut self, world: &World, handle: Handle<Self>) {
-        let theme = world.single_fetch::<Theme>().unwrap();
+        let theme = world.single_fetch::<Theme>();
         let roundness = theme.roundness;
         let anim_factor = theme.anim_factor;
         let shadow_offset = theme.shadow_offset.as_ivec2();
@@ -77,9 +77,9 @@ impl Panel {
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let mut back_rect_anim = world.fetch_mut(back_rect_anim).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(handle);
+            let mut back_rect_anim = world.fetch_mut(back_rect_anim);
+            let mut collider = world.fetch_mut(collider);
             this.rect = rect;
             back_rect_anim.dst = rect.into_storage();
             back_rect_anim.src = rect.into_storage();
@@ -88,8 +88,8 @@ impl Panel {
         });
 
         world.observer(handle, move |&SetWidgetVisible(enabled), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(handle);
+            let mut collider = world.fetch_mut(collider);
             this.visible = enabled;
             world.queue_trigger(back, SetWidgetVisible(enabled));
             if let Some(back_shadow) = back_shadow {

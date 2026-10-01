@@ -24,7 +24,7 @@ fn dangling_ref_does_not_break_alternative_visibility() {
     world.flush();
 
     world.enter(view_remove, || world.insert(ElemRef(node.untyped())));
-    world.remove(view_remove).unwrap();
+    world.remove(view_remove);
     world.flush();
 
     world.enter(view_other, || world.insert(ViewRef(view_main.untyped())));
@@ -47,7 +47,7 @@ fn cache_does_not_see_just_removed_before_flush() {
     world.enter(view, || world.queue_cache::<Tag>());
     world.flush();
 
-    world.enter(view, || world.remove(first).unwrap());
+    world.enter(view, || world.remove(first));
 
     assert_eq!(tags(&world, view), vec!["second"]);
 
@@ -68,9 +68,13 @@ fn single_fetch_returns_just_removed_before_flush() {
     world.enter(view, || world.queue_cache::<Tag>());
     world.flush();
 
-    world.enter(view, || world.remove(tag).unwrap());
+    world.enter(view, || world.remove(tag));
 
-    assert!(world.enter(view, || world.single_fetch::<Tag>()).is_err());
+    assert!(
+        world
+            .enter(view, || world.try_single_fetch::<Tag>())
+            .is_err()
+    );
 }
 
 fn tags(world: &World, view: impl HandleGeneric) -> Vec<&str> {

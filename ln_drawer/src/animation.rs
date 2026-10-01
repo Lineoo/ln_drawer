@@ -70,7 +70,7 @@ where
         let anim = world.build(self.animation);
         world.dependency(anim, self.widget);
         world.observer(anim, move |&AnimationValue::<T>(value), world| {
-            let widget = world.fetch_mut(self.widget).unwrap();
+            let widget = world.fetch_mut(self.widget);
             (self.action)(widget, world, value);
         });
 
@@ -103,12 +103,12 @@ where
         let anim = world.build(self.animation);
         world.dependency(anim, self.widget);
         world.observer(anim, move |&AnimationValue::<T>(value), world| {
-            let widget = world.fetch_mut(self.widget).unwrap();
+            let widget = world.fetch_mut(self.widget);
             (self.action)(widget, world, value);
 
             if value == dst {
                 world.queue(move |world| {
-                    world.remove(anim).unwrap();
+                    world.remove(anim);
                 });
             }
         });
@@ -142,7 +142,7 @@ where
         let anim = world.build(AnimationDescriptor::new(self.init, self.factor));
         world.dependency(anim, self.widget);
         world.observer(anim, move |&AnimationValue::<T>(value), world| {
-            let mut widget = world.fetch_mut(self.widget).unwrap();
+            let mut widget = world.fetch_mut(self.widget);
             let access = (self.access)(&mut widget);
             *access = value;
         });
@@ -156,7 +156,7 @@ impl<T: AnimationType> Element for Animation<T> {
         let control = world.insert(RenderControl {
             camera: None,
             prepare: Some(Box::new(move |world| {
-                let mut this = world.fetch_mut(this).unwrap();
+                let mut this = world.fetch_mut(this);
 
                 // calculate next value
 
@@ -188,7 +188,7 @@ impl<T: AnimationType> Element for Animation<T> {
         });
 
         world.observer(this, move |&SetAnimationDst(dst), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.dst = T::into_storage(dst);
         });
 

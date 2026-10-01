@@ -44,30 +44,27 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>, camera: Handle<Cam
     });
 
     world.observer(submenu, move |&SetWidgetVisible(visible), world| {
-        let mut layer = world.single_fetch_mut::<LayerPage>().unwrap();
+        let mut layer = world.single_fetch_mut::<LayerPage>();
         layer.debug = visible;
     });
 
-    world.observer(
-        world.single::<Render>().unwrap(),
-        move |msg: &String, world| {
-            let mut text = world.fetch_mut(debug_text).unwrap();
-            if text.text != *msg {
-                text.text.clone_from(msg);
-                text.outdated = true;
-            }
-        },
-    );
+    world.observer(world.single::<Render>(), move |msg: &String, world| {
+        let mut text = world.fetch_mut(debug_text);
+        if text.text != *msg {
+            text.text.clone_from(msg);
+            text.outdated = true;
+        }
+    });
 
     world.observer(
-        world.single::<LayerPage>().unwrap(),
+        world.single::<LayerPage>(),
         move |LayerDebugMessage(msg), world| {
-            let render = world.single_fetch::<Render>().unwrap();
+            let render = world.single_fetch::<Render>();
             if render.timestamp_poll {
                 return;
             }
 
-            let mut text = world.fetch_mut(debug_text).unwrap();
+            let mut text = world.fetch_mut(debug_text);
             if text.text != *msg {
                 text.text.clone_from(msg);
                 text.outdated = true;
@@ -75,14 +72,14 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>, camera: Handle<Cam
         },
     );
 
-    let theme = world.single_fetch::<Theme>().unwrap();
+    let theme = world.single_fetch::<Theme>();
     let docker_button = docker_button(world, &theme, camera);
 
     let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
     world.observer(compass, move |&ButtonClick, world| {
-        let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
-        let utils = world.single_fetch::<MainCameraUtils>().unwrap().0;
-        let mut camera = world.fetch_mut(utils).unwrap();
+        let main_camera = world.single_fetch::<MainCamera>().0;
+        let utils = world.single_fetch::<MainCameraUtils>().0;
+        let mut camera = world.fetch_mut(utils);
         camera.force_clear();
         camera.force_camera_center(I64Vec2::ZERO);
         camera.force_camera_zoom(0);
@@ -91,14 +88,14 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>, camera: Handle<Cam
 
     let render_profile = docker_button(include_bytes!("../../../res/interface/timer.svg"));
     world.observer(render_profile, move |&ButtonSelected(val), world| {
-        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        let mut render = world.single_fetch_mut::<Render>();
         render.timestamp_poll = val;
         world.queue_trigger(render_profile, SetButtonSelected(val));
     });
 
     let compact = docker_button(include_bytes!("../../../res/interface/database-zap.svg"));
     world.observer(compact, move |&ButtonClick, world| {
-        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        let db = world.single_fetch::<SaveDatabase>();
         log::debug!("on next startup database will be compacted");
         SaveDatabase::write_compact(&db.0).unwrap();
     });

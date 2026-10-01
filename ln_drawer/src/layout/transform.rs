@@ -132,7 +132,7 @@ impl TransformValue {
 impl Element for Transform {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let ob = world.observer(self.source, move |&WidgetRectangle(rect), world| {
-            let this = world.fetch(this).unwrap();
+            let this = world.fetch(this);
             let target = this.value.compute(rect);
 
             world.queue_trigger(this.target, SetWidgetRectangle(target));

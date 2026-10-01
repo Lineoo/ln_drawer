@@ -67,8 +67,8 @@ impl Canvas {
             "data is not matched with its size"
         );
 
-        let render = world.single_fetch::<Render>().unwrap();
-        let pipeline = world.single_fetch::<CanvasPipeline>().unwrap();
+        let render = world.single_fetch::<Render>();
+        let pipeline = world.single_fetch::<CanvasPipeline>();
         let instance = world.insert(self.instantiate(&render, &pipeline));
         drop(render);
 
@@ -77,8 +77,8 @@ impl Canvas {
             camera: Some(camera),
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
-                let instance = world.fetch(instance).unwrap();
-                let pipeline = world.single_fetch::<CanvasPipeline>().unwrap();
+                let instance = world.fetch(instance);
+                let pipeline = world.single_fetch::<CanvasPipeline>();
                 let camera = extra.camera;
 
                 let (start, end) = extra.diagnosis.assign("main > canvas");
@@ -96,8 +96,8 @@ impl Canvas {
         RenderControl::reorder(camera, self.visible.then_some(self.order), world, control);
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let instance = world.fetch(instance).unwrap();
+            let mut this = world.fetch_mut(this);
+            let instance = world.fetch(instance);
             this.rect = rect;
 
             let uniform = RectangleUniform {
@@ -106,42 +106,42 @@ impl Canvas {
             };
 
             let bytes = bytemuck::bytes_of(&uniform);
-            let render = world.single_fetch::<Render>().unwrap();
+            let render = world.single_fetch::<Render>();
             render
                 .queue
                 .write_buffer(&instance.rectangle_uniform, 0, bytes);
         });
 
         world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.visible = visible;
             RenderControl::reorder(camera, this.visible.then_some(this.order), world, control);
         });
 
         world.observer(this, move |&SetCanvasColor(color), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let instance = world.fetch(instance).unwrap();
+            let mut this = world.fetch_mut(this);
+            let instance = world.fetch(instance);
             this.color = color;
 
             let uniform = <[f32; 4]>::from(color.into_linear());
 
             let bytes = bytemuck::bytes_of(&uniform);
-            let render = world.single_fetch::<Render>().unwrap();
+            let render = world.single_fetch::<Render>();
             render.queue.write_buffer(&instance.color_uniform, 0, bytes);
         });
 
         world.observer(this, move |&UploadCanvasData, world| {
-            let this = world.fetch(this).unwrap();
-            let instance = world.fetch(instance).unwrap();
-            let render = world.single_fetch::<Render>().unwrap();
+            let this = world.fetch(this);
+            let instance = world.fetch(instance);
+            let render = world.single_fetch::<Render>();
             this.upload_full(&instance, &render.queue);
         });
 
         world.observer(this, move |&RemakeCanvasTexture, world| {
-            let this = world.fetch(this).unwrap();
-            let mut instance = world.fetch_mut(instance).unwrap();
-            let pipeline = world.single_fetch::<CanvasPipeline>().unwrap();
-            let render = world.single_fetch::<Render>().unwrap();
+            let this = world.fetch(this);
+            let mut instance = world.fetch_mut(instance);
+            let pipeline = world.single_fetch::<CanvasPipeline>();
+            let render = world.single_fetch::<Render>();
             *instance = this.instantiate(&render, &pipeline)
         });
 
@@ -341,8 +341,8 @@ impl Canvas {
 
 impl CanvasPipeline {
     pub fn from_world(world: &World) -> Self {
-        let render = world.single_fetch::<Render>().unwrap();
-        let camera = world.single_fetch::<CameraBind>().unwrap();
+        let render = world.single_fetch::<Render>();
+        let camera = world.single_fetch::<CameraBind>();
 
         let shader = render.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("canvas_shader"),

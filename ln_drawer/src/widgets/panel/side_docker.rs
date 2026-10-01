@@ -29,9 +29,9 @@ use crate::{
 };
 
 pub fn side_docker(world: &World, camera: Handle<Camera>) {
-    let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-    let theme = world.single_fetch::<Theme>().unwrap();
-    let layer = world.single::<LayerPage>().unwrap();
+    let lnwindow = world.single_fetch::<Lnwindow>();
+    let theme = world.single_fetch::<Theme>();
+    let layer = world.single::<LayerPage>();
 
     let side_panel = world.insert(Panel {
         rect: Rectangle::default(),
@@ -118,43 +118,43 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
     });
 
     world.observer(eraser, move |&ButtonSelected(val), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         layer.active_mut().set_toggle(BrushParamKey::Erase, val);
         world.queue_trigger(layer.handle(), BrushConfigurationChanged);
     });
 
     world.observer(pipette, move |&ButtonSelected(val), world| {
-        let mut input = world.single_fetch_mut::<LayerInput>().unwrap();
+        let mut input = world.single_fetch_mut::<LayerInput>();
         input.hold_pick = val;
         world.queue_trigger(pipette, SetButtonSelected(val));
     });
 
     world.observer(touch, move |&ButtonSelected(val), world| {
-        let mut input = world.single_fetch_mut::<LayerInput>().unwrap();
+        let mut input = world.single_fetch_mut::<LayerInput>();
         input.touch_draw = val;
         world.queue_trigger(touch, SetButtonSelected(val));
     });
 
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let is_eraser = {
-            let layer = world.fetch(layer).unwrap();
+            let layer = world.fetch(layer);
             layer.active().toggle(BrushParamKey::Erase).unwrap_or(false)
         };
         world.trigger(eraser, &SetButtonSelected(is_eraser));
     });
 
     world.observer(undo, move |&ButtonClick, world| {
-        let mut layer = world.fetch_mut::<LayerPage>(layer).unwrap();
+        let mut layer = world.fetch_mut::<LayerPage>(layer);
         layer.undo();
     });
 
     world.observer(redo, move |&ButtonClick, world| {
-        let mut layer = world.fetch_mut::<LayerPage>(layer).unwrap();
+        let mut layer = world.fetch_mut::<LayerPage>(layer);
         layer.redo();
     });
 
     world.observer(slider, move |&SliderValue(value), world| {
-        let mut layer = world.fetch_mut(layer).unwrap();
+        let mut layer = world.fetch_mut(layer);
         let scale = (value.exp2() - 1.) * 127.5 + 0.5;
         if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Size) {
             param.scale = scale;
@@ -165,7 +165,7 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
 
     world.observer(layer, move |&BrushConfigurationChanged, world| {
         let value = {
-            let layer = world.fetch(layer).unwrap();
+            let layer = world.fetch(layer);
             layer
                 .active()
                 .scalar(BrushParamKey::Size)

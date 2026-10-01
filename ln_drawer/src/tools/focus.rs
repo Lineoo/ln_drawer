@@ -10,14 +10,14 @@ pub struct FocusTool {
 
 impl Element for FocusTool {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
+        let lnwindow = world.single::<Lnwindow>();
 
         world.observer(lnwindow, move |event: &WindowEvent, world| {
             let WindowEvent::KeyboardInput { event, .. } = event else {
                 return;
             };
 
-            let fetched = world.fetch(this).unwrap();
+            let fetched = world.fetch(this);
 
             if let Some(focus_on) = fetched.focus {
                 world.trigger(focus_on, &FocusInput(event.clone()));
@@ -25,7 +25,7 @@ impl Element for FocusTool {
         });
 
         world.observer(this, move |&RequestFocus(on), world| {
-            let mut fetched = world.fetch_mut(this).unwrap();
+            let mut fetched = world.fetch_mut(this);
 
             let off = fetched.focus;
             fetched.focus = on;

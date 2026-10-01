@@ -60,8 +60,8 @@ impl ApplicationHandler for Lnwin {
         } else {
             for &view in self.windows.values() {
                 self.world.enter(view, || {
-                    let mut render = self.world.single_fetch_mut::<Render>().unwrap();
-                    let lnwindow = self.world.single_fetch::<Lnwindow>().unwrap();
+                    let mut render = self.world.single_fetch_mut::<Render>();
+                    let lnwindow = self.world.single_fetch::<Lnwindow>();
                     render.surface_recreate(&lnwindow);
                 });
             }
@@ -78,7 +78,7 @@ impl ApplicationHandler for Lnwin {
     ) {
         if let Some(&view) = self.windows.get(&window_id) {
             self.world.enter(view, || {
-                if let Ok(lnwindow) = self.world.single::<Lnwindow>() {
+                if let Ok(lnwindow) = self.world.try_single::<Lnwindow>() {
                     self.world.trigger(lnwindow, &event);
                 } else {
                     self.windows.remove(&window_id);
@@ -102,7 +102,7 @@ impl ApplicationHandler for Lnwin {
 
         // Record the allocator state on disk so that if the process is killed
         // while backgrounded, the next open can skip the full checksum scan.
-        if let Ok(db) = self.world.single_fetch::<SaveDatabase>()
+        if let Ok(db) = self.world.try_single_fetch::<SaveDatabase>()
             && let Err(err) = SaveDatabase::begin_clean_write(&db.0).and_then(|x| Ok(x.commit()?))
         {
             log::warn!("failed to finalize database before suspend: {err}");
@@ -132,7 +132,7 @@ impl Element for Lnwindow {
 
             // Setup render
 
-            let lnwindow = world.fetch(this).unwrap();
+            let lnwindow = world.fetch(this);
             world.insert(pollster::block_on(Render::new(&lnwindow)));
             drop(lnwindow);
 
@@ -169,7 +169,7 @@ impl Element for Lnwindow {
 
             // Setup cameras
 
-            let lnwindow = world.fetch(this).unwrap();
+            let lnwindow = world.fetch(this);
             let size = lnwindow.window.surface_size();
 
             let main_camera = Camera::build_from_save(world, "camera1");
@@ -187,21 +187,21 @@ impl Element for Lnwindow {
 
             world.flush();
 
-            let camera = world.fetch(main_camera).unwrap();
+            let camera = world.fetch(main_camera);
             let main_camera_utils = world.insert(CameraUtils::new(&camera));
             world.insert(MainCameraUtils(main_camera_utils));
 
             world.observer(this, move |event: &WindowEvent, world| {
                 if let WindowEvent::SurfaceResized(size) = event {
-                    let mut camera = world.fetch_mut(main_camera_utils).unwrap();
+                    let mut camera = world.fetch_mut(main_camera_utils);
                     camera.camera_size(UVec2::new(size.width, size.height));
                 }
             });
 
             world.observer(this, move |event: &WindowEvent, world| {
                 if let WindowEvent::SurfaceResized(size) = event {
-                    let lnwindow = world.fetch(this).unwrap();
-                    let mut camera = world.fetch_mut(ui_camera).unwrap();
+                    let lnwindow = world.fetch(this);
+                    let mut camera = world.fetch_mut(ui_camera);
 
                     let scale = lnwindow.window.scale_factor();
                     world.queue_trigger(

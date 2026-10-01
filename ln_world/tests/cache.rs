@@ -31,7 +31,7 @@ fn cache_invalidated_on_remove_cross_view() {
     assert!(stags(&world, view1).is_err());
     assert!(stags(&world, view2).is_err());
 
-    world.enter(view2, || world.remove(node1b).unwrap());
+    world.enter(view2, || world.remove(node1b));
     world.flush();
 
     assert_eq!(tags(&world, view1), vec!["node1a"]);
@@ -86,7 +86,7 @@ fn cache_invalidated_on_viewref_change() {
     world.flush();
     assert_eq!(tags(&world, view2), vec!["v1", "v2"]);
 
-    world.enter(view2, || world.remove(vref).unwrap());
+    world.enter(view2, || world.remove(vref));
     world.flush();
 
     assert_eq!(tags(&world, view2), vec!["v2"]);
@@ -122,5 +122,5 @@ fn tags(world: &World, view: impl HandleGeneric) -> Vec<&str> {
 }
 
 fn stags(world: &World, view: impl HandleGeneric) -> Result<&str, WorldError> {
-    Ok(world.enter(view, || world.single_fetch::<Tag>())?.0)
+    Ok(world.enter(view, || world.try_single_fetch::<Tag>())?.0)
 }

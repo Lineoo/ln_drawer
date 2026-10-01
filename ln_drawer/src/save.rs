@@ -59,7 +59,7 @@ pub struct SaveMetadata1 {
 
 impl SaveDatabase {
     pub fn init(world: &World) {
-        let Err(WorldError::SingletonNoSuch(_)) = world.single::<SaveDatabase>() else {
+        let Err(WorldError::SingletonNoSuch(_)) = world.try_single::<SaveDatabase>() else {
             log::warn!("duplicated database initialization!");
             return;
         };
@@ -282,7 +282,7 @@ impl Autosave {
     pub fn autosave_all(world: &World) {
         let start = Instant::now();
 
-        let db = world.single_fetch::<SaveDatabase>().unwrap();
+        let db = world.single_fetch::<SaveDatabase>();
         let write = SaveDatabase::begin_clean_write(&db.0).unwrap();
         world.foreach_fetch_mut::<Autosave>(|mut task| {
             (task.0)(world, &write);
@@ -317,7 +317,7 @@ impl Element for Autosave {}
 
 impl Element for AutosaveScheduler {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.dependency(this, world.single::<Lnwindow>().unwrap());
+        world.dependency(this, world.single::<Lnwindow>());
 
         let timer = world.insert(Timer::new(self.autosave_duration));
         world.observer(timer, move |TimerHit, world| {

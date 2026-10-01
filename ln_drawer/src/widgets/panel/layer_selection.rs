@@ -19,7 +19,7 @@ use crate::{
 struct LayerChosen(u64);
 
 pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<Camera>) {
-    let theme = world.single_fetch::<Theme>().unwrap();
+    let theme = world.single_fetch::<Theme>();
 
     let doc_label = world.insert(Text {
         text: tr("settings.layer_selection.doc_label").into(),
@@ -127,7 +127,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<C
 
         world.observer(layer0_button, move |&ButtonSelected(val), world| {
             if val {
-                let mut wrapper = world.single_fetch_mut::<LayerPage>().unwrap();
+                let mut wrapper = world.single_fetch_mut::<LayerPage>();
                 wrapper.set_page(i as u64);
                 world.queue_trigger(layers_node, LayerChosen(i as u64));
             }

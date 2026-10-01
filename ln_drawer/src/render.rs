@@ -319,7 +319,7 @@ impl Render {
     }
 
     fn prepare(world: &World) -> bool {
-        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        let mut render = world.single_fetch_mut::<Render>();
         render.preparing = true;
         drop(render);
 
@@ -335,7 +335,7 @@ impl Render {
             log::debug!("control cached");
         }
 
-        let mut render = world.single_fetch_mut::<Render>().unwrap();
+        let mut render = world.single_fetch_mut::<Render>();
         render.preparing = false;
         drop(render);
 
@@ -345,7 +345,7 @@ impl Render {
     fn redraw(world: &World) {
         // start redrawing
 
-        let render = &mut *world.single_fetch_mut::<Render>().unwrap();
+        let render = &mut *world.single_fetch_mut::<Render>();
         let now = Instant::now();
 
         // setup render pass
@@ -393,14 +393,14 @@ impl Render {
 
         // redraw
 
-        let main_camera = world.single_fetch::<MainCamera>().unwrap().0;
-        let ui_camera = world.single_fetch::<UICamera>().unwrap().0;
+        let main_camera = world.single_fetch::<MainCamera>().0;
+        let ui_camera = world.single_fetch::<UICamera>().0;
 
         let scissor = Cell::new(None);
         // The painting camera draws first, the interface camera over it.
         for camera_handle in [main_camera, ui_camera] {
             scissor.set(None);
-            let camera = &mut *world.fetch_mut(camera_handle).unwrap();
+            let camera = &mut *world.fetch_mut(camera_handle);
             camera.reorder();
             camera.draw(
                 world,
@@ -452,7 +452,7 @@ impl Render {
             let mapper = render.timestamp_mapper.clone();
             let mapped = render.timestamp_mapped.clone();
             let cmd = world.commander("render_timestamp_poll");
-            let target = world.single::<Render>().unwrap();
+            let target = world.single::<Render>();
             let slots = std::mem::take(&mut diagnosis.slots);
             let period = render.queue.get_timestamp_period() as u64;
             let cpu_redraw = now.elapsed();
@@ -573,8 +573,8 @@ fn plain_rpass<'encoder>(
 impl RenderControl {
     /// Safer functions to request redraw.
     pub fn request_redraw(world: &World) {
-        let render = world.single_fetch::<Render>().unwrap();
-        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+        let render = world.single_fetch::<Render>();
+        let lnwindow = world.single_fetch::<Lnwindow>();
 
         if !render.preparing {
             lnwindow.window.request_redraw();
@@ -587,7 +587,7 @@ impl RenderControl {
         world: &World,
         handle: Handle<Self>,
     ) {
-        let camera = &mut *world.fetch_mut(camera).unwrap();
+        let camera = &mut *world.fetch_mut(camera);
 
         if let Some(order) = order {
             camera.seq_dirty.push((handle, world.here(), order));
@@ -622,10 +622,10 @@ impl RenderDiagnosis<'_> {
 
 impl Element for Render {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
+        let lnwindow = world.single::<Lnwindow>();
         world.observer(lnwindow, move |event: &WindowEvent, world| match event {
             WindowEvent::SurfaceResized(size) => {
-                let mut render = world.fetch_mut(this).unwrap();
+                let mut render = world.fetch_mut(this);
                 render.surface_resize(*size);
             }
 
@@ -633,7 +633,7 @@ impl Element for Render {
                 world.queue(|world| {
                     let refreshing = Render::prepare(world);
                     if refreshing {
-                        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                        let lnwindow = world.single_fetch::<Lnwindow>();
                         lnwindow.window.request_redraw();
                     }
                     world.flush();

@@ -41,7 +41,7 @@ impl Baz {
 impl Element for Baz {
     fn when_inserted(&mut self, world: &World, handle: Handle<Self>) {
         // 过度包揽了自己不该干的活儿
-        let interface = world.single_fetch_mut::<Interface>().unwrap();
+        let interface = world.single_fetch_mut::<Interface>();
         let inner = interface.create_painter(/* .. */);
         // self.inner 为 None 的状态只在初始化时存在，很别扭
         self.inner = Some(inner);
@@ -58,8 +58,8 @@ impl Element for Baz {
 ```rust
 impl<M: QuadMaterial> QuadMesh<M> {
     pub fn init(&self, world: &World, this: Handle<Self>) {
-        let render = world.single_fetch::<Render>().unwrap();
-        let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
+        let render = world.single_fetch::<Render>();
+        let pipeline = world.single_fetch::<QuadMeshPipeline<M>>();
         // Initialize code
     }
 }
@@ -124,13 +124,13 @@ actual ownership lifecycle      ===> where `drop` runs
 可以让 Rust 的 variable shadow 更好地发挥作用
 
 ```rust
-let fetched = world.fetch(this).unwrap();
+let fetched = world.fetch(this);
 fetched.perform();
 world.observer(this, /**/);
 ```
 
 ```rust
-let this = world.fetch(this).unwrap();
+let this = world.fetch(this);
 this.perform();
 world.observer(this.handle(), /**/);
 ```

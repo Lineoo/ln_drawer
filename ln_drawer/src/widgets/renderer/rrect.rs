@@ -49,19 +49,19 @@ impl RRect {
         });
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.enabled = enabled;
             world.queue_trigger(quad, SetWidgetVisible(enabled));
         });
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.rect = rect;
             world.queue_trigger(quad, SetWidgetRectangle(rect));
         });
 
         world.observer(this, move |&SetRRectColor(color), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.color = color;
             world.queue_trigger(
                 quad,

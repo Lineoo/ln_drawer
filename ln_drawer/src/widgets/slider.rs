@@ -44,7 +44,7 @@ pub struct SliderLabel {
 
 impl Slider {
     pub fn init(&self, world: &World, handle: Handle<Self>) {
-        let theme = world.single_fetch::<Theme>().unwrap();
+        let theme = world.single_fetch::<Theme>();
 
         let back = world.insert(RRect {
             rect: back_rect(self.rect, self.axis),
@@ -126,14 +126,14 @@ impl Slider {
         world.dependency(collider, handle);
 
         world.observer(handle, move |&SetSliderValue(value), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
+            let mut this = world.fetch_mut(handle);
             this.set_value(world, value, front, knob, knob_split);
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let mut back_rect_anim = world.fetch_mut(back_rect_anim).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(handle);
+            let mut back_rect_anim = world.fetch_mut(back_rect_anim);
+            let mut collider = world.fetch_mut(collider);
             this.set_rect(
                 world,
                 rect,
@@ -146,7 +146,7 @@ impl Slider {
         });
 
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut collider = world.fetch_mut(collider);
             world.queue_trigger(back, SetWidgetVisible(visible));
             world.queue_trigger(front, SetWidgetVisible(visible));
             world.queue_trigger(knob, SetWidgetVisible(visible));
@@ -163,8 +163,8 @@ impl Slider {
         });
 
         world.observer(collider, move |event: &PointerHit, world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let theme = world.single_fetch::<Theme>().unwrap();
+            let mut this = world.fetch_mut(handle);
+            let theme = world.single_fetch::<Theme>();
 
             let position = match this.axis.is_vertical() {
                 true => event.position.q32_round().y,
@@ -268,8 +268,8 @@ impl Slider {
 
 impl SliderLabel {
     fn init(&self, world: &World, this: Handle<Self>) {
-        let slider = world.fetch(self.source).unwrap();
-        let theme = world.single_fetch::<Theme>().unwrap();
+        let slider = world.fetch(self.source);
+        let theme = world.single_fetch::<Theme>();
 
         let position = into_position(slider.rect, slider.axis, slider.value);
 
@@ -294,7 +294,7 @@ impl SliderLabel {
         });
 
         world.observer(self.source, move |event: &WidgetHover, world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.hover = match event {
                 WidgetHover::Enter => true,
                 WidgetHover::Leave => false,
@@ -304,8 +304,8 @@ impl SliderLabel {
         });
 
         world.observer(self.source, move |&SetWidgetRectangle(rect), world| {
-            let this = world.fetch(this).unwrap();
-            let slider = world.fetch(this.source).unwrap();
+            let this = world.fetch(this);
+            let slider = world.fetch(this.source);
             let position = into_position_pressed(rect, slider.axis, slider.value);
             let rect = label_back_rect(rect, slider.axis, this.clockwise, position);
             world.queue_trigger(back, SetWidgetRectangle(rect));
@@ -313,15 +313,15 @@ impl SliderLabel {
         });
 
         world.observer(self.source, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.visible = visible;
             world.queue_trigger(back, SetWidgetVisible(this.hover && this.visible));
             world.queue_trigger(label, SetWidgetVisible(this.hover && this.visible));
         });
 
         world.observer(self.source, move |&SetSliderValue(val), world| {
-            let this = world.fetch(this).unwrap();
-            let slider = world.fetch(this.source).unwrap();
+            let this = world.fetch(this);
+            let slider = world.fetch(this.source);
             let position = into_position_pressed(slider.rect, slider.axis, val);
             let rect = label_back_rect(slider.rect, slider.axis, this.clockwise, position);
             world.queue_trigger(back, SetWidgetRectangle(rect));

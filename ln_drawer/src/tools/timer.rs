@@ -23,12 +23,12 @@ impl Timer {
 
 impl Element for Timer {
     fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
-        if let Err(WorldError::SingletonNoSuch(_)) = world.single::<TimerLastTick>() {
+        if let Err(WorldError::SingletonNoSuch(_)) = world.try_single::<TimerLastTick>() {
             world.insert(TimerLastTick(Instant::now()));
         }
 
         world.queue(|world| {
-            let mut last_tick = world.single_fetch_mut::<TimerLastTick>().unwrap();
+            let mut last_tick = world.single_fetch_mut::<TimerLastTick>();
             last_tick.tick(world);
         });
     }
@@ -38,9 +38,9 @@ struct TimerLastTick(Instant);
 
 impl Element for TimerLastTick {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>().unwrap();
+        let lnwindow = world.single::<Lnwindow>();
         world.observer(lnwindow, move |_: &WindowEvent, world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.tick(world);
         });
     }

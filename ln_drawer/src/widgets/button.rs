@@ -73,7 +73,7 @@ pub enum ButtonDragStatus {
 
 impl ToggleButton {
     pub fn init(&self, world: &World, handle: Handle<Self>) {
-        let theme = world.single_fetch::<Theme>().unwrap();
+        let theme = world.single_fetch::<Theme>();
 
         let frame = world.insert(RRect {
             rect: self.rect,
@@ -124,7 +124,7 @@ impl ToggleButton {
         };
 
         world.observer(handle, move |&SetButtonSelected(selected), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
+            let mut this = world.fetch_mut(handle);
             this.selected = selected;
             if selected {
                 world.trigger(
@@ -139,8 +139,8 @@ impl ToggleButton {
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(handle);
+            let mut collider = world.fetch_mut(collider);
             this.rect = rect;
             world.queue_trigger(frame, SetWidgetRectangle(rect));
             collider.rect = rect;
@@ -153,8 +153,8 @@ impl ToggleButton {
         });
 
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(handle);
+            let mut collider = world.fetch_mut(collider);
             this.visible = visible;
             world.queue_trigger(frame, SetWidgetVisible(visible));
             collider.enabled = visible;
@@ -209,7 +209,7 @@ impl ToggleButton {
                 }
                 PointerHitStatus::Release => {
                     if !dragging {
-                        let this = world.fetch(handle).unwrap();
+                        let this = world.fetch(handle);
                         world.queue_trigger(handle, ButtonClick);
                         world.queue_trigger(handle, ButtonSelected(!this.selected));
                     } else if let Some(start) = drag_start {
@@ -235,7 +235,7 @@ impl ToggleButton {
         });
 
         world.observer(collider, move |event: &PointerHover, world| {
-            let mut this = world.fetch_mut(handle).unwrap();
+            let mut this = world.fetch_mut(handle);
             match event.status {
                 PointerHoverStatus::Enter => {
                     this.hovering = true;
@@ -250,7 +250,7 @@ impl ToggleButton {
         });
 
         world.observer(handle, move |event: &WidgetHover, world| {
-            let this = world.fetch(handle).unwrap();
+            let this = world.fetch(handle);
             if this.selected {
                 return;
             }
@@ -263,7 +263,7 @@ impl ToggleButton {
         });
 
         world.observer(handle, move |event: &ButtonAction, world| {
-            let this = world.fetch(handle).unwrap();
+            let this = world.fetch(handle);
             if this.selected {
                 return;
             }

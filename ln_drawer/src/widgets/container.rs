@@ -41,9 +41,9 @@ impl Descriptor for ContainerDescriptor {
     type Target = (Handle<Container>, Handle<Camera>);
 
     fn when_build(self, world: &World) -> Self::Target {
-        let render = world.single_fetch::<Render>().unwrap();
-        let camera_bind = world.single_fetch::<CameraBind>().unwrap();
-        let parent = world.fetch(self.parent).unwrap();
+        let render = world.single_fetch::<Render>();
+        let camera_bind = world.single_fetch::<CameraBind>();
+        let parent = world.fetch(self.parent);
         let descriptor = CameraDescriptor {
             size: parent.size,
             center: parent.center,
@@ -93,7 +93,7 @@ impl Element for ContainerState {}
 
 impl Container {
     pub fn init(&mut self, world: &World, handle: Handle<Self>) {
-        let theme = world.single_fetch::<Theme>().unwrap();
+        let theme = world.single_fetch::<Theme>();
         let parent = self.parent;
         let camera = self.camera;
 
@@ -125,10 +125,10 @@ impl Container {
         world.dependency(camera, handle);
 
         world.observer(parent, move |&CameraUpdated, world| {
-            let Ok(state) = world.fetch(state) else {
+            let Ok(state) = world.try_fetch(state) else {
                 return;
             };
-            let parent_center = match world.fetch(state.parent) {
+            let parent_center = match world.try_fetch(state.parent) {
                 Ok(parent) => parent.center,
                 Err(_) => return,
             };
@@ -141,9 +141,9 @@ impl Container {
             camera: Some(parent),
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
-                let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+                let lnwindow = world.single_fetch::<Lnwindow>();
                 let parent_camera = extra.camera;
-                let panel_rect = world.fetch(handle).unwrap().rect;
+                let panel_rect = world.fetch(handle).rect;
                 let window_size = lnwindow.window.surface_size();
 
                 let scissor = extra.scissor;
@@ -165,7 +165,7 @@ impl Container {
 
                 if clipped.width > 0 && clipped.height > 0 {
                     rpass.set_scissor_rect(clipped.x, clipped.y, clipped.width, clipped.height);
-                    let mut child = world.fetch_mut(camera).unwrap();
+                    let mut child = world.fetch_mut(camera);
                     child.reorder();
                     child.draw(world, rpass, extra);
                 }
@@ -200,7 +200,7 @@ impl Container {
                 (None, PointerHitStatus::Release) => None,
                 (Some(_), PointerHitStatus::Press) => Some(event.pointer.screen),
                 (Some(position), PointerHitStatus::Moving) => {
-                    let parent_camera = world.fetch(parent).unwrap();
+                    let parent_camera = world.fetch(parent);
                     let delta =
                         parent_camera.screen_to_world_relative(event.pointer.screen - position);
                     drop(parent_camera);
@@ -208,7 +208,7 @@ impl Container {
                     Some(event.pointer.screen)
                 }
                 (Some(position), PointerHitStatus::Release) => {
-                    let parent_camera = world.fetch(parent).unwrap();
+                    let parent_camera = world.fetch(parent);
                     let delta =
                         parent_camera.screen_to_world_relative(event.pointer.screen - position);
                     drop(parent_camera);
@@ -229,7 +229,7 @@ impl Container {
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
+            let mut this = world.fetch_mut(handle);
             let old_origin = this.rect.origin;
             this.rect = rect;
 
@@ -237,7 +237,7 @@ impl Container {
             let relayout = this.inner.extend != extend;
             this.inner = Rectangle::new_extend(0, 0, extend.x, extend.y);
 
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut collider = world.fetch_mut(collider);
             collider.rect = rect;
             drop(collider);
 
@@ -256,8 +256,8 @@ impl Container {
         });
 
         world.observer(handle, move |&SetWidgetVisible(enabled), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(handle);
+            let mut collider = world.fetch_mut(collider);
             this.visible = enabled;
             collider.enabled = enabled;
             world.queue_trigger(back, SetWidgetVisible(enabled));
@@ -279,12 +279,12 @@ fn move_camera(
     delta: I64Vec2,
 ) {
     let parent_center = {
-        let state = world.fetch(state).unwrap();
-        world.fetch(state.parent).unwrap().center
+        let state = world.fetch(state);
+        world.fetch(state.parent).center
     };
 
-    let mut state = world.fetch_mut(state).unwrap();
-    let this = world.fetch(handle).unwrap();
+    let mut state = world.fetch_mut(state);
+    let this = world.fetch(handle);
     state.scroll = rect_contain(state.scroll + delta, this.inner.extend, this.rect);
     let center = compose_center(parent_center, state.scroll);
     drop(this);
@@ -301,7 +301,7 @@ fn compose_center(parent_center: I64Vec2, scroll: I64Vec2) -> I64Vec2 {
 
 /// Point a camera at `center` (absolute, in its parent camera's space).
 fn set_camera_center(world: &World, camera: Handle<Camera>, center: I64Vec2) {
-    let Ok(mut camera) = world.fetch_mut(camera) else {
+    let Ok(mut camera) = world.try_fetch_mut(camera) else {
         return;
     };
     if camera.center != center {

@@ -59,8 +59,8 @@ pub struct QuadUniform {
 
 impl<M: QuadMaterial> QuadMesh<M> {
     pub fn init(&self, world: &World, this: Handle<Self>) {
-        let render = world.single_fetch::<Render>().unwrap();
-        let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
+        let render = world.single_fetch::<Render>();
+        let pipeline = world.single_fetch::<QuadMeshPipeline<M>>();
         let device = &render.device;
 
         let rectangle_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -99,7 +99,7 @@ impl<M: QuadMaterial> QuadMesh<M> {
             camera: Some(camera),
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
-                let pipeline = world.single_fetch::<QuadMeshPipeline<M>>().unwrap();
+                let pipeline = world.single_fetch::<QuadMeshPipeline<M>>();
                 let camera = extra.camera;
 
                 let key = format!("main > quad > {}", M::label());
@@ -118,8 +118,8 @@ impl<M: QuadMaterial> QuadMesh<M> {
         RenderControl::reorder(camera, self.visible.then_some(self.order), world, control);
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let render = world.single_fetch::<Render>().unwrap();
+            let mut this = world.fetch_mut(this);
+            let render = world.single_fetch::<Render>();
             this.rect = rect;
             let uniform = QuadUniform {
                 origin: rect.origin.into(),
@@ -133,15 +133,15 @@ impl<M: QuadMaterial> QuadMesh<M> {
         });
 
         world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.visible = visible;
             RenderControl::reorder(camera, visible.then_some(this.order), world, control);
             RenderControl::request_redraw(world);
         });
 
         world.observer(this, move |&SetQuadMaterial(mat), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let render = world.single_fetch::<Render>().unwrap();
+            let mut this = world.fetch_mut(this);
+            let render = world.single_fetch::<Render>();
             this.material = mat;
 
             render
@@ -156,8 +156,8 @@ impl<M: QuadMaterial> QuadMesh<M> {
 
 impl<M: QuadMaterial> QuadMeshPipeline<M> {
     pub fn from_world(world: &World) -> Self {
-        let render = world.single_fetch::<Render>().unwrap();
-        let camera = world.single_fetch::<CameraBind>().unwrap();
+        let render = world.single_fetch::<Render>();
+        let camera = world.single_fetch::<CameraBind>();
         let device = &render.device;
 
         let quad_shader = device.create_shader_module(ShaderModuleDescriptor {

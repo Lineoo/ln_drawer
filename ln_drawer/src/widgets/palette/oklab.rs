@@ -104,7 +104,7 @@ impl OklabPolar {
         world.dependency(collider, this);
 
         world.observer(collider, move |event: &PointerHit, world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             let delta = event.position - I64Vec2::q32_from_i32(this.rect.origin);
             let uv = (delta.q32_as_f64() / this.rect.extend.as_dvec2()).as_vec2();
 
@@ -115,8 +115,8 @@ impl OklabPolar {
         });
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(this);
+            let mut collider = world.fetch_mut(collider);
             this.enabled = enabled;
             collider.enabled = enabled;
             world.queue_trigger(thumb, SetWidgetVisible(enabled));
@@ -126,8 +126,8 @@ impl OklabPolar {
         });
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(this);
+            let mut collider = world.fetch_mut(collider);
             this.rect = rect;
             collider.rect = rect;
             let thumb_rect = Rectangle::new_half(
@@ -144,7 +144,7 @@ impl OklabPolar {
         });
 
         world.observer(this, move |&SetColorOklab(color), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.color = color;
             world.queue_trigger(
                 quad,
@@ -217,7 +217,7 @@ impl OklabBar {
         });
 
         world.observer(collider, move |event: &PointerHit, world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             let delta = event.position - I64Vec2::q32_from_i32(this.rect.origin);
             let uv = (delta.q32_as_f64() / this.rect.extend.as_dvec2()).as_vec2();
 
@@ -227,8 +227,8 @@ impl OklabBar {
         });
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(this);
+            let mut collider = world.fetch_mut(collider);
             this.enabled = enabled;
             collider.enabled = enabled;
             world.queue_trigger(thumb, SetWidgetVisible(enabled));
@@ -238,8 +238,8 @@ impl OklabBar {
         });
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(this);
+            let mut collider = world.fetch_mut(collider);
             this.rect = rect;
             collider.rect = rect;
             let thumb_rect = Rectangle::new_half(
@@ -256,7 +256,7 @@ impl OklabBar {
         });
 
         world.observer(this, move |&SetColorOklab(color), world| {
-            let mut this = world.fetch_mut(this).unwrap();
+            let mut this = world.fetch_mut(this);
             this.color = color;
             world.queue_trigger(
                 quad,

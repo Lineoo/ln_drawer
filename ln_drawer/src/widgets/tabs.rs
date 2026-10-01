@@ -44,7 +44,7 @@ struct TabButton {
 
 impl Tabs {
     pub fn init(&self, world: &World, handle: Handle<Self>) {
-        let theme = world.single_fetch::<Theme>().unwrap();
+        let theme = world.single_fetch::<Theme>();
 
         let roundness = theme.roundness;
         let shadow_offset = theme.shadow_offset.as_ivec2();
@@ -172,8 +172,8 @@ impl Tabs {
         }
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(handle);
+            let mut collider = world.fetch_mut(collider);
 
             this.rect = rect;
             world.queue_trigger(back, SetWidgetRectangle(rect));
@@ -190,8 +190,8 @@ impl Tabs {
 
         let children2 = children.clone();
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let mut collider = world.fetch_mut(collider).unwrap();
+            let mut this = world.fetch_mut(handle);
+            let mut collider = world.fetch_mut(collider);
 
             this.visible = visible;
             world.queue_trigger(back, SetWidgetVisible(visible));
@@ -211,8 +211,8 @@ impl Tabs {
         });
 
         world.observer(handle, move |&SetTabsActive(active), world| {
-            let mut this = world.fetch_mut(handle).unwrap();
-            let theme = world.single_fetch::<Theme>().unwrap();
+            let mut this = world.fetch_mut(handle);
+            let theme = world.single_fetch::<Theme>();
             this.active = active;
 
             for (i, tab) in children.iter().enumerate() {
