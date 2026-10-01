@@ -18,7 +18,10 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{
         Render,
-        camera::{Camera, CameraDescriptor, CameraUtils, MainCamera, MainCameraUtils, UICamera},
+        camera::{
+            Camera, CameraDescriptor, CameraUpdated, CameraUtils, MainCamera, MainCameraUtils,
+            UICamera,
+        },
     },
     save::{Autosave, AutosaveScheduler, SaveDatabase},
     theme::Theme,
@@ -211,6 +214,7 @@ impl Element for Lnwindow {
                         )),
                     );
 
+                    world.queue_trigger(camera.handle(), CameraUpdated);
                     camera.zoom = i64::q32_from_f64(scale.log2());
                 }
             });

@@ -94,29 +94,12 @@ impl Element for Camera {
             }
         });
         world.dependency(obs, this);
-    }
-
-    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
-        let transform = Mat2::from_scale_angle(
-            Vec2::splat(self.zoom.q32_as_f64().exp2() as f32) * 2. / self.size.as_vec2(),
-            0.0,
-        );
-        let translate = self.center;
-        self.queue.write_buffer(
-            &self.uniform,
-            0,
-            bytemuck::bytes_of(&CameraUniform {
-                center: translate.q32_floor().into(),
-                center_fract: translate.q32_fract().into(),
-                transform,
-                inverse: transform.inverse(),
-            }),
-        );
-
-        world.queue_trigger(this, CameraUpdated);
-
-        let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
-        lnwindow.window.request_redraw();
+        world.observer(this, move |&CameraUpdated, world| {
+            let this = world.fetch(this).unwrap();
+            let lnwindow = world.single_fetch::<Lnwindow>().unwrap();
+            this.upload();
+            lnwindow.window.request_redraw();
+        });
     }
 }
 
@@ -329,6 +312,24 @@ impl Camera {
             table.insert(&name_owned[..], &bytes[..]).unwrap();
         }))
     }
+
+    fn upload(&self) {
+        let transform = Mat2::from_scale_angle(
+            Vec2::splat(self.zoom.q32_as_f64().exp2() as f32) * 2. / self.size.as_vec2(),
+            0.0,
+        );
+        let translate = self.center;
+        self.queue.write_buffer(
+            &self.uniform,
+            0,
+            bytemuck::bytes_of(&CameraUniform {
+                center: translate.q32_floor().into(),
+                center_fract: translate.q32_fract().into(),
+                transform,
+                inverse: transform.inverse(),
+            }),
+        );
+    }
 }
 
 pub struct CameraUtils {
@@ -454,6 +455,7 @@ impl CameraUtils {
     }
 
     pub fn apply_to_camera(&self, world: &World, camera: Handle<Camera>) {
+        world.queue_trigger(camera, CameraUpdated);
         let mut camera = world.fetch_mut(camera).unwrap();
         camera.zoom = self.camera_zoom;
         camera.center = self.camera_center;

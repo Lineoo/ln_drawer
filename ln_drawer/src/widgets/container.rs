@@ -305,6 +305,7 @@ fn set_camera_center(world: &World, camera: Handle<Camera>, center: I64Vec2) {
         return;
     };
     if camera.center != center {
+        world.queue_trigger(camera.handle(), CameraUpdated);
         camera.center = center;
     }
 }
