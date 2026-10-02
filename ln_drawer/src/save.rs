@@ -99,7 +99,8 @@ impl Save {
                 sn.database_version
             );
         } else if sn.database_version < DATABASE_VERSION {
-            Self::migrate_format(db, sn.database_version, db_file)?;
+            Self::create_backup(db_file, "migration", false, 256);
+            Self::migrate_format(db, sn.database_version)?;
             sn.database_version = DATABASE_VERSION;
         }
 
@@ -111,15 +112,13 @@ impl Save {
         Ok(())
     }
 
-    fn migrate_format(db: &Database, version: u32, db_file: &Path) -> Result<(), redb::Error> {
-        Save::create_backup(db_file, "migration", false, 256);
+    fn migrate_format(db: &Database, version: u32) -> Result<(), redb::Error> {
         log::info!("start migration from {version} to {DATABASE_VERSION}");
 
         let write = db.begin_write()?;
+        #[expect(unreachable_code)]
         for migrate_format in version..DATABASE_VERSION {
             match migrate_format {
-                0 => legacy::migrate0(&write).unwrap(),
-                1 => legacy::migrate1(&write).unwrap(),
                 _ => unimplemented!("unsupported migration {migrate_format}"),
             }
 
