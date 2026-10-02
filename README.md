@@ -7,12 +7,6 @@ A simple, light-weight, GPU-accelerated drawing application written in Rust, dri
 
 ## Build
 
-Building requires ALSA Library, in Ubuntu you need:
-
-```
-apt-get install libasound2-dev
-``` 
-
 Manually build through `cargo`:
 
 ```

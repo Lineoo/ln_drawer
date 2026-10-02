@@ -59,9 +59,6 @@ jobs:
           ~/.cargo
           target
 
-    - name: '[Install] ALSA Library'
-      run: sudo apt-get install libasound2-dev
-
     - name: '[Install] MinGW-w64 for Win32 & Posix'
       if: ${{ matrix.target == 'x86_64-pc-windows-gnu' }}
       run: sudo apt-get install gcc-mingw-w64-x86-64-win32 gcc-mingw-w64-x86-64-posix

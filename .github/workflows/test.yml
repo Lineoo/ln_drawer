@@ -30,9 +30,6 @@ jobs:
           ~/.cargo
           target
 
-    - name: '[Install] ALSA Library'
-      run: sudo apt-get install libasound2-dev
-
     - name: '[Test] Cargo Test x86_64 Linux'
       run: cargo test --verbose
 

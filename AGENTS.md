@@ -7,7 +7,6 @@ GPU-accelerated drawing app in Rust (winit + wgpu). Cargo workspace with two cra
 
 ## Build & run
 
-- ALSA is required: `sudo apt-get install libasound2-dev` (rodio pulls it in).
 - `cargo build --package=ln_drawer --bin ln_drawer`; `cargo run -p ln_drawer --bin ln_drawer`.
 - Tests: `cargo test` — tests live in `ln_world/src/lib.rs`, `ln_drawer/src/layer/stream.rs`, and `ln_drawer/src/widgets/shaders.rs`; all are pure-compute and run headless. `cargo test <name>` works per-test as usual.
 - Format gate: `cargo fmt --all --check` (enforced by CI and the `scripts/hooks/pre-push` hook). rustfmt config sets `group_imports = "StdExternalCrate"` and `imports_granularity = "Crate"` — imports must be organized as grouped crate imports, never `use foo::{a, b}` split lines.
