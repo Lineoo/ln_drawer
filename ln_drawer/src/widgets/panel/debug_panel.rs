@@ -95,9 +95,9 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>, camera: Handle<Cam
 
     let compact = docker_button(include_bytes!("../../../res/interface/database-zap.svg"));
     world.observer(compact, move |&ButtonClick, world| {
-        let save = world.single_fetch::<Save>();
+        let mut save = world.single_fetch_mut::<Save>();
         log::debug!("on next startup database will be compacted");
-        Save::write_compact(&save.db).unwrap();
+        save.sn.compact_on_startup = true;
     });
 
     world.insert(Transform {

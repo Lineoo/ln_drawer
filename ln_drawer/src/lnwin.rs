@@ -172,7 +172,7 @@ impl Element for Lnwindow {
             let lnwindow = world.fetch(this);
             let size = lnwindow.window.surface_size();
 
-            let main_camera = Camera::build_from_save(world, "camera1");
+            let main_camera = Camera::init_main_camera(world);
 
             let ui_camera = world.build(CameraDescriptor {
                 size: UVec2::new(size.width, size.height),

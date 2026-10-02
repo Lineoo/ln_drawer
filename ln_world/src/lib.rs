@@ -1354,7 +1354,7 @@ struct Observers<E: Send + 'static> {
 }
 
 #[expect(clippy::type_complexity)]
-struct Observer<E: Send + 'static> {
+struct Observer<E: Send> {
     action: Box<dyn FnMut(&E, &World) + Send>,
     label: Cow<'static, str>,
     view: HandleAny,

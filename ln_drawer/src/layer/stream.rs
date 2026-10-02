@@ -10,7 +10,7 @@ use std::{
 use glam::{I64Vec2, IVec2, UVec2};
 use hashbrown::HashSet;
 use indexmap::{IndexMap, IndexSet};
-use redb::{ReadableDatabase, TableDefinition};
+use redb::{Database, ReadableDatabase, TableDefinition};
 use wgpu::{
     BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Device, Extent3d, MapMode, Origin3d,
     PollType, Queue, TexelCopyBufferInfoBase, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
@@ -23,7 +23,6 @@ use crate::{
     layer::{Chunk, ChunkKey, LayerPipeline, chunk_to_rect},
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    save::Save,
 };
 
 const CHUNK_REAL_CAPS: usize = 512;
@@ -61,7 +60,7 @@ struct ChunkMeta0 {
 }
 
 pub struct StreamConfig {
-    pub save: Save,
+    pub database: Arc<Database>,
     pub device: Device,
     pub queue: Queue,
     pub page: u64,
@@ -304,7 +303,7 @@ fn load(
     staging: &mut StreamStaging,
     debug: &mut DebugInfo,
 ) -> Result<(), Box<dyn Error + 'static>> {
-    let read = config.save.db.begin_read()?;
+    let read = config.database.begin_read()?;
     let table_chunk = read.open_table(TABLE_LAYER_CHUNK)?;
     let table_meta = read.open_table(TABLE_LAYER_CHUNK_META)?;
     for key in staging.active.drain(..) {
@@ -365,7 +364,7 @@ fn unload(
         return Ok(());
     }
 
-    let write = config.save.db.begin_write()?;
+    let write = config.database.begin_write()?;
     let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
     let mut frnt = base.active.len();
@@ -419,7 +418,7 @@ fn unload_all(
     base: &mut StreamBase,
     debug: &mut DebugInfo,
 ) -> Result<(), Box<dyn Error + 'static>> {
-    let write = config.save.db.begin_write()?;
+    let write = config.database.begin_write()?;
     let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
     while !base.active.is_empty() {
@@ -466,7 +465,8 @@ fn autosave(
 ) -> Result<(), Box<dyn Error + 'static>> {
     let now = Instant::now();
 
-    let write = Save::begin_clean_write(&config.save.db)?;
+    let mut write = config.database.begin_write()?;
+    write.set_quick_repair(true);
 
     let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
@@ -671,7 +671,7 @@ fn chunk_migration(
 
     meta0.format = CHUNK_META0_FORMAT;
 
-    let write = config.save.db.begin_write()?;
+    let write = config.database.begin_write()?;
     let mut table_chunk = write.open_table(TABLE_LAYER_CHUNK)?;
     let mut table_meta = write.open_table(TABLE_LAYER_CHUNK_META)?;
     let meta_bytes = postcard::to_stdvec(&meta0)?;

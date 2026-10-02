@@ -7,22 +7,18 @@ use std::{
 };
 
 use ln_world::{Element, Handle, World, WorldError};
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition, WriteTransaction};
+use redb::{Database, WriteTransaction};
 
 #[cfg(target_os = "android")]
 use crate::lnwin::LnAndroid;
 use crate::{
     lnwin::Lnwindow,
+    render::camera::RootCameraDescriptor,
     tools::timer::{Timer, TimerHit},
 };
 
-/// See [`TABLE_METADATA`] and [`SaveMetadata0`].
-///
-/// ### History
-/// `version`: `format` (the last version that used it)
-/// - `v0.1.3-alpha.2`: 0
-/// - `v0.1.3-alpha.3`: 1
-const FORMAT_VERSION: u32 = 2;
+/// The format version of the database.
+const DATABASE_VERSION: u32 = 0;
 
 /// The number of backup files.
 const BACKUP_SLOT: u32 = 6;
@@ -30,33 +26,17 @@ const BACKUP_SLOT: u32 = 6;
 /// The minimum duration before creating another save backup
 const BACKUP_MINIMUM_DURATION: Duration = Duration::from_hours(24);
 
-const TABLE_METADATA: TableDefinition<u32, &[u8]> = TableDefinition::new("metadata");
-
 /// The core database.
 ///
 /// ## Tables
 ///
 /// | name | key | value |
 /// |------|-----|-------|
-/// | `metadata`            | `u32`                     | `&[u8]`   |
 /// | `stroke_chunk`        | `(u64, ChunkKey)`         | `&[u8]`   |
 /// | `stroke_chunk_meta`   | `((u64, ChunkKey), u32)`  | `&[u8]`   |
-/// | `camera`              | ` &str`                   | `&[u8]`   |
-#[derive(Clone)]
 pub struct Save {
+    pub sn: Scene,
     pub db: Arc<Database>,
-}
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, bytemuck::AnyBitPattern, bytemuck::NoUninit)]
-pub struct SaveMetadata0 {
-    /// See [`FORMAT_VERSION`]
-    pub version: u32,
-}
-
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub struct SaveMetadata1 {
-    pub compact_on_startup: bool,
 }
 
 impl Save {
@@ -66,19 +46,35 @@ impl Save {
             return;
         };
 
-        let file = get_file_path(world, "world.lndb");
-        std::fs::create_dir_all(&file.parent().unwrap()).unwrap();
-        Save::create_backup(&file, "old", true, BACKUP_SLOT);
-        if let Ok(mut db) = Database::open(&file) {
-            Save::touch(&mut db, &file).unwrap();
-            world.insert(Save { db: Arc::new(db) });
-            log::debug!("database loaded");
+        let db_file = get_file_path(world, "world.lndb");
+        let sn_file = get_file_path(world, "world.toml");
+
+        std::fs::create_dir_all(&db_file.parent().unwrap()).unwrap();
+        Save::create_backup(&db_file, "old", true, BACKUP_SLOT);
+
+        let mut sn = if let Ok(sn) = std::fs::read(&sn_file) {
+            let sn = toml::from_slice(&sn).unwrap();
+            log::debug!("scene loaded");
+            sn
         } else {
-            let db = Database::create(&file).unwrap();
-            Save::fresh(&db).unwrap();
-            world.insert(Save { db: Arc::new(db) });
+            let sn = Scene::default();
+            log::debug!("scene created");
+            let sn_tmp_file = get_file_path(world, "world.toml");
+            sn.write_disk(&sn_file, &sn_tmp_file);
+            sn
+        };
+
+        let db = if let Ok(mut db) = Database::open(&db_file) {
+            Save::touch(&mut sn, &mut db, &db_file).unwrap();
+            log::debug!("database loaded");
+            Arc::new(db)
+        } else {
+            let db = Database::create(&db_file).unwrap();
             log::debug!("database created");
-        }
+            Arc::new(db)
+        };
+
+        world.insert(Save { sn, db });
     }
 
     /// Begin a write transaction with quick-repair enabled.
@@ -93,51 +89,30 @@ impl Save {
         Ok(write)
     }
 
-    /// Format a fresh, empty database, this contains initializing minimum
-    /// sets of data such as metadata and format version.
-    fn fresh(db: &Database) -> Result<(), redb::Error> {
-        let write = Self::begin_clean_write(db)?;
-
-        let mut metadata = write.open_table(TABLE_METADATA)?;
-        metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
-        let meta1 = postcard::to_stdvec(&SaveMetadata1::default_value()).unwrap();
-        metadata.insert(1, &meta1[..])?;
-        drop(metadata);
-
-        write.commit()?;
-        Ok(())
-    }
-
     /// Touch a existed database, including updating necessary timestamps,
     /// validation, and most of all migration data from older versions.
-    fn touch(db: &mut Database, file: &Path) -> Result<(), redb::Error> {
-        let write = Self::begin_clean_write(db)?;
-        Self::migrate_format(&write, file)?;
-        write.commit()?;
+    fn touch(sn: &mut Scene, db: &mut Database, db_file: &Path) -> Result<(), redb::Error> {
+        if sn.database_version > DATABASE_VERSION {
+            panic!("cannot open database from newer version {}", sn.database_version);
+        } else if sn.database_version < DATABASE_VERSION {
+            Self::migrate_format(db, sn.database_version, db_file)?;
+            sn.database_version = DATABASE_VERSION;
+        }
 
-        Self::perform_compact(db)?;
+        if sn.compact_on_startup {
+            Self::perform_compact(db)?;
+            sn.compact_on_startup = false;
+        }
 
         Ok(())
     }
 
-    fn migrate_format(write: &WriteTransaction, file: &Path) -> Result<(), redb::Error> {
-        let mut metadata = write.open_table(TABLE_METADATA)?;
+    fn migrate_format(db: &Database, version: u32, db_file: &Path) -> Result<(), redb::Error> {
+        Save::create_backup(db_file, "migration", false, 256);
+        log::info!("start migration from {version} to {DATABASE_VERSION}");
 
-        let access0 = metadata.get(0)?.unwrap();
-        let meta0 = *bytemuck::from_bytes::<SaveMetadata0>(access0.value());
-        let from_format = meta0.version;
-        drop(access0);
-
-        if meta0.version > FORMAT_VERSION {
-            panic!("cannot open database from newer version {}", meta0.version);
-        } else if meta0.version == FORMAT_VERSION {
-            return Ok(());
-        }
-
-        Save::create_backup(file, "migration", false, 256);
-        log::info!("start migration from {from_format} to {FORMAT_VERSION}");
-
-        for migrate_format in from_format..FORMAT_VERSION {
+        let write = db.begin_write()?;
+        for migrate_format in version..DATABASE_VERSION {
             match migrate_format {
                 0 => legacy::migrate0(&write).unwrap(),
                 1 => legacy::migrate1(&write).unwrap(),
@@ -146,39 +121,16 @@ impl Save {
 
             log::info!("finish migration from {migrate_format}");
         }
-
-        // update metadata
-        metadata.insert(0, bytemuck::bytes_of(&SaveMetadata0::current_version()))?;
+        write.commit()?;
 
         log::info!("migration all finished");
         Ok(())
     }
 
     fn perform_compact(db: &mut Database) -> Result<(), redb::Error> {
-        let read = db.begin_read()?;
-        let metadata = read.open_table(TABLE_METADATA)?;
-        let access = metadata.get(1)?;
-        drop(metadata);
-        drop(read);
-
-        if let Some(access) = access
-            && let Ok(meta1) = postcard::from_bytes::<SaveMetadata1>(access.value())
-            && meta1.compact_on_startup
-        {
-            log::debug!("database compact started");
-            let result = db.compact()?;
-            log::debug!("database compact finished, result: {result}");
-        }
-
-        let write = Self::begin_clean_write(db)?;
-        let mut metadata = write.open_table(TABLE_METADATA)?;
-
-        // update metadata
-        let meta1 = postcard::to_stdvec(&SaveMetadata1::default_value()).unwrap();
-        metadata.insert(1, &meta1[..])?;
-
-        drop(metadata);
-        write.commit()?;
+        log::debug!("database compact started");
+        let result = db.compact()?;
+        log::debug!("database compact finished, result: {result}");
 
         Ok(())
     }
@@ -239,42 +191,40 @@ impl Save {
         log::debug!("backup file is written to {backup:?}");
         std::fs::copy(file, backup).unwrap();
     }
+}
 
-    pub fn write_compact(db: &Database) -> Result<(), redb::Error> {
-        let write = Self::begin_clean_write(db)?;
-        let mut metadata = write.open_table(TABLE_METADATA)?;
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct Scene {
+    pub database_version: u32,
+    pub compact_on_startup: bool,
+    pub main_camera: RootCameraDescriptor,
+}
 
-        // update metadata
-        let meta1 = postcard::to_stdvec(&SaveMetadata1 {
-            compact_on_startup: true,
-        })
-        .unwrap();
-        metadata.insert(1, &meta1[..])?;
-
-        drop(metadata);
-        write.commit()?;
-
-        Ok(())
+impl Scene {
+    pub fn write_disk(&self, sn_file: &Path, sn_tmp_file: &Path) {
+        let text = toml::to_string(self).unwrap();
+        std::fs::write(&sn_tmp_file, text).unwrap();
+        std::fs::rename(&sn_tmp_file, &sn_file).unwrap();
     }
 }
 
-impl SaveMetadata0 {
-    const fn current_version() -> Self {
-        SaveMetadata0 {
-            version: FORMAT_VERSION,
-        }
-    }
-}
-
-impl SaveMetadata1 {
-    const fn default_value() -> Self {
-        SaveMetadata1 {
+impl Default for Scene {
+    fn default() -> Self {
+        Self {
+            database_version: DATABASE_VERSION,
             compact_on_startup: false,
+            main_camera: RootCameraDescriptor::default(),
         }
     }
 }
 
-pub struct Autosave(pub Box<dyn FnMut(&World, &WriteTransaction) + Send>);
+pub struct Autosave(pub Box<dyn FnMut(&World, AutosaveTask) + Send>);
+
+pub struct AutosaveTask<'a> {
+    #[expect(unused)]
+    pub write: &'a WriteTransaction,
+    pub scene: &'a mut Scene,
+}
 
 pub struct AutosaveScheduler {
     pub autosave_duration: Duration,
@@ -284,12 +234,22 @@ impl Autosave {
     pub fn autosave_all(world: &World) {
         let start = Instant::now();
 
-        let save = world.single_fetch::<Save>();
+        let mut save = world.single_fetch_mut::<Save>();
         let write = Save::begin_clean_write(&save.db).unwrap();
         world.foreach_fetch_mut::<Autosave>(|mut task| {
-            (task.0)(world, &write);
+            (task.0)(
+                world,
+                AutosaveTask {
+                    write: &write,
+                    scene: &mut save.sn,
+                },
+            );
         });
         write.commit().unwrap();
+
+        let sn_file = get_file_path(world, "world.toml");
+        let sn_tmp_file = get_file_path(world, "world.toml.tmp");
+        save.sn.write_disk(&sn_file, &sn_tmp_file);
 
         let duration = Instant::now().duration_since(start);
         log::debug!("autosave request finished in {duration:?}");

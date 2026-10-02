@@ -104,14 +104,14 @@ impl LayerPage {
         let draw = DrawPipeline::new(layer.clone());
         let traveler = Traveler::new(layer.clone());
 
-        let database = world.single_fetch::<Save>().clone();
+        let database = world.single_fetch::<Save>().db.clone();
         let window = world.single_fetch::<Lnwindow>().window.clone();
 
         let (input_tx, input_rx) = channel();
         let (output_tx, output_rx) = channel();
 
         let stream_config = StreamConfig {
-            save: database,
+            database,
             device: render.device.clone(),
             queue: render.queue.clone(),
             page: 0,

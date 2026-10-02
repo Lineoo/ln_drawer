@@ -1,6 +1,5 @@
 use glam::{DVec2, I64Vec2, Mat2, UVec2, Vec2};
 use ln_world::{Descriptor, Element, Handle, HandleAny, World};
-use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
     *,
@@ -13,8 +12,6 @@ use crate::{
     render::{Render, RenderControl, RenderExtra},
     save::{Autosave, Save},
 };
-
-const TABLE_CAMERA: TableDefinition<&str, &[u8]> = TableDefinition::new("camera");
 
 pub struct Camera {
     pub size: UVec2,
@@ -56,7 +53,7 @@ pub struct MainCameraUtils(pub Handle<CameraUtils>);
 pub struct CameraUpdated;
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-struct RootCameraDescriptor {
+pub struct RootCameraDescriptor {
     pub size: UVec2,
     pub center: I64Vec2,
     pub zoom: i64,
@@ -253,64 +250,29 @@ impl Camera {
         world.insert(CameraBind { layout });
     }
 
-    pub fn build_from_save(world: &World, name: &str) -> Handle<Camera> {
-        Camera::try_build_from_save(world, name).unwrap()
-    }
-
-    fn try_build_from_save(world: &World, name: &str) -> Result<Handle<Camera>, redb::Error> {
+    pub fn init_main_camera(world: &World) -> Handle<Camera> {
         let save = world.single_fetch::<Save>();
-        Camera::build_default_if_empty(&save, name)?;
-
-        let read = save.db.begin_read()?;
-        let table = read.open_table(TABLE_CAMERA)?;
-        let bytes = table.get(name)?.unwrap();
-        let camera_desc = postcard::from_bytes::<RootCameraDescriptor>(bytes.value()).unwrap();
 
         let lnwindow = world.single_fetch::<Lnwindow>();
         let size = lnwindow.window.surface_size();
         let camera = world.build(CameraDescriptor {
             size: UVec2::new(size.width, size.height),
-            center: camera_desc.center,
-            zoom: camera_desc.zoom,
+            center: save.sn.main_camera.center,
+            zoom: save.sn.main_camera.zoom,
         });
 
-        world.insert(Camera::autosave(camera, name));
-
-        Ok(camera)
-    }
-
-    fn build_default_if_empty(save: &Save, name: &str) -> Result<(), redb::Error> {
-        let write = save.db.begin_write()?;
-        {
-            let mut table = write.open_table(TABLE_CAMERA)?;
-            if table.get(name)?.is_some() {
-                return Ok(());
-            }
-
-            let bytes = postcard::to_stdvec(&RootCameraDescriptor::default()).unwrap();
-
-            table.insert(name, &bytes[..])?;
-        }
-
-        write.commit()?;
-        Ok(())
-    }
-
-    fn autosave(camera: Handle<Camera>, name: &str) -> Autosave {
-        let name_owned = String::from(name);
-        Autosave(Box::new(move |world, write| {
+        let autosave = world.insert(Autosave(Box::new(move |world, task| {
             let camera = world.fetch(camera);
-
-            let bytes = postcard::to_stdvec(&RootCameraDescriptor {
+            task.scene.main_camera = RootCameraDescriptor {
                 size: camera.size,
                 center: camera.center,
                 zoom: camera.zoom,
-            })
-            .unwrap();
+            };
+        })));
 
-            let mut table = write.open_table(TABLE_CAMERA).unwrap();
-            table.insert(&name_owned[..], &bytes[..]).unwrap();
-        }))
+        world.dependency(autosave, camera);
+
+        camera
     }
 
     fn upload(&self) {
