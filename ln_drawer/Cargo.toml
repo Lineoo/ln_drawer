@@ -32,7 +32,7 @@ smallvec = "1.15.1"
 swash = "0.2.9"
 sys-locale = "0.3.2"
 thiserror = "2.0.16"
-toml = "1.1.4"
+toml_edit = { version = "0.25.15", features = ["serde"] }
 usvg = "0.47.0"
 wgpu = "30.0"
 zeno = "0.3.3"

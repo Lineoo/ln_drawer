@@ -8,6 +8,7 @@ use std::{
 
 use ln_world::{Element, Handle, World, WorldError};
 use redb::{Database, WriteTransaction};
+use toml_edit::{DocumentMut, Item};
 
 #[cfg(target_os = "android")]
 use crate::lnwin::LnAndroid;
@@ -53,7 +54,7 @@ impl Save {
         Save::create_backup(&db_file, "old", true, BACKUP_SLOT);
 
         let mut sn = if let Ok(sn) = std::fs::read(&sn_file) {
-            let sn = toml::from_slice(&sn).unwrap();
+            let sn = toml_edit::de::from_slice(&sn).unwrap();
             log::debug!("scene loaded");
             sn
         } else {
@@ -93,7 +94,10 @@ impl Save {
     /// validation, and most of all migration data from older versions.
     fn touch(sn: &mut Scene, db: &mut Database, db_file: &Path) -> Result<(), redb::Error> {
         if sn.database_version > DATABASE_VERSION {
-            panic!("cannot open database from newer version {}", sn.database_version);
+            panic!(
+                "cannot open database from newer version {}",
+                sn.database_version
+            );
         } else if sn.database_version < DATABASE_VERSION {
             Self::migrate_format(db, sn.database_version, db_file)?;
             sn.database_version = DATABASE_VERSION;
@@ -202,8 +206,18 @@ pub struct Scene {
 
 impl Scene {
     pub fn write_disk(&self, sn_file: &Path, sn_tmp_file: &Path) {
-        let text = toml::to_string(self).unwrap();
-        std::fs::write(&sn_tmp_file, text).unwrap();
+        let sn_str = std::fs::read_to_string(sn_file).unwrap();
+        let mut sn_doc = sn_str.parse::<DocumentMut>().unwrap();
+        let new_doc = toml_edit::ser::to_document(self).unwrap();
+        for (key, item) in new_doc.iter() {
+            let item = item.clone();
+            let item = match item.into_table() {
+                Ok(x) => Item::from(x),
+                Err(x) => x,
+            };
+            sn_doc.insert(key, item);
+        }
+        std::fs::write(&sn_tmp_file, sn_doc.to_string()).unwrap();
         std::fs::rename(&sn_tmp_file, &sn_file).unwrap();
     }
 }

@@ -1,4 +1,4 @@
-static TRF: std::sync::LazyLock<toml::Value> = std::sync::LazyLock::new(|| {
+static TRF: std::sync::LazyLock<toml_edit::Document<&'static str>> = std::sync::LazyLock::new(|| {
     let locale = sys_locale::get_locale().unwrap_or_default();
     let locale = icu::locale::Locale::try_from_str(&locale).unwrap();
 
@@ -22,14 +22,14 @@ static TRF: std::sync::LazyLock<toml::Value> = std::sync::LazyLock::new(|| {
         };
     };
 
-    toml::from_str(table).unwrap()
+    toml_edit::Document::parse(table).unwrap()
 });
 
-static FALLBACK_TRF: std::sync::LazyLock<toml::Value> =
-    std::sync::LazyLock::new(|| toml::from_str(include_str!("../lang/en.toml")).unwrap());
+static FALLBACK_TRF: std::sync::LazyLock<toml_edit::Document<&'static str>> =
+    std::sync::LazyLock::new(|| toml_edit::Document::parse(include_str!("../lang/en.toml")).unwrap());
 
 pub fn tr(key: &str) -> &str {
-    let mut rf = &*TRF;
+    let mut rf = TRF.as_item();
     for i in key.split('.') {
         if let Some(nxt) = rf.get(i) {
             rf = nxt
@@ -40,7 +40,7 @@ pub fn tr(key: &str) -> &str {
     if let Some(rst) = rf.as_str() {
         rst
     } else {
-        rf = &*FALLBACK_TRF;
+        rf = FALLBACK_TRF.as_item();
         for i in key.split('.') {
             if let Some(nxt) = rf.get(i) {
                 rf = nxt
@@ -57,7 +57,7 @@ pub fn tr(key: &str) -> &str {
 }
 
 pub fn trp(key: &str, params: &[(&str, &str)]) -> String {
-    let mut rf = &*TRF;
+    let mut rf = TRF.as_item();
     for i in key.split('.') {
         if let Some(nxt) = rf.get(i) {
             rf = nxt
@@ -68,7 +68,7 @@ pub fn trp(key: &str, params: &[(&str, &str)]) -> String {
     if let Some(rst) = rf.as_str() {
         compile(rst, params)
     } else {
-        rf = &*FALLBACK_TRF;
+        rf = FALLBACK_TRF.as_item();
         for i in key.split('.') {
             if let Some(nxt) = rf.get(i) {
                 rf = nxt
