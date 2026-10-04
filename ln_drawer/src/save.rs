@@ -1,5 +1,3 @@
-mod legacy;
-
 use std::{
     path::{Path, PathBuf},
     sync::Arc,

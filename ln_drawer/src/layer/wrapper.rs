@@ -63,8 +63,8 @@ pub struct BrushPreset {
 /// - brush preview
 /// - undo/redo traveler
 pub struct LayerPage {
-    pub main: Layer,
-    merge: Layer,
+    pub main: Layer, // CacheLayers
+    merge: Layer, // RawLayer
 
     pub draw: DrawPipeline,
     traveler: Traveler,

@@ -28,6 +28,7 @@ use crate::{
 const CHUNK_REAL_CAPS: usize = 512;
 const CHUNK_HARD_CAPS: usize = 1024;
 const CHUNK_BATCH: usize = 8;
+
 /// last version used
 /// `2`: 0.4.0
 const CHUNK_META0_FORMAT: u32 = 3;

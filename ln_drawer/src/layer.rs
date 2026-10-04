@@ -82,6 +82,37 @@ pub struct LayerPipeline {
     support_read_write: bool,
 }
 
+/// layer for scratch, hashmap existence stands for whether it's non-transparent.
+pub struct PlainLayer {
+    pub chunks: HashMap<(i32, i32), Chunk>,
+    pub chunk_size: UVec2,
+}
+
+/// layer for rendering, hashmap existence stands for whether it's loaded or not.
+pub struct CacheLayers {
+    pub chunks: HashMap<(i32, i32, u8), CacheLayerChunk>,
+    pub chunk_size: UVec2,
+    pub mipmap_cap: u8,
+}
+
+pub enum CacheLayerChunk {
+    Transparent,
+    Filled(Chunk)
+}
+
+/// layer of raw data, `Associated` variety means chunk's data equals to its correlated cached
+/// layer level 0 chunk, hashmap existence stands for whether it's loaded or not.
+pub struct RawLayer {
+    pub chunks: HashMap<(i32, i32), RawLayerChunk>,
+    pub chunk_size: UVec2,
+}
+
+pub enum RawLayerChunk {
+    Transparent,
+    Associated,
+    Filled(Chunk)
+}
+
 pub struct Layer {
     pub chunks: HashMap<ChunkKey, Chunk>,
     pub chunk_size: u32,
@@ -96,11 +127,12 @@ pub struct Standalone {
 
 pub struct ChunkPool {
     pub list: Vec<Chunk>,
+    // TODO change to UVec2
     pub chunk_size: u32,
 }
 
-#[derive(Clone)]
 pub struct Chunk {
+    // TODO dynamic offset
     pub rectangle: Buffer,
     pub texture: Texture,
     pub dispatch: BindGroup,

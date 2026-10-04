@@ -42,8 +42,8 @@ const BRIDGE_CHUNK_SIZE: u32 = 1024;
 pub struct DrawPipeline {
     pub layer: Arc<LayerPipeline>,
 
-    pub scratch_dst: Layer,
-    scratch_swp: Layer,
+    pub scratch_dst: Layer, // PlainLayer
+    scratch_swp: Layer,  // PlainLayer
     scratch_pool: ChunkPool,
 
     bridge: Standalone,
