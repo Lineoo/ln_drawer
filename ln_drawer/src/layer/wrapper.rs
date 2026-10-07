@@ -10,18 +10,20 @@ use glam::{I64Vec2, IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
 use palette::{IntoColor, Srgba};
-use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor, RenderPass};
+use wgpu::{CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, RenderPass};
 
 use crate::{
     layer::{
-        DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_DISABLED, DEFAULT_MIPMAP_ENABLED, Layer, LayerPipeline,
+        CacheLayerChunk, CacheLayers, ChunkPool, DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_CAP,
+        LayerPipeline, PlainLayer, RawLayer, Standalone,
         brush::{
-            BrushParams, Draw, DrawPipeline, blur::BlurBrush, param::BrushParam, pixel::PixelBrush,
+            BrushParams, Draw, Stroke, blur::BlurBrush, param::BrushParam, pixel::PixelBrush,
             round::RoundBrush, smudge::SmudgeBrush, tint::TintBrush,
         },
-        rect_to_chunks,
-        stream::{StreamConfig, ThreadInput, ThreadOutput, loading_thread},
+        chunks_key_to_rect, create_chunk, create_chunk_texture, rect_chunks_stack_layer_iter,
+        stream::{StreamConfig, StreamThread, ThreadInput, ThreadOutput},
         traveler::Traveler,
+        zoom_to_mipmap,
     },
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
@@ -32,6 +34,8 @@ use crate::{
     save::{Autosave, Save},
     widgets::renderer::rrect::RRect,
 };
+
+const BRIDGE_CHUNK_SIZE: UVec2 = UVec2::splat(1024);
 
 // TODO rename module to `page`
 
@@ -63,10 +67,16 @@ pub struct BrushPreset {
 /// - brush preview
 /// - undo/redo traveler
 pub struct LayerPage {
-    pub main: Layer, // CacheLayers
-    merge: Layer, // RawLayer
+    pub lp: Arc<LayerPipeline>,
 
-    pub draw: DrawPipeline,
+    pub cache: CacheLayers,
+    raw: RawLayer,
+    scratch: PlainLayer,
+    bridge: Standalone,
+    pool: ChunkPool,
+
+    stroke: Option<Stroke>,
+
     traveler: Traveler,
 
     /// Immutable registry of brush presets.
@@ -80,8 +90,8 @@ pub struct LayerPage {
 
     pub debug: bool,
 
-    pub brush_preview: Handle<RRect>,
-    pub brush_preview_shadow: Handle<RRect>,
+    pub cursor: Handle<RRect>,
+    pub cursor_shadow: Handle<RRect>,
 
     pub thread_tx: Sender<ThreadInput>,
     pub thread_rx: Receiver<ThreadOutput>,
@@ -93,7 +103,7 @@ impl LayerPage {
         let render = world.single_fetch::<Render>();
         let camera_bind = world.single_fetch::<CameraBind>();
 
-        let layer = Arc::new(LayerPipeline::new(
+        let lp = Arc::new(LayerPipeline::new(
             render.adapter.clone(),
             render.device.clone(),
             render.queue.clone(),
@@ -101,8 +111,7 @@ impl LayerPage {
             &camera_bind.layout,
         ));
 
-        let draw = DrawPipeline::new(layer.clone());
-        let traveler = Traveler::new(layer.clone());
+        let traveler = Traveler::new(lp.clone());
 
         let database = world.single_fetch::<Save>().db.clone();
         let window = world.single_fetch::<Lnwindow>().window.clone();
@@ -116,8 +125,8 @@ impl LayerPage {
             queue: render.queue.clone(),
             page: 0,
             chunk_size: DEFAULT_CHUNK_SIZE,
-            mipmap_levels: DEFAULT_MIPMAP_ENABLED,
-            layer_pipeline: layer.clone(),
+            mipmap_levels: DEFAULT_MIPMAP_CAP,
+            layer_pipeline: lp.clone(),
             window,
         };
 
@@ -132,12 +141,14 @@ impl LayerPage {
             .unwrap();
 
         let thread = std::thread::spawn(move || {
-            loading_thread(stream_config, input_rx, output_tx).unwrap();
+            StreamThread::new(stream_config, input_rx, output_tx)
+                .run()
+                .unwrap();
         });
 
         let ui_camera = world.single_fetch::<UICamera>().0;
 
-        let brush_preview = world.insert(RRect {
+        let cursor = world.insert(RRect {
             rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
             order: -10,
             color: Srgba::new(0.5, 0.5, 0.5, 0.4),
@@ -146,7 +157,7 @@ impl LayerPage {
             enabled: false,
             camera: ui_camera,
         });
-        let brush_preview_shadow = world.insert(RRect {
+        let cursor_shadow = world.insert(RRect {
             rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
             order: -11,
             color: Srgba::new(0.0, 0.0, 0.0, 0.3),
@@ -226,26 +237,43 @@ impl LayerPage {
         let mut active = brushes[0].brush.dup();
         active.set_color(color);
 
+        let bridge_texture = create_chunk_texture(&lp.device, BRIDGE_CHUNK_SIZE);
+        let bridge_rect = Rectangle {
+            origin: IVec2::ZERO,
+            extend: BRIDGE_CHUNK_SIZE,
+        };
+        let bridge_chunk = create_chunk(&lp.device, &lp.chunk_layout, bridge_texture, bridge_rect);
+
         LayerPage {
-            main: Layer {
+            lp,
+            cache: CacheLayers {
                 chunks: HashMap::new(),
-                mipmap_levels: DEFAULT_MIPMAP_ENABLED,
                 chunk_size: DEFAULT_CHUNK_SIZE,
-                controlled: true,
+                mipmap_cap: DEFAULT_MIPMAP_CAP,
+                thread_tx: input_tx.clone(),
             },
-            merge: Layer {
+            raw: RawLayer {
                 chunks: HashMap::new(),
-                mipmap_levels: DEFAULT_MIPMAP_DISABLED,
                 chunk_size: DEFAULT_CHUNK_SIZE,
-                controlled: false,
+                thread_tx: input_tx.clone(),
             },
-            draw,
+            scratch: PlainLayer {
+                chunks: HashMap::new(),
+                chunk_size: DEFAULT_CHUNK_SIZE,
+            },
+            bridge: Standalone {
+                chunk: bridge_chunk,
+                rect: bridge_rect,
+            },
+            pool: ChunkPool {
+                list: Vec::new(),
+                chunk_size: DEFAULT_CHUNK_SIZE,
+            },
+            stroke: None,
             traveler,
             brushes,
             active_brush: 0,
             active,
-            color,
-            debug: false,
             erase: RoundBrush {
                 size: BrushParam::force_index(5.0, 15.0, 1.0),
                 flow: BrushParam::force_index(0.9, 1.0, 0.5),
@@ -254,8 +282,10 @@ impl LayerPage {
                 color: Srgba::new(1.0, 1.0, 1.0, 1.0),
                 erase: true,
             },
-            brush_preview,
-            brush_preview_shadow,
+            color,
+            debug: false,
+            cursor,
+            cursor_shadow,
             thread_tx: input_tx,
             thread_rx: output_rx,
             thread: Some(thread),
@@ -271,66 +301,130 @@ impl LayerPage {
     }
 
     pub fn draw_active(&mut self, draw: Draw) {
-        self.active.draw(&mut self.draw, &self.main, draw);
-        self.draw.request_stream(&self.main, &self.thread_tx);
-        if let Some(stroke) = &self.draw.stroke
-            && !stroke.replace
-        {
-            self.draw.cache_merge_scratch(&self.main, &mut self.merge);
-        }
-    }
+        let stroke = self
+            .stroke
+            .get_or_insert_with(|| Stroke::new(self.active.as_ref(), draw));
 
-    pub fn draw_erase(&mut self, draw: Draw) {
-        self.erase.draw(&mut self.draw, &self.main, draw);
-        self.draw.request_stream(&self.main, &self.thread_tx);
-        if let Some(stroke) = &self.draw.stroke
-            && !stroke.replace
-        {
-            self.draw.cache_merge_scratch(&self.main, &mut self.merge);
-        }
-    }
-
-    pub fn submit(&mut self) {
-        let Some(stroke) = &self.draw.stroke else {
+        let Some(batch) = stroke.batch(self.active.as_ref(), draw) else {
             return;
         };
 
-        let mut encoder =
-            (self.draw.layer.device).create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("page_submit"),
-            });
+        batch.upload(&self.lp, &mut self.bridge);
 
-        self.traveler.stock(&mut encoder, &self.main, stroke.dirty);
+        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("draw_active"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("draw_active"),
+            timestamp_writes: None,
+        });
+
+        batch.draw_layers(
+            &self.lp,
+            &mut cpass,
+            &mut self.scratch,
+            &mut self.bridge,
+            self.active.as_ref(),
+        );
+
+        drop(cpass);
+        self.lp.queue.submit([encoder.finish()]);
+    }
+
+    pub fn draw_erase(&mut self, draw: Draw) {
+        let stroke = self
+            .stroke
+            .get_or_insert_with(|| Stroke::new(&self.erase, draw));
+
+        let Some(batch) = stroke.batch(self.active.as_ref(), draw) else {
+            return;
+        };
+
+        batch.upload(&self.lp, &mut self.bridge);
+
+        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("draw_erase"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("draw_erase"),
+            timestamp_writes: None,
+        });
+
+        batch.draw_layers(
+            &self.lp,
+            &mut cpass,
+            &mut self.scratch,
+            &mut self.bridge,
+            self.active.as_ref(),
+        );
+
+        drop(cpass);
+        self.lp.queue.submit([encoder.finish()]);
+    }
+
+    pub fn submit(&mut self) {
+        let Some(stroke) = self.stroke.take() else {
+            return;
+        };
+
+        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("page_submit"),
+        });
+
+        self.traveler.stock(&mut encoder, &self.raw, stroke.dirty);
 
         let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("page_submit"),
             timestamp_writes: None,
         });
 
-        self.draw
-            .submit(&mut self.main, Some(&self.thread_tx), &mut cpass);
-        self.draw.recycle_all(&mut self.merge, &mut cpass);
+        stroke.submit_layers(&self.lp, &mut cpass, &self.raw, &mut self.scratch);
+        self.lp.cache_mipmaps(&mut cpass, &self.cache, stroke.dirty);
+
+        self.cleanup(&mut cpass, &stroke);
 
         drop(cpass);
-        self.draw.layer.queue.submit([encoder.finish()]);
+        self.lp.queue.submit([encoder.finish()]);
     }
 
     pub fn discard(&mut self) {
-        let mut encoder =
-            (self.draw.layer.device).create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("page_discard"),
-            });
+        let Some(stroke) = self.stroke.take() else {
+            return;
+        };
+
+        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("page_discard"),
+        });
 
         let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("page_discard"),
             timestamp_writes: None,
         });
 
-        self.draw.discard(&mut cpass);
-        self.draw.recycle_all(&mut self.merge, &mut cpass);
+        self.cleanup(&mut cpass, &stroke);
 
         drop(cpass);
-        self.draw.layer.queue.submit([encoder.finish()]);
+        self.lp.queue.submit([encoder.finish()]);
+    }
+
+    fn cleanup(&mut self, cpass: &mut ComputePass, stroke: &Stroke) {
+        if stroke.replace {
+            for (key, chunk) in self.scratch.chunks.drain() {
+                let chunk_rect = chunks_key_to_rect(key, self.scratch.chunk_size);
+                self.lp.clear_chunk_direct(cpass, &chunk, chunk_rect);
+                self.pool.list.push(chunk);
+            }
+        } else {
+            for (key, chunk) in self.scratch.chunks.drain() {
+                let chunk_rect = chunks_key_to_rect(key, self.scratch.chunk_size);
+                self.lp.clear_chunk(cpass, &chunk, chunk_rect, stroke.dirty);
+                self.pool.list.push(chunk);
+            }
+        }
+
+        // TODO Evaluate raw chunks and turn suitable chunks back into associated/transparent
     }
 
     /// Copy the preset at `index` into the temporary working brush.
@@ -354,9 +448,8 @@ impl LayerPage {
 
     pub fn pick_color(&mut self, cursor: I64Vec2, world: &World) {
         let cmd = world.commander("async_color_pick");
-        self.draw
-            .layer
-            .pick_color(&self.main, cursor.q32_floor(), move |color| {
+        self.lp
+            .pick_color(&self.raw, cursor.q32_floor(), move |color| {
                 cmd.queue(move |world| {
                     let mut wrapper = world.single_fetch_mut::<LayerPage>();
                     wrapper.set_color(color.into_color());
@@ -371,11 +464,17 @@ impl LayerPage {
                 ThreadOutput::ThreadDebugMessage(msg) => {
                     world.queue_trigger(world.single::<LayerPage>(), LayerDebugMessage(msg));
                 }
-                ThreadOutput::Insert(key, chunk_bind) => {
-                    self.main.chunks.insert(key, chunk_bind);
+                ThreadOutput::RawInsert(key, chunk) => {
+                    self.raw.chunks.insert(key, chunk);
                 }
-                ThreadOutput::Remove(key) => {
-                    self.main.chunks.remove(&key);
+                ThreadOutput::RawRemove(key) => {
+                    self.raw.chunks.remove(&key);
+                }
+                ThreadOutput::CacheInsert(key, chunk) => {
+                    self.cache.chunks.insert(key, chunk);
+                }
+                ThreadOutput::CacheRemove(key) => {
+                    self.cache.chunks.remove(&key);
                 }
             }
         }
@@ -387,37 +486,26 @@ impl LayerPage {
 
         let camera = extra.camera;
         let view_rect = camera.world_view_rect();
-        let mipmap = (-camera.zoom).q32_floor().max(0) as u8;
-        let actual_mipmap = mipmap.min(self.main.mipmap_levels.saturating_sub(1));
+        let mipmap = zoom_to_mipmap(camera.zoom);
+        let actual_mipmap = mipmap.min(self.cache.mipmap_cap.saturating_sub(1));
         let pixel = camera.zoom.q32_as_f64().exp2() > 4.0;
 
         match self.debug {
-            false => rpass.set_pipeline(&self.draw.layer.render_pipelines.over),
-            true => rpass.set_pipeline(&self.draw.layer.render_pipelines.debug),
+            false => rpass.set_pipeline(&self.lp.render_pipelines.over),
+            true => rpass.set_pipeline(&self.lp.render_pipelines.debug),
         }
 
         rpass.set_bind_group(0, &camera.bind, &[]);
 
         match pixel {
-            true => rpass.set_bind_group(1, &self.draw.layer.sampler_group_unfiltered, &[]),
-            false => rpass.set_bind_group(1, &self.draw.layer.sampler_group_filtered, &[]),
+            true => rpass.set_bind_group(1, &self.lp.sampler_group_unfiltered, &[]),
+            false => rpass.set_bind_group(1, &self.lp.sampler_group_filtered, &[]),
         }
 
-        let (src, dst) = rect_to_chunks(view_rect, actual_mipmap, self.main.chunk_size);
-        for x in src.0..dst.0 {
-            for y in src.1..dst.1 {
-                if let Some(merge) = self.merge.chunks.get(&(x, y, actual_mipmap)) {
-                    rpass.set_bind_group(2, &merge.render, &[]);
-                    rpass.draw(0..4, 0..1);
-                } else if let Some(scratch) =
-                    self.draw.scratch_dst.chunks.get(&(x, y, actual_mipmap))
-                {
-                    rpass.set_bind_group(2, &scratch.render, &[]);
-                    rpass.draw(0..4, 0..1);
-                } else if let Some(chunk) = self.main.chunks.get(&(x, y, actual_mipmap)) {
-                    rpass.set_bind_group(2, &chunk.render, &[]);
-                    rpass.draw(0..4, 0..1);
-                }
+        for key in rect_chunks_stack_layer_iter(view_rect, self.cache.chunk_size, actual_mipmap) {
+            if let Some(CacheLayerChunk::Filled(chunk)) = self.cache.chunks.get(&key) {
+                rpass.set_bind_group(2, &chunk.render, &[]);
+                rpass.draw(0..4, 0..1);
             }
         }
 
@@ -425,50 +513,44 @@ impl LayerPage {
     }
 
     pub fn undo(&mut self) {
-        if self.traveler.undo_available(&self.main) {
-            let dirty = self.traveler.undo(&self.main).unwrap();
+        if self.traveler.undo_available(&self.raw) {
+            let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("page_undo"),
+            });
 
-            let mut encoder =
-                (self.draw.layer.device).create_command_encoder(&CommandEncoderDescriptor {
-                    label: Some("page_undo"),
-                });
+            let dirty = self.traveler.undo(&mut encoder, &self.raw).unwrap();
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("page_undo"),
                 timestamp_writes: None,
             });
 
-            self.draw
-                .layer
-                .generate_mipmaps(&self.main, dirty, &mut cpass);
+            self.lp.cache_mipmaps(&mut cpass, &self.cache, dirty);
 
             drop(cpass);
-            self.draw.layer.queue.submit([encoder.finish()]);
+            self.lp.queue.submit([encoder.finish()]);
         } else {
             log::debug!("failed to undo");
         }
     }
 
     pub fn redo(&mut self) {
-        if self.traveler.redo_available(&self.main) {
-            let dirty = self.traveler.redo(&self.main).unwrap();
+        if self.traveler.redo_available(&self.raw) {
+            let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("page_undo"),
+            });
 
-            let mut encoder =
-                (self.draw.layer.device).create_command_encoder(&CommandEncoderDescriptor {
-                    label: Some("page_undo"),
-                });
+            let dirty = self.traveler.redo(&mut encoder, &self.raw).unwrap();
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("page_undo"),
                 timestamp_writes: None,
             });
 
-            self.draw
-                .layer
-                .generate_mipmaps(&self.main, dirty, &mut cpass);
+            self.lp.cache_mipmaps(&mut cpass, &self.cache, dirty);
 
             drop(cpass);
-            self.draw.layer.queue.submit([encoder.finish()]);
+            self.lp.queue.submit([encoder.finish()]);
         } else {
             log::debug!("failed to redo");
         }

@@ -3,12 +3,12 @@ use std::sync::Arc;
 use glam::{DVec2, I64Vec2};
 use ln_world::{Element, Handle, World};
 use palette::Srgba;
-use wgpu::TextureViewDescriptor;
+use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor, TextureViewDescriptor};
 
 use crate::{
     layer::{
         LayerPipeline, Standalone,
-        brush::{BrushParams, Draw, DrawPipeline, param::BrushParam, round::RoundBrush},
+        brush::{BrushParams, Draw, Stroke, param::BrushParam, round::RoundBrush},
         wrapper::LayerPage,
     },
     measures::{FI64Ext, Rectangle},
@@ -31,7 +31,7 @@ pub struct BrushPreview {
 
 struct BrushPreviewInstance {
     quad: Handle<TextureQuad>,
-    preview_canvas: Standalone,
+    canvas: Standalone,
 }
 
 /// Bakes a real brush stroke into a small offscreen [`Standalone`] canvas.
@@ -40,15 +40,14 @@ struct BrushPreviewInstance {
 /// never touched, and draws into the canvas directly through [`DrawPipeline::draw_standalone`]
 /// instead of the scratch layer.
 pub struct BrushPreviewGenerator {
-    pub layer: Arc<LayerPipeline>,
-    pub pipe: DrawPipeline,
+    pub lp: Arc<LayerPipeline>,
 }
 
 impl BrushPreview {
     fn init(&self, world: &World, this: Handle<Self>) {
         let generator_instance = world.fetch(self.generator);
         let preview_canvas = generator_instance
-            .layer
+            .lp
             .create_standalone(Rectangle::new_extend(
                 0,
                 0,
@@ -68,7 +67,7 @@ impl BrushPreview {
         });
         let instance = world.insert(BrushPreviewInstance {
             quad,
-            preview_canvas,
+            canvas: preview_canvas,
         });
         let control = world.insert(RenderControl {
             camera: None,
@@ -80,7 +79,7 @@ impl BrushPreview {
                     && this.visible
                 {
                     let mut generator = world.fetch_mut(this.generator);
-                    generator.paint(&instance.preview_canvas, brush.as_ref());
+                    generator.paint(&instance.canvas, brush.as_ref());
                     this.outdated = false;
                 }
                 None
@@ -92,22 +91,21 @@ impl BrushPreview {
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this);
             let mut instance = world.fetch_mut(instance);
-            if rect.extend != instance.preview_canvas.rect.extend {
+            if rect.extend != instance.canvas.rect.extend {
                 let quad = world.fetch(instance.quad);
                 let old_visible = quad.visible;
                 drop(quad);
                 world.remove(instance.quad);
                 let wrapper = world.single_fetch::<LayerPage>();
-                instance.preview_canvas =
-                    wrapper.draw.layer.create_standalone(Rectangle::new_extend(
-                        0,
-                        0,
-                        (rect.width() * 2).max(1),
-                        (rect.height() * 2).max(1),
-                    ));
+                instance.canvas = wrapper.lp.create_standalone(Rectangle::new_extend(
+                    0,
+                    0,
+                    (rect.width() * 2).max(1),
+                    (rect.height() * 2).max(1),
+                ));
                 this.outdated = true;
                 let view = instance
-                    .preview_canvas
+                    .canvas
                     .chunk
                     .texture
                     .create_view(&TextureViewDescriptor::default());
@@ -136,24 +134,27 @@ impl BrushPreview {
 }
 
 impl BrushPreviewGenerator {
-    pub fn new(layer: Arc<LayerPipeline>) -> Self {
-        BrushPreviewGenerator {
-            pipe: DrawPipeline::new(layer.clone()),
-            layer,
-        }
-    }
-
     /// Redraw `brush` over a fixed seed into `canvas`.
     pub fn paint(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
-        self.layer.clear_chunk(&canvas.chunk, canvas.rect);
+        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("preview_paint_clear"),
+        });
 
-        if brush.seed() {
-            self.pipe.reset();
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("preview_paint_clear"),
+            timestamp_writes: None,
+        });
+
+        self.lp
+            .clear_chunk_direct(&mut cpass, &canvas.chunk, canvas.rect);
+
+        drop(cpass);
+        self.lp.queue.submit([encoder.finish()]);
+
+        if brush.replace_mode() {
             self.paint_seed(canvas);
         }
 
-        // Begin the brush stroke without connecting it to the seed path.
-        self.pipe.reset();
         self.paint_stroke(canvas, brush);
     }
 
@@ -178,45 +179,80 @@ impl BrushPreviewGenerator {
                 erase: false,
             };
 
-            // Reset between bands so the interpolation never bridges them with a diagonal.
-            self.pipe.reset();
-            self.pipe.draw_standalone(
-                canvas,
-                &brush,
-                Draw {
-                    position: I64Vec2::q32_from_f64(DVec2::new(x as f64, -radius as f64)),
-                    force: 1.0,
-                },
-            );
-            self.pipe.draw_standalone(
-                canvas,
-                &brush,
-                Draw {
-                    position: I64Vec2::q32_from_f64(DVec2::new(x as f64, (h + radius) as f64)),
-                    force: 1.0,
-                },
-            );
+            let start = Draw {
+                position: I64Vec2::q32_from_f64(DVec2::new(x as f64, -radius as f64)),
+                force: 1.0,
+            };
+
+            let end = Draw {
+                position: I64Vec2::q32_from_f64(DVec2::new(x as f64, (h + radius) as f64)),
+                force: 1.0,
+            };
+
+            let mut stroke = Stroke::new(&brush, start);
+            let Some(batch) = stroke.batch(&brush, end) else {
+                return;
+            };
+
+            batch.upload_dispatch(&self.lp);
+
+            let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("preview_paint_seed"),
+            });
+
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("preview_paint_seed"),
+                timestamp_writes: None,
+            });
+
+            batch.draw_standalone(&self.lp, &mut cpass, canvas, &brush);
+
+            drop(cpass);
+
+            self.lp.queue.submit([encoder.finish()]);
         }
     }
 
     /// A gentle S-curve with a pressure ramp, drawn with the previewed brush.
     fn paint_stroke(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
-        let steps = 24;
-        for i in 0..=steps {
-            let t = i as f32 / steps as f32;
-            let x = canvas.rect.width() as f32 * 0.5 - 250. + 500. * t;
-            let y = canvas.rect.height() as f32 * 0.5 + 20. * (t * std::f32::consts::TAU).sin();
-            let f = 4. * t * (1. - t);
+        const STEPS: i32 = 8;
 
-            brush.draw_standalone(
-                &mut self.pipe,
-                canvas,
-                Draw {
-                    position: I64Vec2::q32_from_f64(DVec2::new(x as f64, y as f64)),
-                    force: 0.25 + 0.75 * f,
-                },
-            );
+        let mut stroke = Stroke::new(brush, draw_curve(canvas, 0.0));
+
+        for i in 0..=STEPS {
+            let t = i as f32 / STEPS as f32;
+            let draw = draw_curve(canvas, t);
+
+            let Some(batch) = stroke.batch(brush, draw) else {
+                return;
+            };
+
+            batch.upload_dispatch(&self.lp);
+
+            let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("paint_seed"),
+            });
+
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("draw_active"),
+                timestamp_writes: None,
+            });
+
+            batch.draw_standalone(&self.lp, &mut cpass, canvas, brush);
+
+            drop(cpass);
+            self.lp.queue.submit([encoder.finish()]);
         }
+    }
+}
+
+fn draw_curve(canvas: &Standalone, t: f32) -> Draw {
+    let x = canvas.rect.width() as f32 * 0.5 - 250. + 500. * t;
+    let y = canvas.rect.height() as f32 * 0.5 + 20. * (t * std::f32::consts::TAU).sin();
+    let f = 4. * t * (1. - t);
+    Draw {
+        position: I64Vec2::q32_from_f64(DVec2::new(x as f64, y as f64)),
+        force: 0.25 + 0.75 * f,
     }
 }
 

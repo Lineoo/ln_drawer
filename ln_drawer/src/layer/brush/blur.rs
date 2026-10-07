@@ -6,7 +6,7 @@ use crate::{
     layer::{
         LayerPipeline,
         brush::{
-            Brush, Draw,
+            Brush, Draw, DrawsProcessor,
             param::{BrushParam, mask_sq_integral, step_of},
         },
     },
@@ -33,6 +33,24 @@ pub struct BlurDraw {
 }
 
 impl Brush for BlurBrush {
+    fn processor(&self, from: Draw, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
+        self.processor_output(from, to, out)
+    }
+
+    fn replace_mode(&self) -> bool {
+        true
+    }
+
+    fn bridge_mode(&self) -> bool {
+        true
+    }
+
+    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
+        cpass.set_pipeline(&pipeline.brush_pipelines.blur);
+    }
+}
+
+impl DrawsProcessor for BlurBrush {
     type Draw = BlurDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
@@ -60,18 +78,6 @@ impl Brush for BlurBrush {
 
     fn dirty(&self, draw: Self::Draw) -> Rectangle {
         Rectangle::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
-    }
-
-    fn replace_mode(&self) -> bool {
-        true
-    }
-
-    fn bridge_mode(&self) -> bool {
-        true
-    }
-
-    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
-        cpass.set_pipeline(&pipeline.brush_pipelines.blur);
     }
 }
 

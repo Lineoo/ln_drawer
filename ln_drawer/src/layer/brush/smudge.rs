@@ -7,7 +7,7 @@ use crate::{
     layer::{
         LayerPipeline,
         brush::{
-            Brush, Draw,
+            Brush, Draw, DrawsProcessor,
             param::{BrushParam, overlap, rate_coeff, step_of},
         },
     },
@@ -42,6 +42,37 @@ pub struct SmudgeDraw {
 }
 
 impl Brush for SmudgeBrush {
+    fn processor(&self, from: Draw, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
+        self.processor_output(from, to, out)
+    }
+
+    fn prepare_stroke(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
+        cpass.set_pipeline(&pipeline.brush_pipelines.smudge_prepare_stroke);
+        cpass.set_bind_group(0, Some(&pipeline.draws_dispatch_group), &[]);
+        cpass.dispatch_workgroups(1, 1, 1);
+    }
+
+    fn prepare_draw(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline, dst: &BindGroup) {
+        cpass.set_pipeline(&pipeline.brush_pipelines.smudge_prepare_draw);
+        cpass.set_bind_group(0, Some(&pipeline.draws_dispatch_group), &[]);
+        cpass.set_bind_group(1, Some(dst), &[]);
+        cpass.dispatch_workgroups(1, 1, 1);
+    }
+
+    fn replace_mode(&self) -> bool {
+        true
+    }
+
+    fn bridge_mode(&self) -> bool {
+        true
+    }
+
+    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
+        cpass.set_pipeline(&pipeline.brush_pipelines.smudge);
+    }
+}
+
+impl DrawsProcessor for SmudgeBrush {
     type Draw = SmudgeDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
@@ -73,31 +104,6 @@ impl Brush for SmudgeBrush {
             draw.position,
             UVec2::splat(((draw.size * 2.0).ceil() as u32) + 1),
         )
-    }
-
-    fn replace_mode(&self) -> bool {
-        true
-    }
-
-    fn bridge_mode(&self) -> bool {
-        true
-    }
-
-    fn prepare_stroke(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
-        cpass.set_pipeline(&pipeline.brush_pipelines.smudge_prepare_stroke);
-        cpass.set_bind_group(0, Some(&pipeline.draws_dispatch_group), &[]);
-        cpass.dispatch_workgroups(1, 1, 1);
-    }
-
-    fn prepare_draw(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline, dst: &BindGroup) {
-        cpass.set_pipeline(&pipeline.brush_pipelines.smudge_prepare_draw);
-        cpass.set_bind_group(0, Some(&pipeline.draws_dispatch_group), &[]);
-        cpass.set_bind_group(1, Some(dst), &[]);
-        cpass.dispatch_workgroups(1, 1, 1);
-    }
-
-    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
-        cpass.set_pipeline(&pipeline.brush_pipelines.smudge);
     }
 }
 

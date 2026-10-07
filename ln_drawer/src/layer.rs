@@ -9,6 +9,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
+        mpsc::Sender,
     },
 };
 
@@ -31,13 +32,16 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
 };
 
-use crate::{measures::Rectangle, widgets::shaders::shader_compile};
+use crate::{
+    layer::{brush::Brush, stream::ThreadInput},
+    measures::{FI64Ext, Rectangle},
+    widgets::shaders::shader_compile,
+};
 
 pub type ChunkKey = (i32, i32, u8);
 
-pub const DEFAULT_MIPMAP_DISABLED: u8 = 1;
-pub const DEFAULT_MIPMAP_ENABLED: u8 = 8;
-pub const DEFAULT_CHUNK_SIZE: u32 = 512;
+pub const DEFAULT_MIPMAP_CAP: u8 = 8;
+pub const DEFAULT_CHUNK_SIZE: UVec2 = UVec2::splat(512);
 
 pub const CHUNK_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
@@ -48,9 +52,9 @@ const WORKGROUP_SIZE: UVec2 = UVec2::new(16, 16);
 
 // function: render, merge, mipmap, clear & chunk recycle
 pub struct LayerPipeline {
-    _adapter: Adapter,
-    device: Device,
-    queue: Queue,
+    pub _adapter: Adapter,
+    pub device: Device,
+    pub queue: Queue,
 
     chunk_layout: ChunkLayout,
 
@@ -93,11 +97,13 @@ pub struct CacheLayers {
     pub chunks: HashMap<(i32, i32, u8), CacheLayerChunk>,
     pub chunk_size: UVec2,
     pub mipmap_cap: u8,
+    pub thread_tx: Sender<ThreadInput>,
 }
 
+#[derive(Clone)]
 pub enum CacheLayerChunk {
     Transparent,
-    Filled(Chunk)
+    Filled(Chunk),
 }
 
 /// layer of raw data, `Associated` variety means chunk's data equals to its correlated cached
@@ -105,12 +111,14 @@ pub enum CacheLayerChunk {
 pub struct RawLayer {
     pub chunks: HashMap<(i32, i32), RawLayerChunk>,
     pub chunk_size: UVec2,
+    pub thread_tx: Sender<ThreadInput>,
 }
 
+#[derive(Clone)]
 pub enum RawLayerChunk {
     Transparent,
     Associated,
-    Filled(Chunk)
+    Filled(Chunk),
 }
 
 pub struct Layer {
@@ -125,12 +133,13 @@ pub struct Standalone {
     pub rect: Rectangle,
 }
 
+/// chunks here are directly available in full transparent pixels
 pub struct ChunkPool {
     pub list: Vec<Chunk>,
-    // TODO change to UVec2
-    pub chunk_size: u32,
+    pub chunk_size: UVec2,
 }
 
+#[derive(Clone)]
 pub struct Chunk {
     // TODO dynamic offset
     pub rectangle: Buffer,
@@ -266,71 +275,12 @@ impl LayerPipeline {
         }
     }
 
-    pub fn validate_chunks(&self, dst: &mut Layer, rect: Rectangle) -> bool {
-        for mipmap in 0..dst.mipmap_levels {
-            let (start, end) = rect_to_chunks(rect, mipmap, dst.chunk_size);
-            for chunk_x in start.0..end.0 {
-                for chunk_y in start.1..end.1 {
-                    let key = (chunk_x, chunk_y, mipmap);
-                    if !dst.chunks.contains_key(&key) {
-                        return false;
-                    }
-                }
-            }
-        }
-
-        return true;
+    pub fn create_chunk_texture(&self, size: UVec2) -> Texture {
+        create_chunk_texture(&self.device, size)
     }
 
-    /// Assume `self.controlled` is false.
-    pub fn layer_prepare_rect(
-        &self,
-        layer: &mut Layer,
-        pool: &mut ChunkPool,
-        rect: Rectangle,
-    ) -> Vec<ChunkKey> {
-        assert!(!layer.controlled, "controlled layer cannot prepare chunks");
-        assert_eq!(
-            layer.chunk_size, pool.chunk_size,
-            "pool chunk_size does not matched"
-        );
-
-        let chunks = layer.get_missing_chunks(rect);
-        for &key in &chunks {
-            let dst_chunk = pool.pop(key, layer.chunk_size, self);
-            layer.chunks.insert(key, dst_chunk);
-        }
-
-        return chunks;
-    }
-
-    /// Unloaded chunk will be ignored.
-    fn layer_copy_chunk(
-        &self,
-        src: &Layer,
-        dst: &mut Layer,
-        cpass: &mut ComputePass<'_>,
-        key: ChunkKey,
-    ) -> bool {
-        assert_eq!(
-            src.chunk_size, dst.chunk_size,
-            "reference layer chunk_size does not matched"
-        );
-
-        let src_chunk = src.chunks.get(&key);
-        let dst_chunk = dst.chunks.get(&key);
-
-        if let (Some(src_chunk), Some(dst_chunk)) = (src_chunk, dst_chunk) {
-            cpass.set_pipeline(&self.copy_pipeline);
-            cpass.set_bind_group(0, &dst_chunk.dispatch, &[0]);
-            cpass.set_bind_group(1, &dst_chunk.write, &[]);
-            cpass.set_bind_group(2, &src_chunk.read, &[]);
-            let chunk_rect = chunk_to_rect(key, dst.chunk_size);
-            dispatch_workgroups(cpass, &[chunk_rect]);
-            true
-        } else {
-            false
-        }
+    pub fn create_chunk(&self, texture: Texture, rect: Rectangle) -> Chunk {
+        create_chunk(&self.device, &self.chunk_layout, texture, rect)
     }
 
     /// Create a single offscreen chunk, used as a standalone preview/render target.
@@ -340,65 +290,32 @@ impl LayerPipeline {
         Standalone { chunk, rect }
     }
 
-    /// Clear `rect` of a standalone chunk to transparent.
-    pub fn clear_chunk(&self, chunk: &Chunk, rect: Rectangle) {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("layer_clear_chunk"),
-            });
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("layer_clear_chunk"),
-            timestamp_writes: None,
-        });
-
-        cpass.set_pipeline(&self.clear_pipeline);
-        cpass.set_bind_group(0, &chunk.dispatch, &[0]);
-        cpass.set_bind_group(1, &chunk.write, &[]);
-        dispatch_workgroups(&mut cpass, &[rect]);
-
-        drop(cpass);
-        self.queue.submit([encoder.finish()]);
-    }
-
-    pub fn generate_mipmaps(&self, layer: &Layer, dirty: Rectangle, cpass: &mut ComputePass) {
-        if layer.mipmap_levels <= 1 {
-            return;
-        }
-
-        write_dispatch(&self.queue, &self.dispatch, 0, dirty);
-
+    pub fn cache_mipmaps(&self, cpass: &mut ComputePass, cache: &CacheLayers, dirty: Rectangle) {
         cpass.set_pipeline(&self.mipmap_pipeline);
         cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
 
-        for src_level in 0..layer.mipmap_levels - 1 {
-            let (src, dst) = rect_to_chunks(dirty, src_level, layer.chunk_size);
-            let scale = 1u32 << src_level;
-            for x in src.0..dst.0 {
-                for y in src.1..dst.1 {
-                    let src_key = (x, y, src_level);
-                    let dst_key = upper_chunk_of(src_key);
+        for lower_key in rect_chunks_stack_iter(dirty, cache.chunk_size, cache.mipmap_cap - 1) {
+            let scale = 1u32 << lower_key.2;
+            let upper_key = upper_chunk_of(lower_key);
 
-                    let Some(src_chunk) = layer.chunks.get(&src_key) else {
-                        continue;
-                    };
-                    let Some(dst_chunk) = layer.chunks.get(&dst_key) else {
-                        continue;
-                    };
+            let Some(CacheLayerChunk::Filled(lower_chunk)) = cache.chunks.get(&lower_key) else {
+                continue;
+            };
+            let Some(CacheLayerChunk::Filled(upper_chunk)) = cache.chunks.get(&upper_key) else {
+                continue;
+            };
 
-                    cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
-                    cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
-                    let dst_rect = chunk_to_rect(dst_key, layer.chunk_size);
-                    let src_rect = chunk_to_rect(src_key, layer.chunk_size);
-                    dispatch_workgroups_divide(cpass, &[dirty, dst_rect, src_rect], scale);
-                }
-            }
+            let dst_rect = chunks_stack_key_to_rect(upper_key, cache.chunk_size);
+            let src_rect = chunks_stack_key_to_rect(lower_key, cache.chunk_size);
+            cpass.set_bind_group(1, Some(&upper_chunk.write), &[]);
+            cpass.set_bind_group(2, Some(&lower_chunk.read), &[]);
+            dispatch_workgroups_divide(cpass, &[dirty, dst_rect, src_rect], scale);
         }
     }
 
     pub fn pick_color(
         &self,
-        layer: &Layer,
+        layer: &RawLayer,
         point: IVec2,
         f: impl FnOnce(Srgba) + WasmNotSend + 'static,
     ) {
@@ -420,9 +337,9 @@ impl LayerPipeline {
             timestamp_writes: None,
         });
 
-        let chunk_key = point_to_chunks(point, 0, layer.chunk_size);
+        let chunk_key = point_to_chunks(point, layer.chunk_size);
 
-        let Some(chunk) = layer.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
+        let Some(RawLayerChunk::Filled(chunk)) = layer.chunks.get(&chunk_key) else {
             return;
         };
 
@@ -463,43 +380,156 @@ impl LayerPipeline {
                 readback_share.unmap();
             });
     }
-}
 
-impl Layer {
-    fn get_missing_chunks(&self, rect: Rectangle) -> Vec<ChunkKey> {
-        let mut missing = Vec::new();
-        for mipmap in 0..self.mipmap_levels {
-            let (start, end) = rect_to_chunks(rect, mipmap, self.chunk_size);
-            for chunk_x in start.0..end.0 {
-                for chunk_y in start.1..end.1 {
-                    let key = (chunk_x, chunk_y, mipmap);
-                    if !self.chunks.contains_key(&key) {
-                        missing.push(key);
-                    }
-                }
-            }
-        }
-        missing
+    pub fn copy_chunk_direct(
+        &self,
+        cpass: &mut ComputePass,
+        src: &Chunk,
+        src_rect: Rectangle,
+        dst: &Chunk,
+        dst_rect: Rectangle,
+    ) {
+        cpass.set_pipeline(&self.copy_pipeline);
+        cpass.set_bind_group(0, Some(&dst.dispatch), &[0]);
+        cpass.set_bind_group(1, Some(&dst.write), &[]);
+        cpass.set_bind_group(2, Some(&src.read), &[]);
+        dispatch_workgroups(cpass, &[src_rect, dst_rect]);
+    }
+
+    /// use `dispatch_group`
+    pub fn copy_chunk(
+        &self,
+        cpass: &mut ComputePass<'_>,
+        src_chunk: &Chunk,
+        src_rect: Rectangle,
+        dst_chunk: &Chunk,
+        dst_rect: Rectangle,
+        dispatch: Rectangle,
+    ) {
+        cpass.set_pipeline(&self.copy_pipeline);
+        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
+        cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
+        cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
+        dispatch_workgroups(cpass, &[dispatch, src_rect, dst_rect]);
+    }
+
+    pub fn draw_chunk_cross<T: Brush + ?Sized>(
+        &self,
+        cpass: &mut ComputePass,
+        src: &Chunk,
+        src_rect: Rectangle,
+        dst: &Chunk,
+        dst_rect: Rectangle,
+        brush: &T,
+        dispatch: Rectangle,
+    ) {
+        brush.set_pipeline(cpass, self);
+        cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
+        cpass.set_bind_group(1, Some(&src.read), &[]);
+        cpass.set_bind_group(2, Some(&dst.write), &[]);
+        dispatch_workgroups(cpass, &[dispatch, src_rect, dst_rect]);
+    }
+
+    pub fn draw_chunk_swap<T: Brush + ?Sized>(
+        &self,
+        cpass: &mut ComputePass,
+        chunk: &Chunk,
+        chunk_rect: Rectangle,
+        swap: &Chunk,
+        swap_rect: Rectangle,
+        brush: &T,
+        dispatch: Rectangle,
+    ) {
+        brush.set_pipeline(cpass, self);
+        cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
+        cpass.set_bind_group(1, Some(&chunk.read), &[]);
+        cpass.set_bind_group(2, Some(&swap.write), &[]);
+        dispatch_workgroups(cpass, &[dispatch, chunk_rect, swap_rect]);
+
+        cpass.set_pipeline(&self.copy_pipeline);
+        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
+        cpass.set_bind_group(1, Some(&chunk.write), &[]);
+        cpass.set_bind_group(2, Some(&swap.read), &[]);
+        dispatch_workgroups(cpass, &[dispatch, chunk_rect, swap_rect]);
+    }
+
+    pub fn draw_chunk_read_write<T: Brush + ?Sized>(
+        &self,
+        cpass: &mut ComputePass,
+        chunk: &Chunk,
+        chunk_rect: Rectangle,
+        brush: &T,
+        dispatch: Rectangle,
+    ) {
+        brush.set_pipeline(cpass, self);
+        cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
+        cpass.set_bind_group(1, Some(&chunk.read_write), &[]);
+        cpass.set_bind_group(2, Some(&chunk.read_write), &[]);
+        dispatch_workgroups(cpass, &[dispatch, chunk_rect]);
+    }
+
+    /// use `dispatch_group`
+    pub fn merge_chunk_over_read_write(
+        &self,
+        cpass: &mut ComputePass,
+        src: &Chunk,
+        src_rect: Rectangle,
+        dst: &Chunk,
+        dst_rect: Rectangle,
+        dispatch: Rectangle,
+    ) {
+        cpass.set_pipeline(&self.merge_pipelines.over);
+        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
+        cpass.set_bind_group(1, Some(&dst.read_write), &[]);
+        cpass.set_bind_group(2, Some(&src.read), &[]);
+        cpass.set_bind_group(3, Some(&dst.read_write), &[]);
+        dispatch_workgroups(cpass, &[dispatch, src_rect, dst_rect]);
+    }
+
+    /// use `dispatch_group`
+    pub fn clear_chunk(
+        &self,
+        cpass: &mut ComputePass,
+        chunk: &Chunk,
+        chunk_rect: Rectangle,
+        dispatch: Rectangle,
+    ) {
+        cpass.set_pipeline(&self.clear_pipeline);
+        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
+        cpass.set_bind_group(1, Some(&chunk.write), &[]);
+        dispatch_workgroups(cpass, &[dispatch, chunk_rect]);
+    }
+
+    pub fn clear_chunk_direct(&self, cpass: &mut ComputePass, chunk: &Chunk, chunk_rect: Rectangle) {
+        cpass.set_pipeline(&self.clear_pipeline);
+        cpass.set_bind_group(0, Some(&chunk.dispatch), &[0]);
+        cpass.set_bind_group(1, Some(&chunk.write), &[]);
+        dispatch_workgroups(cpass, &[chunk_rect]);
     }
 }
 
 impl ChunkPool {
-    fn pop(&mut self, key: ChunkKey, chunk_size: u32, pipeline: &LayerPipeline) -> Chunk {
+    fn pop_chunk_stack(
+        &mut self,
+        key: (i32, i32, u8),
+        chunk_size: UVec2,
+        lp: &LayerPipeline,
+    ) -> Chunk {
         if let Some(chunk) = self.list.pop() {
             write_dispatch(
-                &pipeline.queue,
+                &lp.queue,
                 &chunk.rectangle,
                 0,
-                chunk_to_rect(key, chunk_size),
+                chunks_stack_key_to_rect(key, chunk_size),
             );
             chunk
         } else {
-            let texture = create_chunk_texture(&pipeline.device, UVec2::splat(chunk_size));
+            let texture = create_chunk_texture(&lp.device, chunk_size);
             let chunk = create_chunk(
-                &pipeline.device,
-                &pipeline.chunk_layout,
+                &lp.device,
+                &lp.chunk_layout,
                 texture,
-                chunk_to_rect(key, chunk_size),
+                chunks_stack_key_to_rect(key, chunk_size),
             );
             chunk
         }
@@ -543,35 +573,79 @@ fn write_dispatch(queue: &Queue, buffer: &Buffer, index: u64, rect: Rectangle) {
     );
 }
 
-fn chunk_to_rect((x, y, z): ChunkKey, chunk_size: u32) -> Rectangle {
-    let size = chunk_size << z;
+// ---- ChunkKey Utils ---- //
+
+fn point_to_chunks(point: IVec2, chunk_size: UVec2) -> (i32, i32) {
+    let size = chunk_size.as_ivec2();
+    let chunk = point.div_euclid(size);
+    chunk.into()
+}
+
+fn point_zoom_to_chunks_stack(point: IVec2, zoom: i64, chunk_size: UVec2) -> (i32, i32, u8) {
+    let mipmap = zoom_to_mipmap(zoom);
+    let size = (chunk_size << mipmap).as_ivec2();
+    let chunk = point.div_euclid(size);
+    (chunk.x, chunk.y, mipmap)
+}
+
+fn zoom_to_mipmap(zoom: i64) -> u8 {
+    (-zoom).q32_round().max(0) as u8
+}
+
+fn rect_chunks_iter(rect: Rectangle, chunk_size: UVec2) -> impl Iterator<Item = (i32, i32)> {
+    let (chunk_src, chunk_dst) = rect_chunks_stack_layer_range(rect, chunk_size, 0);
+    (chunk_src.0..chunk_dst.0).flat_map(move |i| (chunk_src.1..chunk_dst.1).map(move |j| (i, j)))
+}
+
+fn rect_chunks_stack_iter(
+    rect: Rectangle,
+    chunk_size: UVec2,
+    mipmap_cap: u8,
+) -> impl Iterator<Item = (i32, i32, u8)> {
+    (0..mipmap_cap).flat_map(move |m| rect_chunks_stack_layer_iter(rect, chunk_size, m))
+}
+
+fn rect_chunks_stack_layer_iter(
+    rect: Rectangle,
+    chunk_size: UVec2,
+    mipmap: u8,
+) -> impl Iterator<Item = (i32, i32, u8)> {
+    let (chunk_src, chunk_dst) = rect_chunks_stack_layer_range(rect, chunk_size, mipmap);
+    (chunk_src.0..chunk_dst.0)
+        .flat_map(move |i| (chunk_src.1..chunk_dst.1).map(move |j| (i, j, mipmap)))
+}
+
+fn rect_chunks_stack_layer_range(
+    rect: Rectangle,
+    chunk_size: UVec2,
+    mipmap: u8,
+) -> ((i32, i32), (i32, i32)) {
+    let size = (chunk_size << mipmap).as_ivec2();
+    let chunk_src = rect.left_down().div_euclid(size);
+    let chunk_dst = (rect.right_up() - 1).div_euclid(size) + 1;
+    (chunk_src.into(), chunk_dst.into())
+}
+
+fn chunks_key_to_rect(key: (i32, i32), chunk_size: UVec2) -> Rectangle {
     Rectangle {
-        origin: IVec2::new(x, y) * size as i32,
-        extend: UVec2::splat(size),
+        origin: IVec2::new(key.0, key.1) * chunk_size.as_ivec2(),
+        extend: chunk_size,
     }
 }
 
-fn point_to_chunks(point: IVec2, mipmap: u8, chunk_size: u32) -> (i32, i32) {
-    let size = (chunk_size << mipmap) as i32;
-    let chunk_src = (point.x.div_euclid(size), point.y.div_euclid(size));
-    chunk_src
+fn chunks_stack_key_to_rect(key: (i32, i32, u8), chunk_size: UVec2) -> Rectangle {
+    let size = chunk_size << key.2;
+    Rectangle {
+        origin: IVec2::new(key.0, key.1) * size.as_ivec2(),
+        extend: size,
+    }
 }
 
-fn rect_to_chunks(rect: Rectangle, mipmap: u8, chunk_size: u32) -> ((i32, i32), (i32, i32)) {
-    let size = (chunk_size << mipmap) as i32;
-    let chunk_src = (rect.left().div_euclid(size), rect.down().div_euclid(size));
-    let chunk_dst = (
-        (rect.right() - 1).div_euclid(size) + 1,
-        (rect.up() - 1).div_euclid(size) + 1,
-    );
-    (chunk_src, chunk_dst)
-}
-
-fn upper_chunk_of(chunk: ChunkKey) -> ChunkKey {
+fn upper_chunk_of(chunk: (i32, i32, u8)) -> (i32, i32, u8) {
     (chunk.0.div_euclid(2), chunk.1.div_euclid(2), chunk.2 + 1)
 }
 
-fn lower_chunk_of(chunk: ChunkKey) -> [ChunkKey; 4] {
+fn lower_chunk_of(chunk: (i32, i32, u8)) -> [(i32, i32, u8); 4] {
     [
         (chunk.0 * 2, chunk.1 * 2, chunk.2 - 1),
         (chunk.0 * 2 + 1, chunk.1 * 2, chunk.2 - 1),

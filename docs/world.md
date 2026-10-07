@@ -213,35 +213,35 @@ world 世界模型会严格限制视图之间的可见性，以提供良好的�
     - 视图节点下的所有节点
     - 视图节点下的 `ElemRef` 节点指向的节点
         - `ElemRef -> T`
-        - **未实现** `ElemRef -> ElemRef -> T` 单节点双跳
-        - **未实现** `ElemRef -> ViewRef -> T` 视图跳跃
+        - **(未实现)** `ElemRef -> ElemRef -> T` 单节点双跳
+        - **(未实现)** `ElemRef -> ViewRef -> T` 视图跳跃
     - 视图节点下的 `ViewRef` 节点指向的视图节点下的所有节点
         - `ViewRef -> T`
         - `ViewRef -> ElemRef -> T` 视图节点双跳
         - `ViewRef -> .. -> ViewRef -> T` 嵌套跳跃
-        - **未实现** `ViewRef -> ElemRef -> ElemRef -> T` 同上
-        - **未实现** `ViewRef -> ElemRef -> ViewRef -> T` 同上
+        - **(未实现)** `ViewRef -> ElemRef -> ElemRef -> T` 同上
+        - **(未实现)** `ViewRef -> ElemRef -> ViewRef -> T` 同上
 3. 输入非法句柄时绝对不应当被执行
     - fetch, foreach, single 家族运行良好
     - dependency(parent) 会返回 `ToxicDependency`
-    - **未实现** 目前 enter 会导致进入一个虚空视图
-    - **未实现** 目前 dependency(child), observer 均选择无报错返回
-    - **未实现** 目前 trigger 做了初步拦截，会输出 log 并拒绝执行
+    - **(未实现)** 目前 enter 会导致进入一个虚空视图
+    - **(未实现)** 目前 dependency(child), observer 均选择无报错返回
+    - **(未实现)** 目前 trigger 做了初步拦截，会输出 log 并拒绝执行
 4. 输入刚插入的节点时可部分执行
     - fetch trigger single foreach 不执行
         - fetch, trigger 返回 `JustInserted`
         - single 返回 `SingletonCorrupted` 指示单例初始化忙
         - foreach 会静默跳过
     - validate 优先返回 `Invisible` 而不是 `JustRemoved`
-        -  **未实现**  `JustInserted` 仍优先返回，索引不可得，需要底层修改
+        -  **(未实现)**  `JustInserted` 仍优先返回，索引不可得，需要底层修改
         - 返回 `JustRemoved` 则说明句柄是可见的
-    - **未实现** dependency, observer 允许执行
+    - **(未实现)** dependency, observer 允许执行
 5. 不可见的节点会被直接视作非法句柄（句柄指向无效数据）处理，在任何细节上都与非法节点无差（除了报错信息）
     - enter 指令也遵循这一点，也就是说你只有看得见一个节点，你才能跳到这个节点上
     - fetch, foreach, single 家族一致性良好
     - 目前 enter, dependency(child), observer, trigger 和非法句柄处理一致（但行为不合理，见上）
-    - **未实现** 目前 remove `ElemRef/ViewRef` 导致变为非法句柄时和 remove 原生节点后的行为不一致
-    - **未实现** 目前 dependency(parent) 被 bypass，与非法句柄不一致
+    - **(未实现)** 目前 remove `ElemRef/ViewRef` 导致变为非法句柄时和 remove 原生节点后的行为不一致
+    - **(未实现)** 目前 dependency(parent) 被 bypass，与非法句柄不一致
 6. INITELEM 也和不可见节点一样，总是被当作非法句柄
     - fetch, foreach, single 家族一致性良好
     - 目前 enter, dependency, observer, trigger 和非法句柄处理一致（但行为不合理，见上）
@@ -261,11 +261,11 @@ world 世界模型会严格限制视图之间的可见性，以提供良好的�
 尽可能解决世界模型内部的内存泄漏问题：
 
 1. 没有失去视图节点导致不可访问的元素
-2. **未实现** 没有失去目标的无效 observer
+2. **(未实现)** 没有失去目标的无效 observer
 3. 没有失去父节点的无效 dependency
 4. 没有失去子节点的无效 dependency
-5. **未实现** 没有目标被移除的无效 ElemRef/ViewRef
-6. **未实现** 节点索引没有记录无效的 elemrefs/viewrefs 缓存
+5. **(未实现)** 没有目标被移除的无效 ElemRef/ViewRef
+6. **(未实现)** 节点索引没有记录无效的 elemrefs/viewrefs 缓存
 
 ## 任意位置命令 Commander ##
 

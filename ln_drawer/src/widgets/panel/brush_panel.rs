@@ -98,9 +98,9 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
 
     let wrapper = world.single::<LayerPage>();
     let wrapper_instance = world.fetch(wrapper);
-    let generator = world.insert(BrushPreviewGenerator::new(
-        wrapper_instance.draw.layer.clone(),
-    ));
+    let generator = world.insert(BrushPreviewGenerator {
+        lp: wrapper_instance.lp.clone(),
+    });
 
     world.dependency(list_container, toggle_button);
     world.dependency(settings_container, toggle_button);

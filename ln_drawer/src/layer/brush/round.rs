@@ -6,7 +6,7 @@ use crate::{
     layer::{
         LayerPipeline,
         brush::{
-            Brush, Draw,
+            Brush, Draw, DrawsProcessor,
             param::{BrushParam, overlap, rate_coeff, step_of},
         },
     },
@@ -36,6 +36,27 @@ pub struct RoundDraw {
 }
 
 impl Brush for RoundBrush {
+    fn processor(&self, from: Draw, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
+        self.processor_output(from, to, out)
+    }
+
+    fn replace_mode(&self) -> bool {
+        self.erase
+    }
+
+    fn bridge_mode(&self) -> bool {
+        false
+    }
+
+    fn set_pipeline(&self, cpass: &mut wgpu::ComputePass, pipeline: &LayerPipeline) {
+        match self.erase {
+            true => cpass.set_pipeline(&pipeline.brush_pipelines.round_erase),
+            false => cpass.set_pipeline(&pipeline.brush_pipelines.round_over),
+        }
+    }
+}
+
+impl DrawsProcessor for RoundBrush {
     type Draw = RoundDraw;
 
     fn process(&self, draw: Draw) -> Self::Draw {
@@ -60,21 +81,6 @@ impl Brush for RoundBrush {
 
     fn dirty(&self, draw: Self::Draw) -> Rectangle {
         Rectangle::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
-    }
-
-    fn replace_mode(&self) -> bool {
-        self.erase
-    }
-
-    fn bridge_mode(&self) -> bool {
-        false
-    }
-
-    fn set_pipeline(&self, cpass: &mut wgpu::ComputePass, pipeline: &LayerPipeline) {
-        match self.erase {
-            true => cpass.set_pipeline(&pipeline.brush_pipelines.round_erase),
-            false => cpass.set_pipeline(&pipeline.brush_pipelines.round_over),
-        }
     }
 }
 

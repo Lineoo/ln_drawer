@@ -74,21 +74,21 @@ impl LayerInput {
                 UVec2::new(1, 1),
             );
             let shadow_rect = brush_rect + (event.pointer.tilt * 48.0).as_ivec2();
-            world.queue_trigger(wrapper.brush_preview, SetWidgetRectangle(brush_rect));
+            world.queue_trigger(wrapper.cursor, SetWidgetRectangle(brush_rect));
             world.queue_trigger(
-                wrapper.brush_preview_shadow,
+                wrapper.cursor_shadow,
                 SetWidgetRectangle(shadow_rect),
             );
 
             match event.status {
                 PointerHoverStatus::Enter => {
-                    world.queue_trigger(wrapper.brush_preview, SetWidgetVisible(true));
-                    world.queue_trigger(wrapper.brush_preview_shadow, SetWidgetVisible(true));
+                    world.queue_trigger(wrapper.cursor, SetWidgetVisible(true));
+                    world.queue_trigger(wrapper.cursor_shadow, SetWidgetVisible(true));
                 }
                 PointerHoverStatus::Moving => {}
                 PointerHoverStatus::Leave => {
-                    world.queue_trigger(wrapper.brush_preview, SetWidgetVisible(false));
-                    world.queue_trigger(wrapper.brush_preview_shadow, SetWidgetVisible(false));
+                    world.queue_trigger(wrapper.cursor, SetWidgetVisible(false));
+                    world.queue_trigger(wrapper.cursor_shadow, SetWidgetVisible(false));
                 }
             }
         });

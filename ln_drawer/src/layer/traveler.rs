@@ -4,12 +4,15 @@ use glam::{IVec2, UVec2};
 use guillotiere::{AllocId, Allocation, AtlasAllocator, euclid::Size2D};
 use smallvec::SmallVec;
 use wgpu::{
-    CommandEncoder, CommandEncoderDescriptor, Extent3d, Origin3d, TexelCopyTextureInfoBase,
-    Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,
+    CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfoBase, Texture, TextureAspect,
+    TextureDescriptor, TextureDimension, TextureUsages,
 };
 
 use crate::{
-    layer::{CHUNK_TEXTURE_FORMAT, ChunkKey, Layer, LayerPipeline, chunk_to_rect, rect_to_chunks},
+    layer::{
+        CHUNK_TEXTURE_FORMAT, LayerPipeline, RawLayer, RawLayerChunk, chunks_key_to_rect,
+        rect_chunks_iter,
+    },
     measures::Rectangle,
 };
 
@@ -29,7 +32,7 @@ pub struct Traveler {
 struct Snapshot {
     sections: SmallVec<[SnapshotSection; 1]>,
     dirty: Rectangle,
-    chunk_size: u32,
+    chunk_size: UVec2,
 }
 
 /// components of each snapshot
@@ -38,7 +41,7 @@ struct SnapshotSection {
     atlas_index: usize,
     atlas_id: AllocId,
     origin: IVec2,
-    origin_key: ChunkKey,
+    origin_key: (i32, i32),
     extend: UVec2,
 }
 
@@ -65,7 +68,7 @@ impl Traveler {
         }
     }
 
-    pub fn stock(&mut self, encoder: &mut CommandEncoder, main: &Layer, dirty: Rectangle) {
+    pub fn stock(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer, dirty: Rectangle) {
         // 0. clear redos
         for snapshot in self.redos.drain(..) {
             for section in &snapshot.sections {
@@ -77,18 +80,9 @@ impl Traveler {
 
         // 1. split sections
 
-        let mut keys = Vec::new();
-        let (start, end) = rect_to_chunks(dirty, 0, main.chunk_size);
-        for x in start.0..end.0 {
-            for y in start.1..end.1 {
-                let key = (x, y, 0u8);
-                keys.push(key);
-            }
-        }
-
-        let mut sections = SmallVec::with_capacity(keys.len());
-        for key in keys {
-            let chunk_rect = chunk_to_rect(key, main.chunk_size);
+        let mut sections = SmallVec::new();
+        for key in rect_chunks_iter(dirty, raw.chunk_size) {
+            let chunk_rect = chunks_key_to_rect(key, raw.chunk_size);
             let Some(origin) = chunk_rect.intersect(dirty) else {
                 log::warn!("section skipped: no intersection");
                 continue;
@@ -113,7 +107,7 @@ impl Traveler {
 
             // 3. copy textures
 
-            let Some(chunk) = main.chunks.get(&key) else {
+            let Some(RawLayerChunk::Filled(chunk)) = raw.chunks.get(&key) else {
                 log::error!("failed to find chunk");
                 continue;
             };
@@ -132,7 +126,7 @@ impl Traveler {
 
         self.undos.push_back(Snapshot {
             sections,
-            chunk_size: main.chunk_size,
+            chunk_size: raw.chunk_size,
             dirty,
         });
 
@@ -149,23 +143,16 @@ impl Traveler {
         }
     }
 
-    pub fn undo(&mut self, main: &Layer) -> Option<Rectangle> {
+    pub fn undo(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer) -> Option<Rectangle> {
         let Some(snapshot) = self.undos.pop_back() else {
             return None;
         };
 
-        debug_assert_eq!(snapshot.chunk_size, main.chunk_size);
-
-        let mut encoder = self
-            .layer
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("traveler_undo"),
-            });
+        debug_assert_eq!(snapshot.chunk_size, raw.chunk_size);
 
         let mut redo_sections = SmallVec::with_capacity(snapshot.sections.len());
         for section in snapshot.sections {
-            let Some(chunk) = main.chunks.get(&section.origin_key) else {
+            let Some(RawLayerChunk::Filled(chunk)) = raw.chunks.get(&section.origin_key) else {
                 log::warn!("failed to find undo origin chunk");
                 continue;
             };
@@ -186,7 +173,7 @@ impl Traveler {
             };
 
             self.copy_into_atlas(
-                &mut encoder,
+                encoder,
                 &chunk.texture,
                 &self.atlas[redo_section.atlas_index].texture,
                 &redo_section,
@@ -194,7 +181,7 @@ impl Traveler {
 
             // 2. apply old data
             self.copy_into_origin(
-                &mut encoder,
+                encoder,
                 &chunk.texture,
                 &self.atlas[section.atlas_index].texture,
                 &section,
@@ -209,7 +196,6 @@ impl Traveler {
                 .deallocate(section.atlas_id);
         }
 
-        self.layer.queue.submit([encoder.finish()]);
         self.redos.push(Snapshot {
             sections: redo_sections,
             ..snapshot
@@ -218,23 +204,16 @@ impl Traveler {
         Some(snapshot.dirty)
     }
 
-    pub fn redo(&mut self, main: &Layer) -> Option<Rectangle> {
+    pub fn redo(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer) -> Option<Rectangle> {
         let Some(snapshot) = self.redos.pop() else {
             return None;
         };
 
-        debug_assert_eq!(snapshot.chunk_size, main.chunk_size);
-
-        let mut encoder = self
-            .layer
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("traveler_redo"),
-            });
+        debug_assert_eq!(snapshot.chunk_size, raw.chunk_size);
 
         let mut undo_sections = SmallVec::with_capacity(snapshot.sections.len());
         for section in snapshot.sections {
-            let Some(chunk) = main.chunks.get(&section.origin_key) else {
+            let Some(RawLayerChunk::Filled(chunk)) = raw.chunks.get(&section.origin_key) else {
                 log::warn!("failed to find redo origin chunk");
                 continue;
             };
@@ -255,7 +234,7 @@ impl Traveler {
             };
 
             self.copy_into_atlas(
-                &mut encoder,
+                encoder,
                 &chunk.texture,
                 &self.atlas[undo_section.atlas_index].texture,
                 &undo_section,
@@ -263,7 +242,7 @@ impl Traveler {
 
             // 2. apply old data
             self.copy_into_origin(
-                &mut encoder,
+                encoder,
                 &chunk.texture,
                 &self.atlas[section.atlas_index].texture,
                 &section,
@@ -278,7 +257,6 @@ impl Traveler {
                 .deallocate(section.atlas_id);
         }
 
-        self.layer.queue.submit([encoder.finish()]);
         self.undos.push_back(Snapshot {
             sections: undo_sections,
             ..snapshot
@@ -287,13 +265,13 @@ impl Traveler {
         Some(snapshot.dirty)
     }
 
-    pub fn undo_available(&mut self, main: &Layer) -> bool {
+    pub fn undo_available(&mut self, raw: &RawLayer) -> bool {
         let Some(snapshot) = self.undos.back() else {
             return false;
         };
 
         for section in &snapshot.sections {
-            if !main.chunks.contains_key(&section.origin_key) {
+            if !raw.chunks.contains_key(&section.origin_key) {
                 return false;
             };
         }
@@ -301,13 +279,13 @@ impl Traveler {
         true
     }
 
-    pub fn redo_available(&mut self, main: &Layer) -> bool {
+    pub fn redo_available(&mut self, raw: &RawLayer) -> bool {
         let Some(snapshot) = self.redos.last() else {
             return false;
         };
 
         for section in &snapshot.sections {
-            if !main.chunks.contains_key(&section.origin_key) {
+            if !raw.chunks.contains_key(&section.origin_key) {
                 return false;
             };
         }
