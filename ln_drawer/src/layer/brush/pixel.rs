@@ -29,7 +29,7 @@ pub struct PixelDraw {
 }
 
 impl Brush for PixelBrush {
-    fn processor(&self, from: Draw, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
+    fn processor(&self, from: Option<Draw>, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
         self.processor_output(from, to, out)
     }
 
@@ -70,7 +70,19 @@ impl DrawsProcessor for PixelBrush {
         Rectangle::new_half(draw.position, UVec2::splat(half))
     }
 
-    fn processor_output(&self, from: Draw, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
+    fn processor_output(
+        &self,
+        from: Option<Draw>,
+        to: Draw,
+        out: &mut Vec<u8>,
+    ) -> (Draw, Rectangle, u32) {
+        let Some(from) = from else {
+            let processed = self.process(to);
+            let dirty = self.dirty(processed);
+            out.extend_from_slice(bytemuck::bytes_of(&processed));
+            return (to, dirty, 1);
+        };
+
         let cap = DRAWS_ARRAY_CAPACITY as usize / size_of::<Self::Draw>();
 
         let mut pixel = from.position.q32_floor();

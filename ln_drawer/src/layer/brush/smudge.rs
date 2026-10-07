@@ -42,7 +42,7 @@ pub struct SmudgeDraw {
 }
 
 impl Brush for SmudgeBrush {
-    fn processor(&self, from: Draw, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
+    fn processor(&self, from: Option<Draw>, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
         self.processor_output(from, to, out)
     }
 

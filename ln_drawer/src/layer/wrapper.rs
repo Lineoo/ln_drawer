@@ -303,7 +303,7 @@ impl LayerPage {
     pub fn draw_active(&mut self, draw: Draw) {
         let stroke = self
             .stroke
-            .get_or_insert_with(|| Stroke::new(self.active.as_ref(), draw));
+            .get_or_insert_with(|| Stroke::new(self.active.as_ref()));
 
         let Some(batch) = stroke.batch(self.active.as_ref(), draw) else {
             return;
@@ -333,11 +333,9 @@ impl LayerPage {
     }
 
     pub fn draw_erase(&mut self, draw: Draw) {
-        let stroke = self
-            .stroke
-            .get_or_insert_with(|| Stroke::new(&self.erase, draw));
+        let stroke = self.stroke.get_or_insert_with(|| Stroke::new(&self.erase));
 
-        let Some(batch) = stroke.batch(self.active.as_ref(), draw) else {
+        let Some(batch) = stroke.batch(&self.erase, draw) else {
             return;
         };
 
@@ -357,7 +355,7 @@ impl LayerPage {
             &mut cpass,
             &mut self.scratch,
             &mut self.bridge,
-            self.active.as_ref(),
+            &self.erase,
         );
 
         drop(cpass);

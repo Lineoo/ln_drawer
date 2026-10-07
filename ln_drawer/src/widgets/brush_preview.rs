@@ -189,7 +189,33 @@ impl BrushPreviewGenerator {
                 force: 1.0,
             };
 
-            let mut stroke = Stroke::new(&brush, start);
+            let mut stroke = Stroke::new(&brush);
+
+            // first
+
+            let Some(batch) = stroke.batch(&brush, start) else {
+                return;
+            };
+
+            batch.upload_dispatch(&self.lp);
+
+            let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("preview_paint_seed"),
+            });
+
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("preview_paint_seed"),
+                timestamp_writes: None,
+            });
+
+            batch.draw_standalone(&self.lp, &mut cpass, canvas, &brush);
+
+            drop(cpass);
+
+            self.lp.queue.submit([encoder.finish()]);
+
+            // end
+
             let Some(batch) = stroke.batch(&brush, end) else {
                 return;
             };
@@ -217,11 +243,17 @@ impl BrushPreviewGenerator {
     fn paint_stroke(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
         const STEPS: i32 = 8;
 
-        let mut stroke = Stroke::new(brush, draw_curve(canvas, 0.0));
+        let mut stroke = Stroke::new(brush);
 
         for i in 0..=STEPS {
             let t = i as f32 / STEPS as f32;
-            let draw = draw_curve(canvas, t);
+            let x = canvas.rect.width() as f32 * 0.5 - 250. + 500. * t;
+            let y = canvas.rect.height() as f32 * 0.5 + 20. * (t * std::f32::consts::TAU).sin();
+            let f = 4. * t * (1. - t);
+            let draw = Draw {
+                position: I64Vec2::q32_from_f64(DVec2::new(x as f64, y as f64)),
+                force: 0.25 + 0.75 * f,
+            };
 
             let Some(batch) = stroke.batch(brush, draw) else {
                 return;
@@ -243,16 +275,6 @@ impl BrushPreviewGenerator {
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);
         }
-    }
-}
-
-fn draw_curve(canvas: &Standalone, t: f32) -> Draw {
-    let x = canvas.rect.width() as f32 * 0.5 - 250. + 500. * t;
-    let y = canvas.rect.height() as f32 * 0.5 + 20. * (t * std::f32::consts::TAU).sin();
-    let f = 4. * t * (1. - t);
-    Draw {
-        position: I64Vec2::q32_from_f64(DVec2::new(x as f64, y as f64)),
-        force: 0.25 + 0.75 * f,
     }
 }
 

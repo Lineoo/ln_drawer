@@ -35,19 +35,17 @@ pub struct Draw {
 }
 
 pub struct Stroke {
-    pub prev: Draw,
-    pub init: bool,
+    pub prev: Option<Draw>,
     pub dirty: Rectangle,
     pub replace: bool,
     pub bridge: bool,
 }
 
 impl Stroke {
-    pub fn new<T: Brush + ?Sized>(brush: &T, init: Draw) -> Self {
+    pub fn new<T: Brush + ?Sized>(brush: &T) -> Self {
         Stroke {
-            prev: init,
-            init: false,
-            dirty: Rectangle::new_half(init.position.q32_floor(), UVec2::ZERO),
+            prev: None,
+            dirty: Rectangle::default(),
             replace: brush.replace_mode(),
             bridge: brush.bridge_mode(),
         }
@@ -60,26 +58,23 @@ impl Stroke {
             force: target.force.clamp(0.0, 1.0),
         };
 
+        let start = self.prev.is_none();
+
         let mut draws = Vec::new();
         let (next, dirty, draws_cnt) = brush.processor(self.prev, target, &mut draws);
-        self.prev = next;
-        self.dirty = self.dirty.grow(dirty);
+        self.prev = Some(next);
+
+        if start {
+            self.dirty = Rectangle::new_half(next.position.q32_floor(), UVec2::ZERO);
+        } else {
+            self.dirty = self.dirty.grow(dirty);
+        }
 
         if dirty.extend.x == 0 || dirty.extend.y == 0 {
             None
-        } else if self.init {
-            self.init = false;
-            Some(DrawsBatch {
-                start: true,
-                draws_cnt,
-                draws,
-                dirty,
-                replace: self.replace,
-                bridge: self.bridge,
-            })
         } else {
             Some(DrawsBatch {
-                start: false,
+                start,
                 draws_cnt,
                 draws,
                 dirty,
@@ -303,7 +298,7 @@ impl DrawsBatch {
 }
 
 pub trait Brush {
-    fn processor(&self, from: Draw, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32);
+    fn processor(&self, from: Option<Draw>, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32);
 
     fn prepare_stroke(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
         let _ = (cpass, pipeline);
@@ -353,7 +348,19 @@ trait DrawsProcessor {
     fn step(&self, draw: Draw) -> f32;
     fn dirty(&self, draw: Self::Draw) -> Rectangle;
 
-    fn processor_output(&self, from: Draw, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
+    fn processor_output(
+        &self,
+        from: Option<Draw>,
+        to: Draw,
+        out: &mut Vec<u8>,
+    ) -> (Draw, Rectangle, u32) {
+        let Some(from) = from else {
+            let processed = self.process(to);
+            let dirty = self.dirty(processed);
+            out.extend_from_slice(bytes_of(&processed));
+            return (to, dirty, 1);
+        };
+
         let from_position = from.position.q32_as_f64();
         let to_position = to.position.q32_as_f64();
         let whole_dist = from_position.distance(to_position);
