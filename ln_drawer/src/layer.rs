@@ -268,7 +268,8 @@ impl LayerPipeline {
 
     pub fn pick_color(
         &self,
-        layer: &RawLayer,
+        raw: &RawLayer,
+        cache: &CacheLayers,
         point: IVec2,
         f: impl FnOnce(Srgba) + WasmNotSend + 'static,
     ) {
@@ -276,6 +277,30 @@ impl LayerPipeline {
         if mapped {
             return;
         }
+
+        let chunk_key = point_to_chunks(point, raw.chunk_size);
+        let chunk = match raw.chunks.get(&chunk_key) {
+            Some(RawLayerChunk::Filled(chunk)) => chunk,
+            Some(RawLayerChunk::Associated) => {
+                match cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) {
+                    Some(CacheLayerChunk::Filled(chunk)) => chunk,
+                    Some(CacheLayerChunk::Transparent) => {
+                        f(Srgba::new(0.0, 0.0, 0.0, 0.0));
+                        return;
+                    }
+                    None => {
+                        return;
+                    }
+                }
+            }
+            Some(RawLayerChunk::Transparent) => {
+                f(Srgba::new(0.0, 0.0, 0.0, 0.0));
+                return;
+            }
+            None => {
+                return;
+            }
+        };
 
         self.queue
             .write_buffer(&self.readback_sample, 0, bytes_of(&point));
@@ -289,12 +314,6 @@ impl LayerPipeline {
             label: Some("layer_color_readback"),
             timestamp_writes: None,
         });
-
-        let chunk_key = point_to_chunks(point, layer.chunk_size);
-
-        let Some(RawLayerChunk::Filled(chunk)) = layer.chunks.get(&chunk_key) else {
-            return;
-        };
 
         cpass.set_pipeline(&self.readback_pipeline);
         cpass.set_bind_group(0, Some(&self.readback_group), &[]);

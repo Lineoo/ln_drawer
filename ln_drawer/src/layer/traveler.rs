@@ -10,8 +10,8 @@ use wgpu::{
 
 use crate::{
     layer::{
-        CHUNK_TEXTURE_FORMAT, LayerPipeline, RawLayer, RawLayerChunk, brush::Stroke,
-        chunks_key_to_rect, rect_chunks_iter,
+        CHUNK_TEXTURE_FORMAT, CacheLayerChunk, CacheLayers, LayerPipeline, RawLayer, RawLayerChunk,
+        brush::Stroke, chunks_key_to_rect, rect_chunks_iter,
     },
     measures::Rectangle,
 };
@@ -68,7 +68,13 @@ impl Traveler {
         }
     }
 
-    pub fn stock(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer, dirty: Rectangle) {
+    pub fn stock(
+        &mut self,
+        encoder: &mut CommandEncoder,
+        raw: &RawLayer,
+        cache: &CacheLayers,
+        dirty: Rectangle,
+    ) {
         // 0. clear redos
         for snapshot in self.redos.drain(..) {
             for section in &snapshot.sections {
@@ -107,9 +113,27 @@ impl Traveler {
 
             // 3. copy textures
 
-            let Some(RawLayerChunk::Filled(chunk)) = raw.chunks.get(&key) else {
-                log::error!("failed to find chunk");
-                continue;
+            let chunk = match raw.chunks.get(&key) {
+                Some(RawLayerChunk::Filled(chunk)) => chunk,
+                Some(RawLayerChunk::Associated) => match cache.chunks.get(&(key.0, key.1, 0)) {
+                    Some(CacheLayerChunk::Filled(chunk)) => chunk,
+                    Some(CacheLayerChunk::Transparent) => {
+                        log::error!("todo: transparent chunk");
+                        continue;
+                    }
+                    None => {
+                        log::error!("failed to find chunk");
+                        continue;
+                    }
+                },
+                Some(RawLayerChunk::Transparent) => {
+                    log::error!("todo: transparent chunk");
+                    continue;
+                }
+                None => {
+                    log::error!("failed to find chunk");
+                    continue;
+                }
             };
 
             self.copy_into_atlas(
@@ -143,7 +167,12 @@ impl Traveler {
         }
     }
 
-    pub fn undo(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer) -> Option<Stroke> {
+    pub fn undo(
+        &mut self,
+        encoder: &mut CommandEncoder,
+        raw: &RawLayer,
+        cache: &CacheLayers,
+    ) -> Option<Stroke> {
         let Some(snapshot) = self.undos.pop_back() else {
             return None;
         };
@@ -152,9 +181,32 @@ impl Traveler {
 
         let mut redo_sections = SmallVec::with_capacity(snapshot.sections.len());
         for section in snapshot.sections {
-            let Some(RawLayerChunk::Filled(chunk)) = raw.chunks.get(&section.origin_key) else {
-                log::warn!("failed to find undo origin chunk");
-                continue;
+            let chunk = match raw.chunks.get(&section.origin_key) {
+                Some(RawLayerChunk::Filled(chunk)) => chunk,
+                Some(RawLayerChunk::Associated) => {
+                    match cache
+                        .chunks
+                        .get(&(section.origin_key.0, section.origin_key.1, 0))
+                    {
+                        Some(CacheLayerChunk::Filled(chunk)) => chunk,
+                        Some(CacheLayerChunk::Transparent) => {
+                            log::error!("todo: transparent chunk");
+                            continue;
+                        }
+                        None => {
+                            log::warn!("failed to find undo origin chunk");
+                            continue;
+                        }
+                    }
+                }
+                Some(RawLayerChunk::Transparent) => {
+                    log::error!("todo: transparent chunk");
+                    continue;
+                }
+                None => {
+                    log::warn!("failed to find undo origin chunk");
+                    continue;
+                }
             };
 
             // 1. copy back new data
@@ -209,7 +261,12 @@ impl Traveler {
         })
     }
 
-    pub fn redo(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer) -> Option<Stroke> {
+    pub fn redo(
+        &mut self,
+        encoder: &mut CommandEncoder,
+        raw: &RawLayer,
+        cache: &CacheLayers,
+    ) -> Option<Stroke> {
         let Some(snapshot) = self.redos.pop() else {
             return None;
         };
@@ -218,9 +275,32 @@ impl Traveler {
 
         let mut undo_sections = SmallVec::with_capacity(snapshot.sections.len());
         for section in snapshot.sections {
-            let Some(RawLayerChunk::Filled(chunk)) = raw.chunks.get(&section.origin_key) else {
-                log::warn!("failed to find redo origin chunk");
-                continue;
+            let chunk = match raw.chunks.get(&section.origin_key) {
+                Some(RawLayerChunk::Filled(chunk)) => chunk,
+                Some(RawLayerChunk::Associated) => {
+                    match cache
+                        .chunks
+                        .get(&(section.origin_key.0, section.origin_key.1, 0))
+                    {
+                        Some(CacheLayerChunk::Filled(chunk)) => chunk,
+                        Some(CacheLayerChunk::Transparent) => {
+                            log::error!("todo: transparent chunk");
+                            continue;
+                        }
+                        None => {
+                            log::warn!("failed to find undo origin chunk");
+                            continue;
+                        }
+                    }
+                }
+                Some(RawLayerChunk::Transparent) => {
+                    log::error!("todo: transparent chunk");
+                    continue;
+                }
+                None => {
+                    log::warn!("failed to find undo origin chunk");
+                    continue;
+                }
             };
 
             // 1. copy back new data

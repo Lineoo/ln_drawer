@@ -429,7 +429,8 @@ impl LayerPage {
             label: Some("page_submit"),
         });
 
-        self.traveler.stock(&mut encoder, &self.raw, stroke.dirty);
+        self.traveler
+            .stock(&mut encoder, &self.raw, &self.cache, stroke.dirty);
 
         let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("page_submit"),
@@ -511,7 +512,7 @@ impl LayerPage {
     pub fn pick_color(&mut self, cursor: I64Vec2, world: &World) {
         let cmd = world.commander("async_color_pick");
         self.lp
-            .pick_color(&self.raw, cursor.q32_floor(), move |color| {
+            .pick_color(&self.raw, &self.cache, cursor.q32_floor(), move |color| {
                 cmd.queue(move |world| {
                     let mut wrapper = world.single_fetch_mut::<LayerPage>();
                     wrapper.set_color(color.into_color());
@@ -580,7 +581,10 @@ impl LayerPage {
                 label: Some("page_undo"),
             });
 
-            let stroke = self.traveler.undo(&mut encoder, &self.raw).unwrap();
+            let stroke = self
+                .traveler
+                .undo(&mut encoder, &self.raw, &self.cache)
+                .unwrap();
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("page_undo"),
@@ -602,7 +606,10 @@ impl LayerPage {
                 label: Some("page_undo"),
             });
 
-            let stroke = self.traveler.redo(&mut encoder, &self.raw).unwrap();
+            let stroke = self
+                .traveler
+                .redo(&mut encoder, &self.raw, &self.cache)
+                .unwrap();
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("page_undo"),
