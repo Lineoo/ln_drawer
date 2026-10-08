@@ -337,6 +337,27 @@ impl LayerPage {
 
         drop(cpass);
         self.lp.queue.submit([encoder.finish()]);
+
+        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("draw_active_cache"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("draw_active_cache"),
+            timestamp_writes: None,
+        });
+
+        stroke.upload_dispatch(&self.lp);
+        stroke.submit_cache(
+            &self.lp,
+            &mut cpass,
+            &self.scratch,
+            &mut self.raw,
+            &mut self.cache,
+        );
+
+        drop(cpass);
+        self.lp.queue.submit([encoder.finish()]);
     }
 
     pub fn draw_erase(&mut self, draw: Draw) {
@@ -375,6 +396,11 @@ impl LayerPage {
         );
 
         drop(cpass);
+        self.lp.queue.submit([encoder.finish()]);
+
+        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("draw_erase_cache"),
+        });
 
         let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("draw_erase_cache"),
@@ -382,7 +408,7 @@ impl LayerPage {
         });
 
         stroke.upload_dispatch(&self.lp);
-        stroke.submit_raw_cache(
+        stroke.submit_cache(
             &self.lp,
             &mut cpass,
             &self.scratch,
@@ -391,7 +417,6 @@ impl LayerPage {
         );
 
         drop(cpass);
-
         self.lp.queue.submit([encoder.finish()]);
     }
 
@@ -562,13 +587,7 @@ impl LayerPage {
                 timestamp_writes: None,
             });
 
-            stroke.submit_raw_cache(
-                &self.lp,
-                &mut cpass,
-                &self.scratch,
-                &mut self.raw,
-                &mut self.cache,
-            );
+            stroke.raw_merge(&self.lp, &mut cpass, &mut self.raw, &mut self.cache);
 
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);
@@ -590,13 +609,7 @@ impl LayerPage {
                 timestamp_writes: None,
             });
 
-            stroke.submit_raw_cache(
-                &self.lp,
-                &mut cpass,
-                &self.scratch,
-                &mut self.raw,
-                &mut self.cache,
-            );
+            stroke.raw_merge(&self.lp, &mut cpass, &mut self.raw, &mut self.cache);
 
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);

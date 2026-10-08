@@ -92,6 +92,54 @@ impl Stroke {
         write_dispatch(&lp.queue, &lp.work_rect, 0, self.dirty);
     }
 
+    /// if raw & cache is desynced, use this to copy raw to cache, without scratch
+    pub fn raw_merge(
+        &self,
+        lp: &LayerPipeline,
+        cpass: &mut ComputePass,
+        raw: &mut RawLayer,
+        cache: &mut CacheLayers,
+    ) {
+        for chunk_key in rect_chunks_iter(self.dirty, raw.chunk_size) {
+            let chunk_rect = chunks_key_to_rect(chunk_key, raw.chunk_size);
+
+            let Some(cache_chunk) = cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
+                continue;
+            };
+            let Some(raw_chunk) = raw.chunks.get(&chunk_key) else {
+                continue;
+            };
+
+            match (cache_chunk, raw_chunk) {
+                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Filled(raw_chunk)) => {
+                    lp.copy_chunk(
+                        cpass,
+                        raw_chunk,
+                        chunk_rect,
+                        cache_chunk,
+                        chunk_rect,
+                        self.dirty,
+                    );
+                }
+                (CacheLayerChunk::Filled(_), RawLayerChunk::Associated) => {}
+                (CacheLayerChunk::Filled(_), RawLayerChunk::Transparent) => {
+                    cache.swap_chunk((chunk_key.0, chunk_key.1, 0), CacheLayerChunk::Transparent);
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Filled(raw_chunk)) => {
+                    cache.swap_chunk(
+                        (chunk_key.0, chunk_key.1, 0),
+                        CacheLayerChunk::Filled(raw_chunk.clone()),
+                    );
+                    raw.swap_chunk(chunk_key, RawLayerChunk::Associated);
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Associated) => {}
+                (CacheLayerChunk::Transparent, RawLayerChunk::Transparent) => {}
+            }
+        }
+
+        lp.cache_mipmaps(cpass, cache, self.dirty);
+    }
+
     // TODO find a way to request stream thread to load chunks
 
     // TODO support swap draw
