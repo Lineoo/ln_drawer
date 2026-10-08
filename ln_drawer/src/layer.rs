@@ -58,13 +58,13 @@ pub struct LayerPipeline {
 
     chunk_layout: ChunkLayout,
 
-    dispatch: Buffer,
-    dispatch_group: BindGroup,
+    work_rect: Buffer,
+    work_dispatch_group: BindGroup,
 
     sampler_group_unfiltered: BindGroup,
     sampler_group_filtered: BindGroup,
 
-    draws_dispatch: Buffer,
+    draws_rect: Buffer,
     draws_length: Buffer,
     draws_array: Buffer,
     draws_state: Buffer,
@@ -84,59 +84,6 @@ pub struct LayerPipeline {
     brush_pipelines: BrushPipelines,
 
     support_read_write: bool,
-}
-
-/// layer for scratch, hashmap existence stands for whether it's non-transparent.
-pub struct PlainLayer {
-    pub chunks: HashMap<(i32, i32), Chunk>,
-    pub chunk_size: UVec2,
-}
-
-/// layer for rendering, hashmap existence stands for whether it's loaded or not.
-pub struct CacheLayers {
-    pub chunks: HashMap<(i32, i32, u8), CacheLayerChunk>,
-    pub chunk_size: UVec2,
-    pub mipmap_cap: u8,
-    pub thread_tx: Sender<ThreadInput>,
-}
-
-#[derive(Clone)]
-pub enum CacheLayerChunk {
-    Transparent,
-    Filled(Chunk),
-}
-
-/// layer of raw data, `Associated` variety means chunk's data equals to its correlated cached
-/// layer level 0 chunk, hashmap existence stands for whether it's loaded or not.
-pub struct RawLayer {
-    pub chunks: HashMap<(i32, i32), RawLayerChunk>,
-    pub chunk_size: UVec2,
-    pub thread_tx: Sender<ThreadInput>,
-}
-
-#[derive(Clone)]
-pub enum RawLayerChunk {
-    Transparent,
-    Associated,
-    Filled(Chunk),
-}
-
-pub struct Layer {
-    pub chunks: HashMap<ChunkKey, Chunk>,
-    pub chunk_size: u32,
-    pub mipmap_levels: u8,
-    pub controlled: bool,
-}
-
-pub struct Standalone {
-    pub chunk: Chunk,
-    pub rect: Rectangle,
-}
-
-/// chunks here are directly available in full transparent pixels
-pub struct ChunkPool {
-    pub list: Vec<Chunk>,
-    pub chunk_size: UVec2,
 }
 
 #[derive(Clone)]
@@ -200,15 +147,15 @@ impl LayerPipeline {
 
         log::debug!("texture read write: {support_read_write}");
 
-        let dispatch_layout = device.create_bind_group_layout(&LAYOUT_DISPATCH);
-        let (dispatch, dispatch_group) = dispatch_group(&device, &dispatch_layout);
+        let dispatch_layout = device.create_bind_group_layout(&LAYOUT_WORK_DISPATCH);
+        let (work_rect, work_dispatch_group) = work_dispatch_group(&device, &dispatch_layout);
 
         let sampler_layout = device.create_bind_group_layout(&LAYOUT_SAMPLER);
         let (sampler_group_unfiltered, sampler_group_filtered) =
             sampler_groups(&device, &sampler_layout);
 
         let draw_dispatch_layout = device.create_bind_group_layout(&LAYOUT_DRAW_DISPATCH);
-        let (draws_dispatch, draws_length, draws_array, draws_state, draws_dispatch_group) =
+        let (draws_rect, draws_length, draws_array, draws_state, draws_dispatch_group) =
             draws_dispatch_group(&device, &draw_dispatch_layout);
 
         let color_readback_layout = device.create_bind_group_layout(&LAYOUT_COLOR_READBACK);
@@ -251,11 +198,11 @@ impl LayerPipeline {
             device,
             queue,
             chunk_layout,
-            dispatch,
-            dispatch_group,
+            work_rect,
+            work_dispatch_group,
             sampler_group_unfiltered,
             sampler_group_filtered,
-            draws_dispatch,
+            draws_rect,
             draws_length,
             draws_array,
             draws_dispatch_group,
@@ -283,6 +230,11 @@ impl LayerPipeline {
         create_chunk(&self.device, &self.chunk_layout, texture, rect)
     }
 
+    pub fn create_empty_chunk(&self, size: UVec2, rect: Rectangle) -> Chunk {
+        let texture = self.create_chunk_texture(size);
+        self.create_chunk(texture, rect)
+    }
+
     /// Create a single offscreen chunk, used as a standalone preview/render target.
     pub fn create_standalone(&self, rect: Rectangle) -> Standalone {
         let texture = create_chunk_texture(&self.device, rect.extend);
@@ -290,9 +242,10 @@ impl LayerPipeline {
         Standalone { chunk, rect }
     }
 
+    /// silent skip if cache is not **filled**
     pub fn cache_mipmaps(&self, cpass: &mut ComputePass, cache: &CacheLayers, dirty: Rectangle) {
         cpass.set_pipeline(&self.mipmap_pipeline);
-        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
+        cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
 
         for lower_key in rect_chunks_stack_iter(dirty, cache.chunk_size, cache.mipmap_cap - 1) {
             let scale = 1u32 << lower_key.2;
@@ -407,7 +360,7 @@ impl LayerPipeline {
         dispatch: Rectangle,
     ) {
         cpass.set_pipeline(&self.copy_pipeline);
-        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
+        cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
         cpass.set_bind_group(1, Some(&dst_chunk.write), &[]);
         cpass.set_bind_group(2, Some(&src_chunk.read), &[]);
         dispatch_workgroups(cpass, &[dispatch, src_rect, dst_rect]);
@@ -447,7 +400,7 @@ impl LayerPipeline {
         dispatch_workgroups(cpass, &[dispatch, chunk_rect, swap_rect]);
 
         cpass.set_pipeline(&self.copy_pipeline);
-        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
+        cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
         cpass.set_bind_group(1, Some(&chunk.write), &[]);
         cpass.set_bind_group(2, Some(&swap.read), &[]);
         dispatch_workgroups(cpass, &[dispatch, chunk_rect, swap_rect]);
@@ -468,7 +421,28 @@ impl LayerPipeline {
         dispatch_workgroups(cpass, &[dispatch, chunk_rect]);
     }
 
-    /// use `dispatch_group`
+    /// use `work_dispatch_group`
+    pub fn merge_chunk_over_cross(
+        &self,
+        cpass: &mut ComputePass,
+        src: &Chunk,
+        src_rect: Rectangle,
+        dst: &Chunk,
+        dst_rect: Rectangle,
+        swp: &Chunk,
+        swp_rect: Rectangle,
+        dispatch: Rectangle,
+    ) {
+        // TODO pipeline should have read_write/swap varieties
+        cpass.set_pipeline(&self.merge_pipelines.over);
+        cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
+        cpass.set_bind_group(1, Some(&dst.read), &[]);
+        cpass.set_bind_group(2, Some(&src.read), &[]);
+        cpass.set_bind_group(3, Some(&swp.write), &[]);
+        dispatch_workgroups(cpass, &[dispatch, src_rect, dst_rect, swp_rect]);
+    }
+
+    /// use `work_dispatch_group`
     pub fn merge_chunk_over_read_write(
         &self,
         cpass: &mut ComputePass,
@@ -479,14 +453,14 @@ impl LayerPipeline {
         dispatch: Rectangle,
     ) {
         cpass.set_pipeline(&self.merge_pipelines.over);
-        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
+        cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
         cpass.set_bind_group(1, Some(&dst.read_write), &[]);
         cpass.set_bind_group(2, Some(&src.read), &[]);
         cpass.set_bind_group(3, Some(&dst.read_write), &[]);
         dispatch_workgroups(cpass, &[dispatch, src_rect, dst_rect]);
     }
 
-    /// use `dispatch_group`
+    /// use `work_dispatch_group`
     pub fn clear_chunk(
         &self,
         cpass: &mut ComputePass,
@@ -495,17 +469,88 @@ impl LayerPipeline {
         dispatch: Rectangle,
     ) {
         cpass.set_pipeline(&self.clear_pipeline);
-        cpass.set_bind_group(0, Some(&self.dispatch_group), &[0]);
+        cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
         cpass.set_bind_group(1, Some(&chunk.write), &[]);
         dispatch_workgroups(cpass, &[dispatch, chunk_rect]);
     }
 
-    pub fn clear_chunk_direct(&self, cpass: &mut ComputePass, chunk: &Chunk, chunk_rect: Rectangle) {
+    pub fn clear_chunk_direct(
+        &self,
+        cpass: &mut ComputePass,
+        chunk: &Chunk,
+        chunk_rect: Rectangle,
+    ) {
         cpass.set_pipeline(&self.clear_pipeline);
         cpass.set_bind_group(0, Some(&chunk.dispatch), &[0]);
         cpass.set_bind_group(1, Some(&chunk.write), &[]);
         dispatch_workgroups(cpass, &[chunk_rect]);
     }
+}
+
+// ---- collections of chunk ---- //
+
+/// layer for scratch, hashmap existence stands for whether it's non-transparent.
+pub struct PlainLayer {
+    pub chunks: HashMap<(i32, i32), Chunk>,
+    pub chunk_size: UVec2,
+}
+
+/// layer for rendering, hashmap existence stands for whether it's loaded or not.
+pub struct CacheLayers {
+    pub chunks: HashMap<(i32, i32, u8), CacheLayerChunk>,
+    pub chunk_size: UVec2,
+    pub mipmap_cap: u8,
+    pub thread_tx: Sender<ThreadInput>,
+}
+
+#[derive(Clone)]
+pub enum CacheLayerChunk {
+    Transparent,
+    Filled(Chunk),
+}
+
+impl CacheLayers {
+    pub fn swap_chunk(&mut self, key: (i32, i32, u8), chunk: CacheLayerChunk) {
+        self.chunks.insert(key, chunk.clone());
+        self.thread_tx
+            .send(ThreadInput::SwapCache(key, chunk))
+            .unwrap();
+    }
+}
+
+/// layer of raw data, `Associated` variety means chunk's data equals to its correlated cached
+/// layer level 0 chunk, hashmap existence stands for whether it's loaded or not.
+pub struct RawLayer {
+    pub chunks: HashMap<(i32, i32), RawLayerChunk>,
+    pub chunk_size: UVec2,
+    pub thread_tx: Sender<ThreadInput>,
+}
+
+#[derive(Clone)]
+pub enum RawLayerChunk {
+    Transparent,
+    Associated,
+    Filled(Chunk),
+}
+
+impl RawLayer {
+    pub fn swap_chunk(&mut self, key: (i32, i32), chunk: RawLayerChunk) {
+        self.chunks.insert(key, chunk.clone());
+        self.thread_tx
+            .send(ThreadInput::SwapRaw(key, chunk))
+            .unwrap();
+    }
+}
+
+pub struct Standalone {
+    pub chunk: Chunk,
+    pub rect: Rectangle,
+}
+
+/// chunks here are directly available in full transparent pixels
+pub struct ChunkPool {
+    pub list: Vec<Chunk>,
+    pub chunk_size: UVec2,
 }
 
 impl ChunkPool {
@@ -656,7 +701,17 @@ fn lower_chunk_of(chunk: (i32, i32, u8)) -> [(i32, i32, u8); 4] {
 
 // --- Layouts --- //
 
-const LAYOUT_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+const LAYOUT_SAMPLER: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("layer_sampler"),
+    entries: &[BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStages::FRAGMENT,
+        ty: BindingType::Sampler(SamplerBindingType::Filtering),
+        count: None,
+    }],
+};
+
+const LAYOUT_WORK_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
     label: Some("layer_dispatch"),
     entries: &[BindGroupLayoutEntry {
         binding: 0,
@@ -666,16 +721,6 @@ const LAYOUT_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor
             has_dynamic_offset: true,
             min_binding_size: None,
         },
-        count: None,
-    }],
-};
-
-const LAYOUT_SAMPLER: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
-    label: Some("layer_sampler"),
-    entries: &[BindGroupLayoutEntry {
-        binding: 0,
-        visibility: ShaderStages::FRAGMENT,
-        ty: BindingType::Sampler(SamplerBindingType::Filtering),
         count: None,
     }],
 };
@@ -862,7 +907,7 @@ const LAYOUT_COLOR_READBACK: BindGroupLayoutDescriptor = BindGroupLayoutDescript
 
 // --- Bind Groups --- //
 
-fn dispatch_group(device: &Device, dispatch_layout: &BindGroupLayout) -> (Buffer, BindGroup) {
+fn work_dispatch_group(device: &Device, dispatch_layout: &BindGroupLayout) -> (Buffer, BindGroup) {
     let dispatch = device.create_buffer(&BufferDescriptor {
         label: Some("layer_dispatch"),
         size: size_of::<Rectangle>() as u64,

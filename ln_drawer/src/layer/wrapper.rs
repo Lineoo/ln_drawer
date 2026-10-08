@@ -121,13 +121,11 @@ impl LayerPage {
 
         let stream_config = StreamConfig {
             database,
-            device: render.device.clone(),
-            queue: render.queue.clone(),
+            lp: lp.clone(),
+            window,
             page: 0,
             chunk_size: DEFAULT_CHUNK_SIZE,
-            mipmap_levels: DEFAULT_MIPMAP_CAP,
-            layer_pipeline: lp.clone(),
-            window,
+            mipmap_caps: DEFAULT_MIPMAP_CAP,
         };
 
         let main_camera = world.single_fetch::<MainCamera>();
@@ -309,6 +307,7 @@ impl LayerPage {
             return;
         };
 
+        stroke.confirm_batch(&batch);
         batch.upload(&self.lp, &mut self.bridge);
 
         let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
@@ -319,6 +318,14 @@ impl LayerPage {
             label: Some("draw_active"),
             timestamp_writes: None,
         });
+
+        batch.prepare_scratch(
+            &self.lp,
+            &mut cpass,
+            &self.raw,
+            &self.cache,
+            &mut self.scratch,
+        );
 
         batch.draw_layers(
             &self.lp,
@@ -339,6 +346,7 @@ impl LayerPage {
             return;
         };
 
+        stroke.confirm_batch(&batch);
         batch.upload(&self.lp, &mut self.bridge);
 
         let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
@@ -350,6 +358,14 @@ impl LayerPage {
             timestamp_writes: None,
         });
 
+        batch.prepare_scratch(
+            &self.lp,
+            &mut cpass,
+            &self.raw,
+            &self.cache,
+            &mut self.scratch,
+        );
+
         batch.draw_layers(
             &self.lp,
             &mut cpass,
@@ -359,6 +375,23 @@ impl LayerPage {
         );
 
         drop(cpass);
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("draw_erase_cache"),
+            timestamp_writes: None,
+        });
+
+        stroke.upload_dispatch(&self.lp);
+        stroke.submit_raw_cache(
+            &self.lp,
+            &mut cpass,
+            &self.scratch,
+            &mut self.raw,
+            &mut self.cache,
+        );
+
+        drop(cpass);
+
         self.lp.queue.submit([encoder.finish()]);
     }
 
@@ -378,8 +411,14 @@ impl LayerPage {
             timestamp_writes: None,
         });
 
-        stroke.submit_layers(&self.lp, &mut cpass, &self.raw, &mut self.scratch);
-        self.lp.cache_mipmaps(&mut cpass, &self.cache, stroke.dirty);
+        stroke.upload_dispatch(&self.lp);
+        stroke.submit_raw_cache(
+            &self.lp,
+            &mut cpass,
+            &self.scratch,
+            &mut self.raw,
+            &mut self.cache,
+        );
 
         self.cleanup(&mut cpass, &stroke);
 
@@ -516,14 +555,20 @@ impl LayerPage {
                 label: Some("page_undo"),
             });
 
-            let dirty = self.traveler.undo(&mut encoder, &self.raw).unwrap();
+            let stroke = self.traveler.undo(&mut encoder, &self.raw).unwrap();
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("page_undo"),
                 timestamp_writes: None,
             });
 
-            self.lp.cache_mipmaps(&mut cpass, &self.cache, dirty);
+            stroke.submit_raw_cache(
+                &self.lp,
+                &mut cpass,
+                &self.scratch,
+                &mut self.raw,
+                &mut self.cache,
+            );
 
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);
@@ -538,14 +583,20 @@ impl LayerPage {
                 label: Some("page_undo"),
             });
 
-            let dirty = self.traveler.redo(&mut encoder, &self.raw).unwrap();
+            let stroke = self.traveler.redo(&mut encoder, &self.raw).unwrap();
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("page_undo"),
                 timestamp_writes: None,
             });
 
-            self.lp.cache_mipmaps(&mut cpass, &self.cache, dirty);
+            stroke.submit_raw_cache(
+                &self.lp,
+                &mut cpass,
+                &self.scratch,
+                &mut self.raw,
+                &mut self.cache,
+            );
 
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);

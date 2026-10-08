@@ -22,8 +22,8 @@ use winit::window::Window;
 use crate::{
     layer::{
         CacheLayerChunk, ChunkKey, LayerPipeline, RawLayerChunk, chunks_key_to_rect,
-        chunks_stack_key_to_rect, create_chunk, create_chunk_texture, point_zoom_to_chunks_stack,
-        rect_chunks_stack_layer_iter, rect_chunks_stack_layer_range,
+        chunks_stack_key_to_rect, point_zoom_to_chunks_stack, rect_chunks_stack_layer_iter,
+        rect_chunks_stack_layer_range,
     },
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
@@ -42,8 +42,8 @@ pub enum ThreadInput {
     SetStreamCamera(i64, UVec2, I64Vec2),
     MarkRawUnsaved((i32, i32)),
     MarkCacheUnsaved((i32, i32, u8)),
-    RequestRaw((i32, i32)),
-    RequestCache((i32, i32, u8)),
+    SwapRaw((i32, i32), RawLayerChunk),
+    SwapCache((i32, i32, u8), CacheLayerChunk),
     Autosave,
     Abort,
 }
@@ -58,13 +58,11 @@ pub enum ThreadOutput {
 
 pub struct StreamConfig {
     pub database: Arc<Database>,
-    pub device: Device,
-    pub queue: Queue,
+    pub lp: Arc<LayerPipeline>,
+    pub window: Arc<dyn Window>,
     pub page: u64,
     pub chunk_size: UVec2,
-    pub mipmap_levels: u8,
-    pub layer_pipeline: Arc<LayerPipeline>,
-    pub window: Arc<dyn Window>,
+    pub mipmap_caps: u8,
 }
 
 pub struct StreamThread {
@@ -90,6 +88,7 @@ struct ChunksBase {
 /// All chunks waited to stage _(no matter loaded or not)_, will *immediately*
 /// refresh after camera movement.
 struct LoadQueue {
+    outdated: bool,
     raw: IndexSet<(i32, i32)>,
     raw_front: usize,
     cache: IndexSet<(i32, i32, u8)>,
@@ -110,7 +109,6 @@ struct CameraInfo {
     center: ChunkKey,
     rect: Rectangle,
     range: ((i32, i32), (i32, i32)),
-    outdated: bool,
 }
 
 /// Debug information for diagnosis.
@@ -144,6 +142,7 @@ impl StreamThread {
                 cache_real_cnt: 0,
             },
             queue: LoadQueue {
+                outdated: false,
                 raw: IndexSet::with_capacity(400),
                 raw_front: 0,
                 cache: IndexSet::with_capacity(400),
@@ -154,7 +153,6 @@ impl StreamThread {
                 center: (0, 0, 0),
                 rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(50)),
                 range: ((0, 0), (0, 0)),
-                outdated: false,
             },
             debug: DebugInfo::default(),
         }
@@ -162,24 +160,11 @@ impl StreamThread {
 
     pub fn run(mut self) -> Result<(), Box<dyn Error>> {
         loop {
-            let input = if self.queue.cache_front < self.queue.cache.len() || self.camera.outdated {
-                match self.input_rx.try_recv() {
-                    Ok(input) => Some(input),
-                    Err(TryRecvError::Empty) => None,
-                    Err(TryRecvError::Disconnected) => Err(TryRecvError::Disconnected)?,
-                }
-            } else {
-                match self.input_rx.recv() {
-                    Ok(input) => Some(input),
-                    Err(RecvError) => Err(RecvError)?,
-                }
-            };
-
-            match input {
+            match self.recv()? {
                 Some(ThreadInput::SetPage(page)) => {
                     self.unload_all()?;
                     self.config.page = page;
-                    self.camera.outdated = true;
+                    self.queue.outdated = true;
                 }
                 Some(ThreadInput::SetStreamCamera(zoom, size, center)) => {
                     self.camera.rect = Camera::view_rect(zoom, size, center);
@@ -198,86 +183,99 @@ impl StreamThread {
                     {
                         self.camera.range = stream_range_new;
                         self.camera.center = stream_center_new;
-                        self.camera.outdated = true;
+                        self.queue.outdated = true;
                     }
-                    continue;
                 }
                 Some(ThreadInput::MarkRawUnsaved(chunk)) => {
                     self.base.raw_unsaved.insert(chunk);
-                    continue;
                 }
                 Some(ThreadInput::MarkCacheUnsaved(chunk)) => {
                     self.base.cache_unsaved.insert(chunk);
-                    continue;
                 }
-                Some(ThreadInput::RequestRaw(_key)) => {
-                    // TODO
+                Some(ThreadInput::SwapRaw(key, chunk)) => {
+                    // Loading is controlled by stream thread, but the chunk's content is
+                    // controlled by the main thread. Since this command replace the chunk
+                    // entirely, it is safe to just add chunk into our base (and mark it as
+                    // unsaved), without concerning about loading it from db.
+                    // NOT sending it back to main thread
+                    self.base.raw_insert(key, chunk);
+                    self.base.raw_unsaved.insert(key);
                 }
-                Some(ThreadInput::RequestCache(_key)) => {
-                    // TODO
+                Some(ThreadInput::SwapCache(key, chunk)) => {
+                    self.base.cache_insert(key, chunk);
+                    self.base.cache_unsaved.insert(key);
                 }
                 Some(ThreadInput::Autosave) => {
                     self.save_all()?;
-                    continue;
                 }
                 Some(ThreadInput::Abort) => {
                     return Ok(());
                 }
-                None => {}
-            }
+                None => {
+                    self.send_debug_message()?;
 
-            self.output_tx
-                .send(ThreadOutput::ThreadDebugMessage(format!(
-                    "\
-Loading Queue: length {} - pending {}
-Texture Index: real {} total {}
-Load Counter:
+                    if self.queue.outdated {
+                        self.queue.restock(&self.config, &self.camera);
+                    }
+
+                    self.queue.generate_batch(&mut self.base);
+                    if self.queue.batch.is_empty() {
+                        continue;
+                    }
+
+                    self.unload_overflow()?;
+                    self.load()?;
+
+                    self.config.window.request_redraw();
+                }
+            }
+        }
+    }
+
+    fn recv(&self) -> Result<Option<ThreadInput>, Box<dyn Error>> {
+        let result = if self.queue.still_has_tasks() || self.queue.outdated {
+            match self.input_rx.try_recv() {
+                Ok(input) => Some(input),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Disconnected) => Err(TryRecvError::Disconnected)?,
+            }
+        } else {
+            match self.input_rx.recv() {
+                Ok(input) => Some(input),
+                Err(RecvError) => Err(RecvError)?,
+            }
+        };
+
+        Ok(result)
+    }
+
+    fn send_debug_message(&self) -> Result<(), Box<dyn Error>> {
+        self.output_tx
+            .send(ThreadOutput::ThreadDebugMessage(format!(
+                "\
+    Loading Queue: length {} - pending {}
+    Texture Index: real {} total {}
+    Load Counter:
     decode {}
     real {} total {}
-Unload Counter:
+    Unload Counter:
     encode {} clean {}
     real {} total {} 
-Camera Center: {:?}",
-                    self.queue.cache.len(),
-                    self.queue.cache.len() - self.queue.cache_front,
-                    self.base.raw_real_cnt,
-                    self.base.cache.len(),
-                    self.debug.decode,
-                    self.debug.load_real,
-                    self.debug.load,
-                    self.debug.encode,
-                    self.debug.clean,
-                    self.debug.unload_real,
-                    self.debug.unload,
-                    self.camera.center
-                )))?;
-
-            if self.camera.outdated {
-                self.queue.restock(&self.config, &mut self.camera);
-            }
-
-            debug_assert!(self.queue.batch.is_empty(), "staging buffer is not cleared");
-
-            self.queue.consume(&mut self.base);
-
-            if self.queue.batch.is_empty() {
-                continue;
-            }
-
-            self.base.cache.sort_by_key(|&key, _| {
-                chunk_distance(key, self.camera.center, self.config.mipmap_levels)
-            });
-
-            // save //
-
-            self.unload_overflow()?;
-
-            // load //
-
-            self.load()?;
-
-            self.config.window.request_redraw();
-        }
+    Camera Center: {:?}",
+                self.queue.cache.len(),
+                self.queue.cache.len() - self.queue.cache_front,
+                self.base.raw_real_cnt,
+                self.base.cache.len(),
+                self.debug.decode,
+                self.debug.load_real,
+                self.debug.load,
+                self.debug.encode,
+                self.debug.clean,
+                self.debug.unload_real,
+                self.debug.unload,
+                self.camera.center
+            )))?;
+        Ok(())
     }
 
     fn load(&mut self) -> Result<(), Box<dyn Error>> {
@@ -288,11 +286,8 @@ Camera Center: {:?}",
                 ChunkKeyKind::Cache(key) => {
                     let result = read.load_cache((self.config.page, key))?;
                     if let Some(bytes) = result.texture {
-                        let texture =
-                            create_chunk_texture(&self.config.device, self.config.chunk_size);
-                        let chunk = CacheLayerChunk::Filled(create_chunk(
-                            &self.config.device,
-                            &self.config.layer_pipeline.chunk_layout,
+                        let texture = self.config.lp.create_chunk_texture(self.config.chunk_size);
+                        let chunk = CacheLayerChunk::Filled(self.config.lp.create_chunk(
                             texture.clone(),
                             chunks_stack_key_to_rect(key, self.config.chunk_size),
                         ));
@@ -312,11 +307,8 @@ Camera Center: {:?}",
                 ChunkKeyKind::Raw(key) => {
                     let result = read.load_raw((self.config.page, key))?;
                     if let Some(bytes) = result.texture {
-                        let texture =
-                            create_chunk_texture(&self.config.device, self.config.chunk_size);
-                        let chunk = RawLayerChunk::Filled(create_chunk(
-                            &self.config.device,
-                            &self.config.layer_pipeline.chunk_layout,
+                        let texture = self.config.lp.create_chunk_texture(self.config.chunk_size);
+                        let chunk = RawLayerChunk::Filled(self.config.lp.create_chunk(
                             texture.clone(),
                             chunks_key_to_rect(key, self.config.chunk_size),
                         ));
@@ -345,45 +337,39 @@ Camera Center: {:?}",
         Ok(())
     }
 
-    fn save_all(&mut self) -> Result<(), Box<dyn Error + 'static>> {
+    fn save_all(&mut self) -> Result<(), Box<dyn Error>> {
         let now = Instant::now();
 
         let mut write = self.config.database.begin_write()?;
         write.set_quick_repair(true);
         let mut save = ChunkSave::new(&write)?;
-        let mut tasks = Vec::new();
 
-        for &key in &self.base.cache_unsaved {
-            let Some(CacheLayerChunk::Filled(chunk)) = self.base.cache.get(&key) else {
+        for &key in &self.base.raw_unsaved {
+            let Some(chunk) = self.base.raw.get(&key) else {
                 continue;
             };
 
-            tasks.push((
-                ChunkKeyKind::Cache(key),
-                chunk_readback(
-                    &chunk.texture,
-                    &self.config.device,
-                    &self.config.queue,
-                    self.config.chunk_size,
-                ),
-            ));
+            self.persist_raw(&mut save, key, chunk)?;
+        }
+
+        for &key in &self.base.cache_unsaved {
+            let Some(chunk) = self.base.cache.get(&key) else {
+                continue;
+            };
+
+            self.persist_cache(&mut save, key, chunk)?;
         }
 
         self.config
+            .lp
             .device
             .poll(PollType::wait_indefinitely())
             .unwrap();
 
-        for (key, rx) in tasks {
-            let bytes = rx.recv().unwrap();
-            match key {
-                ChunkKeyKind::Raw(key) => save.save_raw((self.config.page, key), &bytes)?,
-                ChunkKeyKind::Cache(key) => save.save_cache((self.config.page, key), &bytes)?,
-            }
-        }
         drop(save);
         write.commit()?;
 
+        self.base.raw_unsaved.clear();
         self.base.cache_unsaved.clear();
 
         log::info!(
@@ -416,6 +402,8 @@ Camera Center: {:?}",
             return Ok(());
         }
 
+        self.base.sort(self.camera.center);
+
         let write = self.config.database.begin_write()?;
         let mut save = ChunkSave::new(&write)?;
 
@@ -445,60 +433,59 @@ Camera Center: {:?}",
         Ok(())
     }
 
-    fn unload_raw(
-        &mut self,
-        save: &mut ChunkSave,
-        index: usize,
-    ) -> Result<(), Box<dyn Error + 'static>> {
+    fn unload_raw(&mut self, save: &mut ChunkSave, index: usize) -> Result<(), Box<dyn Error>> {
         let (key, chunk) = self.base.raw_swap_remove_index(index).unwrap();
         self.output_tx.send(ThreadOutput::RawRemove(key))?;
 
-        self.persist_raw(save, key, &chunk)?;
+        if self.base.raw_unsaved.contains(&key) {
+            self.persist_raw(save, key, &chunk)?;
+            self.base.raw_unsaved.remove(&key);
+            self.debug.encode += 1;
+            self.debug.unload_real += 1;
+        }
+
         self.debug.unload += 1;
 
         Ok(())
     }
 
-    fn unload_cache(
-        &mut self,
-        save: &mut ChunkSave,
-        index: usize,
-    ) -> Result<(), Box<dyn Error + 'static>> {
+    fn unload_cache(&mut self, save: &mut ChunkSave, index: usize) -> Result<(), Box<dyn Error>> {
         let (key, chunk) = self.base.cache_swap_remove_index(index).unwrap();
         self.output_tx.send(ThreadOutput::CacheRemove(key))?;
 
-        self.persist_cache(save, key, &chunk)?;
+        if self.base.cache_unsaved.contains(&key) {
+            self.persist_cache(save, key, &chunk)?;
+            self.base.cache_unsaved.remove(&key);
+            self.debug.encode += 1;
+            self.debug.unload_real += 1;
+        }
+
         self.debug.unload += 1;
 
         Ok(())
     }
 
     fn persist_raw(
-        &mut self,
+        &self,
         save: &mut ChunkSave,
         key: (i32, i32),
         chunk: &RawLayerChunk,
     ) -> Result<(), Box<dyn Error>> {
-        if !self.base.raw_unsaved.contains(&key) {
-            return Ok(());
-        }
-
         match chunk {
             RawLayerChunk::Filled(chunk) => {
                 let rx = chunk_readback(
                     &chunk.texture,
-                    &self.config.device,
-                    &self.config.queue,
+                    &self.config.lp.device,
+                    &self.config.lp.queue,
                     self.config.chunk_size,
                 );
                 self.config
+                    .lp
                     .device
                     .poll(PollType::wait_indefinitely())
                     .unwrap();
                 let bytes = rx.recv().unwrap();
                 save.save_raw((self.config.page, key), &bytes[..])?;
-                self.base.raw_unsaved.remove(&key);
-                self.debug.unload_real += 1;
             }
             RawLayerChunk::Associated => {
                 save.save_raw_associated((self.config.page, key))?;
@@ -512,33 +499,26 @@ Camera Center: {:?}",
     }
 
     fn persist_cache(
-        &mut self,
+        &self,
         save: &mut ChunkSave,
         key: (i32, i32, u8),
         chunk: &CacheLayerChunk,
     ) -> Result<(), Box<dyn Error>> {
-        if !self.base.cache_unsaved.contains(&key) {
-            return Ok(());
-        }
-
         match chunk {
             CacheLayerChunk::Filled(chunk) => {
                 let rx = chunk_readback(
                     &chunk.texture,
-                    &self.config.device,
-                    &self.config.queue,
+                    &self.config.lp.device,
+                    &self.config.lp.queue,
                     self.config.chunk_size,
                 );
                 self.config
+                    .lp
                     .device
                     .poll(PollType::wait_indefinitely())
                     .unwrap();
                 let bytes = rx.recv().unwrap();
                 save.save_cache((self.config.page, key), &bytes[..])?;
-                self.base.cache_unsaved.remove(&key);
-                self.debug.decode += 1;
-
-                self.debug.unload_real += 1;
             }
             CacheLayerChunk::Transparent => {
                 save.save_cache_transparent((self.config.page, key))?;
@@ -550,18 +530,25 @@ Camera Center: {:?}",
 }
 
 impl ChunksBase {
-    fn raw_insert(&mut self, key: (i32, i32), value: RawLayerChunk) {
-        if matches!(value, RawLayerChunk::Filled(_)) {
-            self.raw_real_cnt += 1;
-        }
-        self.raw.insert(key, value);
+    fn sort(&mut self, center: (i32, i32, u8)) {
+        self.raw
+            .sort_by_key(|&key, _| chunk_distance((key.0, key.1, 0), center));
+        self.cache
+            .sort_by_key(|&key, _| chunk_distance(key, center));
     }
 
-    fn cache_insert(&mut self, key: (i32, i32, u8), value: CacheLayerChunk) {
-        if matches!(value, CacheLayerChunk::Filled(_)) {
+    fn raw_insert(&mut self, key: (i32, i32), chunk: RawLayerChunk) {
+        if matches!(chunk, RawLayerChunk::Filled(_)) {
+            self.raw_real_cnt += 1;
+        }
+        self.raw.insert(key, chunk);
+    }
+
+    fn cache_insert(&mut self, key: (i32, i32, u8), chunk: CacheLayerChunk) {
+        if matches!(chunk, CacheLayerChunk::Filled(_)) {
             self.cache_real_cnt += 1;
         }
-        self.cache.insert(key, value);
+        self.cache.insert(key, chunk);
     }
 
     fn raw_swap_remove_index(&mut self, index: usize) -> Option<((i32, i32), RawLayerChunk)> {
@@ -594,12 +581,12 @@ impl ChunksBase {
 
 impl LoadQueue {
     /// camera is moved so we restock the stream queue
-    fn restock(&mut self, config: &StreamConfig, camera: &mut CameraInfo) {
-        camera.outdated = false;
+    fn restock(&mut self, config: &StreamConfig, camera: &CameraInfo) {
+        self.outdated = false;
         self.cache_front = 0;
         self.cache.clear();
 
-        for mipmap in camera.center.2.saturating_sub(1)..config.mipmap_levels {
+        for mipmap in camera.center.2.saturating_sub(1)..config.mipmap_caps {
             for key in rect_chunks_stack_layer_iter(camera.rect, config.chunk_size, mipmap) {
                 self.cache.insert(key);
             }
@@ -607,12 +594,16 @@ impl LoadQueue {
 
         debug_assert!(self.cache.len() < CHUNK_CACHE_REAL_CAPS - 1);
 
+        self.raw
+            .sort_by_key(|&key| chunk_distance((key.0, key.1, 0), camera.center));
         self.cache
-            .sort_by_key(|&key| chunk_distance(key, camera.center, config.mipmap_levels));
+            .sort_by_key(|&key| chunk_distance(key, camera.center));
     }
 
     /// select certain amount of chunks defined in [`CHUNK_BATCH`] from queue to load in single batch,
-    fn consume(&mut self, base: &mut ChunksBase) {
+    fn generate_batch(&mut self, base: &mut ChunksBase) {
+        debug_assert!(self.batch.is_empty(), "batch is not cleared yet");
+
         let mut batch_cnt = 0;
         while let Some(&key) = self.cache.get_index(self.cache_front)
             && batch_cnt < CHUNK_BATCH
@@ -637,10 +628,14 @@ impl LoadQueue {
             batch_cnt += 1;
         }
     }
+
+    fn still_has_tasks(&self) -> bool {
+        self.cache_front < self.cache.len()
+    }
 }
 
 fn write_texture(config: &StreamConfig, bytes: &[u8], texture: &Texture) {
-    config.queue.write_texture(
+    config.lp.queue.write_texture(
         TexelCopyTextureInfoBase {
             texture: texture,
             mip_level: 0,
@@ -716,10 +711,10 @@ fn chunk_readback(
 }
 
 /// Guaranteed assumption: Upper layer is always loaded first
-fn chunk_distance((x, y, z): ChunkKey, (cx, cy, cz): ChunkKey, m: u8) -> u64 {
+fn chunk_distance((x, y, z): ChunkKey, (cx, cy, cz): ChunkKey) -> u64 {
     let dx = (x << z).abs_diff(cx << cz).saturating_sub(1 << z) as u64;
     let dy = (y << z).abs_diff(cy << cz).saturating_sub(1 << z) as u64;
-    (dx + dy << m) + (255 - z) as u64
+    (dx + dy << 8) + (255 - z) as u64
 }
 
 #[cfg(test)]
@@ -738,7 +733,7 @@ mod test {
 
         let center: super::ChunkKey = (0, 2, 0);
         let mut test = golden.clone();
-        test.sort_by_key(|&chunk| super::chunk_distance(chunk, center, 8));
+        test.sort_by_key(|&chunk| super::chunk_distance(chunk, center));
         assert_eq!(test, golden);
     }
 
@@ -785,7 +780,7 @@ mod test {
 
         let center: super::ChunkKey = (0, 0, 0);
         let mut test = golden.clone();
-        test.sort_by_key(|&chunk| super::chunk_distance(chunk, center, 8));
+        test.sort_by_key(|&chunk| super::chunk_distance(chunk, center));
         assert_eq!(test, golden);
     }
 
@@ -818,7 +813,7 @@ mod test {
         let center: super::ChunkKey = (-2, 1, 1);
         let mut test = golden.clone();
         test.iter_mut()
-            .for_each(|(chunk, key)| *key = super::chunk_distance(*chunk, center, 8));
+            .for_each(|(chunk, key)| *key = super::chunk_distance(*chunk, center));
         test.sort_by_key(|(_, key)| *key);
         assert_eq!(test, golden);
     }

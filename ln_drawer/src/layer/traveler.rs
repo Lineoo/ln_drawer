@@ -10,8 +10,8 @@ use wgpu::{
 
 use crate::{
     layer::{
-        CHUNK_TEXTURE_FORMAT, LayerPipeline, RawLayer, RawLayerChunk, chunks_key_to_rect,
-        rect_chunks_iter,
+        CHUNK_TEXTURE_FORMAT, LayerPipeline, RawLayer, RawLayerChunk, brush::Stroke,
+        chunks_key_to_rect, rect_chunks_iter,
     },
     measures::Rectangle,
 };
@@ -143,7 +143,7 @@ impl Traveler {
         }
     }
 
-    pub fn undo(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer) -> Option<Rectangle> {
+    pub fn undo(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer) -> Option<Stroke> {
         let Some(snapshot) = self.undos.pop_back() else {
             return None;
         };
@@ -201,10 +201,15 @@ impl Traveler {
             ..snapshot
         });
 
-        Some(snapshot.dirty)
+        Some(Stroke {
+            prev: None,
+            dirty: snapshot.dirty,
+            replace: true,
+            bridge: false,
+        })
     }
 
-    pub fn redo(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer) -> Option<Rectangle> {
+    pub fn redo(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer) -> Option<Stroke> {
         let Some(snapshot) = self.redos.pop() else {
             return None;
         };
@@ -262,7 +267,12 @@ impl Traveler {
             ..snapshot
         });
 
-        Some(snapshot.dirty)
+        Some(Stroke {
+            prev: None,
+            dirty: snapshot.dirty,
+            replace: true,
+            bridge: false,
+        })
     }
 
     pub fn undo_available(&mut self, raw: &RawLayer) -> bool {

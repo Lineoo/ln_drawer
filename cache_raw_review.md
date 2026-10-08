@@ -6,7 +6,7 @@
 
 ## A. 绘制链路（P0，功能不可用）
 
-1. **绘制目标区块根本不创建** — `layer/wrapper.rs` / `layer/brush.rs`
+1. (DONE) **绘制目标区块根本不创建** — `layer/wrapper.rs` / `layer/brush.rs`
    - 旧：`DrawPipeline::prepare_scratch` 用 `layer_prepare_rect` + `ChunkPool::pop` 在 scratch 层补齐 `batch.dirty` 覆盖的区块（替换模式还先从 raw/主层拷入副本）。
    - 新：没有任何代码调用 `ChunkPool::pop_chunk_stack`，`PlainLayer.chunks` 永远为空，`DrawsBatch::draw_layers` 中 `scratch.chunks.get(&key)` 永远 `None`。整个绘制循环空转；`pool` 只被 `push` 从没被 `pop`。
    - 期望：绘制前在 scratch 层按 dirty 补齐区块（替换模式拷入源数据），笔刷结果才会落到 scratch 并参与渲染。
@@ -32,12 +32,12 @@
    - 新：`Stroke::new(&self.erase, draw)` 只用来取 `replace/bridge`，而 `stroke.batch(self.active.as_ref(), draw)` 与 `draw_layers(..., self.active.as_ref())` 用的是当前预设笔刷。于是"长按擦除"实际用当前笔刷（如 smudge/blur，`bridge_mode() == true`、`replace_mode() == true`）的 dab 与管线去擦除，而 `Stroke.bridge` 却来自 `erase`（false），桥接块既不准备也不清理。
    - 期望：擦除路径全程使用 `erase`（或让 erase 与 active 的 `replace/bridge` 语义显式统一）。
 
-6. **`request_stream` 被删除，区间未加载时整批绘制静默丢弃** — 旧 `brush.rs::request_stream` / 新 `stream.rs:213-218`
+6. (DONE) **`request_stream` 被删除，区间未加载时整批绘制静默丢弃** — 旧 `brush.rs::request_stream` / 新 `stream.rs:213-218`
    - 旧：每批绘制后按 `stroke.dirty` 对各 mip 层发送 `ThreadInput::RequestReal(key)`（下级已加载才请求上级），并把范围外区块拉进来。
    - 新：`RequestRaw`/`RequestCache` 处理分支是 `// TODO` 空实现，且 `LayerPage` 侧根本不再发送；新区块只能靠相机队列里的 cache 被动加载。
    - 期望：绘制前确保 raw + cache + scratch 三者覆盖 dirty（issue 里"检查相关区块全部加载，否则请求并放弃这一批"）。
 
-7. **`MarkRawUnsaved` / `MarkCacheUnsaved` 无发送方，脏块不落库** — `stream.rs:205-212`，`wrapper.rs`
+7. (DONE) **`MarkRawUnsaved` / `MarkCacheUnsaved` 无发送方，脏块不落库** — `stream.rs:205-212`，`wrapper.rs`
    - 旧：`submit()` 结束后对 dirty 覆盖的所有 `(x, y, level)` 发送 `MarkUnsaved`。
    - 新：两个输入变体没有任何调用点，`ChunksBase::raw_unsaved` / `cache_unsaved` 恒为空集。
    - 后果：`persist_raw` / `persist_cache` 首行 `if !unsaved.contains(&key) { return }` 使所有持久化路径失效（见 D 组）。
@@ -47,7 +47,7 @@
 
 ## B. cache / raw 一致性（P0，画完不显示）
 
-8. **raw 的修改从不回写 cache，渲染看不到新笔画，undo/redo 无视觉变化** — `wrapper.rs:376-390, 515-557`
+8. (DONE) **raw 的修改从不回写 cache，渲染看不到新笔画，undo/redo 无视觉变化** — `wrapper.rs:376-390, 515-557`
    - 旧：被编辑的 `main` 层既是数据源又是渲染源，`submit` 直接改它；`merge` 层提供笔迹预览，渲染按 `merge > scratch > main` 回退。
    - 新：`stroke.submit_layers()` 只把 scratch 合成到 `raw`，之后 `cache_mipmaps(&self.cache, dirty)` 只更新 **cache 自身**的高层 mipmap；cache 的 level 0 没有任何刷新路径，渲染又只读 cache（`render()` 中 `CacheLayerChunk::Filled`）。撤销/重做同样只改 raw。
    - 期望：raw 变更后同步 cache level 0，再由 cache 生成 mipmap，渲染始终与 raw 一致。
@@ -57,7 +57,7 @@
    - 新：绘制会直接改写 raw 区块，cache level 0 不变；`ThreadOutput::RawInsert` 也不更新 cache。于是 `Associated` 区块的实际内容可能与 cache 不一致；反之 `cache_mipmaps` 从 level 0 重新下采样时会把已被 raw 修改的内容覆盖回旧值。
    - 期望：明确谁是权威（raw），并在提交时把 raw 区块内容写回 cache level 0 / 或把状态降级为 `Filled`。
 
-10. **cache 的 level 0 无来源，mipmap 链无法建立** — `stream.rs:283-346`
+10. (DONE) **cache 的 level 0 无来源，mipmap 链无法建立** — `stream.rs:283-346`
     - 旧：主层自身被加载并生成 mipmap（`generate_mipmaps` 在编辑后按 `main.mipmap_levels` 逐级下采样）。
     - 新：`load()` 只把磁盘上的 cache 区块放进来，绘制结果不进 cache，也没有"由 raw 生成 cache level 0"的步骤，`cache_mipmaps` 又只在上下层都已 `Filled` 时才 dispatch。干净启动后 cache 里只有磁盘残留的层级，LOD 链基本不存在。
     - 期望：raw 提交时生成/刷新对应 cache level 0，再逐级生成 mipmap。
@@ -66,7 +66,7 @@
 
 ## C. 缓存图层纹理尺寸（P0，mip 渲染与生成均错）
 
-11. **所有 mip 层级的 cache 区块都用第 0 级像素尺寸创建**
+11. (INVALID) **所有 mip 层级的 cache 区块都用第 0 级像素尺寸创建**
     - 旧：`chunk_prepare` 用 `create_chunk_texture(UVec2::splat(chunk_size << z))`，第 z 级区块纹理是 `(chunk_size << z)²`，与 `chunk_to_rect` 的世界范围一致。
     - 新：`stream.rs:291-297`（cache 分支）统一用 `self.config.chunk_size` 创建纹理，但 `chunks_stack_key_to_rect(key, ...)` 给出的是 `(chunk_size << z)²` 的世界矩形。cache 区块的 rect 与纹理尺寸彻底失配。
     - 后果：第 z ≥ 1 级区块渲染时，`render.wgsl` 用 `chunk.size`（= `512<<z`）铺满屏幕四边形，却只采样 512×512 的纹理 → 内容被放大 `2^z` 倍（读越界靠 clamp）。同时 `mipmap.wgsl` 的 `dst_coords = position / scale`（scale 恒为 2）会越出 512×512 目标纹理，写出未定义内容。
@@ -92,12 +92,12 @@
     - 新：`unload_overflow`/`unload_all` 只调用 `persist_*`，而它因 unsaved 为空直接返回 → 未保存的 raw 内容随内存释放消失；`set_page` 的 `unload_all` 同样丢数据。
     - 期望：卸载前把 unsaved 内容持久化。
 
-15. **`autosave` 不覆盖 raw 图层**
+15. (DONE) **`autosave` 不覆盖 raw 图层**
     - 旧：`autosave` 遍历整个 `base.unsaved`（单一图层）写 `stroke_chunk`。
     - 新：`save_all()` 只收集 `cache_unsaved`，完全没有 raw 任务；`ThreadInput::Autosave` 因此不可能保住原图层。
     - 期望：autosave 同时落盘 raw + cache。
 
-16. **透明 / 伴生区块的落盘无 `unsaved` 判定，会删掉未改动数据** — `stream.rs:503-509`
+16. (DONE) **透明 / 伴生区块的落盘无 `unsaved` 判定，会删掉未改动数据** — `stream.rs:503-509`
     - 旧：一整套 `unsaved` 守卫。
     - 新：`RawLayerChunk::Associated` → `save_raw_associated`、`Transparent` → `save_raw_transparent`（执行 `table.remove`）都在守卫之后；只要卸载一个未加载数据的 raw 区块，就会把它在库里的记录删掉或覆盖成伴生标记。
     - 期望：透明/伴生状态变更需先标记 unsaved 再落盘。

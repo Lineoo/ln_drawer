@@ -197,6 +197,7 @@ impl BrushPreviewGenerator {
                 return;
             };
 
+            stroke.confirm_batch(&batch);
             batch.upload_dispatch(&self.lp);
 
             let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
@@ -220,6 +221,7 @@ impl BrushPreviewGenerator {
                 return;
             };
 
+            stroke.confirm_batch(&batch);
             batch.upload_dispatch(&self.lp);
 
             let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
@@ -259,6 +261,7 @@ impl BrushPreviewGenerator {
                 return;
             };
 
+            stroke.confirm_batch(&batch);
             batch.upload_dispatch(&self.lp);
 
             let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {

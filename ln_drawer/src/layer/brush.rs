@@ -14,7 +14,8 @@ use wgpu::{BindGroup, ComputePass};
 
 use crate::{
     layer::{
-        DRAWS_ARRAY_CAPACITY, LayerPipeline, PlainLayer, RawLayer, RawLayerChunk, Standalone,
+        CacheLayerChunk, CacheLayers, DRAWS_ARRAY_CAPACITY, LayerPipeline, PlainLayer, RawLayer,
+        RawLayerChunk, Standalone,
         brush::{
             blur::BlurBrush,
             param::{BrushParam, BrushParamKey, BrushValue, BrushValueMut},
@@ -51,30 +52,22 @@ impl Stroke {
         }
     }
 
-    pub fn batch<T: Brush + ?Sized>(&mut self, brush: &T, target: Draw) -> Option<DrawsBatch> {
+    pub fn batch<T: Brush + ?Sized>(&self, brush: &T, target: Draw) -> Option<DrawsBatch> {
         // pre-process
         let target = Draw {
             position: target.position,
             force: target.force.clamp(0.0, 1.0),
         };
 
-        let start = self.prev.is_none();
-
         let mut draws = Vec::new();
         let (next, dirty, draws_cnt) = brush.processor(self.prev, target, &mut draws);
-        self.prev = Some(next);
-
-        if start {
-            self.dirty = Rectangle::new_half(next.position.q32_floor(), UVec2::ZERO);
-        } else {
-            self.dirty = self.dirty.grow(dirty);
-        }
 
         if dirty.extend.x == 0 || dirty.extend.y == 0 {
             None
         } else {
             Some(DrawsBatch {
-                start,
+                prev: self.prev,
+                next,
                 draws_cnt,
                 draws,
                 dirty,
@@ -84,74 +77,205 @@ impl Stroke {
         }
     }
 
-    /// All finished, merge to dst layer and optionally notify stream thread unsaved chunks
-    pub fn submit_layers(
+    /// Confirm that the generated batch will be used, and stroke will respond to related dirty
+    /// rectangle changes and previous draw updates, etc.
+    pub fn confirm_batch(&mut self, batch: &DrawsBatch) {
+        self.prev = Some(batch.next);
+        if batch.prev.is_none() {
+            self.dirty = Rectangle::new_half(batch.next.position.q32_floor(), UVec2::ZERO);
+        } else {
+            self.dirty = self.dirty.grow(batch.dirty);
+        }
+    }
+
+    pub fn upload_dispatch(&self, lp: &LayerPipeline) {
+        write_dispatch(&lp.queue, &lp.work_rect, 0, self.dirty);
+    }
+
+    // TODO find a way to request stream thread to load chunks
+
+    // TODO support swap draw
+    /// Submit scratch to cache. Raw layer's content will be preserved, but may turn from
+    /// associated to filled kind.
+    ///
+    /// Silent skip unloaded cache/raw chunks.
+    pub fn submit_cache(
         &self,
         lp: &LayerPipeline,
         cpass: &mut ComputePass,
-        raw: &RawLayer,
-        scratch: &mut PlainLayer,
+        scratch: &PlainLayer,
+        raw: &mut RawLayer,
+        cache: &mut CacheLayers,
     ) {
         debug_assert_eq!(raw.chunk_size, scratch.chunk_size);
 
-        write_dispatch(&lp.queue, &lp.dispatch, 0, self.dirty);
+        for (&chunk_key, scratch_chunk) in &scratch.chunks {
+            let chunk_rect = chunks_key_to_rect(chunk_key, scratch.chunk_size);
 
-        for (chunk_key, scratch_chunk) in &scratch.chunks {
-            let chunk_rect = chunks_key_to_rect(*chunk_key, scratch.chunk_size);
-            if let Some(RawLayerChunk::Filled(raw_chunk)) = raw.chunks.get(chunk_key) {
-                if self.replace {
+            let Some(cache_chunk) = cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
+                continue;
+            };
+            let Some(raw_chunk) = raw.chunks.get(&chunk_key) else {
+                continue;
+            };
+
+            match (cache_chunk, raw_chunk) {
+                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Filled(raw_chunk)) => {
+                    if self.replace {
+                        lp.copy_chunk(
+                            cpass,
+                            scratch_chunk,
+                            chunk_rect,
+                            &cache_chunk,
+                            chunk_rect,
+                            self.dirty,
+                        );
+                    } else {
+                        lp.merge_chunk_over_cross(
+                            cpass,
+                            scratch_chunk,
+                            chunk_rect,
+                            raw_chunk,
+                            chunk_rect,
+                            cache_chunk,
+                            chunk_rect,
+                            self.dirty,
+                        );
+                    };
+                }
+                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Associated) => {
+                    let raw_chunk = lp.create_empty_chunk(
+                        raw.chunk_size,
+                        chunks_key_to_rect(chunk_key, raw.chunk_size),
+                    );
+                    lp.copy_chunk_direct(cpass, cache_chunk, chunk_rect, &raw_chunk, chunk_rect);
+                    if self.replace {
+                        lp.copy_chunk(
+                            cpass,
+                            scratch_chunk,
+                            chunk_rect,
+                            cache_chunk,
+                            chunk_rect,
+                            self.dirty,
+                        );
+                    } else {
+                        lp.merge_chunk_over_cross(
+                            cpass,
+                            scratch_chunk,
+                            chunk_rect,
+                            &raw_chunk,
+                            chunk_rect,
+                            cache_chunk,
+                            chunk_rect,
+                            self.dirty,
+                        );
+                    };
+                    raw.swap_chunk(chunk_key, RawLayerChunk::Filled(raw_chunk));
+                }
+                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Transparent) => {
                     lp.copy_chunk(
                         cpass,
                         scratch_chunk,
                         chunk_rect,
-                        &raw_chunk,
+                        cache_chunk,
                         chunk_rect,
                         self.dirty,
                     );
-                } else {
-                    lp.merge_chunk_over_read_write(
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Filled(raw_chunk)) => {
+                    let cache_chunk = lp.create_empty_chunk(
+                        cache.chunk_size,
+                        chunks_key_to_rect(chunk_key, cache.chunk_size),
+                    );
+                    if self.replace {
+                        lp.copy_chunk(
+                            cpass,
+                            scratch_chunk,
+                            chunk_rect,
+                            &cache_chunk,
+                            chunk_rect,
+                            self.dirty,
+                        );
+                    } else {
+                        lp.merge_chunk_over_cross(
+                            cpass,
+                            scratch_chunk,
+                            chunk_rect,
+                            raw_chunk,
+                            chunk_rect,
+                            &cache_chunk,
+                            chunk_rect,
+                            self.dirty,
+                        );
+                    };
+                    cache.swap_chunk(
+                        (chunk_key.0, chunk_key.1, 0),
+                        CacheLayerChunk::Filled(cache_chunk),
+                    );
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Associated) => {
+                    let cache_chunk = lp.create_empty_chunk(
+                        cache.chunk_size,
+                        chunks_key_to_rect(chunk_key, cache.chunk_size),
+                    );
+                    lp.copy_chunk(
                         cpass,
                         scratch_chunk,
                         chunk_rect,
-                        raw_chunk,
+                        &cache_chunk,
                         chunk_rect,
                         self.dirty,
                     );
-                };
+                    cache.swap_chunk(
+                        (chunk_key.0, chunk_key.1, 0),
+                        CacheLayerChunk::Filled(cache_chunk),
+                    );
+                    raw.swap_chunk(chunk_key, RawLayerChunk::Transparent);
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Transparent) => {
+                    let cache_chunk = lp.create_empty_chunk(
+                        cache.chunk_size,
+                        chunks_key_to_rect(chunk_key, cache.chunk_size),
+                    );
+                    lp.copy_chunk(
+                        cpass,
+                        scratch_chunk,
+                        chunk_rect,
+                        &cache_chunk,
+                        chunk_rect,
+                        self.dirty,
+                    );
+                    cache.swap_chunk(
+                        (chunk_key.0, chunk_key.1, 0),
+                        CacheLayerChunk::Filled(cache_chunk),
+                    );
+                }
             }
         }
 
-        // TODO swap draw
-        // for (chunk_key, scratch_chunk) in &scratch.chunks {
-        //     let chunk_rect = chunks_key_to_rect(*chunk_key, scratch.chunk_size);
-        //     if let Some(RawLayerChunk::Filled(raw_chunk)) = raw.chunks.get(chunk_key)
-        //         && let Some(swp_chunk) = self.scratch_swp.chunks.get(chunk_key)
-        //     {
-        //         if self.replace {
-        //             lp.copy_chunk(
-        //                 cpass,
-        //                 scratch_chunk,
-        //                 chunk_rect,
-        //                 raw_chunk,
-        //                 chunk_rect,
-        //                 self.dirty,
-        //             );
-        //         } else {
-        //             cpass.set_pipeline(&lp.merge_pipelines.over);
-        //             cpass.set_bind_group(0, Some(&lp.dispatch_group), &[0]);
-        //             cpass.set_bind_group(1, Some(&raw_chunk.read), &[]);
-        //             cpass.set_bind_group(2, Some(&scratch_chunk.read), &[]);
-        //             cpass.set_bind_group(3, Some(&swp_chunk.write), &[]);
-        //             dispatch_workgroups(cpass, &[self.dirty, chunk_rect]);
+        lp.cache_mipmaps(cpass, cache, self.dirty);
+    }
 
-        //             cpass.set_pipeline(&lp.copy_pipeline);
-        //             cpass.set_bind_group(0, Some(&lp.dispatch_group), &[0]);
-        //             cpass.set_bind_group(1, Some(&raw_chunk.write), &[]);
-        //             cpass.set_bind_group(2, Some(&swp_chunk.read), &[]);
-        //             dispatch_workgroups(cpass, &[self.dirty, chunk_rect]);
-        //         };
-        //     }
-        // }
+    /// Submits scratch to cache & raw. Raw layer's content will be modified and backup should
+    /// be done before calling it.
+    ///
+    /// Silent skip unloaded cache/raw chunks.
+    pub fn submit_raw_cache(
+        &self,
+        lp: &LayerPipeline,
+        cpass: &mut ComputePass,
+        scratch: &PlainLayer,
+        raw: &mut RawLayer,
+        cache: &mut CacheLayers,
+    ) {
+        debug_assert_eq!(raw.chunk_size, scratch.chunk_size);
+        self.submit_cache(lp, cpass, scratch, raw, cache);
+
+        // XXX now it is completely safe to say it is associated chunks, not the case
+        // after we add overlap objects to render.
+        for &chunk_key in scratch.chunks.keys() {
+            raw.swap_chunk(chunk_key, RawLayerChunk::Associated);
+        }
     }
 
     /// All finished, merge to dst layer and optionally notify stream thread unsaved chunks
@@ -162,7 +286,7 @@ impl Stroke {
         raw: &Standalone,
         scratch: &mut Standalone,
     ) {
-        write_dispatch(&lp.queue, &lp.dispatch, 0, self.dirty);
+        write_dispatch(&lp.queue, &lp.work_rect, 0, self.dirty);
 
         if self.replace {
             lp.copy_chunk(
@@ -187,7 +311,8 @@ impl Stroke {
 }
 
 pub struct DrawsBatch {
-    pub start: bool,
+    pub prev: Option<Draw>,
+    pub next: Draw,
     pub draws_cnt: u32,
     pub draws: Vec<u8>,
     pub dirty: Rectangle,
@@ -215,11 +340,52 @@ impl DrawsBatch {
     }
 
     pub fn upload_dispatch(&self, lp: &LayerPipeline) {
-        write_dispatch(&lp.queue, &lp.draws_dispatch, 0, self.dirty);
-        write_dispatch(&lp.queue, &lp.dispatch, 0, self.dirty);
-
+        write_dispatch(&lp.queue, &lp.work_rect, 0, self.dirty);
+        write_dispatch(&lp.queue, &lp.draws_rect, 0, self.dirty);
         (lp.queue).write_buffer(&lp.draws_length, 0, bytes_of(&self.draws_cnt));
         (lp.queue).write_buffer(&lp.draws_array, 0, &self.draws);
+    }
+
+    pub fn prepare_scratch(
+        &self,
+        lp: &LayerPipeline,
+        cpass: &mut ComputePass,
+        raw: &RawLayer,
+        cache: &CacheLayers,
+        scratch: &mut PlainLayer,
+    ) {
+        for key in rect_chunks_iter(self.dirty, scratch.chunk_size) {
+            if scratch.chunks.contains_key(&key) {
+                continue;
+            };
+
+            if self.replace {
+                let raw_chunk = match raw.chunks.get(&key) {
+                    Some(RawLayerChunk::Transparent) => None,
+                    Some(RawLayerChunk::Filled(chunk)) => Some(chunk),
+                    Some(RawLayerChunk::Associated) => match cache.chunks.get(&(key.0, key.1, 0)) {
+                        Some(CacheLayerChunk::Transparent) => None,
+                        Some(CacheLayerChunk::Filled(chunk)) => Some(chunk),
+                        None => continue,
+                    },
+                    None => continue,
+                };
+
+                let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
+                let texture = lp.create_chunk_texture(scratch.chunk_size);
+                let scratch_chunk = lp.create_chunk(texture, chunk_rect);
+                if let Some(raw_chunk) = raw_chunk {
+                    lp.copy_chunk_direct(cpass, raw_chunk, chunk_rect, &scratch_chunk, chunk_rect);
+                }
+
+                scratch.chunks.insert(key, scratch_chunk);
+            } else {
+                let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
+                let texture = lp.create_chunk_texture(scratch.chunk_size);
+                let scratch_chunk = lp.create_chunk(texture, chunk_rect);
+                scratch.chunks.insert(key, scratch_chunk);
+            }
+        }
     }
 
     /// must `upload` before draw
@@ -231,7 +397,7 @@ impl DrawsBatch {
         bridge: &Standalone,
         brush: &T,
     ) {
-        if self.start {
+        if self.prev.is_none() {
             brush.prepare_stroke(cpass, lp);
         }
 
@@ -288,7 +454,7 @@ impl DrawsBatch {
         scratch: &Standalone,
         brush: &T,
     ) {
-        if self.start {
+        if self.prev.is_none() {
             brush.prepare_stroke(cpass, lp);
         }
 
