@@ -205,8 +205,22 @@ pub struct Scene {
 
 impl Scene {
     pub fn write_disk(&self, sn_file: &Path, sn_tmp_file: &Path) {
-        let sn_str = std::fs::read_to_string(sn_file).unwrap();
-        let mut sn_doc = sn_str.parse::<DocumentMut>().unwrap();
+        let mut sn_doc = match std::fs::read_to_string(sn_file) {
+            Ok(sn_str) => match sn_str.parse::<DocumentMut>() {
+                Ok(sn_doc) => sn_doc,
+                Err(err) => {
+                    log::error!("toml parse error: {err}");
+                    DocumentMut::new()
+                }
+            },
+            Err(err) => match err.kind() {
+                std::io::ErrorKind::NotFound => DocumentMut::new(),
+                _ => {
+                    log::error!("unhandled error: {err}");
+                    DocumentMut::new()
+                }
+            },
+        };
         let new_doc = toml_edit::ser::to_document(self).unwrap();
         for (key, item) in new_doc.iter() {
             let item = item.clone();

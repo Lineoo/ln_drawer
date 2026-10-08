@@ -22,12 +22,12 @@ use winit::window::Window;
 use crate::{
     layer::{
         CacheLayerChunk, ChunkKey, LayerPipeline, RawLayerChunk, chunks_key_to_rect,
-        chunks_stack_key_to_rect, point_zoom_to_chunks_stack, rect_chunks_stack_layer_iter,
-        rect_chunks_stack_layer_range,
+        chunks_stack_key_to_rect, point_zoom_to_chunks_stack, rect_chunks_iter,
+        rect_chunks_stack_layer_iter, rect_chunks_stack_layer_range,
     },
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    save::chunk::{ChunkLoad, ChunkSave},
+    save::chunk::{ChunkLoad, ChunkLoadResult, ChunkSave},
 };
 
 const CHUNK_CACHE_REAL_CAPS: usize = 512;
@@ -159,6 +159,7 @@ impl StreamThread {
     }
 
     pub fn run(mut self) -> Result<(), Box<dyn Error>> {
+        self.init()?;
         loop {
             match self.recv()? {
                 Some(ThreadInput::SetPage(page)) => {
@@ -232,6 +233,14 @@ impl StreamThread {
         }
     }
 
+    fn init(&self) -> Result<(), Box<dyn Error>> {
+        let mut write = self.config.database.begin_write()?;
+        write.set_quick_repair(true);
+        ChunkSave::new(&write)?;
+        write.commit()?;
+        Ok(())
+    }
+
     fn recv(&self) -> Result<Option<ThreadInput>, Box<dyn Error>> {
         let result = if self.queue.still_has_tasks() || self.queue.outdated {
             match self.input_rx.try_recv() {
@@ -284,7 +293,14 @@ impl StreamThread {
         for key in self.queue.batch.drain(..) {
             match key {
                 ChunkKeyKind::Cache(key) => {
-                    let result = read.load_cache((self.config.page, key))?;
+                    let result = match read.load_cache((self.config.page, key)) {
+                        Ok(result) => result,
+                        Err(_) => ChunkLoadResult {
+                            texture: None,
+                            associated: false,
+                            unsaved: true,
+                        },
+                    };
                     if let Some(bytes) = result.texture {
                         let texture = self.config.lp.create_chunk_texture(self.config.chunk_size);
                         let chunk = CacheLayerChunk::Filled(self.config.lp.create_chunk(
@@ -305,7 +321,14 @@ impl StreamThread {
                     }
                 }
                 ChunkKeyKind::Raw(key) => {
-                    let result = read.load_raw((self.config.page, key))?;
+                    let result = match read.load_raw((self.config.page, key)) {
+                        Ok(result) => result,
+                        Err(_) => ChunkLoadResult {
+                            texture: None,
+                            associated: false,
+                            unsaved: true,
+                        },
+                    };
                     if let Some(bytes) = result.texture {
                         let texture = self.config.lp.create_chunk_texture(self.config.chunk_size);
                         let chunk = RawLayerChunk::Filled(self.config.lp.create_chunk(
@@ -583,8 +606,14 @@ impl LoadQueue {
     /// camera is moved so we restock the stream queue
     fn restock(&mut self, config: &StreamConfig, camera: &CameraInfo) {
         self.outdated = false;
+        self.raw_front = 0;
+        self.raw.clear();
         self.cache_front = 0;
         self.cache.clear();
+
+        for key in rect_chunks_iter(camera.rect, config.chunk_size) {
+            self.raw.insert(key);
+        }
 
         for mipmap in camera.center.2.saturating_sub(1)..config.mipmap_caps {
             for key in rect_chunks_stack_layer_iter(camera.rect, config.chunk_size, mipmap) {
@@ -592,7 +621,7 @@ impl LoadQueue {
             }
         }
 
-        debug_assert!(self.cache.len() < CHUNK_CACHE_REAL_CAPS - 1);
+        // TODO overflow detect
 
         self.raw
             .sort_by_key(|&key| chunk_distance((key.0, key.1, 0), camera.center));
@@ -604,6 +633,7 @@ impl LoadQueue {
     fn generate_batch(&mut self, base: &mut ChunksBase) {
         debug_assert!(self.batch.is_empty(), "batch is not cleared yet");
 
+        // prioritize cache, render is important
         let mut batch_cnt = 0;
         while let Some(&key) = self.cache.get_index(self.cache_front)
             && batch_cnt < CHUNK_BATCH

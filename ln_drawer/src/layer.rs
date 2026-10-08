@@ -242,27 +242,55 @@ impl LayerPipeline {
         Standalone { chunk, rect }
     }
 
-    /// silent skip if cache is not **filled**
-    pub fn cache_mipmaps(&self, cpass: &mut ComputePass, cache: &CacheLayers, dirty: Rectangle) {
-        cpass.set_pipeline(&self.mipmap_pipeline);
+    pub fn cache_mipmaps(
+        &self,
+        cpass: &mut ComputePass,
+        cache: &mut CacheLayers,
+        dirty: Rectangle,
+    ) {
+        cpass.set_pipeline(&self.clear_pipeline);
         cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
-
         for lower_key in rect_chunks_stack_iter(dirty, cache.chunk_size, cache.mipmap_cap - 1) {
-            let scale = 1u32 << lower_key.2;
             let upper_key = upper_chunk_of(lower_key);
+            let upper_rect = chunks_stack_key_to_rect(upper_key, cache.chunk_size);
+            let lower_rect = chunks_stack_key_to_rect(lower_key, cache.chunk_size);
+            let scale = 1u32 << lower_key.2;
 
-            let Some(CacheLayerChunk::Filled(lower_chunk)) = cache.chunks.get(&lower_key) else {
+            let Some(lower_chunk) = cache.chunks.get(&lower_key) else {
                 continue;
             };
-            let Some(CacheLayerChunk::Filled(upper_chunk)) = cache.chunks.get(&upper_key) else {
+            let Some(upper_chunk) = cache.chunks.get(&upper_key) else {
                 continue;
             };
 
-            let dst_rect = chunks_stack_key_to_rect(upper_key, cache.chunk_size);
-            let src_rect = chunks_stack_key_to_rect(lower_key, cache.chunk_size);
-            cpass.set_bind_group(1, Some(&upper_chunk.write), &[]);
-            cpass.set_bind_group(2, Some(&lower_chunk.read), &[]);
-            dispatch_workgroups_divide(cpass, &[dirty, dst_rect, src_rect], scale);
+            match (lower_chunk, upper_chunk) {
+                (CacheLayerChunk::Filled(lower_chunk), CacheLayerChunk::Filled(upper_chunk)) => {
+                    cpass.set_bind_group(1, Some(&upper_chunk.write), &[]);
+                    cpass.set_bind_group(2, Some(&lower_chunk.read), &[]);
+                    dispatch_workgroups_divide(cpass, &[dirty, upper_rect, lower_rect], scale);
+                }
+                (CacheLayerChunk::Filled(lower_chunk), CacheLayerChunk::Transparent) => {
+                    let upper_chunk = self.create_empty_chunk(
+                        cache.chunk_size,
+                        chunks_stack_key_to_rect(upper_key, cache.chunk_size),
+                    );
+                    cpass.set_bind_group(1, Some(&upper_chunk.write), &[]);
+                    cpass.set_bind_group(2, Some(&lower_chunk.read), &[]);
+                    dispatch_workgroups_divide(cpass, &[dirty, upper_rect, lower_rect], scale);
+                    cache.swap_chunk(upper_key, CacheLayerChunk::Filled(upper_chunk));
+                }
+                (CacheLayerChunk::Transparent, CacheLayerChunk::Filled(upper_chunk)) => {
+                    let lower_chunk = self.create_empty_chunk(
+                        cache.chunk_size,
+                        chunks_stack_key_to_rect(lower_key, cache.chunk_size),
+                    );
+                    cpass.set_bind_group(1, Some(&upper_chunk.write), &[]);
+                    cpass.set_bind_group(2, Some(&lower_chunk.read), &[]);
+                    dispatch_workgroups_divide(cpass, &[dirty, upper_rect, lower_rect], scale);
+                    cache.swap_chunk(lower_key, CacheLayerChunk::Filled(lower_chunk));
+                }
+                (CacheLayerChunk::Transparent, CacheLayerChunk::Transparent) => {}
+            }
         }
     }
 
@@ -1359,32 +1387,17 @@ fn merge_pipelines(
 ) -> MergePipelines {
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_merge"),
-        bind_group_layouts: &match read_write {
-            true => [
-                Some(&chunk_layout.dispatch),
-                Some(&chunk_layout.read_write),
-                Some(&chunk_layout.read),
-                Some(&chunk_layout.read_write),
-            ],
-            false => [
-                Some(&chunk_layout.dispatch),
-                Some(&chunk_layout.read),
-                Some(&chunk_layout.read),
-                Some(&chunk_layout.write),
-            ],
-        },
+        bind_group_layouts: &[
+            Some(&chunk_layout.dispatch),
+            Some(&chunk_layout.read),
+            Some(&chunk_layout.read),
+            Some(&chunk_layout.write),
+        ],
         immediate_size: 0,
     });
 
     let new_pipeline = |label, formula| {
-        let constants = match read_write {
-            true => [
-                ("read", "read_write"),
-                ("write", "read_write"),
-                ("composite", formula),
-            ],
-            false => [("read", "read"), ("write", "write"), ("composite", formula)],
-        };
+        let constants = [("read", "read"), ("write", "write"), ("composite", formula)];
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some(label),

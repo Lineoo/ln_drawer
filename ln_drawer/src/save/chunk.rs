@@ -47,7 +47,10 @@ impl ChunkLoad {
 
             match version {
                 0 => Ok(ChunkLoadResult {
-                    texture: Some(zstd::decode_all(texture)?),
+                    texture: match associated {
+                        true => Some(zstd::decode_all(texture)?),
+                        false => None,
+                    },
                     associated,
                     unsaved: false,
                 }),

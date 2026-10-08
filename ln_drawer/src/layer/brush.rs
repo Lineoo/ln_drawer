@@ -191,6 +191,7 @@ impl Stroke {
                         );
                     };
                 }
+                // TODO maybe we dont need to copy back and forth here, optimize is possible
                 (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Associated) => {
                     let raw_chunk = lp.create_empty_chunk(
                         raw.chunk_size,
@@ -324,37 +325,6 @@ impl Stroke {
         for &chunk_key in scratch.chunks.keys() {
             raw.swap_chunk(chunk_key, RawLayerChunk::Associated);
         }
-    }
-
-    /// All finished, merge to dst layer and optionally notify stream thread unsaved chunks
-    pub fn submit_standalone(
-        &self,
-        lp: &LayerPipeline,
-        cpass: &mut ComputePass,
-        raw: &Standalone,
-        scratch: &mut Standalone,
-    ) {
-        write_dispatch(&lp.queue, &lp.work_rect, 0, self.dirty);
-
-        if self.replace {
-            lp.copy_chunk(
-                cpass,
-                &scratch.chunk,
-                scratch.rect,
-                &raw.chunk,
-                raw.rect,
-                self.dirty,
-            );
-        } else {
-            lp.merge_chunk_over_read_write(
-                cpass,
-                &scratch.chunk,
-                scratch.rect,
-                &raw.chunk,
-                raw.rect,
-                self.dirty,
-            );
-        };
     }
 }
 

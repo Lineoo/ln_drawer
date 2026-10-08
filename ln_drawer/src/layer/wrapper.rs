@@ -330,8 +330,8 @@ impl LayerPage {
         batch.draw_layers(
             &self.lp,
             &mut cpass,
-            &mut self.scratch,
-            &mut self.bridge,
+            &self.scratch,
+            &self.bridge,
             self.active.as_ref(),
         );
 
@@ -390,8 +390,8 @@ impl LayerPage {
         batch.draw_layers(
             &self.lp,
             &mut cpass,
-            &mut self.scratch,
-            &mut self.bridge,
+            &self.scratch,
+            &self.bridge,
             &self.erase,
         );
 
