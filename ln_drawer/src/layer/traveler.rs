@@ -68,7 +68,30 @@ impl Traveler {
         }
     }
 
-    pub fn stock(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer, dirty: Rectangle) {
+    pub fn stock(
+        &mut self,
+        encoder: &mut CommandEncoder,
+        raw: &mut RawLayer,
+        cache: &CacheLayers,
+        dirty: Rectangle,
+    ) {
+        let stroke = Stroke {
+            prev: None,
+            dirty: dirty,
+            replace: true,
+            bridge: false,
+        };
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("page_undo"),
+            timestamp_writes: None,
+        });
+
+        stroke.upload(&self.lp);
+        self.lp.raw_remove_associated(&mut cpass, raw, cache, dirty);
+
+        drop(cpass);
+
         // 0. clear redos
         for snapshot in self.redos.drain(..) {
             for section in &snapshot.sections {
@@ -134,6 +157,11 @@ impl Traveler {
         }
 
         // 4. stock snapshot
+
+        if sections.is_empty() {
+            log::warn!("skipped empty snapshot");
+            return;
+        }
 
         self.undos.push_back(Snapshot {
             sections,

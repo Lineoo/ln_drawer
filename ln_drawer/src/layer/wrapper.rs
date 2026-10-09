@@ -353,7 +353,8 @@ impl LayerPage {
             label: Some("page_traveler_stock"),
         });
 
-        self.traveler.stock(&mut encoder, &self.raw, stroke.dirty);
+        self.traveler
+            .stock(&mut encoder, &mut self.raw, &self.cache, stroke.dirty);
 
         self.lp.queue.submit([encoder.finish()]);
 
