@@ -15,7 +15,7 @@ use wgpu::{BindGroup, CommandEncoderDescriptor, ComputePass, ComputePassDescript
 use crate::{
     layer::{
         CacheLayerChunk, CacheLayers, ChunkPool, DRAWS_ARRAY_CAPACITY, LayerPipeline, PlainLayer,
-        RawLayer, RawLayerChunk, Standalone,
+        RawLayer, RawLayerChunk, Standalone, WriteMode,
         brush::{
             blur::BlurBrush,
             param::{BrushParam, BrushParamKey, BrushValue, BrushValueMut},
@@ -100,6 +100,7 @@ impl Stroke {
         &self,
         lp: &LayerPipeline,
         scratch: &mut PlainLayer,
+        swap: Option<&mut PlainLayer>,
         raw: &mut RawLayer,
         cache: &mut CacheLayers,
         pool: &mut ChunkPool,
@@ -123,6 +124,9 @@ impl Stroke {
         lp.raw_remove_associated(&mut cpass, raw, cache, self.dirty);
         self.merge(lp, &mut cpass, raw, scratch);
         self.cleanup(lp, &mut cpass, scratch, pool);
+        if let Some(swap) = swap {
+            self.cleanup(lp, &mut cpass, swap, pool);
+        }
         // skip cache generation since it is already good
         self.cache_recycle_raw(raw);
 
@@ -134,6 +138,7 @@ impl Stroke {
         &self,
         lp: &LayerPipeline,
         scratch: &mut PlainLayer,
+        swap: Option<&mut PlainLayer>,
         raw: &mut RawLayer,
         cache: &mut CacheLayers,
         pool: &mut ChunkPool,
@@ -155,6 +160,9 @@ impl Stroke {
         });
 
         self.cleanup(lp, &mut cpass, scratch, pool);
+        if let Some(swap) = swap {
+            self.cleanup(lp, &mut cpass, swap, pool);
+        }
         lp.raw_remove_associated(&mut cpass, raw, cache, self.dirty);
         self.cache_generate_without_scratch(lp, &mut cpass, raw, cache);
         lp.cache_mipmaps(&mut cpass, cache, self.dirty);
@@ -300,9 +308,10 @@ pub struct DrawsBatch {
 
 impl DrawsBatch {
     pub fn draw<T: Brush + ?Sized>(
-        self,
+        &self,
         lp: &LayerPipeline,
         scratch: &mut PlainLayer,
+        swap: &mut Option<PlainLayer>,
         raw: &mut RawLayer,
         cache: &mut CacheLayers,
         bridge: &mut Standalone,
@@ -320,7 +329,10 @@ impl DrawsBatch {
         });
 
         self.draw_prepare_scratch(lp, &mut cpass, raw, cache, scratch);
-        self.draw_into_scratch(lp, &mut cpass, scratch, bridge, brush);
+        if let Some(swap) = swap {
+            self.draw_prepare_scratch(lp, &mut cpass, raw, cache, swap);
+        }
+        self.draw_into_scratch(lp, &mut cpass, scratch, swap, bridge, brush);
 
         lp.raw_remove_associated(&mut cpass, raw, cache, self.dirty);
         self.cache_generate_with_scratch(lp, &mut cpass, scratch, raw, cache);
@@ -383,7 +395,7 @@ impl DrawsBatch {
         for key in rect_chunks_iter(self.dirty, scratch.chunk_size) {
             if scratch.chunks.contains_key(&key) {
                 continue;
-            };
+            }
 
             if self.replace {
                 let raw_chunk = match raw.chunks.get(&key) {
@@ -422,6 +434,7 @@ impl DrawsBatch {
         lp: &LayerPipeline,
         cpass: &mut ComputePass,
         scratch: &PlainLayer,
+        swap: &Option<PlainLayer>,
         bridge: &Standalone,
         brush: &T,
     ) {
@@ -465,33 +478,48 @@ impl DrawsBatch {
         } else {
             for key in rect_chunks_iter(self.dirty, scratch.chunk_size) {
                 let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
+                let swap_chunk = swap.as_ref().and_then(|x| x.chunks.get(&key));
                 let Some(chunk) = scratch.chunks.get(&key) else {
                     continue;
                 };
+
                 brush.prepare_draw(cpass, lp, &chunk.read);
-                lp.draw_chunk_read_write(cpass, chunk, chunk_rect, brush, self.dirty);
+                lp.draw_chunk(
+                    cpass,
+                    chunk,
+                    chunk_rect,
+                    swap_chunk,
+                    Some(chunk_rect),
+                    brush,
+                    self.dirty,
+                );
             }
         }
     }
 
     /// must `upload` before draw
     pub fn draw_into_standalone<T: Brush + ?Sized>(
-        self,
+        &self,
         lp: &LayerPipeline,
         cpass: &mut ComputePass,
-        scratch: &Standalone,
+        canvas: &Standalone,
+        swap: &Option<Standalone>,
         brush: &T,
     ) {
         if self.prev.is_none() {
             brush.prepare_stroke(cpass, lp);
         }
 
-        brush.prepare_draw(cpass, lp, &scratch.chunk.read);
-        if self.bridge {
-            // TODO refactor brush pipeline generation/add scratch for preview
-        } else {
-            lp.draw_chunk_read_write(cpass, &scratch.chunk, scratch.rect, brush, self.dirty);
-        }
+        brush.prepare_draw(cpass, lp, &canvas.chunk.read);
+        lp.draw_chunk(
+            cpass,
+            &canvas.chunk,
+            canvas.rect,
+            swap.as_ref().map(|x| &x.chunk),
+            swap.as_ref().map(|x| x.rect),
+            brush,
+            self.dirty,
+        );
     }
 
     /// Submit scratch to cache. Raw layer's content will be preserved, but may turn from
@@ -653,7 +681,7 @@ pub trait Brush {
     ///     - Copy back on scratch layer
     fn bridge_mode(&self) -> bool;
 
-    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline);
+    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline, write: WriteMode);
 }
 
 pub trait BrushParams: Brush + Send {

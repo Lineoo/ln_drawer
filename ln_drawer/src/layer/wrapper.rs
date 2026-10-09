@@ -72,6 +72,7 @@ pub struct LayerPage {
     pub cache: CacheLayers,
     raw: RawLayer,
     scratch: PlainLayer,
+    swap: Option<PlainLayer>,
     bridge: Standalone,
     pool: ChunkPool,
 
@@ -242,6 +243,8 @@ impl LayerPage {
         };
         let bridge_chunk = create_chunk(&lp.device, &lp.chunk_layout, bridge_texture, bridge_rect);
 
+        let support_read_write = lp.chunk_layout.read_write.is_some();
+
         LayerPage {
             lp,
             cache: CacheLayers {
@@ -259,6 +262,10 @@ impl LayerPage {
                 chunks: HashMap::new(),
                 chunk_size: DEFAULT_CHUNK_SIZE,
             },
+            swap: (!support_read_write).then(|| PlainLayer {
+                chunks: HashMap::new(),
+                chunk_size: DEFAULT_CHUNK_SIZE,
+            }),
             bridge: Standalone {
                 chunk: bridge_chunk,
                 rect: bridge_rect,
@@ -302,6 +309,7 @@ impl LayerPage {
         Self::draw_brush(
             &self.lp,
             &mut self.scratch,
+            &mut self.swap,
             &mut self.raw,
             &mut self.cache,
             &mut self.bridge,
@@ -315,6 +323,7 @@ impl LayerPage {
         Self::draw_brush(
             &self.lp,
             &mut self.scratch,
+            &mut self.swap,
             &mut self.raw,
             &mut self.cache,
             &mut self.bridge,
@@ -327,6 +336,7 @@ impl LayerPage {
     fn draw_brush<T: BrushParams + ?Sized>(
         lp: &LayerPipeline,
         scratch: &mut PlainLayer,
+        swap: &mut Option<PlainLayer>,
         raw: &mut RawLayer,
         cache: &mut CacheLayers,
         bridge: &mut Standalone,
@@ -345,7 +355,7 @@ impl LayerPage {
         }
 
         stroke.confirm_batch(&batch);
-        batch.draw(lp, scratch, raw, cache, bridge, brush);
+        batch.draw(lp, scratch, swap, raw, cache, bridge, brush);
     }
 
     pub fn submit(&mut self) {
@@ -365,6 +375,7 @@ impl LayerPage {
         stroke.submit(
             &self.lp,
             &mut self.scratch,
+            self.swap.as_mut(),
             &mut self.raw,
             &mut self.cache,
             &mut self.pool,
@@ -379,6 +390,7 @@ impl LayerPage {
         stroke.discard(
             &self.lp,
             &mut self.scratch,
+            self.swap.as_mut(),
             &mut self.raw,
             &mut self.cache,
             &mut self.pool,

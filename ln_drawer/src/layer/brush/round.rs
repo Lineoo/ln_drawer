@@ -4,7 +4,7 @@ use palette::Srgba;
 
 use crate::{
     layer::{
-        LayerPipeline,
+        BrushKind, BrushStage, CompositeMode, LayerPipeline, WriteMode,
         brush::{
             Brush, Draw, DrawsProcessor,
             param::{BrushParam, overlap, rate_coeff, step_of},
@@ -48,11 +48,22 @@ impl Brush for RoundBrush {
         false
     }
 
-    fn set_pipeline(&self, cpass: &mut wgpu::ComputePass, pipeline: &LayerPipeline) {
-        match self.erase {
-            true => cpass.set_pipeline(&pipeline.brush_pipelines.round_erase),
-            false => cpass.set_pipeline(&pipeline.brush_pipelines.round_over),
-        }
+    fn set_pipeline(
+        &self,
+        cpass: &mut wgpu::ComputePass,
+        pipeline: &LayerPipeline,
+        write: WriteMode,
+    ) {
+        let composite = match self.erase {
+            true => CompositeMode::Erase,
+            false => CompositeMode::Over,
+        };
+        cpass.set_pipeline(pipeline.brush_pipelines.get(
+            BrushKind::Round,
+            BrushStage::Draw,
+            write,
+            composite,
+        ));
     }
 }
 

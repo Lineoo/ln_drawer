@@ -4,7 +4,7 @@ use palette::Srgba;
 
 use crate::{
     layer::{
-        LayerPipeline,
+        BrushKind, BrushStage, CompositeMode, LayerPipeline, WriteMode,
         brush::{
             Brush, Draw, DrawsProcessor,
             param::{BrushParam, overlap, rate_coeff, step_of},
@@ -47,8 +47,18 @@ impl Brush for TintBrush {
         false
     }
 
-    fn set_pipeline(&self, cpass: &mut wgpu::ComputePass, pipeline: &LayerPipeline) {
-        cpass.set_pipeline(&pipeline.brush_pipelines.tint);
+    fn set_pipeline(
+        &self,
+        cpass: &mut wgpu::ComputePass,
+        pipeline: &LayerPipeline,
+        write: WriteMode,
+    ) {
+        cpass.set_pipeline(pipeline.brush_pipelines.get(
+            BrushKind::Tint,
+            BrushStage::Draw,
+            write,
+            CompositeMode::Over,
+        ));
     }
 }
 

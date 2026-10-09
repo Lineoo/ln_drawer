@@ -5,7 +5,7 @@ use wgpu::{BindGroup, ComputePass};
 
 use crate::{
     layer::{
-        LayerPipeline,
+        BrushKind, BrushStage, CompositeMode, LayerPipeline, WriteMode,
         brush::{
             Brush, Draw, DrawsProcessor,
             param::{BrushParam, overlap, rate_coeff, step_of},
@@ -67,8 +67,13 @@ impl Brush for SmudgeBrush {
         true
     }
 
-    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
-        cpass.set_pipeline(&pipeline.brush_pipelines.smudge);
+    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline, write: WriteMode) {
+        cpass.set_pipeline(pipeline.brush_pipelines.get(
+            BrushKind::Smudge,
+            BrushStage::Draw,
+            write,
+            CompositeMode::Over,
+        ));
     }
 }
 

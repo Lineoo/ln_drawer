@@ -6,7 +6,7 @@ use palette::Srgba;
 
 use crate::{
     layer::{
-        DRAWS_ARRAY_CAPACITY, LayerPipeline,
+        BrushKind, BrushStage, CompositeMode, DRAWS_ARRAY_CAPACITY, LayerPipeline, WriteMode,
         brush::{Brush, Draw, DrawsProcessor, param::BrushParam},
     },
     measures::{FI64Ext, Rectangle},
@@ -41,11 +41,22 @@ impl Brush for PixelBrush {
         false
     }
 
-    fn set_pipeline(&self, cpass: &mut wgpu::ComputePass, pipeline: &LayerPipeline) {
-        match self.erase {
-            true => cpass.set_pipeline(&pipeline.brush_pipelines.pixel_erase),
-            false => cpass.set_pipeline(&pipeline.brush_pipelines.pixel_replace),
-        }
+    fn set_pipeline(
+        &self,
+        cpass: &mut wgpu::ComputePass,
+        pipeline: &LayerPipeline,
+        write: WriteMode,
+    ) {
+        let composite = match self.erase {
+            true => CompositeMode::Erase,
+            false => CompositeMode::Replace,
+        };
+        cpass.set_pipeline(pipeline.brush_pipelines.get(
+            BrushKind::Pixel,
+            BrushStage::Draw,
+            write,
+            composite,
+        ));
     }
 }
 
@@ -83,7 +94,7 @@ impl DrawsProcessor for PixelBrush {
             return (to, dirty, 1);
         };
 
-        let cap = DRAWS_ARRAY_CAPACITY as usize / size_of::<Self::Draw>();
+        let limit = DRAWS_ARRAY_CAPACITY as usize - size_of::<Self::Draw>();
 
         let mut pixel = from.position.q32_floor();
         let target = to.position.q32_floor();
@@ -110,7 +121,7 @@ impl DrawsProcessor for PixelBrush {
                 pixel.y += sy;
             }
 
-            if out.len() >= cap {
+            if out.len() >= limit {
                 break;
             }
 

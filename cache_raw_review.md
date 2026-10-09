@@ -121,11 +121,9 @@ Some(RawLayerChunk::Transparent) => { log::error!("todo: transparent chunk"); co
 
 `StreamThread::run`（`stream.rs:161-242`）返回 `Result`，`load()` 里的 `?`（读事务失败、表打不开、`ChunkLoad::new` 出错）会让 `run` 直接返回 `Err` → 线程结束，主线程继续运行但**不再加载也不再保存**（也不会有任何重试或用户可见提示）。期望：至少 `log::error!` + 降级重试（例如跳过这一批）。
 
-### R9. 非 `STORAGE_READ_WRITE` 设备上绘制管线不成立
+### R9. ~~非 `STORAGE_READ_WRITE` 设备上绘制管线不成立~~（已修：见 §4）
 
-- `merge_pipelines`（`layer.rs:1431-1445`）的 `read_write: bool` 参数**已不再使用**，管线布局硬编码为 `[dispatch, read, read, write]`（会有未使用参数 warning）。
-- `brush_pipelines`（`layer.rs:1548-1567`）仍保留 `read_write == false` 的 `[dispatch, read, write]` 布局，但 `draw_chunk_read_write`（`layer.rs:503-517`）在 group 1 与 group 2 上绑的都是 `chunk.read_write`（非 RW 设备时它等于 **read** 布局）→ 与 `write` 期望不匹配。
-- 结论：`support_read_write` 目前是"存了但只影响 bind group layout 构造"的半成品；`merge_chunk_over_read_write`（`layer.rs:540`）与 `draw_chunk_swap`（`layer.rs:480`）都没有调用者。
+原状：typed pipeline 重构把 `merge_pipelines` 全部改成 in-place 布局，但 `merge_chunk_over_cross` 绑的是 `read/read/write`；wgpu 的 bind group layout 按**对象同一性**比较（`wgpu-core/src/command/bind.rs` → `ParentObject::is_equal` = `Arc::ptr_eq`），所以这不是警告而是 `IncompatibleBindGroup` 校验错误 → 默认 uncaptured error handler panic。触发条件是"在已有内容的块上再画一笔"（`raw_remove_associated` 之后 `(Filled cache, Filled raw)`），属于常见路径。
 
 ### R10. 已接受的 desync 组合（记录在案，避免重复讨论）
 
@@ -231,7 +229,7 @@ fn raw_insert(&mut self, key: (i32, i32), chunk: RawLayerChunk) {
 3. **R2**（transparent section）→ 撤销完整性。
 4. **R11 / R12**（raw 队列上限与 caps）→ 内存与抖动；这一步做完，主动请求（R7 后续）才有干净的地基。
 5. **R6**（依赖缺失时阻塞或拒绝）+ 主动区块请求。
-6. **R13 / R14 / R4 / R8 / R9**，最后 **R15–R20**。
+6. **R13 / R14 / R4 / R8**，最后 **R15–R20**。
 
 ---
 
@@ -255,3 +253,6 @@ fn raw_insert(&mut self, key: (i32, i32), chunk: RawLayerChunk) {
 | `stock` 自行 `raw_remove_associated`，并在 `sections.is_empty()` 时不再入栈 | `traveler.rs:71-93 / 161-165` |
 | `raw_real_cnt` 纳入 `AssociatedCached` | `stream.rs:569-588` |
 | `raw` 加载在 `center.2 >= 2` 时停止（内存策略） | `stream.rs:620-624` |
+| **swap 设备兼容**（R9）：`merge_pipelines`/`brush_pipelines` 各按 `WriteMode` 生成一套，`in_place` 在不支持时为 `None`（原本无论如何都会创建 in-place 管线 → 非 RW 设备在**启动**就会校验失败）；`chunk.read_write` / `chunk_layout.read_write` 改 `Option`，误绑变成编译错误/`None`；新增 `LayerPipeline::write_mode()`、`draw_chunk()` 分派、`swap: PlainLayer`（`draw_prepare_scratch` 镜像建立 / `cleanup` 按 dirty 清理回收）、`Standalone.swap` | `layer.rs:113-235`、`brush.rs:387-553`、`wrapper.rs:75` |
+| `merge_chunk_over_cross` 用错写模式（绑 `read/read/write` 却用 in-place 管线 → `IncompatibleBindGroup` panic）；`draw_chunk_swap` 无调用者 | `layer.rs:548-569`、`layer.rs:481-503` |
+| 调试开关 `LNDRAWER_NO_READ_WRITE=1`（仅 debug）：在支持原地写入的硬件上强制走 swap 路径 | `layer.rs:128-132` |

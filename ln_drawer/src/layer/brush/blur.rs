@@ -4,7 +4,7 @@ use wgpu::ComputePass;
 
 use crate::{
     layer::{
-        LayerPipeline,
+        BrushKind, BrushStage, CompositeMode, LayerPipeline, WriteMode,
         brush::{
             Brush, Draw, DrawsProcessor,
             param::{BrushParam, mask_sq_integral, step_of},
@@ -45,8 +45,13 @@ impl Brush for BlurBrush {
         true
     }
 
-    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
-        cpass.set_pipeline(&pipeline.brush_pipelines.blur);
+    fn set_pipeline(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline, write: WriteMode) {
+        cpass.set_pipeline(pipeline.brush_pipelines.get(
+            BrushKind::Blur,
+            BrushStage::Draw,
+            write,
+            CompositeMode::Over,
+        ));
     }
 }
 

@@ -78,7 +78,7 @@ impl BrushPreview {
                     && this.outdated
                     && this.visible
                 {
-                    let mut generator = world.fetch_mut(this.generator);
+                    let generator = world.fetch(this.generator);
                     generator.generate_preview(&instance.canvas, brush.as_ref());
                     this.outdated = false;
                 }
@@ -135,7 +135,13 @@ impl BrushPreview {
 
 impl BrushPreviewGenerator {
     /// Redraw `brush` over a fixed seed into `canvas`.
-    pub fn generate_preview(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
+    pub fn generate_preview(&self, canvas: &Standalone, brush: &dyn BrushParams) {
+        let swap = canvas
+            .chunk
+            .read_write
+            .is_none()
+            .then(|| self.lp.create_standalone(canvas.rect));
+
         let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
             label: Some("preview_paint_clear"),
         });
@@ -152,15 +158,15 @@ impl BrushPreviewGenerator {
         self.lp.queue.submit([encoder.finish()]);
 
         if brush.replace_mode() {
-            self.draw_background(canvas);
+            self.draw_background(canvas, &swap);
         }
 
-        self.draw_stroke(canvas, brush);
+        self.draw_stroke(canvas, &swap, brush);
     }
 
     /// Two vertical bands, one red on the left and one blue on the right, each half the canvas
     /// wide, used as the preview's background.
-    fn draw_background(&mut self, canvas: &Standalone) {
+    fn draw_background(&self, canvas: &Standalone, swap: &Option<Standalone>) {
         let w = canvas.rect.width() as f32;
         let h = canvas.rect.height() as f32;
         let radius = w / 4.0 + 5.0;
@@ -209,7 +215,7 @@ impl BrushPreviewGenerator {
                 timestamp_writes: None,
             });
 
-            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, &brush);
+            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, swap, &brush);
 
             drop(cpass);
 
@@ -233,7 +239,7 @@ impl BrushPreviewGenerator {
                 timestamp_writes: None,
             });
 
-            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, &brush);
+            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, swap, &brush);
 
             drop(cpass);
 
@@ -242,7 +248,7 @@ impl BrushPreviewGenerator {
     }
 
     /// A gentle S-curve with a pressure ramp, drawn with the previewed brush.
-    fn draw_stroke(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
+    fn draw_stroke(&self, canvas: &Standalone, swap: &Option<Standalone>, brush: &dyn BrushParams) {
         const STEPS: i32 = 8;
 
         let mut stroke = Stroke::new(brush);
@@ -273,7 +279,7 @@ impl BrushPreviewGenerator {
                 timestamp_writes: None,
             });
 
-            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, brush);
+            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, swap, brush);
 
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);
