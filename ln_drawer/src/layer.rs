@@ -205,10 +205,8 @@ impl LayerPipeline {
         self.create_chunk(texture, rect)
     }
 
-    /// Create a single offscreen chunk, used as a standalone preview/render target.
     pub fn create_standalone(&self, rect: Rectangle) -> Standalone {
-        let texture = create_chunk_texture(&self.device, rect.extend);
-        let chunk = create_chunk(&self.device, &self.chunk_layout, texture, rect);
+        let chunk = self.create_empty_chunk(rect.extend, rect);
         Standalone { chunk, rect }
     }
 
@@ -642,29 +640,19 @@ pub struct ChunkPool {
 }
 
 impl ChunkPool {
-    fn pop_chunk_stack(
-        &mut self,
-        key: (i32, i32, u8),
-        chunk_size: UVec2,
-        lp: &LayerPipeline,
-    ) -> Chunk {
-        if let Some(chunk) = self.list.pop() {
-            write_dispatch(
-                &lp.queue,
-                &chunk.rectangle,
-                0,
-                chunks_stack_key_to_rect(key, chunk_size),
+    fn pop(&mut self, lp: &LayerPipeline, chunk_size: UVec2, rect: Rectangle) -> Chunk {
+        if chunk_size != self.chunk_size {
+            log::warn!(
+                "wrong chunk pool ({}x) are being called (expect {}x)",
+                self.chunk_size,
+                chunk_size
             );
+            lp.create_empty_chunk(chunk_size, rect)
+        } else if let Some(chunk) = self.list.pop() {
+            write_dispatch(&lp.queue, &chunk.rectangle, 0, rect);
             chunk
         } else {
-            let texture = create_chunk_texture(&lp.device, chunk_size);
-            let chunk = create_chunk(
-                &lp.device,
-                &lp.chunk_layout,
-                texture,
-                chunks_stack_key_to_rect(key, chunk_size),
-            );
-            chunk
+            lp.create_empty_chunk(chunk_size, rect)
         }
     }
 }

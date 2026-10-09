@@ -20,7 +20,7 @@ use crate::{
             BrushParams, Draw, Stroke, blur::BlurBrush, param::BrushParam, pixel::PixelBrush,
             round::RoundBrush, smudge::SmudgeBrush, tint::TintBrush,
         },
-        create_chunk, create_chunk_texture, rect_chunks_stack_layer_iter,
+        rect_chunks_stack_layer_iter,
         stream::{StreamConfig, StreamThread, ThreadInput, ThreadOutput},
         traveler::Traveler,
         zoom_to_mipmap,
@@ -236,12 +236,10 @@ impl LayerPage {
         let mut active = brushes[0].brush.dup();
         active.set_color(color);
 
-        let bridge_texture = create_chunk_texture(&lp.device, BRIDGE_CHUNK_SIZE);
-        let bridge_rect = Rectangle {
+        let bridge = lp.create_standalone(Rectangle {
             origin: IVec2::ZERO,
             extend: BRIDGE_CHUNK_SIZE,
-        };
-        let bridge_chunk = create_chunk(&lp.device, &lp.chunk_layout, bridge_texture, bridge_rect);
+        });
 
         let support_read_write = lp.chunk_layout.read_write.is_some();
 
@@ -266,10 +264,7 @@ impl LayerPage {
                 chunks: HashMap::new(),
                 chunk_size: DEFAULT_CHUNK_SIZE,
             }),
-            bridge: Standalone {
-                chunk: bridge_chunk,
-                rect: bridge_rect,
-            },
+            bridge,
             pool: ChunkPool {
                 list: Vec::new(),
                 chunk_size: DEFAULT_CHUNK_SIZE,

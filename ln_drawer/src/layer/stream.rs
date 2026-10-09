@@ -305,12 +305,12 @@ impl StreamThread {
                         }
                     };
                     if let Some(bytes) = result.texture {
-                        let texture = self.config.lp.create_chunk_texture(self.config.chunk_size);
-                        let chunk = CacheLayerChunk::Filled(self.config.lp.create_chunk(
-                            texture.clone(),
+                        let chunk = self.config.lp.create_empty_chunk(
+                            self.config.chunk_size,
                             chunks_stack_key_to_rect(key, self.config.chunk_size),
-                        ));
-                        write_texture(&self.config, &bytes, &texture);
+                        );
+                        write_texture(&self.config, &bytes, &chunk.texture);
+                        let chunk = CacheLayerChunk::Filled(chunk);
 
                         self.base.cache_insert(key, chunk.clone());
                         self.output_tx.send(ThreadOutput::CacheInsert(key, chunk))?;
@@ -339,12 +339,12 @@ impl StreamThread {
                         }
                     };
                     if let Some(bytes) = result.texture {
-                        let texture = self.config.lp.create_chunk_texture(self.config.chunk_size);
-                        let chunk = RawLayerChunk::Filled(self.config.lp.create_chunk(
-                            texture.clone(),
+                        let chunk = self.config.lp.create_empty_chunk(
+                            self.config.chunk_size,
                             chunks_key_to_rect(key, self.config.chunk_size),
-                        ));
-                        write_texture(&self.config, &bytes, &texture);
+                        );
+                        write_texture(&self.config, &bytes, &chunk.texture);
+                        let chunk = RawLayerChunk::Filled(chunk);
 
                         self.base.raw_insert(key, chunk.clone());
                         self.output_tx.send(ThreadOutput::RawInsert(key, chunk))?;

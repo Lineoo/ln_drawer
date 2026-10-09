@@ -412,8 +412,7 @@ impl DrawsBatch {
                 };
 
                 let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
-                let texture = lp.create_chunk_texture(scratch.chunk_size);
-                let scratch_chunk = lp.create_chunk(texture, chunk_rect);
+                let scratch_chunk = lp.create_empty_chunk(scratch.chunk_size, chunk_rect);
                 if let Some(raw_chunk) = raw_chunk {
                     lp.copy_chunk_direct(cpass, raw_chunk, chunk_rect, &scratch_chunk, chunk_rect);
                 }
@@ -421,8 +420,7 @@ impl DrawsBatch {
                 scratch.chunks.insert(key, scratch_chunk);
             } else {
                 let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
-                let texture = lp.create_chunk_texture(scratch.chunk_size);
-                let scratch_chunk = lp.create_chunk(texture, chunk_rect);
+                let scratch_chunk = lp.create_empty_chunk(scratch.chunk_size, chunk_rect);
                 scratch.chunks.insert(key, scratch_chunk);
             }
         }
