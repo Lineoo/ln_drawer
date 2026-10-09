@@ -322,6 +322,9 @@ impl StreamThread {
                         self.output_tx
                             .send(ThreadOutput::CacheInsert(key, CacheLayerChunk::Transparent))?;
                     }
+                    if result.unsaved {
+                        self.base.cache_unsaved.insert(key);
+                    }
                 }
                 ChunkKeyKind::Raw(key) => {
                     let result = match read.load_raw((self.config.page, key)) {
@@ -356,6 +359,9 @@ impl StreamThread {
                         self.base.raw_insert(key, RawLayerChunk::Transparent);
                         self.output_tx
                             .send(ThreadOutput::RawInsert(key, RawLayerChunk::Transparent))?;
+                    }
+                    if result.unsaved {
+                        self.base.raw_unsaved.insert(key);
                     }
                 }
             }
