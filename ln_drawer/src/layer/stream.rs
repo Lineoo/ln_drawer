@@ -510,7 +510,7 @@ impl StreamThread {
                 let bytes = rx.recv().unwrap();
                 save.save_raw((self.config.page, key), &bytes[..])?;
             }
-            RawLayerChunk::Associated => {
+            RawLayerChunk::Associated | RawLayerChunk::AssociatedCached(_) => {
                 save.save_raw_associated((self.config.page, key))?;
             }
             RawLayerChunk::Transparent => {

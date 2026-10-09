@@ -10,12 +10,12 @@ use std::mem::size_of;
 use bytemuck::{Pod, Zeroable, bytes_of};
 use glam::{I64Vec2, UVec2};
 use palette::Srgba;
-use wgpu::{BindGroup, ComputePass};
+use wgpu::{BindGroup, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor};
 
 use crate::{
     layer::{
-        CacheLayerChunk, CacheLayers, DRAWS_ARRAY_CAPACITY, LayerPipeline, PlainLayer, RawLayer,
-        RawLayerChunk, Standalone,
+        CacheLayerChunk, CacheLayers, ChunkPool, DRAWS_ARRAY_CAPACITY, LayerPipeline, PlainLayer,
+        RawLayer, RawLayerChunk, Standalone,
         brush::{
             blur::BlurBrush,
             param::{BrushParam, BrushParamKey, BrushValue, BrushValueMut},
@@ -82,26 +82,132 @@ impl Stroke {
     pub fn confirm_batch(&mut self, batch: &DrawsBatch) {
         self.prev = Some(batch.next);
         if batch.prev.is_none() {
-            self.dirty = Rectangle::new_half(batch.next.position.q32_floor(), UVec2::ZERO);
+            self.dirty = batch.dirty;
         } else {
             self.dirty = self.dirty.grow(batch.dirty);
         }
     }
 
-    pub fn upload_dispatch(&self, lp: &LayerPipeline) {
+    pub fn upload(&self, lp: &LayerPipeline) {
         write_dispatch(&lp.queue, &lp.work_rect, 0, self.dirty);
     }
 
-    /// if raw & cache is desynced, use this to copy raw to cache, without scratch
-    pub fn raw_merge(
+    // TODO find a way to request stream thread to load chunks
+
+    pub fn submit(
+        &self,
+        lp: &LayerPipeline,
+        scratch: &mut PlainLayer,
+        raw: &mut RawLayer,
+        cache: &mut CacheLayers,
+        pool: &mut ChunkPool,
+    ) {
+        if self.prev.is_none() {
+            log::warn!("stroke submit without init batch");
+            return;
+        }
+
+        self.upload(lp);
+
+        let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("stroke_submit"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("stroke_submit"),
+            timestamp_writes: None,
+        });
+
+        lp.raw_remove_associated(&mut cpass, raw, cache, self.dirty);
+        self.merge(lp, &mut cpass, raw, scratch);
+        self.cleanup(lp, &mut cpass, scratch, pool);
+        // skip cache generation since it is already good
+        self.cache_recycle_raw(scratch, raw);
+
+        drop(cpass);
+        lp.queue.submit([encoder.finish()]);
+    }
+
+    pub fn discard(
+        &self,
+        lp: &LayerPipeline,
+        scratch: &mut PlainLayer,
+        raw: &mut RawLayer,
+        cache: &mut CacheLayers,
+        pool: &mut ChunkPool,
+    ) {
+        if self.prev.is_none() {
+            log::warn!("stroke discard without init batch");
+            return;
+        }
+
+        self.upload(lp);
+
+        let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("stroke_discard"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("stroke_discard"),
+            timestamp_writes: None,
+        });
+
+        self.cleanup(lp, &mut cpass, scratch, pool);
+        lp.raw_remove_associated(&mut cpass, raw, cache, self.dirty);
+        // TODO cache generate without scratch
+        lp.cache_mipmaps(&mut cpass, cache, self.dirty);
+        self.cache_recycle_raw(scratch, raw);
+
+        drop(cpass);
+        lp.queue.submit([encoder.finish()]);
+    }
+
+    /// XXX specificated version, we simply set it associated
+    pub fn merge(
+        &self,
+        _lp: &LayerPipeline,
+        _cpass: &mut ComputePass,
+        raw: &mut RawLayer,
+        scratch: &PlainLayer,
+    ) {
+        for (&chunk_key, _scratch_chunk) in &scratch.chunks {
+            raw.swap_chunk(chunk_key, RawLayerChunk::Associated);
+        }
+    }
+
+    fn cleanup(
+        &self,
+        lp: &LayerPipeline,
+        cpass: &mut ComputePass,
+        scratch: &mut PlainLayer,
+        pool: &mut ChunkPool,
+    ) {
+        if self.replace {
+            for (key, chunk) in scratch.chunks.drain() {
+                let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
+                lp.clear_chunk_direct(cpass, &chunk, chunk_rect);
+                pool.list.push(chunk);
+            }
+        } else {
+            for (key, chunk) in scratch.chunks.drain() {
+                let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
+                lp.clear_chunk(cpass, &chunk, chunk_rect, self.dirty);
+                pool.list.push(chunk);
+            }
+        }
+    }
+
+    /// Submit scratch to cache. Raw layer's content will be preserved, but may turn from
+    /// associated to filled kind.
+    pub fn cache_generate_without_scratch(
         &self,
         lp: &LayerPipeline,
         cpass: &mut ComputePass,
         raw: &mut RawLayer,
         cache: &mut CacheLayers,
     ) {
-        for chunk_key in rect_chunks_iter(self.dirty, raw.chunk_size) {
-            let chunk_rect = chunks_key_to_rect(chunk_key, raw.chunk_size);
+        for chunk_key in rect_chunks_iter(self.dirty, cache.chunk_size) {
+            let chunk_rect = chunks_key_to_rect(chunk_key, cache.chunk_size);
 
             let Some(cache_chunk) = cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
                 continue;
@@ -121,209 +227,51 @@ impl Stroke {
                         self.dirty,
                     );
                 }
-                (CacheLayerChunk::Filled(_), RawLayerChunk::Associated) => {}
-                (CacheLayerChunk::Filled(_), RawLayerChunk::Transparent) => {
-                    cache.swap_chunk((chunk_key.0, chunk_key.1, 0), CacheLayerChunk::Transparent);
+                (
+                    CacheLayerChunk::Filled(_),
+                    RawLayerChunk::Associated | RawLayerChunk::AssociatedCached(_),
+                ) => {
+                    log::error!("call `lp.raw_remove_associated` before gen cache 0");
+                }
+                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Transparent) => {
+                    lp.clear_chunk(cpass, cache_chunk, chunk_rect, self.dirty);
                 }
                 (CacheLayerChunk::Transparent, RawLayerChunk::Filled(raw_chunk)) => {
+                    let cache_chunk = lp.create_empty_chunk(
+                        cache.chunk_size,
+                        chunks_key_to_rect(chunk_key, cache.chunk_size),
+                    );
+                    lp.copy_chunk(
+                        cpass,
+                        raw_chunk,
+                        chunk_rect,
+                        &cache_chunk,
+                        chunk_rect,
+                        self.dirty,
+                    );
                     cache.swap_chunk(
                         (chunk_key.0, chunk_key.1, 0),
-                        CacheLayerChunk::Filled(raw_chunk.clone()),
+                        CacheLayerChunk::Filled(cache_chunk),
                     );
-                    raw.swap_chunk(chunk_key, RawLayerChunk::Associated);
                 }
-                (CacheLayerChunk::Transparent, RawLayerChunk::Associated) => {}
+                (
+                    CacheLayerChunk::Transparent,
+                    RawLayerChunk::Associated | RawLayerChunk::AssociatedCached(_),
+                ) => {
+                    log::error!("call `lp.raw_remove_associated` before gen cache 0");
+                }
                 (CacheLayerChunk::Transparent, RawLayerChunk::Transparent) => {}
             }
         }
-
-        lp.cache_mipmaps(cpass, cache, self.dirty);
     }
 
-    // TODO find a way to request stream thread to load chunks
-
-    // TODO support swap draw
-    /// Submit scratch to cache. Raw layer's content will be preserved, but may turn from
-    /// associated to filled kind.
-    ///
-    /// Silent skip unloaded cache/raw chunks.
-    pub fn submit_cache(
-        &self,
-        lp: &LayerPipeline,
-        cpass: &mut ComputePass,
-        scratch: &PlainLayer,
-        raw: &mut RawLayer,
-        cache: &mut CacheLayers,
-    ) {
-        debug_assert_eq!(raw.chunk_size, scratch.chunk_size);
-
-        for (&chunk_key, scratch_chunk) in &scratch.chunks {
-            let chunk_rect = chunks_key_to_rect(chunk_key, scratch.chunk_size);
-
-            let Some(cache_chunk) = cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
-                continue;
-            };
-            let Some(raw_chunk) = raw.chunks.get(&chunk_key) else {
-                continue;
-            };
-
-            match (cache_chunk, raw_chunk) {
-                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Filled(raw_chunk)) => {
-                    if self.replace {
-                        lp.copy_chunk(
-                            cpass,
-                            scratch_chunk,
-                            chunk_rect,
-                            &cache_chunk,
-                            chunk_rect,
-                            self.dirty,
-                        );
-                    } else {
-                        lp.merge_chunk_over_cross(
-                            cpass,
-                            scratch_chunk,
-                            chunk_rect,
-                            raw_chunk,
-                            chunk_rect,
-                            cache_chunk,
-                            chunk_rect,
-                            self.dirty,
-                        );
-                    };
-                }
-                // TODO maybe we dont need to copy back and forth here, optimize is possible
-                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Associated) => {
-                    let raw_chunk = lp.create_empty_chunk(
-                        raw.chunk_size,
-                        chunks_key_to_rect(chunk_key, raw.chunk_size),
-                    );
-                    lp.copy_chunk_direct(cpass, cache_chunk, chunk_rect, &raw_chunk, chunk_rect);
-                    if self.replace {
-                        lp.copy_chunk(
-                            cpass,
-                            scratch_chunk,
-                            chunk_rect,
-                            cache_chunk,
-                            chunk_rect,
-                            self.dirty,
-                        );
-                    } else {
-                        lp.merge_chunk_over_cross(
-                            cpass,
-                            scratch_chunk,
-                            chunk_rect,
-                            &raw_chunk,
-                            chunk_rect,
-                            cache_chunk,
-                            chunk_rect,
-                            self.dirty,
-                        );
-                    };
-                    raw.swap_chunk(chunk_key, RawLayerChunk::Filled(raw_chunk));
-                }
-                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Transparent) => {
-                    lp.copy_chunk(
-                        cpass,
-                        scratch_chunk,
-                        chunk_rect,
-                        cache_chunk,
-                        chunk_rect,
-                        self.dirty,
-                    );
-                }
-                (CacheLayerChunk::Transparent, RawLayerChunk::Filled(raw_chunk)) => {
-                    let cache_chunk = lp.create_empty_chunk(
-                        cache.chunk_size,
-                        chunks_key_to_rect(chunk_key, cache.chunk_size),
-                    );
-                    if self.replace {
-                        lp.copy_chunk(
-                            cpass,
-                            scratch_chunk,
-                            chunk_rect,
-                            &cache_chunk,
-                            chunk_rect,
-                            self.dirty,
-                        );
-                    } else {
-                        lp.merge_chunk_over_cross(
-                            cpass,
-                            scratch_chunk,
-                            chunk_rect,
-                            raw_chunk,
-                            chunk_rect,
-                            &cache_chunk,
-                            chunk_rect,
-                            self.dirty,
-                        );
-                    };
-                    cache.swap_chunk(
-                        (chunk_key.0, chunk_key.1, 0),
-                        CacheLayerChunk::Filled(cache_chunk),
-                    );
-                }
-                (CacheLayerChunk::Transparent, RawLayerChunk::Associated) => {
-                    let cache_chunk = lp.create_empty_chunk(
-                        cache.chunk_size,
-                        chunks_key_to_rect(chunk_key, cache.chunk_size),
-                    );
-                    lp.copy_chunk(
-                        cpass,
-                        scratch_chunk,
-                        chunk_rect,
-                        &cache_chunk,
-                        chunk_rect,
-                        self.dirty,
-                    );
-                    cache.swap_chunk(
-                        (chunk_key.0, chunk_key.1, 0),
-                        CacheLayerChunk::Filled(cache_chunk),
-                    );
-                    raw.swap_chunk(chunk_key, RawLayerChunk::Transparent);
-                }
-                (CacheLayerChunk::Transparent, RawLayerChunk::Transparent) => {
-                    let cache_chunk = lp.create_empty_chunk(
-                        cache.chunk_size,
-                        chunks_key_to_rect(chunk_key, cache.chunk_size),
-                    );
-                    lp.copy_chunk(
-                        cpass,
-                        scratch_chunk,
-                        chunk_rect,
-                        &cache_chunk,
-                        chunk_rect,
-                        self.dirty,
-                    );
-                    cache.swap_chunk(
-                        (chunk_key.0, chunk_key.1, 0),
-                        CacheLayerChunk::Filled(cache_chunk),
-                    );
-                }
-            }
-        }
-
-        lp.cache_mipmaps(cpass, cache, self.dirty);
-    }
-
-    /// Submits scratch to cache & raw. Raw layer's content will be modified and backup should
-    /// be done before calling it.
-    ///
-    /// Silent skip unloaded cache/raw chunks.
-    pub fn submit_raw_cache(
-        &self,
-        lp: &LayerPipeline,
-        cpass: &mut ComputePass,
-        scratch: &PlainLayer,
-        raw: &mut RawLayer,
-        cache: &mut CacheLayers,
-    ) {
-        debug_assert_eq!(raw.chunk_size, scratch.chunk_size);
-        self.submit_cache(lp, cpass, scratch, raw, cache);
-
-        // XXX now it is completely safe to say it is associated chunks, not the case
-        // after we add overlap objects to render.
+    /// XXX This is specificated version since this version we dont have overlap
+    /// objects yet so we assume it will be associated. Not the case soon later.
+    pub fn cache_recycle_raw(&self, scratch: &PlainLayer, raw: &mut RawLayer) {
         for &chunk_key in scratch.chunks.keys() {
-            raw.swap_chunk(chunk_key, RawLayerChunk::Associated);
+            if let Some(RawLayerChunk::Filled(chunk)) = raw.chunks.get(&chunk_key) {
+                raw.swap_chunk(chunk_key, RawLayerChunk::AssociatedCached(chunk.clone()));
+            }
         }
     }
 }
@@ -339,6 +287,38 @@ pub struct DrawsBatch {
 }
 
 impl DrawsBatch {
+    pub fn draw<T: Brush + ?Sized>(
+        self,
+        lp: &LayerPipeline,
+        scratch: &mut PlainLayer,
+        raw: &mut RawLayer,
+        cache: &mut CacheLayers,
+        bridge: &mut Standalone,
+        brush: &T,
+    ) {
+        self.upload(lp, bridge);
+
+        let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("batch_draw"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("batch_draw"),
+            timestamp_writes: None,
+        });
+
+        self.draw_prepare_scratch(lp, &mut cpass, raw, cache, scratch);
+        self.draw_into_scratch(lp, &mut cpass, scratch, bridge, brush);
+
+        lp.raw_remove_associated(&mut cpass, raw, cache, self.dirty);
+        self.cache_generate_with_scratch(lp, &mut cpass, scratch, raw, cache);
+        lp.cache_mipmaps(&mut cpass, cache, self.dirty);
+        // raw recycle skipped
+
+        drop(cpass);
+        lp.queue.submit([encoder.finish()]);
+    }
+
     pub fn upload(&self, lp: &LayerPipeline, bridge: &mut Standalone) {
         self.upload_dispatch(lp);
         if self.bridge {
@@ -364,7 +344,7 @@ impl DrawsBatch {
         (lp.queue).write_buffer(&lp.draws_array, 0, &self.draws);
     }
 
-    pub fn prepare_scratch(
+    pub fn draw_prepare_scratch(
         &self,
         lp: &LayerPipeline,
         cpass: &mut ComputePass,
@@ -381,11 +361,13 @@ impl DrawsBatch {
                 let raw_chunk = match raw.chunks.get(&key) {
                     Some(RawLayerChunk::Transparent) => None,
                     Some(RawLayerChunk::Filled(chunk)) => Some(chunk),
-                    Some(RawLayerChunk::Associated) => match cache.chunks.get(&(key.0, key.1, 0)) {
-                        Some(CacheLayerChunk::Transparent) => None,
-                        Some(CacheLayerChunk::Filled(chunk)) => Some(chunk),
-                        None => continue,
-                    },
+                    Some(RawLayerChunk::Associated) | Some(RawLayerChunk::AssociatedCached(_)) => {
+                        match cache.chunks.get(&(key.0, key.1, 0)) {
+                            Some(CacheLayerChunk::Transparent) => None,
+                            Some(CacheLayerChunk::Filled(chunk)) => Some(chunk),
+                            None => continue,
+                        }
+                    }
                     None => continue,
                 };
 
@@ -407,8 +389,8 @@ impl DrawsBatch {
     }
 
     /// must `upload` before draw
-    pub fn draw_layers<T: Brush + ?Sized>(
-        self,
+    pub fn draw_into_scratch<T: Brush + ?Sized>(
+        &self,
         lp: &LayerPipeline,
         cpass: &mut ComputePass,
         scratch: &PlainLayer,
@@ -464,7 +446,131 @@ impl DrawsBatch {
         }
     }
 
+    /// Submit scratch to cache. Raw layer's content will be preserved, but may turn from
+    /// associated to filled kind.
+    pub fn cache_generate_with_scratch(
+        &self,
+        lp: &LayerPipeline,
+        cpass: &mut ComputePass,
+        scratch: &PlainLayer,
+        raw: &mut RawLayer,
+        cache: &mut CacheLayers,
+    ) {
+        debug_assert_eq!(raw.chunk_size, scratch.chunk_size);
+
+        for (&chunk_key, scratch_chunk) in &scratch.chunks {
+            let chunk_rect = chunks_key_to_rect(chunk_key, scratch.chunk_size);
+
+            let Some(cache_chunk) = cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
+                log::error!("cache not loaded");
+                continue;
+            };
+            let Some(raw_chunk) = raw.chunks.get(&chunk_key) else {
+                log::error!("raw not loaded");
+                continue;
+            };
+
+            match (cache_chunk, raw_chunk) {
+                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Filled(raw_chunk)) => {
+                    if self.replace {
+                        lp.copy_chunk(
+                            cpass,
+                            scratch_chunk,
+                            chunk_rect,
+                            &cache_chunk,
+                            chunk_rect,
+                            self.dirty,
+                        );
+                    } else {
+                        lp.merge_chunk_over_cross(
+                            cpass,
+                            scratch_chunk,
+                            chunk_rect,
+                            raw_chunk,
+                            chunk_rect,
+                            cache_chunk,
+                            chunk_rect,
+                            self.dirty,
+                        );
+                    };
+                }
+                (
+                    CacheLayerChunk::Filled(_),
+                    RawLayerChunk::Associated | RawLayerChunk::AssociatedCached(_),
+                ) => {
+                    log::error!("call `lp.raw_remove_associated` before gen cache 0");
+                }
+                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Transparent) => {
+                    lp.copy_chunk(
+                        cpass,
+                        scratch_chunk,
+                        chunk_rect,
+                        cache_chunk,
+                        chunk_rect,
+                        self.dirty,
+                    );
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Filled(raw_chunk)) => {
+                    let cache_chunk = lp.create_empty_chunk(
+                        cache.chunk_size,
+                        chunks_key_to_rect(chunk_key, cache.chunk_size),
+                    );
+                    if self.replace {
+                        lp.copy_chunk(
+                            cpass,
+                            scratch_chunk,
+                            chunk_rect,
+                            &cache_chunk,
+                            chunk_rect,
+                            self.dirty,
+                        );
+                    } else {
+                        lp.merge_chunk_over_cross(
+                            cpass,
+                            scratch_chunk,
+                            chunk_rect,
+                            raw_chunk,
+                            chunk_rect,
+                            &cache_chunk,
+                            chunk_rect,
+                            self.dirty,
+                        );
+                    };
+                    cache.swap_chunk(
+                        (chunk_key.0, chunk_key.1, 0),
+                        CacheLayerChunk::Filled(cache_chunk),
+                    );
+                }
+                (
+                    CacheLayerChunk::Transparent,
+                    RawLayerChunk::Associated | RawLayerChunk::AssociatedCached(_),
+                ) => {
+                    log::error!("call `lp.raw_remove_associated` before gen cache 0");
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Transparent) => {
+                    let cache_chunk = lp.create_empty_chunk(
+                        cache.chunk_size,
+                        chunks_key_to_rect(chunk_key, cache.chunk_size),
+                    );
+                    lp.copy_chunk(
+                        cpass,
+                        scratch_chunk,
+                        chunk_rect,
+                        &cache_chunk,
+                        chunk_rect,
+                        self.dirty,
+                    );
+                    cache.swap_chunk(
+                        (chunk_key.0, chunk_key.1, 0),
+                        CacheLayerChunk::Filled(cache_chunk),
+                    );
+                }
+            }
+        }
+    }
+
     /// must `upload` before draw
+    #[deprecated]
     pub fn draw_standalone<T: Brush + ?Sized>(
         self,
         lp: &LayerPipeline,

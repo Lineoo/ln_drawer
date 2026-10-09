@@ -10,7 +10,7 @@ use glam::{I64Vec2, IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
 use palette::{IntoColor, Srgba};
-use wgpu::{CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, RenderPass};
+use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor, RenderPass};
 
 use crate::{
     layer::{
@@ -20,7 +20,7 @@ use crate::{
             BrushParams, Draw, Stroke, blur::BlurBrush, param::BrushParam, pixel::PixelBrush,
             round::RoundBrush, smudge::SmudgeBrush, tint::TintBrush,
         },
-        chunks_key_to_rect, create_chunk, create_chunk_texture, rect_chunks_stack_layer_iter,
+        create_chunk, create_chunk_texture, rect_chunks_stack_layer_iter,
         stream::{StreamConfig, StreamThread, ThreadInput, ThreadOutput},
         traveler::Traveler,
         zoom_to_mipmap,
@@ -299,125 +299,49 @@ impl LayerPage {
     }
 
     pub fn draw_active(&mut self, draw: Draw) {
-        let stroke = self
-            .stroke
-            .get_or_insert_with(|| Stroke::new(self.active.as_ref()));
-
-        let Some(batch) = stroke.batch(self.active.as_ref(), draw) else {
-            return;
-        };
-
-        stroke.confirm_batch(&batch);
-        batch.upload(&self.lp, &mut self.bridge);
-
-        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("draw_active"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("draw_active"),
-            timestamp_writes: None,
-        });
-
-        batch.prepare_scratch(
+        Self::draw_brush(
             &self.lp,
-            &mut cpass,
-            &self.raw,
-            &self.cache,
             &mut self.scratch,
-        );
-
-        batch.draw_layers(
-            &self.lp,
-            &mut cpass,
-            &self.scratch,
-            &self.bridge,
-            self.active.as_ref(),
-        );
-
-        drop(cpass);
-        self.lp.queue.submit([encoder.finish()]);
-
-        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("draw_active_cache"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("draw_active_cache"),
-            timestamp_writes: None,
-        });
-
-        stroke.upload_dispatch(&self.lp);
-        stroke.submit_cache(
-            &self.lp,
-            &mut cpass,
-            &self.scratch,
             &mut self.raw,
             &mut self.cache,
-        );
-
-        drop(cpass);
-        self.lp.queue.submit([encoder.finish()]);
+            &mut self.bridge,
+            &*self.active,
+            &mut self.stroke,
+            draw,
+        )
     }
 
     pub fn draw_erase(&mut self, draw: Draw) {
-        let stroke = self.stroke.get_or_insert_with(|| Stroke::new(&self.erase));
+        Self::draw_brush(
+            &self.lp,
+            &mut self.scratch,
+            &mut self.raw,
+            &mut self.cache,
+            &mut self.bridge,
+            &self.erase,
+            &mut self.stroke,
+            draw,
+        )
+    }
 
-        let Some(batch) = stroke.batch(&self.erase, draw) else {
+    fn draw_brush<T: BrushParams + ?Sized>(
+        lp: &LayerPipeline,
+        scratch: &mut PlainLayer,
+        raw: &mut RawLayer,
+        cache: &mut CacheLayers,
+        bridge: &mut Standalone,
+        brush: &T,
+        stroke: &mut Option<Stroke>,
+        draw: Draw,
+    ) {
+        let stroke = stroke.get_or_insert_with(|| Stroke::new(brush));
+
+        let Some(batch) = stroke.batch(brush, draw) else {
             return;
         };
 
         stroke.confirm_batch(&batch);
-        batch.upload(&self.lp, &mut self.bridge);
-
-        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("draw_erase"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("draw_erase"),
-            timestamp_writes: None,
-        });
-
-        batch.prepare_scratch(
-            &self.lp,
-            &mut cpass,
-            &self.raw,
-            &self.cache,
-            &mut self.scratch,
-        );
-
-        batch.draw_layers(
-            &self.lp,
-            &mut cpass,
-            &self.scratch,
-            &self.bridge,
-            &self.erase,
-        );
-
-        drop(cpass);
-        self.lp.queue.submit([encoder.finish()]);
-
-        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("draw_erase_cache"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("draw_erase_cache"),
-            timestamp_writes: None,
-        });
-
-        stroke.upload_dispatch(&self.lp);
-        stroke.submit_cache(
-            &self.lp,
-            &mut cpass,
-            &self.scratch,
-            &mut self.raw,
-            &mut self.cache,
-        );
-
-        drop(cpass);
-        self.lp.queue.submit([encoder.finish()]);
+        batch.draw(lp, scratch, raw, cache, bridge, brush);
     }
 
     pub fn submit(&mut self) {
@@ -426,30 +350,20 @@ impl LayerPage {
         };
 
         let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("page_submit"),
+            label: Some("page_traveler_stock"),
         });
 
-        self.traveler
-            .stock(&mut encoder, &self.raw, &self.cache, stroke.dirty);
+        self.traveler.stock(&mut encoder, &self.raw, stroke.dirty);
 
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("page_submit"),
-            timestamp_writes: None,
-        });
+        self.lp.queue.submit([encoder.finish()]);
 
-        stroke.upload_dispatch(&self.lp);
-        stroke.submit_raw_cache(
+        stroke.submit(
             &self.lp,
-            &mut cpass,
-            &self.scratch,
+            &mut self.scratch,
             &mut self.raw,
             &mut self.cache,
+            &mut self.pool,
         );
-
-        self.cleanup(&mut cpass, &stroke);
-
-        drop(cpass);
-        self.lp.queue.submit([encoder.finish()]);
     }
 
     pub fn discard(&mut self) {
@@ -457,37 +371,13 @@ impl LayerPage {
             return;
         };
 
-        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("page_discard"),
-        });
-
-        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-            label: Some("page_discard"),
-            timestamp_writes: None,
-        });
-
-        self.cleanup(&mut cpass, &stroke);
-
-        drop(cpass);
-        self.lp.queue.submit([encoder.finish()]);
-    }
-
-    fn cleanup(&mut self, cpass: &mut ComputePass, stroke: &Stroke) {
-        if stroke.replace {
-            for (key, chunk) in self.scratch.chunks.drain() {
-                let chunk_rect = chunks_key_to_rect(key, self.scratch.chunk_size);
-                self.lp.clear_chunk_direct(cpass, &chunk, chunk_rect);
-                self.pool.list.push(chunk);
-            }
-        } else {
-            for (key, chunk) in self.scratch.chunks.drain() {
-                let chunk_rect = chunks_key_to_rect(key, self.scratch.chunk_size);
-                self.lp.clear_chunk(cpass, &chunk, chunk_rect, stroke.dirty);
-                self.pool.list.push(chunk);
-            }
-        }
-
-        // TODO Evaluate raw chunks and turn suitable chunks back into associated/transparent
+        stroke.discard(
+            &self.lp,
+            &mut self.scratch,
+            &mut self.raw,
+            &mut self.cache,
+            &mut self.pool,
+        );
     }
 
     /// Copy the preset at `index` into the temporary working brush.
@@ -583,7 +473,7 @@ impl LayerPage {
 
             let stroke = self
                 .traveler
-                .undo(&mut encoder, &self.raw, &self.cache)
+                .undo(&mut encoder, &mut self.raw, &self.cache)
                 .unwrap();
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -591,7 +481,7 @@ impl LayerPage {
                 timestamp_writes: None,
             });
 
-            stroke.raw_merge(&self.lp, &mut cpass, &mut self.raw, &mut self.cache);
+            stroke.merge(&self.lp, &mut cpass, &mut self.raw, &self.scratch);
 
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);
@@ -603,20 +493,28 @@ impl LayerPage {
     pub fn redo(&mut self) {
         if self.traveler.redo_available(&self.raw) {
             let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("page_undo"),
+                label: Some("page_redo"),
             });
 
             let stroke = self
                 .traveler
-                .redo(&mut encoder, &self.raw, &self.cache)
+                .redo(&mut encoder, &mut self.raw, &self.cache)
                 .unwrap();
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("page_undo"),
+                label: Some("page_redo"),
                 timestamp_writes: None,
             });
 
-            stroke.raw_merge(&self.lp, &mut cpass, &mut self.raw, &mut self.cache);
+            stroke.cache_generate_without_scratch(
+                &self.lp,
+                &mut cpass,
+                &mut self.raw,
+                &mut self.cache,
+            );
+            self.lp
+                .cache_mipmaps(&mut cpass, &mut self.cache, stroke.dirty);
+            stroke.cache_recycle_raw(&self.scratch, &mut self.raw);
 
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);

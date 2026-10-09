@@ -4,14 +4,14 @@ use glam::{IVec2, UVec2};
 use guillotiere::{AllocId, Allocation, AtlasAllocator, euclid::Size2D};
 use smallvec::SmallVec;
 use wgpu::{
-    CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfoBase, Texture, TextureAspect,
-    TextureDescriptor, TextureDimension, TextureUsages,
+    CommandEncoder, ComputePassDescriptor, Extent3d, Origin3d, TexelCopyTextureInfoBase, Texture,
+    TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,
 };
 
 use crate::{
     layer::{
-        CHUNK_TEXTURE_FORMAT, CacheLayerChunk, CacheLayers, LayerPipeline, RawLayer, RawLayerChunk,
-        brush::Stroke, chunks_key_to_rect, rect_chunks_iter,
+        CHUNK_TEXTURE_FORMAT, CacheLayers, LayerPipeline, RawLayer, RawLayerChunk, brush::Stroke,
+        chunks_key_to_rect, rect_chunks_iter,
     },
     measures::Rectangle,
 };
@@ -68,13 +68,7 @@ impl Traveler {
         }
     }
 
-    pub fn stock(
-        &mut self,
-        encoder: &mut CommandEncoder,
-        raw: &RawLayer,
-        cache: &CacheLayers,
-        dirty: Rectangle,
-    ) {
+    pub fn stock(&mut self, encoder: &mut CommandEncoder, raw: &RawLayer, dirty: Rectangle) {
         // 0. clear redos
         for snapshot in self.redos.drain(..) {
             for section in &snapshot.sections {
@@ -115,17 +109,10 @@ impl Traveler {
 
             let chunk = match raw.chunks.get(&key) {
                 Some(RawLayerChunk::Filled(chunk)) => chunk,
-                Some(RawLayerChunk::Associated) => match cache.chunks.get(&(key.0, key.1, 0)) {
-                    Some(CacheLayerChunk::Filled(chunk)) => chunk,
-                    Some(CacheLayerChunk::Transparent) => {
-                        log::error!("todo: transparent chunk");
-                        continue;
-                    }
-                    None => {
-                        log::error!("failed to find chunk");
-                        continue;
-                    }
-                },
+                Some(RawLayerChunk::Associated) | Some(RawLayerChunk::AssociatedCached(_)) => {
+                    log::error!("call `lp.raw_remove_associated` before stock snapshot");
+                    continue;
+                }
                 Some(RawLayerChunk::Transparent) => {
                     log::error!("todo: transparent chunk");
                     continue;
@@ -170,7 +157,7 @@ impl Traveler {
     pub fn undo(
         &mut self,
         encoder: &mut CommandEncoder,
-        raw: &RawLayer,
+        raw: &mut RawLayer,
         cache: &CacheLayers,
     ) -> Option<Stroke> {
         let Some(snapshot) = self.undos.pop_back() else {
@@ -179,25 +166,23 @@ impl Traveler {
 
         debug_assert_eq!(snapshot.chunk_size, raw.chunk_size);
 
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("page_undo"),
+            timestamp_writes: None,
+        });
+
+        self.layer
+            .raw_remove_associated(&mut cpass, raw, cache, snapshot.dirty);
+
+        drop(cpass);
+
         let mut redo_sections = SmallVec::with_capacity(snapshot.sections.len());
         for section in snapshot.sections {
             let chunk = match raw.chunks.get(&section.origin_key) {
                 Some(RawLayerChunk::Filled(chunk)) => chunk,
-                Some(RawLayerChunk::Associated) => {
-                    match cache
-                        .chunks
-                        .get(&(section.origin_key.0, section.origin_key.1, 0))
-                    {
-                        Some(CacheLayerChunk::Filled(chunk)) => chunk,
-                        Some(CacheLayerChunk::Transparent) => {
-                            log::error!("todo: transparent chunk");
-                            continue;
-                        }
-                        None => {
-                            log::warn!("failed to find undo origin chunk");
-                            continue;
-                        }
-                    }
+                Some(RawLayerChunk::Associated) | Some(RawLayerChunk::AssociatedCached(_)) => {
+                    log::error!("call `lp.raw_remove_associated` before place snapshot");
+                    continue;
                 }
                 Some(RawLayerChunk::Transparent) => {
                     log::error!("todo: transparent chunk");
@@ -264,7 +249,7 @@ impl Traveler {
     pub fn redo(
         &mut self,
         encoder: &mut CommandEncoder,
-        raw: &RawLayer,
+        raw: &mut RawLayer,
         cache: &CacheLayers,
     ) -> Option<Stroke> {
         let Some(snapshot) = self.redos.pop() else {
@@ -273,25 +258,23 @@ impl Traveler {
 
         debug_assert_eq!(snapshot.chunk_size, raw.chunk_size);
 
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("page_redo"),
+            timestamp_writes: None,
+        });
+
+        self.layer
+            .raw_remove_associated(&mut cpass, raw, cache, snapshot.dirty);
+
+        drop(cpass);
+
         let mut undo_sections = SmallVec::with_capacity(snapshot.sections.len());
         for section in snapshot.sections {
             let chunk = match raw.chunks.get(&section.origin_key) {
                 Some(RawLayerChunk::Filled(chunk)) => chunk,
-                Some(RawLayerChunk::Associated) => {
-                    match cache
-                        .chunks
-                        .get(&(section.origin_key.0, section.origin_key.1, 0))
-                    {
-                        Some(CacheLayerChunk::Filled(chunk)) => chunk,
-                        Some(CacheLayerChunk::Transparent) => {
-                            log::error!("todo: transparent chunk");
-                            continue;
-                        }
-                        None => {
-                            log::warn!("failed to find undo origin chunk");
-                            continue;
-                        }
-                    }
+                Some(RawLayerChunk::Associated) | Some(RawLayerChunk::AssociatedCached(_)) => {
+                    log::error!("call `lp.raw_remove_associated` before place snapshot");
+                    continue;
                 }
                 Some(RawLayerChunk::Transparent) => {
                     log::error!("todo: transparent chunk");

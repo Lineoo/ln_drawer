@@ -242,24 +242,67 @@ impl LayerPipeline {
         Standalone { chunk, rect }
     }
 
+    pub fn raw_remove_associated(
+        &self,
+        cpass: &mut ComputePass,
+        raw: &mut RawLayer,
+        cache: &CacheLayers,
+        dirty: Rectangle,
+    ) {
+        for chunk_key in rect_chunks_iter(dirty, raw.chunk_size) {
+            let chunk_rect = chunks_key_to_rect(chunk_key, raw.chunk_size);
+
+            let Some(cache_chunk) = cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
+                log::error!("cache not loaded");
+                continue;
+            };
+            let Some(raw_chunk) = raw.chunks.get(&chunk_key) else {
+                log::error!("raw not loaded");
+                continue;
+            };
+
+            match (cache_chunk, raw_chunk) {
+                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Associated) => {
+                    let raw_chunk = self.create_empty_chunk(
+                        raw.chunk_size,
+                        chunks_key_to_rect(chunk_key, raw.chunk_size),
+                    );
+                    self.copy_chunk_direct(cpass, cache_chunk, chunk_rect, &raw_chunk, chunk_rect);
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Associated) => {
+                    raw.swap_chunk(chunk_key, RawLayerChunk::Transparent);
+                }
+                (
+                    CacheLayerChunk::Filled(_) | CacheLayerChunk::Transparent,
+                    RawLayerChunk::AssociatedCached(raw_chunk),
+                ) => {
+                    raw.swap_chunk(chunk_key, RawLayerChunk::Filled(raw_chunk.clone()));
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub fn cache_mipmaps(
         &self,
         cpass: &mut ComputePass,
         cache: &mut CacheLayers,
         dirty: Rectangle,
     ) {
-        cpass.set_pipeline(&self.clear_pipeline);
+        cpass.set_pipeline(&self.mipmap_pipeline);
         cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
         for lower_key in rect_chunks_stack_iter(dirty, cache.chunk_size, cache.mipmap_cap - 1) {
             let upper_key = upper_chunk_of(lower_key);
             let upper_rect = chunks_stack_key_to_rect(upper_key, cache.chunk_size);
             let lower_rect = chunks_stack_key_to_rect(lower_key, cache.chunk_size);
-            let scale = 1u32 << lower_key.2;
+            let scale = 1u32 << upper_key.2;
 
             let Some(lower_chunk) = cache.chunks.get(&lower_key) else {
+                log::error!("lower chunk not loaded");
                 continue;
             };
             let Some(upper_chunk) = cache.chunks.get(&upper_key) else {
+                log::error!("upper chunk not loaded");
                 continue;
             };
 
@@ -309,7 +352,7 @@ impl LayerPipeline {
         let chunk_key = point_to_chunks(point, raw.chunk_size);
         let chunk = match raw.chunks.get(&chunk_key) {
             Some(RawLayerChunk::Filled(chunk)) => chunk,
-            Some(RawLayerChunk::Associated) => {
+            Some(RawLayerChunk::AssociatedCached(_)) | Some(RawLayerChunk::Associated) => {
                 match cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) {
                     Some(CacheLayerChunk::Filled(chunk)) => chunk,
                     Some(CacheLayerChunk::Transparent) => {
@@ -577,6 +620,7 @@ pub struct RawLayer {
 pub enum RawLayerChunk {
     Transparent,
     Associated,
+    AssociatedCached(Chunk),
     Filled(Chunk),
 }
 
