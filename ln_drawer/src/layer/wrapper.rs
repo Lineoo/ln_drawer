@@ -267,6 +267,7 @@ impl LayerPage {
             bridge,
             pool: ChunkPool {
                 list: Vec::new(),
+                stage: Vec::new(),
                 chunk_size: DEFAULT_CHUNK_SIZE,
             },
             stroke: None,
@@ -308,6 +309,7 @@ impl LayerPage {
             &mut self.raw,
             &mut self.cache,
             &mut self.bridge,
+            &mut self.pool,
             &*self.active,
             &mut self.stroke,
             draw,
@@ -322,6 +324,7 @@ impl LayerPage {
             &mut self.raw,
             &mut self.cache,
             &mut self.bridge,
+            &mut self.pool,
             &self.erase,
             &mut self.stroke,
             draw,
@@ -335,6 +338,7 @@ impl LayerPage {
         raw: &mut RawLayer,
         cache: &mut CacheLayers,
         bridge: &mut Standalone,
+        pool: &mut ChunkPool,
         brush: &T,
         stroke: &mut Option<Stroke>,
         draw: Draw,
@@ -350,7 +354,7 @@ impl LayerPage {
         }
 
         stroke.confirm_batch(&batch);
-        batch.draw(lp, scratch, swap, raw, cache, bridge, brush);
+        batch.draw(lp, scratch, swap, raw, cache, bridge, pool, brush);
     }
 
     pub fn submit(&mut self) {
@@ -362,8 +366,13 @@ impl LayerPage {
             label: Some("page_traveler_stock"),
         });
 
-        self.traveler
-            .stock(&mut encoder, &mut self.raw, &self.cache, stroke.dirty);
+        self.traveler.stock(
+            &mut encoder,
+            &mut self.raw,
+            &self.cache,
+            &mut self.pool,
+            stroke.dirty,
+        );
 
         self.lp.queue.submit([encoder.finish()]);
 
@@ -485,7 +494,7 @@ impl LayerPage {
 
             let stroke = self
                 .traveler
-                .undo(&mut encoder, &mut self.raw, &self.cache)
+                .undo(&mut encoder, &mut self.raw, &self.cache, &mut self.pool)
                 .unwrap();
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -498,9 +507,10 @@ impl LayerPage {
                 &mut cpass,
                 &mut self.raw,
                 &mut self.cache,
+                &mut self.pool,
             );
             self.lp
-                .cache_mipmaps(&mut cpass, &mut self.cache, stroke.dirty);
+                .cache_mipmaps(&mut cpass, &mut self.cache, &mut self.pool, stroke.dirty);
             stroke.cache_recycle_raw(&mut self.raw);
 
             drop(cpass);
@@ -518,7 +528,7 @@ impl LayerPage {
 
             let stroke = self
                 .traveler
-                .redo(&mut encoder, &mut self.raw, &self.cache)
+                .redo(&mut encoder, &mut self.raw, &self.cache, &mut self.pool)
                 .unwrap();
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -531,9 +541,10 @@ impl LayerPage {
                 &mut cpass,
                 &mut self.raw,
                 &mut self.cache,
+                &mut self.pool,
             );
             self.lp
-                .cache_mipmaps(&mut cpass, &mut self.cache, stroke.dirty);
+                .cache_mipmaps(&mut cpass, &mut self.cache, &mut self.pool, stroke.dirty);
             stroke.cache_recycle_raw(&mut self.raw);
 
             drop(cpass);

@@ -10,8 +10,8 @@ use wgpu::{
 
 use crate::{
     layer::{
-        CHUNK_TEXTURE_FORMAT, CacheLayers, LayerPipeline, RawLayer, RawLayerChunk, brush::Stroke,
-        chunks_key_to_rect, rect_chunks_iter,
+        CHUNK_TEXTURE_FORMAT, CacheLayers, ChunkPool, LayerPipeline, RawLayer, RawLayerChunk,
+        brush::Stroke, chunks_key_to_rect, rect_chunks_iter,
     },
     measures::Rectangle,
 };
@@ -73,6 +73,7 @@ impl Traveler {
         encoder: &mut CommandEncoder,
         raw: &mut RawLayer,
         cache: &CacheLayers,
+        pool: &mut ChunkPool,
         dirty: Rectangle,
     ) {
         let stroke = Stroke {
@@ -88,7 +89,8 @@ impl Traveler {
         });
 
         stroke.upload(&self.lp);
-        self.lp.raw_remove_associated(&mut cpass, raw, cache, dirty);
+        self.lp
+            .raw_remove_associated(&mut cpass, raw, cache, pool, dirty);
 
         drop(cpass);
 
@@ -187,6 +189,7 @@ impl Traveler {
         encoder: &mut CommandEncoder,
         raw: &mut RawLayer,
         cache: &CacheLayers,
+        pool: &mut ChunkPool,
     ) -> Option<Stroke> {
         let Some(snapshot) = self.undos.pop_back() else {
             return None;
@@ -208,7 +211,7 @@ impl Traveler {
 
         stroke.upload(&self.lp);
         self.lp
-            .raw_remove_associated(&mut cpass, raw, cache, snapshot.dirty);
+            .raw_remove_associated(&mut cpass, raw, cache, pool, snapshot.dirty);
 
         drop(cpass);
 
@@ -282,6 +285,7 @@ impl Traveler {
         encoder: &mut CommandEncoder,
         raw: &mut RawLayer,
         cache: &CacheLayers,
+        pool: &mut ChunkPool,
     ) -> Option<Stroke> {
         let Some(snapshot) = self.redos.pop() else {
             return None;
@@ -303,7 +307,7 @@ impl Traveler {
 
         stroke.upload(&self.lp);
         self.lp
-            .raw_remove_associated(&mut cpass, raw, cache, snapshot.dirty);
+            .raw_remove_associated(&mut cpass, raw, cache, pool, snapshot.dirty);
 
         drop(cpass);
 

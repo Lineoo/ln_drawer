@@ -121,7 +121,7 @@ impl Stroke {
             timestamp_writes: None,
         });
 
-        lp.raw_remove_associated(&mut cpass, raw, cache, self.dirty);
+        lp.raw_remove_associated(&mut cpass, raw, cache, pool, self.dirty);
         self.merge(lp, &mut cpass, raw, scratch);
         self.cleanup(lp, &mut cpass, scratch, pool);
         if let Some(swap) = swap {
@@ -132,6 +132,7 @@ impl Stroke {
 
         drop(cpass);
         lp.queue.submit([encoder.finish()]);
+        pool.flip();
     }
 
     pub fn discard(
@@ -163,13 +164,14 @@ impl Stroke {
         if let Some(swap) = swap {
             self.cleanup(lp, &mut cpass, swap, pool);
         }
-        lp.raw_remove_associated(&mut cpass, raw, cache, self.dirty);
-        self.cache_generate_without_scratch(lp, &mut cpass, raw, cache);
-        lp.cache_mipmaps(&mut cpass, cache, self.dirty);
+        lp.raw_remove_associated(&mut cpass, raw, cache, pool, self.dirty);
+        self.cache_generate_without_scratch(lp, &mut cpass, raw, cache, pool);
+        lp.cache_mipmaps(&mut cpass, cache, pool, self.dirty);
         self.cache_recycle_raw(raw);
 
         drop(cpass);
         lp.queue.submit([encoder.finish()]);
+        pool.flip();
     }
 
     /// XXX specificated version, we simply set it associated
@@ -199,13 +201,13 @@ impl Stroke {
             for (key, chunk) in scratch.chunks.drain() {
                 let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
                 lp.clear_chunk_direct(cpass, &chunk, chunk_rect);
-                pool.list.push(chunk);
+                pool.stage.push(chunk);
             }
         } else {
             for (key, chunk) in scratch.chunks.drain() {
                 let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
                 lp.clear_chunk(cpass, &chunk, chunk_rect, self.dirty);
-                pool.list.push(chunk);
+                pool.stage.push(chunk);
             }
         }
     }
@@ -218,6 +220,7 @@ impl Stroke {
         cpass: &mut ComputePass,
         raw: &mut RawLayer,
         cache: &mut CacheLayers,
+        pool: &mut ChunkPool,
     ) {
         for chunk_key in rect_chunks_iter(self.dirty, cache.chunk_size) {
             let chunk_rect = chunks_key_to_rect(chunk_key, cache.chunk_size);
@@ -257,7 +260,8 @@ impl Stroke {
                     lp.clear_chunk(cpass, cache_chunk, chunk_rect, self.dirty);
                 }
                 (CacheLayerChunk::Transparent, RawLayerChunk::Filled(raw_chunk)) => {
-                    let cache_chunk = lp.create_empty_chunk(
+                    let cache_chunk = pool.create_empty_chunk(
+                        lp,
                         cache.chunk_size,
                         chunks_key_to_rect(chunk_key, cache.chunk_size),
                     );
@@ -315,6 +319,7 @@ impl DrawsBatch {
         raw: &mut RawLayer,
         cache: &mut CacheLayers,
         bridge: &mut Standalone,
+        pool: &mut ChunkPool,
         brush: &T,
     ) {
         self.upload(lp, bridge);
@@ -328,15 +333,15 @@ impl DrawsBatch {
             timestamp_writes: None,
         });
 
-        self.draw_prepare_scratch(lp, &mut cpass, raw, cache, scratch);
+        self.draw_prepare_scratch(lp, &mut cpass, raw, cache, scratch, pool);
         if let Some(swap) = swap {
-            self.draw_prepare_scratch(lp, &mut cpass, raw, cache, swap);
+            self.draw_prepare_scratch(lp, &mut cpass, raw, cache, swap, pool);
         }
         self.draw_into_scratch(lp, &mut cpass, scratch, swap, bridge, brush);
 
-        lp.raw_remove_associated(&mut cpass, raw, cache, self.dirty);
-        self.cache_generate_with_scratch(lp, &mut cpass, scratch, raw, cache);
-        lp.cache_mipmaps(&mut cpass, cache, self.dirty);
+        lp.raw_remove_associated(&mut cpass, raw, cache, pool, self.dirty);
+        self.cache_generate_with_scratch(lp, &mut cpass, scratch, raw, cache, pool);
+        lp.cache_mipmaps(&mut cpass, cache, pool, self.dirty);
         // raw recycle skipped
 
         drop(cpass);
@@ -391,6 +396,7 @@ impl DrawsBatch {
         raw: &RawLayer,
         cache: &CacheLayers,
         scratch: &mut PlainLayer,
+        pool: &mut ChunkPool,
     ) {
         for key in rect_chunks_iter(self.dirty, scratch.chunk_size) {
             if scratch.chunks.contains_key(&key) {
@@ -412,7 +418,7 @@ impl DrawsBatch {
                 };
 
                 let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
-                let scratch_chunk = lp.create_empty_chunk(scratch.chunk_size, chunk_rect);
+                let scratch_chunk = pool.create_empty_chunk(lp, scratch.chunk_size, chunk_rect);
                 if let Some(raw_chunk) = raw_chunk {
                     lp.copy_chunk_direct(cpass, raw_chunk, chunk_rect, &scratch_chunk, chunk_rect);
                 }
@@ -420,7 +426,7 @@ impl DrawsBatch {
                 scratch.chunks.insert(key, scratch_chunk);
             } else {
                 let chunk_rect = chunks_key_to_rect(key, scratch.chunk_size);
-                let scratch_chunk = lp.create_empty_chunk(scratch.chunk_size, chunk_rect);
+                let scratch_chunk = pool.create_empty_chunk(lp, scratch.chunk_size, chunk_rect);
                 scratch.chunks.insert(key, scratch_chunk);
             }
         }
@@ -529,6 +535,7 @@ impl DrawsBatch {
         scratch: &PlainLayer,
         raw: &mut RawLayer,
         cache: &mut CacheLayers,
+        pool: &mut ChunkPool,
     ) {
         debug_assert_eq!(raw.chunk_size, scratch.chunk_size);
 
@@ -590,7 +597,8 @@ impl DrawsBatch {
                     );
                 }
                 (CacheLayerChunk::Transparent, RawLayerChunk::Filled(raw_chunk)) => {
-                    let cache_chunk = lp.create_empty_chunk(
+                    let cache_chunk = pool.create_empty_chunk(
+                        lp,
                         cache.chunk_size,
                         chunks_key_to_rect(chunk_key, cache.chunk_size),
                     );
@@ -627,7 +635,8 @@ impl DrawsBatch {
                     log::error!("call `lp.raw_remove_associated` before gen cache 0");
                 }
                 (CacheLayerChunk::Transparent, RawLayerChunk::Transparent) => {
-                    let cache_chunk = lp.create_empty_chunk(
+                    let cache_chunk = pool.create_empty_chunk(
+                        lp,
                         cache.chunk_size,
                         chunks_key_to_rect(chunk_key, cache.chunk_size),
                     );

@@ -215,6 +215,7 @@ impl LayerPipeline {
         cpass: &mut ComputePass,
         raw: &mut RawLayer,
         cache: &CacheLayers,
+        pool: &mut ChunkPool,
         dirty: Rectangle,
     ) {
         for chunk_key in rect_chunks_iter(dirty, raw.chunk_size) {
@@ -231,7 +232,8 @@ impl LayerPipeline {
 
             match (cache_chunk, raw_chunk) {
                 (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Associated) => {
-                    let raw_chunk = self.create_empty_chunk(
+                    let raw_chunk = pool.create_empty_chunk(
+                        self,
                         raw.chunk_size,
                         chunks_key_to_rect(chunk_key, raw.chunk_size),
                     );
@@ -259,6 +261,7 @@ impl LayerPipeline {
         &self,
         cpass: &mut ComputePass,
         cache: &mut CacheLayers,
+        pool: &mut ChunkPool,
         dirty: Rectangle,
     ) {
         cpass.set_pipeline(&self.mipmap_pipeline);
@@ -285,7 +288,8 @@ impl LayerPipeline {
                     dispatch_workgroups_divide(cpass, &[dirty, upper_rect, lower_rect], scale);
                 }
                 (CacheLayerChunk::Filled(lower_chunk), CacheLayerChunk::Transparent) => {
-                    let upper_chunk = self.create_empty_chunk(
+                    let upper_chunk = pool.create_empty_chunk(
+                        self,
                         cache.chunk_size,
                         chunks_stack_key_to_rect(upper_key, cache.chunk_size),
                     );
@@ -295,7 +299,8 @@ impl LayerPipeline {
                     cache.swap_chunk(upper_key, CacheLayerChunk::Filled(upper_chunk));
                 }
                 (CacheLayerChunk::Transparent, CacheLayerChunk::Filled(upper_chunk)) => {
-                    let lower_chunk = self.create_empty_chunk(
+                    let lower_chunk = pool.create_empty_chunk(
+                        self,
                         cache.chunk_size,
                         chunks_stack_key_to_rect(lower_key, cache.chunk_size),
                     );
@@ -633,14 +638,21 @@ pub struct Standalone {
     pub rect: Rectangle,
 }
 
-/// chunks here are directly available in full transparent pixels
 pub struct ChunkPool {
+    /// chunks here are directly available in full transparent pixels
     pub list: Vec<Chunk>,
+    /// chunks here are waiting for queue to refresh its rectangle buffer
+    pub stage: Vec<Chunk>,
     pub chunk_size: UVec2,
 }
 
 impl ChunkPool {
-    fn pop(&mut self, lp: &LayerPipeline, chunk_size: UVec2, rect: Rectangle) -> Chunk {
+    fn create_empty_chunk(
+        &mut self,
+        lp: &LayerPipeline,
+        chunk_size: UVec2,
+        rect: Rectangle,
+    ) -> Chunk {
         if chunk_size != self.chunk_size {
             log::warn!(
                 "wrong chunk pool ({}x) are being called (expect {}x)",
@@ -654,6 +666,10 @@ impl ChunkPool {
         } else {
             lp.create_empty_chunk(chunk_size, rect)
         }
+    }
+
+    fn flip(&mut self) {
+        self.list.append(&mut self.stage);
     }
 }
 

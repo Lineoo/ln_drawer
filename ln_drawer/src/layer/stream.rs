@@ -21,7 +21,7 @@ use winit::window::Window;
 
 use crate::{
     layer::{
-        CacheLayerChunk, ChunkKey, LayerPipeline, RawLayerChunk, chunks_key_to_rect,
+        CacheLayerChunk, ChunkKey, ChunkPool, LayerPipeline, RawLayerChunk, chunks_key_to_rect,
         chunks_stack_key_to_rect, point_zoom_to_chunks_stack, rect_chunks_iter,
         rect_chunks_stack_layer_iter, rect_chunks_stack_layer_range,
     },
@@ -69,6 +69,7 @@ pub struct StreamThread {
     config: StreamConfig,
     input_rx: Receiver<ThreadInput>,
     output_tx: Sender<ThreadOutput>,
+    pool: ChunkPool,
     base: ChunksBase,
     queue: LoadQueue,
     camera: CameraInfo,
@@ -129,10 +130,16 @@ impl StreamThread {
         input_rx: Receiver<ThreadInput>,
         output_tx: Sender<ThreadOutput>,
     ) -> Self {
+        let pool = ChunkPool {
+            list: Vec::new(),
+            stage: Vec::new(),
+            chunk_size: config.chunk_size,
+        };
         StreamThread {
             config,
             input_rx,
             output_tx,
+            pool,
             base: ChunksBase {
                 raw: IndexMap::new(),
                 raw_unsaved: HashSet::new(),
@@ -305,7 +312,8 @@ impl StreamThread {
                         }
                     };
                     if let Some(bytes) = result.texture {
-                        let chunk = self.config.lp.create_empty_chunk(
+                        let chunk = self.pool.create_empty_chunk(
+                            &self.config.lp,
                             self.config.chunk_size,
                             chunks_stack_key_to_rect(key, self.config.chunk_size),
                         );
@@ -339,7 +347,8 @@ impl StreamThread {
                         }
                     };
                     if let Some(bytes) = result.texture {
-                        let chunk = self.config.lp.create_empty_chunk(
+                        let chunk = self.pool.create_empty_chunk(
+                            &self.config.lp,
                             self.config.chunk_size,
                             chunks_key_to_rect(key, self.config.chunk_size),
                         );
