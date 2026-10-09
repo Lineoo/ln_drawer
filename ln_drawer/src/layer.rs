@@ -23,10 +23,10 @@ use wgpu::{
     Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
     ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
     ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState, MapMode,
-    PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
-    RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureFormatFeatureFlags,
+    PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState,
+    PrimitiveTopology, Queue, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType,
+    SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess,
+    Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureFormatFeatureFlags,
     TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
     WasmNotSend,
     util::{BufferInitDescriptor, DeviceExt},
@@ -77,11 +77,11 @@ pub struct LayerPipeline {
 
     render_pipelines: RenderPipelines,
     merge_pipelines: MergePipelines,
+    brush_pipelines: BrushPipelines,
     mipmap_pipeline: ComputePipeline,
     copy_pipeline: ComputePipeline,
     readback_pipeline: ComputePipeline,
     clear_pipeline: ComputePipeline,
-    brush_pipelines: BrushPipelines,
 
     support_read_write: bool,
 }
@@ -106,31 +106,6 @@ struct ChunkLayout {
     read: BindGroupLayout,
     write: BindGroupLayout,
     read_write: BindGroupLayout,
-}
-
-struct RenderPipelines {
-    over: RenderPipeline,
-    debug: RenderPipeline,
-}
-
-struct MergePipelines {
-    over: ComputePipeline,
-    #[expect(unused)]
-    replace: ComputePipeline,
-    #[expect(unused)]
-    erase: ComputePipeline,
-}
-
-struct BrushPipelines {
-    blur: ComputePipeline,
-    smudge: ComputePipeline,
-    smudge_prepare_stroke: ComputePipeline,
-    smudge_prepare_draw: ComputePipeline,
-    tint: ComputePipeline,
-    round_over: ComputePipeline,
-    round_erase: ComputePipeline,
-    pixel_replace: ComputePipeline,
-    pixel_erase: ComputePipeline,
 }
 
 impl LayerPipeline {
@@ -181,13 +156,8 @@ impl LayerPipeline {
             &chunk_layout.render,
         );
 
-        let brush_pipelines = brush_pipelines(
-            &device,
-            support_read_write,
-            &draw_dispatch_layout,
-            &chunk_layout,
-        );
-        let merge_pipelines = merge_pipelines(&device, support_read_write, &chunk_layout);
+        let brush_pipelines = brush_pipelines(&device, &draw_dispatch_layout, &chunk_layout);
+        let merge_pipelines = merge_pipelines(&device, &chunk_layout);
         let mipmap_pipeline = mipmap_pipeline(&device, &chunk_layout);
         let copy_pipeline = copy_pipeline(&device, &chunk_layout);
         let readback_pipeline = readback_pipeline(&device, &color_readback_layout, &chunk_layout);
@@ -1343,6 +1313,146 @@ fn create_chunk(
 
 // --- Pipelines --- //
 
+struct RenderPipelines {
+    over: RenderPipeline,
+    debug: RenderPipeline,
+}
+
+struct MergePipelines {
+    over: ComputePipeline,
+    #[expect(unused)]
+    replace: ComputePipeline,
+    #[expect(unused)]
+    erase: ComputePipeline,
+}
+
+struct BrushPipelines {
+    blur: ComputePipeline,
+    smudge: ComputePipeline,
+    smudge_prepare_stroke: ComputePipeline,
+    smudge_prepare_draw: ComputePipeline,
+    tint: ComputePipeline,
+    round_over: ComputePipeline,
+    round_erase: ComputePipeline,
+    pixel_replace: ComputePipeline,
+    pixel_erase: ComputePipeline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum BrushKind {
+    Blur,
+    Pixel,
+    Smudge,
+    Tint,
+    Round,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum BrushStage {
+    PrepareStroke,
+    PrepareDraw,
+    Draw,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum WriteMode {
+    InPlace,
+    OutOfPlace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum CompositeMode {
+    Over,
+    Erase,
+    Replace,
+}
+
+impl MergePipelines {
+    fn get(&self, write: WriteMode, composite: CompositeMode) -> &ComputePipeline {
+        use CompositeMode::*;
+        use WriteMode::*;
+
+        match (write, composite) {
+            (OutOfPlace, Over) => &self.over,
+            (OutOfPlace, Erase) => &self.erase,
+            (OutOfPlace, Replace) => &self.replace,
+            it => panic!("merge pipeline unavailable {it:?}"),
+        }
+    }
+}
+
+impl BrushPipelines {
+    fn get(
+        &self,
+        brush: BrushKind,
+        stage: BrushStage,
+        write: WriteMode,
+        composite: CompositeMode,
+    ) -> &ComputePipeline {
+        use BrushKind::*;
+        use BrushStage::*;
+        use CompositeMode::*;
+        use WriteMode::*;
+
+        match (brush, stage, write, composite) {
+            (Blur, Draw, OutOfPlace, Over) => &self.blur,
+            (Smudge, Draw, OutOfPlace, Over) => &self.smudge,
+            (Smudge, PrepareStroke, OutOfPlace, Over) => &self.smudge_prepare_stroke,
+            (Smudge, PrepareDraw, OutOfPlace, Over) => &self.smudge_prepare_draw,
+            (Tint, Draw, InPlace, Over) => &self.tint,
+            (Round, Draw, InPlace, Over) => &self.round_over,
+            (Round, Draw, InPlace, Erase) => &self.round_erase,
+            (Pixel, Draw, InPlace, Replace) => &self.pixel_replace,
+            (Pixel, Draw, InPlace, Erase) => &self.pixel_erase,
+            it => panic!("brush pipeline unavailable {it:?}"),
+        }
+    }
+}
+
+impl BrushKind {
+    fn shader(self, stage: BrushStage) -> &'static str {
+        use BrushKind::*;
+        use BrushStage::*;
+
+        match (self, stage) {
+            (Blur, Draw) => include_str!("layer/brush/blur.wgsl"),
+            (Pixel, Draw) => include_str!("layer/brush/pixel.wgsl"),
+            (Round, Draw) => include_str!("layer/brush/round.wgsl"),
+            (Smudge, Draw) => include_str!("layer/brush/smudge.wgsl"),
+            (Smudge, PrepareDraw) => include_str!("layer/brush/smudge_prepare_draw.wgsl"),
+            (Smudge, PrepareStroke) => include_str!("layer/brush/smudge_prepare_stroke.wgsl"),
+            (Tint, Draw) => include_str!("layer/brush/tint.wgsl"),
+            it => panic!("brush pipeline unavailable {it:?}"),
+        }
+    }
+}
+
+impl WriteMode {
+    const fn read(self) -> &'static str {
+        match self {
+            WriteMode::InPlace => "read_write",
+            WriteMode::OutOfPlace => "read",
+        }
+    }
+
+    const fn write(self) -> &'static str {
+        match self {
+            WriteMode::InPlace => "read_write",
+            WriteMode::OutOfPlace => "write",
+        }
+    }
+}
+
+impl CompositeMode {
+    const fn formula(self) -> &'static str {
+        match self {
+            CompositeMode::Over => "src + dst * (1 - src.a)",
+            CompositeMode::Erase => "dst * (1 - src.a)",
+            CompositeMode::Replace => "src",
+        }
+    }
+}
+
 fn render_pipelines(
     device: &Device,
     surface_format: TextureFormat,
@@ -1428,13 +1538,20 @@ fn mipmap_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeli
     })
 }
 
-fn merge_pipelines(
-    device: &Device,
-    read_write: bool,
-    chunk_layout: &ChunkLayout,
-) -> MergePipelines {
-    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: Some("layer_merge"),
+fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipelines {
+    let layout_in_place = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_merge_in_place"),
+        bind_group_layouts: &[
+            Some(&chunk_layout.dispatch),
+            Some(&chunk_layout.read_write),
+            Some(&chunk_layout.read),
+            Some(&chunk_layout.read_write),
+        ],
+        immediate_size: 0,
+    });
+
+    let layout_out_of_place = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_merge_out_of_place"),
         bind_group_layouts: &[
             Some(&chunk_layout.dispatch),
             Some(&chunk_layout.read),
@@ -1444,31 +1561,56 @@ fn merge_pipelines(
         immediate_size: 0,
     });
 
-    let new_pipeline = |label, formula| {
-        let constants = [("read", "read"), ("write", "write"), ("composite", formula)];
-
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some(label),
-            source: ShaderSource::Wgsl(
-                shader_compile(include_str!("layer/merge.wgsl"), &constants[..]).into(),
-            ),
-        });
-
-        device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some(label),
-            layout: Some(&layout),
-            module: &shader,
-            entry_point: Some("cs_main"),
-            compilation_options: PipelineCompilationOptions::default(),
-            cache: None,
-        })
-    };
-
     MergePipelines {
-        over: new_pipeline("merge_over", "src + dst * (1 - src.a)"),
-        replace: new_pipeline("merge_replace", "src"),
-        erase: new_pipeline("merge_erase", "dst * (1 - src.a)"),
+        over: merge_pipeline(
+            device,
+            &layout_in_place,
+            "merge_over",
+            WriteMode::InPlace,
+            CompositeMode::Over,
+        ),
+        replace: merge_pipeline(
+            device,
+            &layout_in_place,
+            "merge_replace",
+            WriteMode::InPlace,
+            CompositeMode::Replace,
+        ),
+        erase: merge_pipeline(
+            device,
+            &layout_in_place,
+            "merge_erase",
+            WriteMode::InPlace,
+            CompositeMode::Erase,
+        ),
     }
+}
+
+fn merge_pipeline(
+    device: &Device,
+    layout: &PipelineLayout,
+    label: &str,
+    write: WriteMode,
+    composite: CompositeMode,
+) -> ComputePipeline {
+    let maps = &[
+        ("read", write.read()),
+        ("write", write.write()),
+        ("composite", composite.formula()),
+    ];
+    let wgsl = shader_compile(include_str!("layer/merge.wgsl"), maps);
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some(label),
+        source: ShaderSource::Wgsl(wgsl.into()),
+    });
+    device.create_compute_pipeline(&ComputePipelineDescriptor {
+        label: Some(label),
+        layout: Some(layout),
+        module: &shader,
+        entry_point: Some("cs_main"),
+        compilation_options: PipelineCompilationOptions::default(),
+        cache: None,
+    })
 }
 
 fn copy_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
@@ -1547,27 +1689,9 @@ fn clear_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipelin
 
 fn brush_pipelines(
     device: &Device,
-    read_write: bool,
     dispatch_draw_layout: &BindGroupLayout,
     chunk_layout: &ChunkLayout,
 ) -> BrushPipelines {
-    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: Some("layer_brush"),
-        bind_group_layouts: &match read_write {
-            true => [
-                Some(dispatch_draw_layout),
-                Some(&chunk_layout.read_write),
-                Some(&chunk_layout.read_write),
-            ],
-            false => [
-                Some(dispatch_draw_layout),
-                Some(&chunk_layout.read),
-                Some(&chunk_layout.write),
-            ],
-        },
-        immediate_size: 0,
-    });
-
     let layout_prepare_stroke = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_brush"),
         bind_group_layouts: &[Some(dispatch_draw_layout)],
@@ -1580,7 +1704,17 @@ fn brush_pipelines(
         immediate_size: 0,
     });
 
-    let layout_bridge = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+    let layout_in_place = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("layer_brush"),
+        bind_group_layouts: &[
+            Some(dispatch_draw_layout),
+            Some(&chunk_layout.read_write),
+            Some(&chunk_layout.read_write),
+        ],
+        immediate_size: 0,
+    });
+
+    let layout_out_of_place = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_brush"),
         bind_group_layouts: &[
             Some(dispatch_draw_layout),
@@ -1590,121 +1724,115 @@ fn brush_pipelines(
         immediate_size: 0,
     });
 
-    let constants = match read_write {
-        true => [("read", "read_write"), ("write", "read_write")],
-        false => [("read", "read"), ("write", "write")],
-    };
-
-    // bridge mode does not need read_write bind
-    let constants_bridge = [("read", "read"), ("write", "write")];
-
-    const COMPOSITE_OVER: &str = "src + dst * (1 - src.a)";
-    const COMPOSITE_REPLACE: &str = "src";
-    const COMPOSITE_ERASE: &str = "dst * (1 - src.a)";
     BrushPipelines {
-        blur: general_brush_pipeline(
+        blur: brush_pipeline(
             device,
-            &layout_bridge,
+            &layout_out_of_place,
             "blur",
-            include_str!("layer/brush/blur.wgsl"),
-            &constants_bridge,
-            "",
-            "cs_main",
+            BrushKind::Blur,
+            BrushStage::Draw,
+            WriteMode::OutOfPlace,
+            CompositeMode::Over,
         ),
-        smudge: general_brush_pipeline(
+        smudge: brush_pipeline(
             device,
-            &layout_bridge,
+            &layout_out_of_place,
             "smudge",
-            include_str!("layer/brush/smudge.wgsl"),
-            &constants_bridge,
-            COMPOSITE_OVER,
-            "cs_main",
+            BrushKind::Smudge,
+            BrushStage::Draw,
+            WriteMode::OutOfPlace,
+            CompositeMode::Over,
         ),
-        smudge_prepare_draw: general_brush_pipeline(
+        smudge_prepare_draw: brush_pipeline(
             device,
             &layout_prepare_draw,
             "smudge_prepare_draw",
-            include_str!("layer/brush/smudge_prepare_draw.wgsl"),
-            &constants_bridge,
-            "",
-            "cs_main",
+            BrushKind::Smudge,
+            BrushStage::PrepareDraw,
+            WriteMode::OutOfPlace,
+            CompositeMode::Over,
         ),
-        smudge_prepare_stroke: general_brush_pipeline(
+        smudge_prepare_stroke: brush_pipeline(
             device,
             &layout_prepare_stroke,
             "smudge_prepare_stroke",
-            include_str!("layer/brush/smudge_prepare_stroke.wgsl"),
-            &constants_bridge,
-            "",
-            "cs_main",
+            BrushKind::Smudge,
+            BrushStage::PrepareStroke,
+            WriteMode::OutOfPlace,
+            CompositeMode::Over,
         ),
-        tint: general_brush_pipeline(
+        tint: brush_pipeline(
             device,
-            &layout,
+            &layout_in_place,
             "tint",
-            include_str!("layer/brush/tint.wgsl"),
-            &constants,
-            "",
-            "cs_main",
+            BrushKind::Tint,
+            BrushStage::Draw,
+            WriteMode::InPlace,
+            CompositeMode::Over,
         ),
-        round_over: general_brush_pipeline(
+        round_over: brush_pipeline(
             device,
-            &layout,
+            &layout_in_place,
             "round_over",
-            include_str!("layer/brush/round.wgsl"),
-            &constants[..],
-            COMPOSITE_OVER,
-            "cs_main",
+            BrushKind::Round,
+            BrushStage::Draw,
+            WriteMode::InPlace,
+            CompositeMode::Over,
         ),
-        round_erase: general_brush_pipeline(
+        round_erase: brush_pipeline(
             device,
-            &layout,
+            &layout_in_place,
             "round_erase",
-            include_str!("layer/brush/round.wgsl"),
-            &constants[..],
-            COMPOSITE_ERASE,
-            "cs_main",
+            BrushKind::Round,
+            BrushStage::Draw,
+            WriteMode::InPlace,
+            CompositeMode::Erase,
         ),
-        pixel_replace: general_brush_pipeline(
+        pixel_replace: brush_pipeline(
             device,
-            &layout,
+            &layout_in_place,
             "pixel_over",
-            include_str!("layer/brush/pixel.wgsl"),
-            &constants[..],
-            COMPOSITE_REPLACE,
-            "cs_main",
+            BrushKind::Pixel,
+            BrushStage::Draw,
+            WriteMode::InPlace,
+            CompositeMode::Replace,
         ),
-        pixel_erase: general_brush_pipeline(
+        pixel_erase: brush_pipeline(
             device,
-            &layout,
+            &layout_in_place,
             "pixel_erase",
-            include_str!("layer/brush/pixel.wgsl"),
-            &constants[..],
-            COMPOSITE_ERASE,
-            "cs_main",
+            BrushKind::Pixel,
+            BrushStage::Draw,
+            WriteMode::InPlace,
+            CompositeMode::Erase,
         ),
     }
 }
 
-fn general_brush_pipeline(
+fn brush_pipeline(
     device: &Device,
-    layout: &wgpu::PipelineLayout,
+    layout: &PipelineLayout,
     label: &str,
-    shader: &str,
-    constants: &[(&str, &str)],
-    composite: &str,
-    entry: &str,
+    brush: BrushKind,
+    stage: BrushStage,
+    write: WriteMode,
+    composite: CompositeMode,
 ) -> ComputePipeline {
-    let maps = &[constants, &[("composite", composite)][..]].concat()[..];
+    let maps = &[
+        ("read", write.read()),
+        ("write", write.write()),
+        ("composite", composite.formula()),
+    ];
+    let wgsl = shader_compile(brush.shader(stage), maps);
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some(label),
-        source: ShaderSource::Wgsl(shader_compile(shader, maps).into()),
+        source: ShaderSource::Wgsl(wgsl.into()),
     });
     device.create_compute_pipeline(&ComputePipelineDescriptor {
         label: Some(label),
         layout: Some(layout),
         module: &shader,
-        entry_point: Some(entry),
+        entry_point: Some("cs_main"),
         compilation_options: PipelineCompilationOptions::default(),
         cache: None,
     })
