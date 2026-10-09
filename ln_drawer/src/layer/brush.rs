@@ -446,6 +446,27 @@ impl DrawsBatch {
         }
     }
 
+
+    /// must `upload` before draw
+    pub fn draw_into_standalone<T: Brush + ?Sized>(
+        self,
+        lp: &LayerPipeline,
+        cpass: &mut ComputePass,
+        scratch: &Standalone,
+        brush: &T,
+    ) {
+        if self.prev.is_none() {
+            brush.prepare_stroke(cpass, lp);
+        }
+
+        brush.prepare_draw(cpass, lp, &scratch.chunk.read);
+        if self.bridge { 
+            // TODO refactor brush pipeline generation/add scratch for preview
+        } else {
+            lp.draw_chunk_read_write(cpass, &scratch.chunk, scratch.rect, brush, self.dirty);
+        }
+    }
+
     /// Submit scratch to cache. Raw layer's content will be preserved, but may turn from
     /// associated to filled kind.
     pub fn cache_generate_with_scratch(
@@ -567,23 +588,6 @@ impl DrawsBatch {
                 }
             }
         }
-    }
-
-    /// must `upload` before draw
-    #[deprecated]
-    pub fn draw_standalone<T: Brush + ?Sized>(
-        self,
-        lp: &LayerPipeline,
-        cpass: &mut ComputePass,
-        scratch: &Standalone,
-        brush: &T,
-    ) {
-        if self.prev.is_none() {
-            brush.prepare_stroke(cpass, lp);
-        }
-
-        brush.prepare_draw(cpass, lp, &scratch.chunk.read);
-        lp.draw_chunk_read_write(cpass, &scratch.chunk, scratch.rect, brush, self.dirty);
     }
 }
 

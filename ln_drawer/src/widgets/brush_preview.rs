@@ -79,7 +79,7 @@ impl BrushPreview {
                     && this.visible
                 {
                     let mut generator = world.fetch_mut(this.generator);
-                    generator.paint(&instance.canvas, brush.as_ref());
+                    generator.generate_preview(&instance.canvas, brush.as_ref());
                     this.outdated = false;
                 }
                 None
@@ -135,7 +135,7 @@ impl BrushPreview {
 
 impl BrushPreviewGenerator {
     /// Redraw `brush` over a fixed seed into `canvas`.
-    pub fn paint(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
+    pub fn generate_preview(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
         let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
             label: Some("preview_paint_clear"),
         });
@@ -152,15 +152,15 @@ impl BrushPreviewGenerator {
         self.lp.queue.submit([encoder.finish()]);
 
         if brush.replace_mode() {
-            self.paint_seed(canvas);
+            self.draw_background(canvas);
         }
 
-        self.paint_stroke(canvas, brush);
+        self.draw_stroke(canvas, brush);
     }
 
     /// Two vertical bands, one red on the left and one blue on the right, each half the canvas
     /// wide, used as the preview's background.
-    fn paint_seed(&mut self, canvas: &Standalone) {
+    fn draw_background(&mut self, canvas: &Standalone) {
         let w = canvas.rect.width() as f32;
         let h = canvas.rect.height() as f32;
         let radius = w / 4.0 + 5.0;
@@ -201,15 +201,15 @@ impl BrushPreviewGenerator {
             batch.upload_dispatch(&self.lp);
 
             let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("preview_paint_seed"),
+                label: Some("preview_draw_background"),
             });
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("preview_paint_seed"),
+                label: Some("preview_draw_background"),
                 timestamp_writes: None,
             });
 
-            batch.draw_standalone(&self.lp, &mut cpass, canvas, &brush);
+            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, &brush);
 
             drop(cpass);
 
@@ -225,15 +225,15 @@ impl BrushPreviewGenerator {
             batch.upload_dispatch(&self.lp);
 
             let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("preview_paint_seed"),
+                label: Some("preview_draw_background"),
             });
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("preview_paint_seed"),
+                label: Some("preview_draw_background"),
                 timestamp_writes: None,
             });
 
-            batch.draw_standalone(&self.lp, &mut cpass, canvas, &brush);
+            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, &brush);
 
             drop(cpass);
 
@@ -242,7 +242,7 @@ impl BrushPreviewGenerator {
     }
 
     /// A gentle S-curve with a pressure ramp, drawn with the previewed brush.
-    fn paint_stroke(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
+    fn draw_stroke(&mut self, canvas: &Standalone, brush: &dyn BrushParams) {
         const STEPS: i32 = 8;
 
         let mut stroke = Stroke::new(brush);
@@ -265,15 +265,15 @@ impl BrushPreviewGenerator {
             batch.upload_dispatch(&self.lp);
 
             let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("paint_seed"),
+                label: Some("preview_draw_stroke"),
             });
 
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("draw_active"),
+                label: Some("preview_draw_stroke"),
                 timestamp_writes: None,
             });
 
-            batch.draw_standalone(&self.lp, &mut cpass, canvas, brush);
+            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, brush);
 
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);
