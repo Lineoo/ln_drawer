@@ -340,6 +340,10 @@ impl LayerPage {
             return;
         };
 
+        if !batch.satisfied(raw, cache) {
+            return;
+        }
+
         stroke.confirm_batch(&batch);
         batch.draw(lp, scratch, raw, cache, bridge, brush);
     }

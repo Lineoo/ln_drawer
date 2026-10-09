@@ -295,11 +295,14 @@ impl StreamThread {
                 ChunkKeyKind::Cache(key) => {
                     let result = match read.load_cache((self.config.page, key)) {
                         Ok(result) => result,
-                        Err(_) => ChunkLoadResult {
-                            texture: None,
-                            associated: false,
-                            unsaved: true,
-                        },
+                        Err(err) => {
+                            log::error!("loading {key:?} from database error: {err}");
+                            ChunkLoadResult {
+                                texture: None,
+                                associated: false,
+                                unsaved: true,
+                            }
+                        }
                     };
                     if let Some(bytes) = result.texture {
                         let texture = self.config.lp.create_chunk_texture(self.config.chunk_size);
@@ -323,11 +326,14 @@ impl StreamThread {
                 ChunkKeyKind::Raw(key) => {
                     let result = match read.load_raw((self.config.page, key)) {
                         Ok(result) => result,
-                        Err(_) => ChunkLoadResult {
-                            texture: None,
-                            associated: false,
-                            unsaved: true,
-                        },
+                        Err(err) => {
+                            log::error!("loading {key:?} from database error: {err}");
+                            ChunkLoadResult {
+                                texture: None,
+                                associated: false,
+                                unsaved: true,
+                            }
+                        }
                     };
                     if let Some(bytes) = result.texture {
                         let texture = self.config.lp.create_chunk_texture(self.config.chunk_size);
@@ -561,22 +567,37 @@ impl ChunksBase {
     }
 
     fn raw_insert(&mut self, key: (i32, i32), chunk: RawLayerChunk) {
-        if matches!(chunk, RawLayerChunk::Filled(_)) {
+        if matches!(
+            chunk,
+            RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_)
+        ) {
             self.raw_real_cnt += 1;
         }
-        self.raw.insert(key, chunk);
+        let old = self.raw.insert(key, chunk);
+        if matches!(
+            old,
+            Some(RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_))
+        ) {
+            self.raw_real_cnt -= 1;
+        }
     }
 
     fn cache_insert(&mut self, key: (i32, i32, u8), chunk: CacheLayerChunk) {
         if matches!(chunk, CacheLayerChunk::Filled(_)) {
             self.cache_real_cnt += 1;
         }
-        self.cache.insert(key, chunk);
+        let old = self.cache.insert(key, chunk);
+        if matches!(old, Some(CacheLayerChunk::Filled(_))) {
+            self.cache_real_cnt -= 1;
+        }
     }
 
     fn raw_swap_remove_index(&mut self, index: usize) -> Option<((i32, i32), RawLayerChunk)> {
         let (key, chunk) = self.raw.swap_remove_index(index)?;
-        if matches!(chunk, RawLayerChunk::Filled(_)) {
+        if matches!(
+            chunk,
+            RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_)
+        ) {
             self.raw_real_cnt -= 1;
         }
         Some((key, chunk))
@@ -611,8 +632,10 @@ impl LoadQueue {
         self.cache_front = 0;
         self.cache.clear();
 
-        for key in rect_chunks_iter(camera.rect, config.chunk_size) {
-            self.raw.insert(key);
+        if camera.center.2 <= 1 {
+            for key in rect_chunks_iter(camera.rect, config.chunk_size) {
+                self.raw.insert(key);
+            }
         }
 
         for mipmap in camera.center.2.saturating_sub(1)..config.mipmap_caps {
@@ -660,7 +683,7 @@ impl LoadQueue {
     }
 
     fn still_has_tasks(&self) -> bool {
-        self.cache_front < self.cache.len()
+        self.cache_front < self.cache.len() || self.raw_front < self.raw.len()
     }
 }
 

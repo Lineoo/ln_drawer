@@ -24,7 +24,9 @@ use crate::{
             smudge::SmudgeBrush,
             tint::TintBrush,
         },
-        chunks_key_to_rect, rect_chunks_iter, write_dispatch,
+        chunks_key_to_rect, rect_chunks_iter, rect_chunks_stack_iter,
+        stream::ThreadInput,
+        write_dispatch,
     },
     measures::{FI64Ext, Rectangle},
 };
@@ -171,6 +173,9 @@ impl Stroke {
         scratch: &PlainLayer,
     ) {
         for (&chunk_key, _scratch_chunk) in &scratch.chunks {
+            raw.thread_tx
+                .send(ThreadInput::MarkRawUnsaved(chunk_key))
+                .unwrap();
             raw.swap_chunk(chunk_key, RawLayerChunk::Associated);
         }
     }
@@ -210,11 +215,18 @@ impl Stroke {
             let chunk_rect = chunks_key_to_rect(chunk_key, cache.chunk_size);
 
             let Some(cache_chunk) = cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
+                log::error!("cache not loaded");
                 continue;
             };
             let Some(raw_chunk) = raw.chunks.get(&chunk_key) else {
+                log::error!("raw not loaded");
                 continue;
             };
+
+            cache
+                .thread_tx
+                .send(ThreadInput::MarkCacheUnsaved((chunk_key.0, chunk_key.1, 0)))
+                .unwrap();
 
             match (cache_chunk, raw_chunk) {
                 (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Filled(raw_chunk)) => {
@@ -344,6 +356,22 @@ impl DrawsBatch {
         (lp.queue).write_buffer(&lp.draws_array, 0, &self.draws);
     }
 
+    pub fn satisfied(&self, raw: &RawLayer, cache: &CacheLayers) -> bool {
+        for key in rect_chunks_iter(self.dirty, raw.chunk_size) {
+            if !raw.chunks.contains_key(&key) {
+                return false;
+            }
+        }
+
+        for key in rect_chunks_stack_iter(self.dirty, cache.chunk_size, cache.mipmap_cap) {
+            if !cache.chunks.contains_key(&key) {
+                return false;
+            }
+        }
+
+        true
+    }
+
     pub fn draw_prepare_scratch(
         &self,
         lp: &LayerPipeline,
@@ -446,7 +474,6 @@ impl DrawsBatch {
         }
     }
 
-
     /// must `upload` before draw
     pub fn draw_into_standalone<T: Brush + ?Sized>(
         self,
@@ -460,7 +487,7 @@ impl DrawsBatch {
         }
 
         brush.prepare_draw(cpass, lp, &scratch.chunk.read);
-        if self.bridge { 
+        if self.bridge {
             // TODO refactor brush pipeline generation/add scratch for preview
         } else {
             lp.draw_chunk_read_write(cpass, &scratch.chunk, scratch.rect, brush, self.dirty);
@@ -490,6 +517,11 @@ impl DrawsBatch {
                 log::error!("raw not loaded");
                 continue;
             };
+
+            cache
+                .thread_tx
+                .send(ThreadInput::MarkCacheUnsaved((chunk_key.0, chunk_key.1, 0)))
+                .unwrap();
 
             match (cache_chunk, raw_chunk) {
                 (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Filled(raw_chunk)) => {

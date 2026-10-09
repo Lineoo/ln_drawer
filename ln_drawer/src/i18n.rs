@@ -1,32 +1,35 @@
-static TRF: std::sync::LazyLock<toml_edit::Document<&'static str>> = std::sync::LazyLock::new(|| {
-    let locale = sys_locale::get_locale().unwrap_or_default();
-    let locale = icu::locale::Locale::try_from_str(&locale).unwrap();
+static TRF: std::sync::LazyLock<toml_edit::Document<&'static str>> =
+    std::sync::LazyLock::new(|| {
+        let locale = sys_locale::get_locale().unwrap_or_default();
+        let locale = icu::locale::Locale::try_from_str(&locale).unwrap();
 
-    let fallbacker = icu::locale::fallback::LocaleFallbacker::new();
-    let mut iter = fallbacker
-        .for_config(Default::default())
-        .fallback_for(locale.id.into());
+        let fallbacker = icu::locale::fallback::LocaleFallbacker::new();
+        let mut iter = fallbacker
+            .for_config(Default::default())
+            .fallback_for(locale.id.into());
 
-    let table = loop {
-        let label = iter.get().to_string();
-        log::debug!("match {label}");
-        match &label[..] {
-            "zh-CN" => break include_str!("../lang/zh-CN.toml"),
-            "zh-Hant" => break include_str!("../lang/zh-Hant.toml"),
-            "zh" => break include_str!("../lang/zh-CN.toml"),
-            "en" => break include_str!("../lang/en.toml"),
-            "jp" => break include_str!("../lang/jp.toml"),
-            "ar" => break include_str!("../lang/ar.toml"),
-            "und" => break include_str!("../lang/en.toml"),
-            _ => iter.step(),
+        let table = loop {
+            let label = iter.get().to_string();
+            log::debug!("match {label}");
+            match &label[..] {
+                "zh-CN" => break include_str!("../lang/zh-CN.toml"),
+                "zh-Hant" => break include_str!("../lang/zh-Hant.toml"),
+                "zh" => break include_str!("../lang/zh-CN.toml"),
+                "en" => break include_str!("../lang/en.toml"),
+                "jp" => break include_str!("../lang/jp.toml"),
+                "ar" => break include_str!("../lang/ar.toml"),
+                "und" => break include_str!("../lang/en.toml"),
+                _ => iter.step(),
+            };
         };
-    };
 
-    toml_edit::Document::parse(table).unwrap()
-});
+        toml_edit::Document::parse(table).unwrap()
+    });
 
 static FALLBACK_TRF: std::sync::LazyLock<toml_edit::Document<&'static str>> =
-    std::sync::LazyLock::new(|| toml_edit::Document::parse(include_str!("../lang/en.toml")).unwrap());
+    std::sync::LazyLock::new(|| {
+        toml_edit::Document::parse(include_str!("../lang/en.toml")).unwrap()
+    });
 
 pub fn tr(key: &str) -> &str {
     let mut rf = TRF.as_item();

@@ -75,10 +75,7 @@ impl LayerInput {
             );
             let shadow_rect = brush_rect + (event.pointer.tilt * 48.0).as_ivec2();
             world.queue_trigger(wrapper.cursor, SetWidgetRectangle(brush_rect));
-            world.queue_trigger(
-                wrapper.cursor_shadow,
-                SetWidgetRectangle(shadow_rect),
-            );
+            world.queue_trigger(wrapper.cursor_shadow, SetWidgetRectangle(shadow_rect));
 
             match event.status {
                 PointerHoverStatus::Enter => {
