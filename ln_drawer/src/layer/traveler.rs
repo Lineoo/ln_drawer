@@ -22,7 +22,7 @@ const ATLAS_TEXTURE_SIZE: UVec2 = UVec2::splat(2048);
 
 /// The undo/redo system
 pub struct Traveler {
-    layer: Arc<LayerPipeline>,
+    lp: Arc<LayerPipeline>,
     undos: VecDeque<Snapshot>,
     redos: Vec<Snapshot>,
     atlas: Vec<AtlasTexture>,
@@ -51,9 +51,9 @@ struct AtlasTexture {
 }
 
 impl Traveler {
-    pub fn new(layer: Arc<LayerPipeline>) -> Traveler {
+    pub fn new(lp: Arc<LayerPipeline>) -> Traveler {
         Traveler {
-            layer,
+            lp,
             undos: VecDeque::new(),
             redos: Vec::new(),
             atlas: Vec::new(),
@@ -166,12 +166,20 @@ impl Traveler {
 
         debug_assert_eq!(snapshot.chunk_size, raw.chunk_size);
 
+        let stroke = Stroke {
+            prev: None,
+            dirty: snapshot.dirty,
+            replace: true,
+            bridge: false,
+        };
+
         let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("page_undo"),
             timestamp_writes: None,
         });
 
-        self.layer
+        stroke.upload(&self.lp);
+        self.lp
             .raw_remove_associated(&mut cpass, raw, cache, snapshot.dirty);
 
         drop(cpass);
@@ -238,12 +246,7 @@ impl Traveler {
             ..snapshot
         });
 
-        Some(Stroke {
-            prev: None,
-            dirty: snapshot.dirty,
-            replace: true,
-            bridge: false,
-        })
+        Some(stroke)
     }
 
     pub fn redo(
@@ -256,6 +259,13 @@ impl Traveler {
             return None;
         };
 
+        let stroke = Stroke {
+            prev: None,
+            dirty: snapshot.dirty,
+            replace: true,
+            bridge: false,
+        };
+
         debug_assert_eq!(snapshot.chunk_size, raw.chunk_size);
 
         let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -263,7 +273,8 @@ impl Traveler {
             timestamp_writes: None,
         });
 
-        self.layer
+        stroke.upload(&self.lp);
+        self.lp
             .raw_remove_associated(&mut cpass, raw, cache, snapshot.dirty);
 
         drop(cpass);
@@ -330,12 +341,7 @@ impl Traveler {
             ..snapshot
         });
 
-        Some(Stroke {
-            prev: None,
-            dirty: snapshot.dirty,
-            replace: true,
-            bridge: false,
-        })
+        Some(stroke)
     }
 
     pub fn undo_available(&mut self, raw: &RawLayer) -> bool {
@@ -453,7 +459,7 @@ impl Traveler {
     fn new_atlas(&mut self) -> (usize, &mut AtlasTexture) {
         let index = self.atlas.len();
 
-        let texture = self.layer.device.create_texture(&TextureDescriptor {
+        let texture = self.lp.device.create_texture(&TextureDescriptor {
             label: Some("traveler_atlas"),
             size: Extent3d {
                 width: ATLAS_TEXTURE_SIZE.x,

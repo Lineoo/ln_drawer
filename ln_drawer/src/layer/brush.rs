@@ -122,7 +122,7 @@ impl Stroke {
         self.merge(lp, &mut cpass, raw, scratch);
         self.cleanup(lp, &mut cpass, scratch, pool);
         // skip cache generation since it is already good
-        self.cache_recycle_raw(scratch, raw);
+        self.cache_recycle_raw(raw);
 
         drop(cpass);
         lp.queue.submit([encoder.finish()]);
@@ -154,9 +154,9 @@ impl Stroke {
 
         self.cleanup(lp, &mut cpass, scratch, pool);
         lp.raw_remove_associated(&mut cpass, raw, cache, self.dirty);
-        // TODO cache generate without scratch
+        self.cache_generate_without_scratch(lp, &mut cpass, raw, cache);
         lp.cache_mipmaps(&mut cpass, cache, self.dirty);
-        self.cache_recycle_raw(scratch, raw);
+        self.cache_recycle_raw(raw);
 
         drop(cpass);
         lp.queue.submit([encoder.finish()]);
@@ -267,8 +267,8 @@ impl Stroke {
 
     /// XXX This is specificated version since this version we dont have overlap
     /// objects yet so we assume it will be associated. Not the case soon later.
-    pub fn cache_recycle_raw(&self, scratch: &PlainLayer, raw: &mut RawLayer) {
-        for &chunk_key in scratch.chunks.keys() {
+    pub fn cache_recycle_raw(&self, raw: &mut RawLayer) {
+        for chunk_key in rect_chunks_iter(self.dirty, raw.chunk_size) {
             if let Some(RawLayerChunk::Filled(chunk)) = raw.chunks.get(&chunk_key) {
                 raw.swap_chunk(chunk_key, RawLayerChunk::AssociatedCached(chunk.clone()));
             }

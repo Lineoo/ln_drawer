@@ -481,7 +481,15 @@ impl LayerPage {
                 timestamp_writes: None,
             });
 
-            stroke.merge(&self.lp, &mut cpass, &mut self.raw, &self.scratch);
+            stroke.cache_generate_without_scratch(
+                &self.lp,
+                &mut cpass,
+                &mut self.raw,
+                &mut self.cache,
+            );
+            self.lp
+                .cache_mipmaps(&mut cpass, &mut self.cache, stroke.dirty);
+            stroke.cache_recycle_raw(&mut self.raw);
 
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);
@@ -514,7 +522,7 @@ impl LayerPage {
             );
             self.lp
                 .cache_mipmaps(&mut cpass, &mut self.cache, stroke.dirty);
-            stroke.cache_recycle_raw(&self.scratch, &mut self.raw);
+            stroke.cache_recycle_raw(&mut self.raw);
 
             drop(cpass);
             self.lp.queue.submit([encoder.finish()]);

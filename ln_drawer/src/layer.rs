@@ -268,6 +268,7 @@ impl LayerPipeline {
                         chunks_key_to_rect(chunk_key, raw.chunk_size),
                     );
                     self.copy_chunk_direct(cpass, cache_chunk, chunk_rect, &raw_chunk, chunk_rect);
+                    raw.swap_chunk(chunk_key, RawLayerChunk::Filled(raw_chunk));
                 }
                 (CacheLayerChunk::Transparent, RawLayerChunk::Associated) => {
                     raw.swap_chunk(chunk_key, RawLayerChunk::Transparent);
@@ -278,7 +279,10 @@ impl LayerPipeline {
                 ) => {
                     raw.swap_chunk(chunk_key, RawLayerChunk::Filled(raw_chunk.clone()));
                 }
-                _ => {}
+                (CacheLayerChunk::Filled(_), RawLayerChunk::Transparent) => {}
+                (CacheLayerChunk::Filled(_), RawLayerChunk::Filled(_)) => {}
+                (CacheLayerChunk::Transparent, RawLayerChunk::Transparent) => {}
+                (CacheLayerChunk::Transparent, RawLayerChunk::Filled(_)) => {}
             }
         }
     }
