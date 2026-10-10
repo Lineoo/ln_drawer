@@ -78,7 +78,6 @@ impl TextureQuad {
 
         let camera = self.camera;
         let control = world.insert(RenderControl {
-            camera: Some(camera),
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
                 let quad = world.fetch(this);

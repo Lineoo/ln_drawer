@@ -11,6 +11,7 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{Render, RenderControl, RenderExtra},
     save::{Autosave, Save},
+    tools::collider::ToolCollider,
 };
 
 pub struct Camera {
@@ -25,6 +26,8 @@ pub struct Camera {
     pub seq_dirty: Vec<(Handle<RenderControl>, HandleAny, isize)>,
     pub seq_remove: Vec<Handle<RenderControl>>,
     pub sequence: Vec<(Handle<RenderControl>, HandleAny, isize)>,
+
+    pub colliders: Vec<Handle<ToolCollider>>,
 
     queue: Queue,
 }
@@ -145,14 +148,15 @@ impl Camera {
         });
 
         Camera {
-            surface_size: size,
             center: desc.center,
             zoom: desc.zoom,
+            surface_size: size,
+            bind,
+            uniform,
             seq_dirty: Vec::new(),
             seq_remove: Vec::new(),
             sequence: Vec::new(),
-            bind,
-            uniform,
+            colliders: Vec::new(),
             queue: render.queue.clone(),
         }
     }

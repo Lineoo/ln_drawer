@@ -70,7 +70,6 @@ impl BrushPreview {
             canvas: preview_canvas,
         });
         let control = world.insert(RenderControl {
-            camera: None,
             prepare: Some(Box::new(move |world| {
                 let mut this = world.fetch_mut(this);
                 let instance = world.fetch(instance);

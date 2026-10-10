@@ -69,7 +69,6 @@ impl Text {
         let mut buffer = Buffer::new(&mut pipeline.font_system, upscale_metrics);
 
         let control = world.insert(RenderControl {
-            camera: Some(camera),
             prepare: Some(Box::new(move |world| {
                 let mut this = world.fetch_mut(this);
 

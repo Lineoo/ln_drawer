@@ -613,7 +613,6 @@ impl Element for LayerPage {
         });
 
         let control = world.insert(RenderControl {
-            camera: Some(main_camera),
             prepare: Some(Box::new(move |world| {
                 let this = &mut *world.fetch_mut(this);
                 this.process_stream(world);

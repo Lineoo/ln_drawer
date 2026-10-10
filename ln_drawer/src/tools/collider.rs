@@ -129,11 +129,10 @@ fn hit_camera(
     if !clip.contains(screen) || visited.contains(&camera) {
         return None;
     }
+
     visited.push(camera);
+    let camera_ref = world.fetch(camera);
 
-    let camera_ref = world.try_fetch(camera).ok()?;
-
-    // Nested containers draw after the rest of the camera, so their content sits on top.
     let mut containers = Vec::new();
     world.foreach_fetch::<Container>(|container| {
         if container.parent == camera {

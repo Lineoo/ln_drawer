@@ -130,7 +130,6 @@ impl Container {
         });
 
         let control = world.insert(RenderControl {
-            camera: Some(parent),
             prepare: None,
             draw: Some(Box::new(move |world, rpass, extra| {
                 let lnwindow = world.single_fetch::<Lnwindow>();

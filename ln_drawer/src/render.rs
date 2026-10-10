@@ -74,13 +74,6 @@ type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, RenderExtra<
 
 /// Need to call `RenderControl::reorder` before it can render normally.
 pub struct RenderControl {
-    /// The camera this control draws into.
-    ///
-    /// `Some` for anything registered in a camera sequence (drawables and ordered prepare
-    /// ticks); `None` for controls that only need a `prepare` pass and are cleaned up through
-    /// their owner, such as animations.
-    pub camera: Option<Handle<Camera>>,
-
     /// prepare to render and give related information
     pub prepare: Option<RenderPrepareCommand>,
 
@@ -646,16 +639,4 @@ impl Element for Render {
     }
 }
 
-impl Element for RenderControl {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        if let Some(camera) = self.camera {
-            world.dependency(this, camera);
-        }
-    }
-
-    fn when_remove(&mut self, world: &World, this: Handle<Self>) {
-        if let Some(camera) = self.camera {
-            Self::reorder(camera, None, world, this);
-        }
-    }
-}
+impl Element for RenderControl {}
