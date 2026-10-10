@@ -272,7 +272,7 @@ impl Autosave {
 
 #[cfg(target_os = "android")]
 pub fn get_file_path(world: &World, filename: &str) -> PathBuf {
-    let app = world.single_fetch::<LnAndroid>().unwrap();
+    let app = world.single_fetch::<LnAndroid>();
     let mut path = app.0.external_data_path().unwrap();
     path.push(filename);
     path
