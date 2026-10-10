@@ -7,8 +7,8 @@ use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{
-        Render, RenderControl, ScissorRect,
-        camera::{Camera, CameraBind, CameraDescriptor, CameraUpdated},
+        RenderControl, ScissorRect,
+        camera::{Camera, CameraDescriptor, SetCameraOutdated},
     },
     theme::Theme,
     tools::{
@@ -41,20 +41,12 @@ impl Descriptor for ContainerDescriptor {
     type Target = (Handle<Container>, Handle<Camera>);
 
     fn when_build(self, world: &World) -> Self::Target {
-        let render = world.single_fetch::<Render>();
-        let camera_bind = world.single_fetch::<CameraBind>();
         let parent = world.fetch(self.parent);
-        let descriptor = CameraDescriptor {
-            size: parent.size,
+        let camera = world.build(CameraDescriptor {
             center: parent.center,
             zoom: parent.zoom,
-        };
-        let camera = Camera::from_descriptor(descriptor, &render, &camera_bind.layout);
-        drop(parent);
-        drop(camera_bind);
-        drop(render);
+        });
 
-        let camera = world.insert(camera);
         let container = world.insert(Container {
             parent: self.parent,
             camera,
@@ -124,7 +116,7 @@ impl Container {
         world.dependency(collider, handle);
         world.dependency(camera, handle);
 
-        world.observer(parent, move |&CameraUpdated, world| {
+        world.observer(parent, move |&SetCameraOutdated, world| {
             let Ok(state) = world.try_fetch(state) else {
                 return;
             };
@@ -305,7 +297,7 @@ fn set_camera_center(world: &World, camera: Handle<Camera>, center: I64Vec2) {
         return;
     };
     if camera.center != center {
-        world.queue_trigger(camera.handle(), CameraUpdated);
+        world.queue_trigger(camera.handle(), SetCameraOutdated);
         camera.center = center;
     }
 }

@@ -14,9 +14,10 @@ use crate::{
 };
 
 pub struct Camera {
-    pub size: UVec2,
     pub center: I64Vec2,
     pub zoom: i64,
+
+    pub surface_size: UVec2,
 
     pub bind: BindGroup,
     pub uniform: Buffer,
@@ -30,7 +31,6 @@ pub struct Camera {
 
 #[derive(Debug)]
 pub struct CameraDescriptor {
-    pub size: UVec2,
     pub center: I64Vec2,
     pub zoom: i64,
 }
@@ -50,11 +50,10 @@ pub struct UICamera(pub Handle<Camera>);
 /// painting camera needs gesture state, so it is exposed through this singleton wrapper.
 pub struct MainCameraUtils(pub Handle<CameraUtils>);
 
-pub struct CameraUpdated;
+pub struct SetCameraOutdated;
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct RootCameraDescriptor {
-    pub size: UVec2,
     pub center: I64Vec2,
     pub zoom: i64,
 }
@@ -83,17 +82,16 @@ impl Element for Camera {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>();
         let obs = world.observer(lnwindow, move |event: &WindowEvent, world| {
-            if let WindowEvent::SurfaceResized(size) = event {
-                let mut camera = world.fetch_mut(this);
-
-                camera.size.x = size.width;
-                camera.size.y = size.height;
+            if let WindowEvent::SurfaceResized(_) = event {
+                world.queue_trigger(this, SetCameraOutdated);
             }
         });
         world.dependency(obs, this);
-        world.observer(this, move |&CameraUpdated, world| {
-            let this = world.fetch(this);
+        world.observer(this, move |&SetCameraOutdated, world| {
+            let mut this = world.fetch_mut(this);
             let lnwindow = world.single_fetch::<Lnwindow>();
+            let size = lnwindow.window.surface_size();
+            this.surface_size = UVec2::new(size.width, size.height);
             this.upload();
             lnwindow.window.request_redraw();
         });
@@ -115,9 +113,10 @@ impl Camera {
         layout: &BindGroupLayout,
     ) -> Camera {
         let device = &render.device;
+        let size = UVec2::new(render.config.width, render.config.height);
 
         let transform = Mat2::from_scale_angle(
-            Vec2::splat(desc.zoom.q32_as_f64().exp2() as f32) * 2. / desc.size.as_vec2(),
+            Vec2::splat(desc.zoom.q32_as_f64().exp2() as f32) * 2. / size.as_vec2(),
             0.0,
         );
         let translate = desc.center;
@@ -146,7 +145,7 @@ impl Camera {
         });
 
         Camera {
-            size: desc.size,
+            surface_size: size,
             center: desc.center,
             zoom: desc.zoom,
             seq_dirty: Vec::new(),
@@ -205,7 +204,7 @@ impl Camera {
 
     pub fn screen_to_world_relative(&self, delta: DVec2) -> I64Vec2 {
         let scale = self.zoom.q32_as_f64().exp2();
-        let pf = delta / scale * self.size.as_dvec2() / 2.0;
+        let pf = delta / scale * self.surface_size.as_dvec2() / 2.0;
         I64Vec2::q32_from_f64(pf)
     }
 
@@ -215,12 +214,12 @@ impl Camera {
 
     pub fn world_to_screen_relative(&self, point: I64Vec2) -> DVec2 {
         let scale = self.zoom.q32_as_f64().exp2();
-        let pf = point.q32_as_f64() * 2.0 / self.size.as_dvec2() * scale;
+        let pf = point.q32_as_f64() * 2.0 / self.surface_size.as_dvec2() * scale;
         pf.into()
     }
 
     pub fn world_view_rect(&self) -> Rectangle {
-        Self::view_rect(self.zoom, self.size, self.center)
+        Self::view_rect(self.zoom, self.surface_size, self.center)
     }
 
     pub fn view_rect(zoom: i64, size: UVec2, center: I64Vec2) -> Rectangle {
@@ -252,11 +251,7 @@ impl Camera {
 
     pub fn init_main_camera(world: &World) -> Handle<Camera> {
         let save = world.single_fetch::<Save>();
-
-        let lnwindow = world.single_fetch::<Lnwindow>();
-        let size = lnwindow.window.surface_size();
         let camera = world.build(CameraDescriptor {
-            size: UVec2::new(size.width, size.height),
             center: save.sn.main_camera.center,
             zoom: save.sn.main_camera.zoom,
         });
@@ -264,7 +259,6 @@ impl Camera {
         let autosave = world.insert(Autosave(Box::new(move |world, task| {
             let camera = world.fetch(camera);
             task.scene.main_camera = RootCameraDescriptor {
-                size: camera.size,
                 center: camera.center,
                 zoom: camera.zoom,
             };
@@ -277,7 +271,7 @@ impl Camera {
 
     fn upload(&self) {
         let transform = Mat2::from_scale_angle(
-            Vec2::splat(self.zoom.q32_as_f64().exp2() as f32) * 2. / self.size.as_vec2(),
+            Vec2::splat(self.zoom.q32_as_f64().exp2() as f32) * 2. / self.surface_size.as_vec2(),
             0.0,
         );
         let translate = self.center;
@@ -320,7 +314,7 @@ impl CameraUtils {
             anchor_zoom: 0,
             anchor_cursor: DVec2::ZERO,
             anchor_distance: 1.0,
-            camera_size: camera.size,
+            camera_size: camera.surface_size,
             anchor_lock: false,
         }
     }
@@ -417,7 +411,7 @@ impl CameraUtils {
     }
 
     pub fn apply_to_camera(&self, world: &World, camera: Handle<Camera>) {
-        world.queue_trigger(camera, CameraUpdated);
+        world.queue_trigger(camera, SetCameraOutdated);
         let mut camera = world.fetch_mut(camera);
         camera.zoom = self.camera_zoom;
         camera.center = self.camera_center;

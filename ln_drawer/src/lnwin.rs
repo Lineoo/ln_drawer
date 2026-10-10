@@ -19,7 +19,7 @@ use crate::{
     render::{
         Render,
         camera::{
-            Camera, CameraDescriptor, CameraUpdated, CameraUtils, MainCamera, MainCameraUtils,
+            Camera, CameraDescriptor, SetCameraOutdated, CameraUtils, MainCamera, MainCameraUtils,
             UICamera,
         },
     },
@@ -162,12 +162,9 @@ impl Element for Lnwindow {
             // Setup cameras
 
             let lnwindow = world.fetch(this);
-            let size = lnwindow.window.surface_size();
 
             let main_camera = Camera::init_main_camera(world);
-
             let ui_camera = world.build(CameraDescriptor {
-                size: UVec2::new(size.width, size.height),
                 center: I64Vec2::ZERO,
                 zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
             });
@@ -206,7 +203,7 @@ impl Element for Lnwindow {
                         )),
                     );
 
-                    world.queue_trigger(camera.handle(), CameraUpdated);
+                    world.queue_trigger(camera.handle(), SetCameraOutdated);
                     camera.zoom = i64::q32_from_f64(scale.log2());
                 }
             });

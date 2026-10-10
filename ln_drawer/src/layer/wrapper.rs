@@ -29,7 +29,7 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{
         Render, RenderControl, RenderExtra, RenderInformation,
-        camera::{CameraBind, CameraUpdated, MainCamera, UICamera},
+        camera::{CameraBind, SetCameraOutdated, MainCamera, UICamera},
     },
     save::{Autosave, Save},
     widgets::renderer::rrect::RRect,
@@ -135,7 +135,7 @@ impl LayerPage {
         input_tx
             .send(ThreadInput::SetStreamCamera(
                 camera.zoom,
-                camera.size,
+                camera.surface_size,
                 camera.center,
             ))
             .unwrap();
@@ -599,14 +599,14 @@ impl Element for LayerPage {
         world.dependency(save, this);
 
         let main_camera = world.single_fetch::<MainCamera>().0;
-        world.observer(main_camera, move |&CameraUpdated, world| {
+        world.observer(main_camera, move |&SetCameraOutdated, world| {
             let this = world.single_fetch::<LayerPage>();
             let camera = world.fetch(main_camera);
 
             this.thread_tx
                 .send(ThreadInput::SetStreamCamera(
                     camera.zoom,
-                    camera.size,
+                    camera.surface_size,
                     camera.center,
                 ))
                 .unwrap();
