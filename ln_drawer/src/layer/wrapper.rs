@@ -433,6 +433,8 @@ impl LayerPage {
     }
 
     fn process_stream(&mut self, world: &World) {
+        let mut cache_ack = Vec::new();
+        let mut raw_ack = Vec::new();
         while let Ok(output) = self.thread_rx.try_recv() {
             match output {
                 ThreadOutput::ThreadDebugMessage(msg) => {
@@ -441,16 +443,28 @@ impl LayerPage {
                 ThreadOutput::RawInsert(key, chunk) => {
                     self.raw.chunks.insert(key, chunk);
                 }
-                ThreadOutput::RawRemove(key) => {
+                ThreadOutput::RawRemoveAsk(key) => {
                     self.raw.chunks.remove(&key);
+                    raw_ack.push(key);
                 }
                 ThreadOutput::CacheInsert(key, chunk) => {
                     self.cache.chunks.insert(key, chunk);
                 }
-                ThreadOutput::CacheRemove(key) => {
+                ThreadOutput::CacheRemoveAsk(key) => {
                     self.cache.chunks.remove(&key);
+                    cache_ack.push(key);
                 }
             }
+        }
+        if !cache_ack.is_empty() {
+            self.thread_tx
+                .send(ThreadInput::CacheRemoveAck(cache_ack))
+                .unwrap();
+        }
+        if !raw_ack.is_empty() {
+            self.thread_tx
+                .send(ThreadInput::RawRemoveAck(raw_ack))
+                .unwrap();
         }
     }
 
@@ -556,6 +570,8 @@ impl LayerPage {
 
     pub fn set_page(&mut self, page: u64) {
         self.traveler.clear();
+        self.cache.chunks.clear();
+        self.raw.chunks.clear();
         self.thread_tx.send(ThreadInput::SetPage(page)).unwrap();
     }
 }

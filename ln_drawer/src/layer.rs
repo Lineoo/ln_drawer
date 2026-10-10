@@ -38,8 +38,6 @@ use crate::{
     widgets::shaders::shader_compile,
 };
 
-pub type ChunkKey = (i32, i32, u8);
-
 pub const DEFAULT_MIPMAP_CAP: u8 = 8;
 pub const DEFAULT_CHUNK_SIZE: UVec2 = UVec2::splat(512);
 

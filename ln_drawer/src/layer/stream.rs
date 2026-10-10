@@ -21,7 +21,7 @@ use winit::window::Window;
 
 use crate::{
     layer::{
-        CacheLayerChunk, ChunkKey, ChunkPool, LayerPipeline, RawLayerChunk, chunks_key_to_rect,
+        CacheLayerChunk, ChunkPool, LayerPipeline, RawLayerChunk, chunks_key_to_rect,
         chunks_stack_key_to_rect, point_zoom_to_chunks_stack, rect_chunks_iter,
         rect_chunks_stack_layer_iter, rect_chunks_stack_layer_range,
     },
@@ -36,7 +36,6 @@ const CHUNK_RAW_REAL_CAPS: usize = 64;
 const CHUNK_RAW_HARD_CAPS: usize = 512;
 const CHUNK_BATCH: usize = 8;
 
-// TODO use Vec<ChunkKey> to minimize thread collision
 pub enum ThreadInput {
     SetPage(u64),
     SetStreamCamera(i64, UVec2, I64Vec2),
@@ -44,6 +43,8 @@ pub enum ThreadInput {
     MarkCacheUnsaved((i32, i32, u8)),
     SwapRaw((i32, i32), RawLayerChunk),
     SwapCache((i32, i32, u8), CacheLayerChunk),
+    RawRemoveAck(Vec<(i32, i32)>),
+    CacheRemoveAck(Vec<(i32, i32, u8)>),
     Autosave,
     Abort,
 }
@@ -51,9 +52,9 @@ pub enum ThreadInput {
 pub enum ThreadOutput {
     ThreadDebugMessage(String),
     RawInsert((i32, i32), RawLayerChunk),
-    RawRemove((i32, i32)),
+    RawRemoveAsk((i32, i32)),
     CacheInsert((i32, i32, u8), CacheLayerChunk),
-    CacheRemove((i32, i32, u8)),
+    CacheRemoveAsk((i32, i32, u8)),
 }
 
 pub struct StreamConfig {
@@ -81,9 +82,13 @@ struct ChunksBase {
     raw: IndexMap<(i32, i32), RawLayerChunk>,
     raw_unsaved: HashSet<(i32, i32)>,
     raw_real_cnt: usize,
+    raw_asked_cnt: usize,
+    raw_real_asked_cnt: usize,
     cache: IndexMap<(i32, i32, u8), CacheLayerChunk>,
     cache_unsaved: HashSet<(i32, i32, u8)>,
     cache_real_cnt: usize,
+    cache_asked_cnt: usize,
+    cache_real_asked_cnt: usize,
 }
 
 /// All chunks waited to stage _(no matter loaded or not)_, will *immediately*
@@ -107,7 +112,7 @@ enum ChunkKeyKind {
 
 /// Camera information from main thread, used to determine which chunks to load.
 struct CameraInfo {
-    center: ChunkKey,
+    center: (i32, i32, u8),
     rect: Rectangle,
     range: ((i32, i32), (i32, i32)),
 }
@@ -144,9 +149,13 @@ impl StreamThread {
                 raw: IndexMap::new(),
                 raw_unsaved: HashSet::new(),
                 raw_real_cnt: 0,
+                raw_asked_cnt: 0,
+                raw_real_asked_cnt: 0,
                 cache: IndexMap::new(),
                 cache_unsaved: HashSet::new(),
                 cache_real_cnt: 0,
+                cache_asked_cnt: 0,
+                cache_real_asked_cnt: 0,
             },
             queue: LoadQueue {
                 outdated: false,
@@ -213,6 +222,24 @@ impl StreamThread {
                     self.base.cache_insert(key, chunk);
                     self.base.cache_unsaved.insert(key);
                 }
+                Some(ThreadInput::RawRemoveAck(keys)) => {
+                    let write = self.config.database.begin_write()?;
+                    let mut save = ChunkSave::new(&write)?;
+                    for key in keys {
+                        self.unload_raw(&mut save, key)?;
+                    }
+                    drop(save);
+                    write.commit()?;
+                }
+                Some(ThreadInput::CacheRemoveAck(keys)) => {
+                    let write = self.config.database.begin_write()?;
+                    let mut save = ChunkSave::new(&write)?;
+                    for key in keys {
+                        self.unload_cache(&mut save, key)?;
+                    }
+                    drop(save);
+                    write.commit()?;
+                }
                 Some(ThreadInput::Autosave) => {
                     self.save_all()?;
                 }
@@ -231,8 +258,8 @@ impl StreamThread {
                         continue;
                     }
 
-                    self.unload_overflow()?;
                     self.load()?;
+                    self.unload_ask_overflow()?;
 
                     self.config.window.request_redraw();
                 }
@@ -269,15 +296,15 @@ impl StreamThread {
         self.output_tx
             .send(ThreadOutput::ThreadDebugMessage(format!(
                 "\
-    Loading Queue: length {} - pending {}
-    Texture Index: real {} total {}
-    Load Counter:
+Loading Queue: length {} - pending {}
+Texture Index: real {} total {}
+Load Counter:
     decode {}
     real {} total {}
     Unload Counter:
     encode {} clean {}
     real {} total {} 
-    Camera Center: {:?}",
+Camera Center: {:?}",
                 self.queue.cache.len(),
                 self.queue.cache.len() - self.queue.cache_front,
                 self.base.raw_real_cnt,
@@ -424,15 +451,18 @@ impl StreamThread {
         Ok(())
     }
 
+    /// only do it when main thread request
     fn unload_all(&mut self) -> Result<(), Box<dyn Error>> {
+        self.base.forget_asked();
+
         let write = self.config.database.begin_write()?;
         let mut save = ChunkSave::new(&write)?;
 
-        while !self.base.cache.is_empty() {
-            self.unload_cache(&mut save, self.base.cache.len() - 1)?;
+        while let Some((&key, _)) = self.base.cache.last() {
+            self.unload_cache(&mut save, key)?;
         }
-        while !self.base.raw.is_empty() {
-            self.unload_raw(&mut save, self.base.raw.len() - 1)?;
+        while let Some((&key, _)) = self.base.raw.last() {
+            self.unload_raw(&mut save, key)?;
         }
 
         drop(save);
@@ -441,45 +471,47 @@ impl StreamThread {
         Ok(())
     }
 
-    fn unload_overflow(&mut self) -> Result<(), Box<dyn Error>> {
+    fn unload_ask_overflow(&mut self) -> Result<(), Box<dyn Error>> {
+        self.base.forget_asked();
+
         if !self.base.cache_overflow() && !self.base.raw_overflow() {
             return Ok(());
         }
 
         self.base.sort(self.camera.center);
 
-        let write = self.config.database.begin_write()?;
-        let mut save = ChunkSave::new(&write)?;
-
         let mut frnt = self.base.cache.len();
         while frnt > 0 && self.base.cache_overflow() {
             frnt -= 1;
-            if (self.queue.cache).contains(self.base.cache.get_index(frnt).unwrap().0) {
+            let (&key, _) = self.base.cache.get_index(frnt).unwrap();
+            if (self.queue.cache).contains(&key) {
                 continue;
             }
 
-            self.unload_cache(&mut save, frnt)?;
+            self.base.cache_removal_asked(key);
+            self.output_tx.send(ThreadOutput::CacheRemoveAsk(key))?;
         }
 
         let mut frnt = self.base.raw.len();
         while frnt > 0 && self.base.raw_overflow() {
             frnt -= 1;
-            if (self.queue.raw).contains(self.base.raw.get_index(frnt).unwrap().0) {
+            let (&key, _) = self.base.raw.get_index(frnt).unwrap();
+            if (self.queue.raw).contains(&key) {
                 continue;
             }
 
-            self.unload_raw(&mut save, frnt)?;
+            self.base.raw_removal_asked(key);
+            self.output_tx.send(ThreadOutput::RawRemoveAsk(key))?;
         }
-
-        drop(save);
-        write.commit()?;
 
         Ok(())
     }
 
-    fn unload_raw(&mut self, save: &mut ChunkSave, index: usize) -> Result<(), Box<dyn Error>> {
-        let (key, chunk) = self.base.raw_swap_remove_index(index).unwrap();
-        self.output_tx.send(ThreadOutput::RawRemove(key))?;
+    /// only available with ack from main thread
+    fn unload_raw(&mut self, save: &mut ChunkSave, key: (i32, i32)) -> Result<(), Box<dyn Error>> {
+        let Some(chunk) = self.base.raw_swap_remove(key) else {
+            return Ok(());
+        };
 
         if self.base.raw_unsaved.contains(&key) {
             self.persist_raw(save, key, &chunk)?;
@@ -493,9 +525,15 @@ impl StreamThread {
         Ok(())
     }
 
-    fn unload_cache(&mut self, save: &mut ChunkSave, index: usize) -> Result<(), Box<dyn Error>> {
-        let (key, chunk) = self.base.cache_swap_remove_index(index).unwrap();
-        self.output_tx.send(ThreadOutput::CacheRemove(key))?;
+    /// only available with ack from main thread
+    fn unload_cache(
+        &mut self,
+        save: &mut ChunkSave,
+        key: (i32, i32, u8),
+    ) -> Result<(), Box<dyn Error>> {
+        let Some(chunk) = self.base.cache_swap_remove(key) else {
+            return Ok(());
+        };
 
         if self.base.cache_unsaved.contains(&key) {
             self.persist_cache(save, key, &chunk)?;
@@ -582,59 +620,74 @@ impl ChunksBase {
     }
 
     fn raw_insert(&mut self, key: (i32, i32), chunk: RawLayerChunk) {
-        if matches!(
-            chunk,
-            RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_)
-        ) {
+        if let RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_) = chunk {
             self.raw_real_cnt += 1;
         }
         let old = self.raw.insert(key, chunk);
-        if matches!(
-            old,
-            Some(RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_))
-        ) {
+        if let Some(RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_)) = old {
             self.raw_real_cnt -= 1;
         }
     }
 
     fn cache_insert(&mut self, key: (i32, i32, u8), chunk: CacheLayerChunk) {
-        if matches!(chunk, CacheLayerChunk::Filled(_)) {
+        if let CacheLayerChunk::Filled(_) = chunk {
             self.cache_real_cnt += 1;
         }
         let old = self.cache.insert(key, chunk);
-        if matches!(old, Some(CacheLayerChunk::Filled(_))) {
+        if let Some(CacheLayerChunk::Filled(_)) = old {
             self.cache_real_cnt -= 1;
         }
     }
 
-    fn raw_swap_remove_index(&mut self, index: usize) -> Option<((i32, i32), RawLayerChunk)> {
-        let (key, chunk) = self.raw.swap_remove_index(index)?;
-        if matches!(
-            chunk,
-            RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_)
-        ) {
+    fn raw_removal_asked(&mut self, key: (i32, i32)) {
+        if let Some(chunk) = self.raw.get(&key) {
+            self.raw_asked_cnt += 1;
+            if let RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_) = chunk {
+                self.raw_real_asked_cnt += 1;
+            }
+        }
+    }
+
+    fn cache_removal_asked(&mut self, key: (i32, i32, u8)) {
+        if let Some(chunk) = self.cache.get(&key) {
+            self.cache_asked_cnt += 1;
+            if let CacheLayerChunk::Filled(_) = chunk {
+                self.cache_real_asked_cnt += 1;
+            }
+        }
+    }
+
+    fn raw_swap_remove(&mut self, key: (i32, i32)) -> Option<RawLayerChunk> {
+        let chunk = self.raw.swap_remove(&key)?;
+        if let RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_) = chunk {
             self.raw_real_cnt -= 1;
         }
-        Some((key, chunk))
+        Some(chunk)
     }
 
-    fn cache_swap_remove_index(
-        &mut self,
-        index: usize,
-    ) -> Option<((i32, i32, u8), CacheLayerChunk)> {
-        let (key, chunk) = self.cache.swap_remove_index(index)?;
-        if matches!(chunk, CacheLayerChunk::Filled(_)) {
+    fn cache_swap_remove(&mut self, key: (i32, i32, u8)) -> Option<CacheLayerChunk> {
+        let chunk = self.cache.swap_remove(&key)?;
+        if let CacheLayerChunk::Filled(_) = chunk {
             self.cache_real_cnt -= 1;
         }
-        Some((key, chunk))
+        Some(chunk)
     }
 
     fn cache_overflow(&mut self) -> bool {
-        self.cache_real_cnt >= CHUNK_CACHE_REAL_CAPS || self.cache.len() >= CHUNK_CACHE_HARD_CAPS
+        (self.cache_real_cnt - self.cache_real_asked_cnt) >= CHUNK_CACHE_REAL_CAPS
+            || (self.cache.len() - self.cache_asked_cnt) >= CHUNK_CACHE_HARD_CAPS
     }
 
     fn raw_overflow(&mut self) -> bool {
-        self.raw_real_cnt >= CHUNK_RAW_REAL_CAPS || self.raw.len() >= CHUNK_RAW_HARD_CAPS
+        (self.raw_real_cnt - self.raw_real_asked_cnt) >= CHUNK_RAW_REAL_CAPS
+            || (self.raw.len() - self.raw_asked_cnt) >= CHUNK_RAW_HARD_CAPS
+    }
+
+    fn forget_asked(&mut self) {
+        self.raw_asked_cnt = 0;
+        self.raw_real_asked_cnt = 0;
+        self.cache_asked_cnt = 0;
+        self.cache_real_asked_cnt = 0;
     }
 }
 
@@ -779,7 +832,7 @@ fn chunk_readback(
 }
 
 /// Guaranteed assumption: Upper layer is always loaded first
-fn chunk_distance((x, y, z): ChunkKey, (cx, cy, cz): ChunkKey) -> u64 {
+fn chunk_distance((x, y, z): (i32, i32, u8), (cx, cy, cz): (i32, i32, u8)) -> u64 {
     let dx = (x << z).abs_diff(cx << cz).saturating_sub(1 << z) as u64;
     let dy = (y << z).abs_diff(cy << cz).saturating_sub(1 << z) as u64;
     (dx + dy << 8) + (255 - z) as u64
@@ -789,7 +842,7 @@ fn chunk_distance((x, y, z): ChunkKey, (cx, cy, cz): ChunkKey) -> u64 {
 mod test {
     #[test]
     fn chunk_order_overlap() {
-        let golden: [super::ChunkKey; _] = [
+        let golden: [(i32, i32, u8); _] = [
             (0, 1, 1),
             (0, 0, 1),
             (0, 2, 0),
@@ -799,7 +852,7 @@ mod test {
             (1, 0, 0),
         ];
 
-        let center: super::ChunkKey = (0, 2, 0);
+        let center: (i32, i32, u8) = (0, 2, 0);
         let mut test = golden.clone();
         test.sort_by_key(|&chunk| super::chunk_distance(chunk, center));
         assert_eq!(test, golden);
@@ -808,7 +861,7 @@ mod test {
     #[test]
     fn chunk_order_random() {
         // raw data from script/gen/chunks.py
-        let golden: [super::ChunkKey; _] = [
+        let golden: [(i32, i32, u8); _] = [
             (0, -1, 8),
             (-1, 0, 8),
             (-1, -1, 8),
@@ -846,7 +899,7 @@ mod test {
             (-30, 29, 1),
         ];
 
-        let center: super::ChunkKey = (0, 0, 0);
+        let center: (i32, i32, u8) = (0, 0, 0);
         let mut test = golden.clone();
         test.sort_by_key(|&chunk| super::chunk_distance(chunk, center));
         assert_eq!(test, golden);
@@ -855,7 +908,7 @@ mod test {
     #[test]
     fn chunk_order_key() {
         // raw data from script/gen/chunks.py
-        let golden: [(super::ChunkKey, u64); _] = [
+        let golden: [((i32, i32, u8), u64); _] = [
             ((0, -1, 2), 765),
             ((-1, 3, 1), 766),
             ((1, 2, 1), 1278),
@@ -878,7 +931,7 @@ mod test {
             ((7, -16, 0), 7167),
         ];
 
-        let center: super::ChunkKey = (-2, 1, 1);
+        let center: (i32, i32, u8) = (-2, 1, 1);
         let mut test = golden.clone();
         test.iter_mut()
             .for_each(|(chunk, key)| *key = super::chunk_distance(*chunk, center));
