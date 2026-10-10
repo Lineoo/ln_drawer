@@ -639,4 +639,11 @@ impl Element for Render {
     }
 }
 
-impl Element for RenderControl {}
+impl Element for RenderControl {
+    fn when_remove(&mut self, world: &World, this: Handle<Self>) {
+        world.foreach::<Camera>(|camera| {
+            // Temp solution before we got relationship system
+            Self::reorder(camera, None, world, this);
+        });
+    }
+}
