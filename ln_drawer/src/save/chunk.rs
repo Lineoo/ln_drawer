@@ -97,17 +97,17 @@ impl ChunkLoad {
 }
 
 impl ChunkSave<'_> {
-    pub fn new(write: &WriteTransaction) -> Result<ChunkSave<'_>, Box<dyn Error>> {
+    pub fn new(write: &WriteTransaction) -> Result<ChunkSave<'_>, redb::Error> {
         let cache = write.open_table(TABLE_LAYER_CHUNK)?;
         let raw = write.open_table(TABLE_LAYER_CHUNK_RAW)?;
         Ok(ChunkSave { cache, raw })
     }
 
-    pub fn save_raw(
-        &mut self,
-        key: (u64, (i32, i32)),
-        texture: &[u8],
-    ) -> Result<(), Box<dyn Error>> {
+    pub fn save_raw(&mut self, key: (u64, (i32, i32)), texture: &[u8]) -> Result<(), redb::Error> {
+        if self.is_transparent(texture) {
+            return self.save_raw_transparent(key);
+        }
+
         let mut texture = zstd::encode_all(texture, 0)?;
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&CHUNK_VERSION.to_le_bytes());
@@ -118,7 +118,7 @@ impl ChunkSave<'_> {
         Ok(())
     }
 
-    pub fn save_raw_associated(&mut self, key: (u64, (i32, i32))) -> Result<(), Box<dyn Error>> {
+    pub fn save_raw_associated(&mut self, key: (u64, (i32, i32))) -> Result<(), redb::Error> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&CHUNK_VERSION.to_le_bytes());
         bytes.push(1);
@@ -126,7 +126,7 @@ impl ChunkSave<'_> {
         Ok(())
     }
 
-    pub fn save_raw_transparent(&mut self, key: (u64, (i32, i32))) -> Result<(), Box<dyn Error>> {
+    pub fn save_raw_transparent(&mut self, key: (u64, (i32, i32))) -> Result<(), redb::Error> {
         self.raw.remove(key)?;
         Ok(())
     }
@@ -135,7 +135,11 @@ impl ChunkSave<'_> {
         &mut self,
         key: (u64, (i32, i32, u8)),
         texture: &[u8],
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), redb::Error> {
+        if self.is_transparent(texture) {
+            return self.save_cache_transparent(key);
+        }
+
         let mut texture = zstd::encode_all(texture, 0)?;
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&CHUNK_VERSION.to_le_bytes());
@@ -148,7 +152,7 @@ impl ChunkSave<'_> {
     pub fn save_cache_transparent(
         &mut self,
         key: (u64, (i32, i32, u8)),
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), redb::Error> {
         self.cache.remove(key)?;
         Ok(())
     }
@@ -163,60 +167,115 @@ impl ChunkSave<'_> {
     }
 }
 
-mod legacy_classic {
-    use redb::TableDefinition;
+pub mod legacy_classic {
+    use std::error::Error;
+
+    use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
+
+    use crate::{
+        color::srgb::{srgb_gamma_decode, srgb_gamma_encode},
+        save::chunk::ChunkSave,
+    };
 
     type ChunkKey = (i32, i32, u8);
 
-    /// last version used
-    /// `2`: 0.4.0
-    const CHUNK_META0_FORMAT: u32 = 3;
+    #[derive(Debug, Default, Clone, Copy, serde::Serialize, serde::Deserialize)]
+    struct ChunkMeta0 {
+        format: u32,
+    }
 
-    const TABLE_LAYER_CHUNK: TableDefinition<(u64, ChunkKey), &[u8]> =
+    const LEGACY_TABLE_LAYER_CHUNK: TableDefinition<(u64, ChunkKey), &[u8]> =
         TableDefinition::new("stroke_chunk");
-    const TABLE_LAYER_CHUNK_META: TableDefinition<((u64, ChunkKey), u32), &[u8]> =
+    const LEGACY_TABLE_LAYER_CHUNK_META: TableDefinition<((u64, ChunkKey), u32), &[u8]> =
         TableDefinition::new("stroke_chunk_meta");
+    const LEGACY_TABLE_DATABASE_METADATA: TableDefinition<u32, &[u8]> =
+        TableDefinition::new("metadata");
+    const LEGACY_TABLE_CAMERA: TableDefinition<&str, &[u8]> = TableDefinition::new("camera");
 
-    // fn chunk_migration(
-    //     config: &StreamConfig,
-    //     debug: &mut DebugInfo,
-    //     key: ChunkKey,
-    //     bytes: &mut [u8],
-    //     mut meta0: ChunkMeta0,
-    // ) -> Result<(), Box<dyn Error + 'static>> {
-    //     let mut chunk_changed = false;
-    //     for migrate_format in meta0.format..3 {
-    //         match migrate_format {
-    //             0 => {
-    //                 let (chunks, _) = bytes.as_chunks_mut();
-    //                 for [r, g, b, _] in chunks {
-    //                     *r = (srgb_gamma_encode(*r as f32 / 255.) * 255.) as u8;
-    //                     *g = (srgb_gamma_encode(*g as f32 / 255.) * 255.) as u8;
-    //                     *b = (srgb_gamma_encode(*b as f32 / 255.) * 255.) as u8;
-    //                 }
-    //                 chunk_changed = true;
-    //             }
-    //             1 => {
-    //                 // remove deprecated mipmap field, migration is a no-op
-    //             }
-    //             2 => {
-    //                 let (chunks, _) = bytes.as_chunks_mut();
-    //                 for [r, g, b, a] in chunks {
-    //                     *r = (srgb_gamma_encode(
-    //                         srgb_gamma_decode(*r as f32 / 255.) * (*a as f32 / 255.),
-    //                     ) * 255.) as u8;
-    //                     *g = (srgb_gamma_encode(
-    //                         srgb_gamma_decode(*g as f32 / 255.) * (*a as f32 / 255.),
-    //                     ) * 255.) as u8;
-    //                     *b = (srgb_gamma_encode(
-    //                         srgb_gamma_decode(*b as f32 / 255.) * (*a as f32 / 255.),
-    //                     ) * 255.) as u8;
-    //                 }
-    //                 chunk_changed = true;
-    //             }
-    //             _ => unreachable!("unsupported migration {migrate_format}"),
-    //         }
-    //     }
-    //     Ok(())
-    // }
+    pub fn need_migration(db: &Database) -> Result<bool, redb::Error> {
+        let read = db.begin_read()?;
+        if read.open_table(LEGACY_TABLE_LAYER_CHUNK).is_err() {
+            // no need to migrate
+            return Ok(false);
+        }
+        drop(read);
+        Ok(true)
+    }
+
+    pub fn startup_migration(db: &mut Database) -> Result<(), redb::Error> {
+        log::warn!("migration from classic database");
+
+        let mut write = db.begin_write()?;
+        write.set_quick_repair(true);
+        let legacy_chunk_table = write.open_table(LEGACY_TABLE_LAYER_CHUNK)?;
+        let legacy_meta_table = write.open_table(LEGACY_TABLE_LAYER_CHUNK_META)?;
+        let mut save = ChunkSave::new(&write)?;
+
+        for pair in legacy_chunk_table.iter()? {
+            let (key, chunk) = pair?;
+            let key = key.value();
+            // lack meta will use version 0 due to some old bugs
+            let meta0 = match legacy_meta_table.get(&(key, 0))? {
+                Some(access) => {
+                    let bytes = access.value();
+                    postcard::from_bytes::<ChunkMeta0>(bytes).unwrap_or_default()
+                }
+                None => ChunkMeta0::default(),
+            };
+            let mut bytes = zstd::decode_all(chunk.value()).unwrap();
+            chunk_migration(&mut bytes[..], meta0.format).unwrap();
+            save.save_cache(key, &bytes[..])?;
+            if key.1.2 == 0 {
+                save.save_raw_associated((key.0, (key.1.0, key.1.1)))?;
+            }
+        }
+
+        drop(legacy_chunk_table);
+        drop(legacy_meta_table);
+        drop(save);
+        write.delete_table(LEGACY_TABLE_LAYER_CHUNK)?;
+        write.delete_table(LEGACY_TABLE_LAYER_CHUNK_META)?;
+        write.delete_table(LEGACY_TABLE_DATABASE_METADATA)?;
+        write.delete_table(LEGACY_TABLE_CAMERA)?;
+        write.commit()?;
+        db.compact()?;
+
+        log::warn!("finish migration");
+
+        Ok(())
+    }
+
+    fn chunk_migration(bytes: &mut [u8], from: u32) -> Result<(), Box<dyn Error + 'static>> {
+        for migrate_format in from..3 {
+            match migrate_format {
+                0 => {
+                    let (chunks, _) = bytes.as_chunks_mut();
+                    for [r, g, b, _] in chunks {
+                        *r = (srgb_gamma_encode(*r as f32 / 255.) * 255.) as u8;
+                        *g = (srgb_gamma_encode(*g as f32 / 255.) * 255.) as u8;
+                        *b = (srgb_gamma_encode(*b as f32 / 255.) * 255.) as u8;
+                    }
+                }
+                1 => {
+                    // remove deprecated mipmap field, migration is a no-op
+                }
+                2 => {
+                    let (chunks, _) = bytes.as_chunks_mut();
+                    for [r, g, b, a] in chunks {
+                        *r = (srgb_gamma_encode(
+                            srgb_gamma_decode(*r as f32 / 255.) * (*a as f32 / 255.),
+                        ) * 255.) as u8;
+                        *g = (srgb_gamma_encode(
+                            srgb_gamma_decode(*g as f32 / 255.) * (*a as f32 / 255.),
+                        ) * 255.) as u8;
+                        *b = (srgb_gamma_encode(
+                            srgb_gamma_decode(*b as f32 / 255.) * (*a as f32 / 255.),
+                        ) * 255.) as u8;
+                    }
+                }
+                _ => unreachable!("unsupported migration {migrate_format}"),
+            }
+        }
+        Ok(())
+    }
 }

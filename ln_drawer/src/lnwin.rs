@@ -99,14 +99,6 @@ impl ApplicationHandler for Lnwin {
                 Autosave::autosave_all(&self.world);
             });
         }
-
-        // Record the allocator state on disk so that if the process is killed
-        // while backgrounded, the next open can skip the full checksum scan.
-        if let Ok(save) = self.world.try_single_fetch::<Save>()
-            && let Err(err) = Save::begin_clean_write(&save.db).and_then(|x| Ok(x.commit()?))
-        {
-            log::warn!("failed to finalize database before suspend: {err}");
-        }
     }
 }
 

@@ -28,13 +28,6 @@ const BACKUP_SLOT: u32 = 6;
 const BACKUP_MINIMUM_DURATION: Duration = Duration::from_hours(24);
 
 /// The core database.
-///
-/// ## Tables
-///
-/// | name | key | value |
-/// |------|-----|-------|
-/// | `stroke_chunk`        | `(u64, ChunkKey)`         | `&[u8]`   |
-/// | `stroke_chunk_meta`   | `((u64, ChunkKey), u32)`  | `&[u8]`   |
 pub struct Save {
     pub sn: Scene,
     pub db: Arc<Database>,
@@ -78,18 +71,6 @@ impl Save {
         world.insert(Save { sn, db });
     }
 
-    /// Begin a write transaction with quick-repair enabled.
-    ///
-    /// A commit made this way records the allocator state on disk (and forces a
-    /// two-phase commit), so a later unclean shutdown — such as the Android
-    /// process being killed — can be recovered by loading that state instead of
-    /// walking the whole database to verify every checksum.
-    pub fn begin_clean_write(db: &Database) -> Result<WriteTransaction, redb::Error> {
-        let mut write = db.begin_write()?;
-        write.set_quick_repair(true);
-        Ok(write)
-    }
-
     /// Touch a existed database, including updating necessary timestamps,
     /// validation, and most of all migration data from older versions.
     fn touch(sn: &mut Scene, db: &mut Database, db_file: &Path) -> Result<(), redb::Error> {
@@ -102,6 +83,11 @@ impl Save {
             Self::create_backup(db_file, "migration", false, 256);
             Self::migrate_format(db, sn.database_version)?;
             sn.database_version = DATABASE_VERSION;
+        }
+
+        if chunk::legacy_classic::need_migration(db)? {
+            Self::create_backup(db_file, "classic", false, 4);
+            chunk::legacy_classic::startup_migration(db)?;
         }
 
         if sn.compact_on_startup {
@@ -262,7 +248,8 @@ impl Autosave {
         let start = Instant::now();
 
         let mut save = world.single_fetch_mut::<Save>();
-        let write = Save::begin_clean_write(&save.db).unwrap();
+        let mut write = save.db.begin_write().unwrap();
+        write.set_quick_repair(true);
         world.foreach_fetch_mut::<Autosave>(|mut task| {
             (task.0)(
                 world,
