@@ -785,7 +785,7 @@ fn point_zoom_to_chunks_stack(point: IVec2, zoom: i64, chunk_size: UVec2) -> (i3
 }
 
 fn zoom_to_mipmap(zoom: i64) -> u8 {
-    (-zoom).q32_round().max(0) as u8
+    (-zoom).q32_floor().max(0) as u8
 }
 
 fn rect_chunks_iter(rect: Rectangle, chunk_size: UVec2) -> impl Iterator<Item = (i32, i32)> {

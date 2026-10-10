@@ -189,7 +189,7 @@ impl StreamThread {
                     self.camera.rect = Camera::view_rect(zoom, size, center);
                     let stream_center_new = point_zoom_to_chunks_stack(
                         center.q32_round(),
-                        zoom,
+                        zoom + i64::q32_from_f64(0.5),
                         self.config.chunk_size,
                     );
                     let stream_range_new = rect_chunks_stack_layer_range(
@@ -765,7 +765,7 @@ impl LoadQueue {
             }
         }
 
-        for mipmap in camera.center.2.saturating_sub(1)..config.mipmap_caps {
+        for mipmap in camera.center.2..config.mipmap_caps {
             for key in rect_chunks_stack_layer_iter(camera.rect, config.chunk_size, mipmap) {
                 self.cache.insert(key);
             }

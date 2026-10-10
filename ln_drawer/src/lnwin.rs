@@ -220,14 +220,14 @@ impl Element for Lnwindow {
             side_docker(world, ui_camera);
             world.flush();
 
-            world.named("desktop_ui");
-            world.insert(DesktopUi {
-                common: WidgetCommon {
-                    camera: ui_camera,
-                    visible: true,
-                },
-            });
-            world.flush();
+            // world.named("desktop_ui");
+            // world.insert(DesktopUi {
+            //     common: WidgetCommon {
+            //         camera: ui_camera,
+            //         visible: true,
+            //     },
+            // });
+            // world.flush();
         });
     }
 }
