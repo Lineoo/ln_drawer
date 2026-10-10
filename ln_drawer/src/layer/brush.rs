@@ -185,9 +185,9 @@ impl Stroke {
         scratch: &PlainLayer,
     ) {
         for (&chunk_key, _scratch_chunk) in &scratch.chunks {
-            raw.thread_tx
-                .send(ThreadInput::MarkRawUnsaved(chunk_key))
-                .unwrap();
+            // raw.thread_tx
+            //     .send(ThreadInput::MarkRawUnsaved(chunk_key))
+            //     .unwrap();
             raw.swap_chunk(chunk_key, RawLayerChunk::Associated);
         }
     }
@@ -224,6 +224,7 @@ impl Stroke {
         cache: &mut CacheLayers,
         pool: &mut ChunkPool,
     ) {
+        let mut unsaved = Vec::new();
         for chunk_key in rect_chunks_iter(self.dirty, cache.chunk_size) {
             let chunk_rect = chunks_key_to_rect(chunk_key, cache.chunk_size);
 
@@ -236,10 +237,7 @@ impl Stroke {
                 continue;
             };
 
-            cache
-                .thread_tx
-                .send(ThreadInput::MarkCacheUnsaved((chunk_key.0, chunk_key.1, 0)))
-                .unwrap();
+            unsaved.push((chunk_key.0, chunk_key.1, 0));
 
             match (cache_chunk, raw_chunk) {
                 (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Filled(raw_chunk)) => {
@@ -289,6 +287,11 @@ impl Stroke {
                 (CacheLayerChunk::Transparent, RawLayerChunk::Transparent) => {}
             }
         }
+
+        cache
+            .thread_tx
+            .send(ThreadInput::MarkCacheUnsaved(unsaved))
+            .unwrap();
     }
 
     /// XXX This is specificated version since this version we dont have overlap
@@ -541,6 +544,8 @@ impl DrawsBatch {
     ) {
         debug_assert_eq!(raw.chunk_size, scratch.chunk_size);
 
+        let mut unsaved = Vec::new();
+
         for (&chunk_key, scratch_chunk) in &scratch.chunks {
             let chunk_rect = chunks_key_to_rect(chunk_key, scratch.chunk_size);
 
@@ -553,10 +558,7 @@ impl DrawsBatch {
                 continue;
             };
 
-            cache
-                .thread_tx
-                .send(ThreadInput::MarkCacheUnsaved((chunk_key.0, chunk_key.1, 0)))
-                .unwrap();
+            unsaved.push((chunk_key.0, chunk_key.1, 0));
 
             match (cache_chunk, raw_chunk) {
                 (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Filled(raw_chunk)) => {
@@ -657,6 +659,11 @@ impl DrawsBatch {
                 }
             }
         }
+
+        cache
+            .thread_tx
+            .send(ThreadInput::MarkCacheUnsaved(unsaved))
+            .unwrap();
     }
 }
 

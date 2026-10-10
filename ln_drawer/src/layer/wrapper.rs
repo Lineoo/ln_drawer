@@ -29,7 +29,7 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{
         Render, RenderControl, RenderExtra, RenderInformation,
-        camera::{CameraBind, SetCameraOutdated, MainCamera, UICamera},
+        camera::{CameraBind, MainCamera, SetCameraOutdated, UICamera},
     },
     save::{Autosave, Save},
     widgets::renderer::rrect::RRect,

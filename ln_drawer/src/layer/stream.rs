@@ -40,8 +40,9 @@ const CHUNK_POOL_CAP: usize = 32;
 pub enum ThreadInput {
     SetPage(u64),
     SetStreamCamera(i64, UVec2, I64Vec2),
-    MarkRawUnsaved((i32, i32)),
-    MarkCacheUnsaved((i32, i32, u8)),
+    #[expect(unused)]
+    MarkRawUnsaved(Vec<(i32, i32)>),
+    MarkCacheUnsaved(Vec<(i32, i32, u8)>),
     SwapRaw((i32, i32), RawLayerChunk),
     SwapCache((i32, i32, u8), CacheLayerChunk),
     RawRemoveAck(Vec<(i32, i32)>),
@@ -204,11 +205,15 @@ impl StreamThread {
                         self.queue.outdated = true;
                     }
                 }
-                Some(ThreadInput::MarkRawUnsaved(chunk)) => {
-                    self.base.raw_unsaved.insert(chunk);
+                Some(ThreadInput::MarkRawUnsaved(chunks)) => {
+                    for chunk in chunks {
+                        self.base.raw_unsaved.insert(chunk);
+                    }
                 }
-                Some(ThreadInput::MarkCacheUnsaved(chunk)) => {
-                    self.base.cache_unsaved.insert(chunk);
+                Some(ThreadInput::MarkCacheUnsaved(chunks)) => {
+                    for chunk in chunks {
+                        self.base.cache_unsaved.insert(chunk);
+                    }
                 }
                 Some(ThreadInput::SwapRaw(key, chunk)) => {
                     // Loading is controlled by stream thread, but the chunk's content is
@@ -216,11 +221,11 @@ impl StreamThread {
                     // entirely, it is safe to just add chunk into our base (and mark it as
                     // unsaved), without concerning about loading it from db.
                     // NOT sending it back to main thread
-                    self.base.raw_insert(key, chunk);
+                    self.base.raw_insert_recycle(&mut self.pool, key, chunk);
                     self.base.raw_unsaved.insert(key);
                 }
                 Some(ThreadInput::SwapCache(key, chunk)) => {
-                    self.base.cache_insert(key, chunk);
+                    self.base.cache_insert_recycle(&mut self.pool, key, chunk);
                     self.base.cache_unsaved.insert(key);
                 }
                 Some(ThreadInput::RawRemoveAck(keys)) => {
@@ -648,6 +653,48 @@ impl ChunksBase {
         let old = self.cache.insert(key, chunk);
         if let Some(CacheLayerChunk::Filled(_)) = old {
             self.cache_real_cnt -= 1;
+        }
+    }
+
+    fn raw_insert_recycle(
+        &mut self,
+        pool: &mut DirtyChunkPool,
+        key: (i32, i32),
+        chunk: RawLayerChunk,
+    ) {
+        let real = if let RawLayerChunk::Filled(_) | RawLayerChunk::AssociatedCached(_) = chunk {
+            self.raw_real_cnt += 1;
+            true
+        } else {
+            false
+        };
+        let old = self.raw.insert(key, chunk);
+        if let Some(RawLayerChunk::Filled(chunk) | RawLayerChunk::AssociatedCached(chunk)) = old {
+            self.raw_real_cnt -= 1;
+            if !real {
+                pool.list.push(chunk);
+            }
+        }
+    }
+
+    fn cache_insert_recycle(
+        &mut self,
+        pool: &mut DirtyChunkPool,
+        key: (i32, i32, u8),
+        chunk: CacheLayerChunk,
+    ) {
+        let real = if let CacheLayerChunk::Filled(_) = chunk {
+            self.cache_real_cnt += 1;
+            true
+        } else {
+            false
+        };
+        let old = self.cache.insert(key, chunk);
+        if let Some(CacheLayerChunk::Filled(chunk)) = old {
+            self.cache_real_cnt -= 1;
+            if !real {
+                pool.list.push(chunk);
+            }
         }
     }
 

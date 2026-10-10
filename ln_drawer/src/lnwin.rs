@@ -19,7 +19,7 @@ use crate::{
     render::{
         Render,
         camera::{
-            Camera, CameraDescriptor, SetCameraOutdated, CameraUtils, MainCamera, MainCameraUtils,
+            Camera, CameraDescriptor, CameraUtils, MainCamera, MainCameraUtils, SetCameraOutdated,
             UICamera,
         },
     },

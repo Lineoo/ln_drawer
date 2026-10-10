@@ -262,6 +262,7 @@ impl LayerPipeline {
         pool: &mut ChunkPool,
         dirty: Rectangle,
     ) {
+        let mut unsaved = Vec::new();
         cpass.set_pipeline(&self.mipmap_pipeline);
         cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
         for lower_key in rect_chunks_stack_iter(dirty, cache.chunk_size, cache.mipmap_cap - 1) {
@@ -284,6 +285,7 @@ impl LayerPipeline {
                     cpass.set_bind_group(1, Some(&upper_chunk.write), &[]);
                     cpass.set_bind_group(2, Some(&lower_chunk.read), &[]);
                     dispatch_workgroups_divide(cpass, &[dirty, upper_rect, lower_rect], scale);
+                    unsaved.push(upper_key);
                 }
                 (CacheLayerChunk::Filled(lower_chunk), CacheLayerChunk::Transparent) => {
                     let upper_chunk = pool.create_empty_chunk(
@@ -310,6 +312,11 @@ impl LayerPipeline {
                 (CacheLayerChunk::Transparent, CacheLayerChunk::Transparent) => {}
             }
         }
+
+        cache
+            .thread_tx
+            .send(ThreadInput::MarkCacheUnsaved(unsaved))
+            .unwrap();
     }
 
     pub fn pick_color(
