@@ -21,7 +21,7 @@ use winit::window::Window;
 
 use crate::{
     layer::{
-        CacheLayerChunk, ChunkPool, LayerPipeline, RawLayerChunk, chunks_key_to_rect,
+        CacheLayerChunk, DirtyChunkPool, LayerPipeline, RawLayerChunk, chunks_key_to_rect,
         chunks_stack_key_to_rect, point_zoom_to_chunks_stack, rect_chunks_iter,
         rect_chunks_stack_layer_iter, rect_chunks_stack_layer_range,
     },
@@ -30,11 +30,12 @@ use crate::{
     save::chunk::{ChunkLoad, ChunkLoadResult, ChunkSave},
 };
 
-const CHUNK_CACHE_REAL_CAPS: usize = 512;
-const CHUNK_CACHE_HARD_CAPS: usize = 1024;
-const CHUNK_RAW_REAL_CAPS: usize = 64;
-const CHUNK_RAW_HARD_CAPS: usize = 512;
-const CHUNK_BATCH: usize = 8;
+const CHUNK_CACHE_REAL_CAP: usize = 512;
+const CHUNK_CACHE_HARD_CAP: usize = 1024;
+const CHUNK_RAW_REAL_CAP: usize = 64;
+const CHUNK_RAW_HARD_CAP: usize = 512;
+const CHUNK_LOAD_BATCH_CAP: usize = 8;
+const CHUNK_POOL_CAP: usize = 32;
 
 pub enum ThreadInput {
     SetPage(u64),
@@ -70,7 +71,7 @@ pub struct StreamThread {
     config: StreamConfig,
     input_rx: Receiver<ThreadInput>,
     output_tx: Sender<ThreadOutput>,
-    pool: ChunkPool,
+    pool: DirtyChunkPool,
     base: ChunksBase,
     queue: LoadQueue,
     camera: CameraInfo,
@@ -102,7 +103,7 @@ struct LoadQueue {
     /// Single batch of streaming chunks selected out of [`LoadQueue`] and waited to
     /// be actually loaded. It serves as a cache buffer and should stay clean whenever
     /// the thread loop starts.
-    batch: SmallVec<[ChunkKeyKind; CHUNK_BATCH]>,
+    batch: SmallVec<[ChunkKeyKind; CHUNK_LOAD_BATCH_CAP]>,
 }
 
 enum ChunkKeyKind {
@@ -135,9 +136,9 @@ impl StreamThread {
         input_rx: Receiver<ThreadInput>,
         output_tx: Sender<ThreadOutput>,
     ) -> Self {
-        let pool = ChunkPool {
+        let pool = DirtyChunkPool {
             list: Vec::new(),
-            stage: Vec::new(),
+            cap: CHUNK_POOL_CAP,
             chunk_size: config.chunk_size,
         };
         StreamThread {
@@ -228,6 +229,7 @@ impl StreamThread {
                     for key in keys {
                         self.unload_raw(&mut save, key)?;
                     }
+                    self.pool.limit();
                     drop(save);
                     write.commit()?;
                 }
@@ -237,6 +239,7 @@ impl StreamThread {
                     for key in keys {
                         self.unload_cache(&mut save, key)?;
                     }
+                    self.pool.limit();
                     drop(save);
                     write.commit()?;
                 }
@@ -339,7 +342,7 @@ Camera Center: {:?}",
                         }
                     };
                     if let Some(bytes) = result.texture {
-                        let chunk = self.pool.create_empty_chunk(
+                        let chunk = self.pool.create_dirty_chunk(
                             &self.config.lp,
                             self.config.chunk_size,
                             chunks_stack_key_to_rect(key, self.config.chunk_size),
@@ -374,7 +377,7 @@ Camera Center: {:?}",
                         }
                     };
                     if let Some(bytes) = result.texture {
-                        let chunk = self.pool.create_empty_chunk(
+                        let chunk = self.pool.create_dirty_chunk(
                             &self.config.lp,
                             self.config.chunk_size,
                             chunks_key_to_rect(key, self.config.chunk_size),
@@ -465,6 +468,7 @@ Camera Center: {:?}",
             self.unload_raw(&mut save, key)?;
         }
 
+        self.pool.limit();
         drop(save);
         write.commit()?;
 
@@ -520,6 +524,10 @@ Camera Center: {:?}",
             self.debug.unload_real += 1;
         }
 
+        if let RawLayerChunk::Filled(chunk) | RawLayerChunk::AssociatedCached(chunk) = chunk {
+            self.pool.list.push(chunk);
+        }
+
         self.debug.unload += 1;
 
         Ok(())
@@ -540,6 +548,10 @@ Camera Center: {:?}",
             self.base.cache_unsaved.remove(&key);
             self.debug.encode += 1;
             self.debug.unload_real += 1;
+        }
+
+        if let CacheLayerChunk::Filled(chunk) = chunk {
+            self.pool.list.push(chunk);
         }
 
         self.debug.unload += 1;
@@ -674,13 +686,13 @@ impl ChunksBase {
     }
 
     fn cache_overflow(&mut self) -> bool {
-        (self.cache_real_cnt - self.cache_real_asked_cnt) >= CHUNK_CACHE_REAL_CAPS
-            || (self.cache.len() - self.cache_asked_cnt) >= CHUNK_CACHE_HARD_CAPS
+        (self.cache_real_cnt - self.cache_real_asked_cnt) >= CHUNK_CACHE_REAL_CAP
+            || (self.cache.len() - self.cache_asked_cnt) >= CHUNK_CACHE_HARD_CAP
     }
 
     fn raw_overflow(&mut self) -> bool {
-        (self.raw_real_cnt - self.raw_real_asked_cnt) >= CHUNK_RAW_REAL_CAPS
-            || (self.raw.len() - self.raw_asked_cnt) >= CHUNK_RAW_HARD_CAPS
+        (self.raw_real_cnt - self.raw_real_asked_cnt) >= CHUNK_RAW_REAL_CAP
+            || (self.raw.len() - self.raw_asked_cnt) >= CHUNK_RAW_HARD_CAP
     }
 
     fn forget_asked(&mut self) {
@@ -727,7 +739,7 @@ impl LoadQueue {
         // prioritize cache, render is important
         let mut batch_cnt = 0;
         while let Some(&key) = self.cache.get_index(self.cache_front)
-            && batch_cnt < CHUNK_BATCH
+            && batch_cnt < CHUNK_LOAD_BATCH_CAP
         {
             self.cache_front += 1;
             if base.cache.contains_key(&key) {
@@ -738,7 +750,7 @@ impl LoadQueue {
             batch_cnt += 1;
         }
         while let Some(&key) = self.raw.get_index(self.raw_front)
-            && batch_cnt < CHUNK_BATCH
+            && batch_cnt < CHUNK_LOAD_BATCH_CAP
         {
             self.raw_front += 1;
             if base.raw.contains_key(&key) {

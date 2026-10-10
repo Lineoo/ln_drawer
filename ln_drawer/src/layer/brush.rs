@@ -133,6 +133,7 @@ impl Stroke {
         drop(cpass);
         lp.queue.submit([encoder.finish()]);
         pool.flip();
+        pool.limit();
     }
 
     pub fn discard(
@@ -172,6 +173,7 @@ impl Stroke {
         drop(cpass);
         lp.queue.submit([encoder.finish()]);
         pool.flip();
+        pool.limit();
     }
 
     /// XXX specificated version, we simply set it associated

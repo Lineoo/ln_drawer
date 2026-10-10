@@ -36,6 +36,7 @@ use crate::{
 };
 
 const BRIDGE_CHUNK_SIZE: UVec2 = UVec2::splat(1024);
+const SCRATCH_POOL_CAP: usize = 32;
 
 // TODO rename module to `page`
 
@@ -268,6 +269,7 @@ impl LayerPage {
             pool: ChunkPool {
                 list: Vec::new(),
                 stage: Vec::new(),
+                cap: SCRATCH_POOL_CAP,
                 chunk_size: DEFAULT_CHUNK_SIZE,
             },
             stroke: None,

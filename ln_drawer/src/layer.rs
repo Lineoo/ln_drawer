@@ -636,11 +636,13 @@ pub struct Standalone {
     pub rect: Rectangle,
 }
 
+/// chunks available in full transparent pixels
 pub struct ChunkPool {
-    /// chunks here are directly available in full transparent pixels
+    /// chunks here are directly available
     pub list: Vec<Chunk>,
     /// chunks here are waiting for queue to refresh its rectangle buffer
     pub stage: Vec<Chunk>,
+    pub cap: usize,
     pub chunk_size: UVec2,
 }
 
@@ -653,7 +655,7 @@ impl ChunkPool {
     ) -> Chunk {
         if chunk_size != self.chunk_size {
             log::warn!(
-                "wrong chunk pool ({}x) are being called (expect {}x)",
+                "wrong chunk pool (size {}) are being called (expect size {})",
                 self.chunk_size,
                 chunk_size
             );
@@ -666,8 +668,60 @@ impl ChunkPool {
         }
     }
 
+    fn limit(&mut self) {
+        while self.list.len() + self.stage.len() > self.cap {
+            if let Some(_) = self.list.pop() {
+                continue;
+            } else if let Some(_) = self.stage.pop() {
+                continue;
+            } else {
+                break;
+            }
+        }
+    }
+
     fn flip(&mut self) {
         self.list.append(&mut self.stage);
+    }
+}
+
+/// chunks here need to write texture before use
+pub struct DirtyChunkPool {
+    pub list: Vec<Chunk>,
+    pub cap: usize,
+    pub chunk_size: UVec2,
+}
+
+impl DirtyChunkPool {
+    fn create_dirty_chunk(
+        &mut self,
+        lp: &LayerPipeline,
+        chunk_size: UVec2,
+        rect: Rectangle,
+    ) -> Chunk {
+        if chunk_size != self.chunk_size {
+            log::warn!(
+                "wrong chunk pool (size {}) are being called (expect size {})",
+                self.chunk_size,
+                chunk_size
+            );
+            lp.create_empty_chunk(chunk_size, rect)
+        } else if let Some(chunk) = self.list.pop() {
+            write_dispatch(&lp.queue, &chunk.rectangle, 0, rect);
+            chunk
+        } else {
+            lp.create_empty_chunk(chunk_size, rect)
+        }
+    }
+
+    fn limit(&mut self) {
+        while self.list.len() > self.cap {
+            if let Some(_) = self.list.pop() {
+                continue;
+            } else {
+                break;
+            }
+        }
     }
 }
 
