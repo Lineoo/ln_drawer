@@ -38,11 +38,11 @@ fn fs_debug(vertex: VertexOutput) -> @location(0) vec4f {
     let grid = max(1 - step(vec2f(5. / 512), vertex.uv), step(vec2f(1 - 5. / 512), vertex.uv));
     let grid_float = max(grid.x, grid.y);
 
-    let a = vec4f(color.rgb, 1) * color.a;
-    let b = vec4f(vertex.uv, 0.5, 0.5) * (grid_float * 0.8 + 0.2);
-    let c = vec4f(0, 1, 0, 1) * (f32(i32(color.a * 255) % 5) / 5);
+    let a = vec4f(vertex.uv, 0.5, 0.5) * (grid_float * 0.8 + 0.2);
+    let b = color;
+    let c = vec4f(1 - color.a, color.a, 0, 1) * fract(color.a * 8);
 
     let ab = a * (1 - b.a) + b;
     let abc = ab * (1 - c.a) + c;
-    return abc + vec4f(1) * (1 - color.a);
+    return srgb_gamma_decode(abc + vec4f(1) * (1 - abc.a));
 }
