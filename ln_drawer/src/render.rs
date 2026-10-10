@@ -583,7 +583,7 @@ impl RenderControl {
         let camera = &mut *world.fetch_mut(camera);
 
         if let Some(order) = order {
-            camera.seq_dirty.push((handle, world.here(), order));
+            camera.seq_dirty.push((handle, order));
             camera.seq_remove.retain(|&x| x != handle);
         } else {
             camera.seq_remove.push(handle);

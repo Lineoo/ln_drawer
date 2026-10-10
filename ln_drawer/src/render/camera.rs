@@ -1,5 +1,5 @@
 use glam::{DVec2, I64Vec2, Mat2, UVec2, Vec2};
-use ln_world::{Descriptor, Element, Handle, HandleAny, World};
+use ln_world::{Descriptor, Element, Handle, World};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
     *,
@@ -23,10 +23,11 @@ pub struct Camera {
     pub bind: BindGroup,
     pub uniform: Buffer,
 
-    pub seq_dirty: Vec<(Handle<RenderControl>, HandleAny, isize)>,
+    pub seq_dirty: Vec<(Handle<RenderControl>, isize)>,
     pub seq_remove: Vec<Handle<RenderControl>>,
-    pub sequence: Vec<(Handle<RenderControl>, HandleAny, isize)>,
+    pub sequence: Vec<(Handle<RenderControl>, isize)>,
 
+    #[expect(unused)]
     pub colliders: Vec<Handle<ToolCollider>>,
 
     queue: Queue,
@@ -162,17 +163,16 @@ impl Camera {
     }
 
     pub fn reorder(&mut self) {
-        'r: for (dirty, view, ord) in self.seq_dirty.drain(..) {
-            for (control, old_view, old_ord) in &mut self.sequence {
+        'r: for (dirty, ord) in self.seq_dirty.drain(..) {
+            for (control, old_ord) in &mut self.sequence {
                 if *control == dirty {
-                    *old_view = view;
                     *old_ord = ord;
                     continue 'r;
                 }
             }
 
             // if new
-            self.sequence.push((dirty, view, ord));
+            self.sequence.push((dirty, ord));
         }
 
         (self.sequence).retain(|(control, ..)| !self.seq_remove.contains(control));
@@ -182,7 +182,7 @@ impl Camera {
     }
 
     pub fn draw(&self, world: &World, rpass: &mut RenderPass, extra: RenderExtra) {
-        for &(control, view, _) in &self.sequence {
+        for &(control, _) in &self.sequence {
             let extra = RenderExtra {
                 device: extra.device,
                 queue: extra.queue,
@@ -192,12 +192,10 @@ impl Camera {
                 diagnosis: extra.diagnosis,
                 scissor: extra.scissor,
             };
-            world.enter(view, || {
-                let mut control = world.fetch_mut(control);
-                if let Some(draw) = &mut control.draw {
-                    draw(world, rpass, extra);
-                }
-            });
+            let mut control = world.fetch_mut(control);
+            if let Some(draw) = &mut control.draw {
+                draw(world, rpass, extra);
+            }
         }
     }
 
