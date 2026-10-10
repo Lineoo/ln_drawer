@@ -122,7 +122,7 @@ impl Stroke {
         });
 
         lp.raw_remove_associated(&mut cpass, raw, cache, pool, self.dirty);
-        self.merge(lp, &mut cpass, raw, scratch);
+        self.merge(lp, &mut cpass, raw, cache, scratch);
         self.cleanup(lp, &mut cpass, scratch, pool);
         if let Some(swap) = swap {
             self.cleanup(lp, &mut cpass, swap, pool);
@@ -176,19 +176,57 @@ impl Stroke {
         pool.limit();
     }
 
-    /// XXX specificated version, we simply set it associated
+    /// XXX specificated version, we simply set it the same as cache
     pub fn merge(
         &self,
-        _lp: &LayerPipeline,
-        _cpass: &mut ComputePass,
+        lp: &LayerPipeline,
+        cpass: &mut ComputePass,
         raw: &mut RawLayer,
+        cache: &CacheLayers,
         scratch: &PlainLayer,
     ) {
         for (&chunk_key, _scratch_chunk) in &scratch.chunks {
-            // raw.thread_tx
-            //     .send(ThreadInput::MarkRawUnsaved(chunk_key))
-            //     .unwrap();
-            raw.swap_chunk(chunk_key, RawLayerChunk::Associated);
+            let chunk_rect = chunks_key_to_rect(chunk_key, cache.chunk_size);
+
+            let Some(cache_chunk) = cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
+                log::error!("cache not loaded");
+                continue;
+            };
+            let Some(raw_chunk) = raw.chunks.get(&chunk_key) else {
+                log::error!("raw not loaded");
+                continue;
+            };
+
+            match (cache_chunk, raw_chunk) {
+                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Filled(raw_chunk)) => {
+                    lp.copy_chunk(
+                        cpass,
+                        cache_chunk,
+                        chunk_rect,
+                        raw_chunk,
+                        chunk_rect,
+                        self.dirty,
+                    );
+                    raw.swap_chunk(
+                        chunk_key,
+                        RawLayerChunk::AssociatedCached(raw_chunk.clone()),
+                    );
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Filled(raw_chunk)) => {
+                    lp.clear_chunk(cpass, raw_chunk, chunk_rect, self.dirty);
+                    raw.swap_chunk(
+                        chunk_key,
+                        RawLayerChunk::AssociatedCached(raw_chunk.clone()),
+                    );
+                }
+                (_, RawLayerChunk::Associated | RawLayerChunk::AssociatedCached(_)) => {
+                    log::error!("call `lp.raw_remove_associated` before stroke merge");
+                    continue;
+                }
+                (_, RawLayerChunk::Transparent) => {
+                    raw.swap_chunk(chunk_key, RawLayerChunk::Associated);
+                }
+            }
         }
     }
 
