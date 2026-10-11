@@ -727,7 +727,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpi"
 version = "0.1.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 
 [[package]]
 name = "either"
@@ -4329,7 +4329,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "winit"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "bitflags 2.13.1",
  "cfg_aliases",
@@ -4355,7 +4355,7 @@ dependencies = [
 [[package]]
 name = "winit-android"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "android-activity",
  "bitflags 2.13.1",
@@ -4370,7 +4370,7 @@ dependencies = [
 [[package]]
 name = "winit-appkit"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "bitflags 2.13.1",
  "block2",
@@ -4392,7 +4392,7 @@ dependencies = [
 [[package]]
 name = "winit-common"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "memmap2",
  "objc2",
@@ -4407,7 +4407,7 @@ dependencies = [
 [[package]]
 name = "winit-core"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "bitflags 2.13.1",
  "cursor-icon",
@@ -4421,7 +4421,7 @@ dependencies = [
 [[package]]
 name = "winit-orbital"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "bitflags 2.13.1",
  "dpi",
@@ -4436,7 +4436,7 @@ dependencies = [
 [[package]]
 name = "winit-uikit"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "bitflags 2.13.1",
  "block2",
@@ -4456,7 +4456,7 @@ dependencies = [
 [[package]]
 name = "winit-wayland"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "ahash",
  "bitflags 2.13.1",
@@ -4482,7 +4482,7 @@ dependencies = [
 [[package]]
 name = "winit-web"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "atomic-waker",
  "bitflags 2.13.1",
@@ -4504,7 +4504,7 @@ dependencies = [
 [[package]]
 name = "winit-win32"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "bitflags 2.13.1",
  "cursor-icon",
@@ -4520,7 +4520,7 @@ dependencies = [
 [[package]]
 name = "winit-x11"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#cf575e03ada7220fbcf3ad6e4aa04cb1bc592e8e"
+source = "git+https://github.com/Lineoo/winit/?branch=ln_drawer#4b9bf17b9280c089de2124fd25a25217c8fe6858"
 dependencies = [
  "bitflags 2.13.1",
  "bytemuck",

@@ -158,7 +158,9 @@ impl Element for PointerTool {
                         PointerSource::Mouse => Vec2::ZERO,
                         PointerSource::Touch { .. } => Vec2::ZERO,
                         PointerSource::TabletTool { data, .. } => match data.tilt {
-                            Some(tilt) => I8Vec2::new(tilt.x, tilt.y).as_vec2() / 128.0,
+                            Some(tilt) => {
+                                I8Vec2::new(tilt.x, tilt.y).as_vec2() * Vec2::new(1.0, -1.0) / 128.0
+                            }
                             None => Vec2::ZERO,
                         },
                         PointerSource::Unknown => Vec2::ZERO,
