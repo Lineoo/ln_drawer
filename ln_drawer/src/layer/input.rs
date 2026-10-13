@@ -58,7 +58,7 @@ enum LayerInputState {
 impl LayerInput {
     fn init(&mut self, world: &World, this: Handle<Self>) {
         let main_camera = world.single_fetch::<MainCamera>().0;
-        let collider = world.insert(ToolRectCollider {
+        world.insert(ToolRectCollider {
             common: WidgetCommon {
                 camera: main_camera,
                 visible: true,
