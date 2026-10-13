@@ -11,7 +11,7 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{Render, RenderControl, RenderExtra},
     save::{Autosave, Save},
-    tools::collider::ToolCollider,
+    tools::collider::ToolControl,
 };
 
 pub struct Camera {
@@ -27,8 +27,7 @@ pub struct Camera {
     pub seq_remove: Vec<Handle<RenderControl>>,
     pub sequence: Vec<(Handle<RenderControl>, isize)>,
 
-    #[expect(unused)]
-    pub colliders: Vec<Handle<ToolCollider>>,
+    pub colliders: Vec<Handle<ToolControl>>,
 
     queue: Queue,
 }
@@ -43,24 +42,18 @@ pub struct CameraBind {
     pub layout: BindGroupLayout,
 }
 
-pub struct MainCamera(pub Handle<Camera>);
-
-pub struct UICamera(pub Handle<Camera>);
-
-/// Singleton wrapper for the painting camera's [`CameraUtils`].
-///
-/// Cameras no longer own ECS views, so `CameraUtils` cannot be a per-view singleton anymore.
-/// Everything lives in one view, and the two cameras are told apart by explicit handles; only the
-/// painting camera needs gesture state, so it is exposed through this singleton wrapper.
-pub struct MainCameraUtils(pub Handle<CameraUtils>);
-
 pub struct SetCameraOutdated;
 
+pub struct MainCamera(pub Handle<Camera>);
+pub struct MainCameraUtils(pub Handle<CameraUtils>);
+
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct RootCameraDescriptor {
+pub struct MainCameraArchive {
     pub center: I64Vec2,
     pub zoom: i64,
 }
+
+pub struct UICamera(pub Handle<Camera>);
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -72,13 +65,56 @@ struct CameraUniform {
 }
 
 impl Descriptor for CameraDescriptor {
-    type Target = Handle<Camera>;
+    type Target = Camera;
 
     fn when_build(self, world: &World) -> Self::Target {
         let render = world.single_fetch::<Render>();
         let binding = world.single_fetch::<CameraBind>();
 
-        world.insert(Camera::from_descriptor(self, &render, &binding.layout))
+        let device = &render.device;
+        let size = UVec2::new(render.config.width, render.config.height);
+
+        let transform = Mat2::from_scale_angle(
+            Vec2::splat(self.zoom.q32_as_f64().exp2() as f32) * 2. / size.as_vec2(),
+            0.0,
+        );
+        let translate = self.center;
+        let uniform = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("camera_uniform"),
+            contents: bytemuck::bytes_of(&CameraUniform {
+                center: translate.q32_floor().into(),
+                center_fract: translate.q32_fract().into(),
+                transform,
+                inverse: transform.inverse(),
+            }),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("camera_bind"),
+            layout: &binding.layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &uniform,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
+        Camera {
+            center: self.center,
+            zoom: self.zoom,
+            surface_size: size,
+            bind,
+            uniform,
+            seq_dirty: Vec::new(),
+            seq_remove: Vec::new(),
+            sequence: Vec::new(),
+            colliders: Vec::new(),
+            queue: render.queue.clone(),
+        }
     }
 }
 
@@ -105,63 +141,6 @@ impl Element for Camera {
 impl Element for CameraBind {}
 
 impl Camera {
-    /// Build a camera that lives in an arbitrary view, sharing the render device and the
-    /// already-created [`CameraBind`] layout with the rest of the cameras.
-    ///
-    /// Unlike [`CameraDescriptor::when_build`], this does not require the world to expose
-    /// `Render` from the camera's own view, which allows creating nested cameras inside a
-    /// container that only sees the root view through references.
-    pub fn from_descriptor(
-        desc: CameraDescriptor,
-        render: &Render,
-        layout: &BindGroupLayout,
-    ) -> Camera {
-        let device = &render.device;
-        let size = UVec2::new(render.config.width, render.config.height);
-
-        let transform = Mat2::from_scale_angle(
-            Vec2::splat(desc.zoom.q32_as_f64().exp2() as f32) * 2. / size.as_vec2(),
-            0.0,
-        );
-        let translate = desc.center;
-        let uniform = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("camera_uniform"),
-            contents: bytemuck::bytes_of(&CameraUniform {
-                center: translate.q32_floor().into(),
-                center_fract: translate.q32_fract().into(),
-                transform,
-                inverse: transform.inverse(),
-            }),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        let bind = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("camera_bind"),
-            layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: &uniform,
-                    offset: 0,
-                    size: None,
-                }),
-            }],
-        });
-
-        Camera {
-            center: desc.center,
-            zoom: desc.zoom,
-            surface_size: size,
-            bind,
-            uniform,
-            seq_dirty: Vec::new(),
-            seq_remove: Vec::new(),
-            sequence: Vec::new(),
-            colliders: Vec::new(),
-            queue: render.queue.clone(),
-        }
-    }
-
     pub fn reorder(&mut self) {
         'r: for (dirty, ord) in self.seq_dirty.drain(..) {
             for (control, old_ord) in &mut self.sequence {
@@ -253,14 +232,14 @@ impl Camera {
 
     pub fn init_main_camera(world: &World) -> Handle<Camera> {
         let save = world.single_fetch::<Save>();
-        let camera = world.build(CameraDescriptor {
+        let camera = world.insert(world.build(CameraDescriptor {
             center: save.sn.main_camera.center,
             zoom: save.sn.main_camera.zoom,
-        });
+        }));
 
         let autosave = world.insert(Autosave(Box::new(move |world, task| {
             let camera = world.fetch(camera);
-            task.scene.main_camera = RootCameraDescriptor {
+            task.scene.main_camera = MainCameraArchive {
                 center: camera.center,
                 zoom: camera.zoom,
             };

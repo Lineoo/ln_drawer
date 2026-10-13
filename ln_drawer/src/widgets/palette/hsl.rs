@@ -1,16 +1,17 @@
 use glam::I64Vec2;
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 use palette::{Hsla, RgbHue};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
     tools::{
-        collider::ToolCollider,
+        collider::ToolRectCollider,
         pointer::{PointerHit, PointerHitStatus},
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
+        common::WidgetCommon,
         renderer::quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
         shaders::shader_compile,
     },
@@ -60,18 +61,20 @@ impl HslPanel {
             },
         });
 
-        let collider = world.insert(ToolCollider {
+        let collider = world.insert(ToolRectCollider {
+            common: WidgetCommon {
+                visible: self.enabled,
+                camera: self.camera,
+            },
+            target: this.untyped(),
             rect: self.rect,
             order: 100,
-            enabled: self.enabled,
-            camera: self.camera,
         });
 
         world.dependency(quad, this);
-        world.dependency(collider, this);
 
         let mut lock = 0;
-        world.observer(collider, move |event: &PointerHit, world| {
+        world.observer(this, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this);
             let delta = event.position - I64Vec2::q32_from_i32(this.rect.origin);
 
@@ -103,17 +106,15 @@ impl HslPanel {
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(this);
-            let mut collider = world.fetch_mut(collider);
             this.enabled = enabled;
-            collider.enabled = enabled;
+            world.queue_trigger(collider, SetWidgetVisible(enabled));
             world.queue_trigger(quad, SetWidgetVisible(enabled));
         });
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this);
-            let mut collider = world.fetch_mut(collider);
             this.rect = rect;
-            collider.rect = rect;
+            world.queue_trigger(collider, SetWidgetRectangle(rect));
             world.queue_trigger(quad, SetWidgetRectangle(rect));
         });
 

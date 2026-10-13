@@ -6,7 +6,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::FI64Ext,
     render::camera::{MainCamera, MainCameraUtils},
-    tools::collider::ToolCollider,
+    tools::collider::ToolControl,
 };
 
 /// Mouse-specific operations like right-click and middle-click.
@@ -35,11 +35,14 @@ impl Element for MouseTool {
                 let screen = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);
 
-                let Some(hit) = ToolCollider::intersect(world, screen) else {
+                let Some(hit) = ToolControl::intersect_main(world, screen) else {
                     return;
                 };
 
-                world.queue_trigger(hit.collider, MouseMenu(hit.position.q32_floor()));
+                let camera = world.fetch(hit.camera);
+                let position = camera.screen_to_world(screen);
+
+                world.queue_trigger(hit.handle, MouseMenu(position.q32_floor()));
             }
 
             // middle-click //

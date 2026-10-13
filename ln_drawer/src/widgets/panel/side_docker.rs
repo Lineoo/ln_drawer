@@ -22,6 +22,7 @@ use crate::{
             ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton,
             ToggleButtonTheme,
         },
+        common::WidgetCommon,
         panel::{Panel, brush_panel::brush_panel, color_picker::color_picker_panel},
         renderer::{svg::svg_render, text::SetText},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
@@ -101,11 +102,14 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
     let elastic_blank = world.insert(());
 
     let slider = world.insert(Slider {
+        common: WidgetCommon {
+            camera,
+            visible: true,
+        },
         rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
         axis: Axis::Up,
         value: 0.67,
         pressed: false,
-        camera,
     });
 
     let slider_label = world.insert(SliderLabel {

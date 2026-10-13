@@ -19,6 +19,7 @@ use crate::{
     theme::Theme,
     widgets::{
         brush_preview::{BrushPreview, BrushPreviewGenerator},
+        common::WidgetCommon,
         container::{Container, ContainerDescriptor},
         echo::EchoWidget,
         renderer::text::{SetText, Text},
@@ -529,11 +530,14 @@ fn option_slider(
     camera: Handle<Camera>,
 ) -> (Handle<Slider>, Handle<SliderLabel>) {
     let slider = world.insert(Slider {
+        common: WidgetCommon {
+            camera,
+            visible: true,
+        },
         value: 0.5,
         axis: Axis::Right,
         rect: Rectangle::default(),
         pressed: false,
-        camera,
     });
 
     world.insert(Transform {

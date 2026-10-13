@@ -6,16 +6,16 @@ pub mod layer_selection;
 pub mod settings;
 pub mod side_docker;
 
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
     animation::{AnimationDescriptor, AnimationType, SimpleAnimationDescriptor},
     measures::Rectangle,
     render::camera::Camera,
     theme::Theme,
-    tools::collider::ToolCollider,
+    tools::collider::ToolRectCollider,
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
+        SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible, common::WidgetCommon,
         renderer::rrect::RRect,
     },
 };
@@ -69,33 +69,34 @@ impl Panel {
             },
         });
 
-        let collider = world.insert(ToolCollider {
+        let collider = world.insert(ToolRectCollider {
+            common: WidgetCommon {
+                visible: self.visible,
+                camera: self.camera,
+            },
+            target: handle.untyped(),
             rect: self.rect,
             order: 0,
-            enabled: self.visible,
-            camera: self.camera,
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(handle);
             let mut back_rect_anim = world.fetch_mut(back_rect_anim);
-            let mut collider = world.fetch_mut(collider);
             this.rect = rect;
             back_rect_anim.dst = rect.into_storage();
             back_rect_anim.src = rect.into_storage();
-            collider.rect = rect;
+            world.queue_trigger(collider, SetWidgetRectangle(rect));
             world.queue_trigger(handle, WidgetRectangle(rect));
         });
 
         world.observer(handle, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(handle);
-            let mut collider = world.fetch_mut(collider);
             this.visible = enabled;
             world.queue_trigger(back, SetWidgetVisible(enabled));
             if let Some(back_shadow) = back_shadow {
                 world.queue_trigger(back_shadow, SetWidgetVisible(enabled));
             }
-            collider.enabled = enabled;
+            world.queue_trigger(collider, SetWidgetVisible(enabled));
             world.queue_trigger(handle, WidgetVisible(enabled));
         });
 

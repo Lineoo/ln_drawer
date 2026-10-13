@@ -1,13 +1,14 @@
 use glam::{I64Vec2, IVec2, UVec2, Vec2, Vec3A};
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 use palette::{IntoColor, Oklab, Srgba};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::Camera,
-    tools::{collider::ToolCollider, pointer::PointerHit},
+    tools::{collider::ToolRectCollider, pointer::PointerHit},
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
+        common::WidgetCommon,
         palette::utils::find_gamut_intersection,
         renderer::{
             quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
@@ -90,20 +91,22 @@ impl OklabPolar {
             camera: self.camera,
         });
 
-        let collider = world.insert(ToolCollider {
+        let collider = world.insert(ToolRectCollider {
+            common: WidgetCommon {
+                visible: self.enabled,
+                camera: self.camera,
+            },
+            target: this.untyped(),
             rect: self.rect,
             order: 100,
-            enabled: self.enabled,
-            camera: self.camera,
         });
 
         world.dependency(quad, this);
         world.dependency(thumb, this);
         world.dependency(thumb_light, this);
         world.dependency(thumb_shadow, this);
-        world.dependency(collider, this);
 
-        world.observer(collider, move |event: &PointerHit, world| {
+        world.observer(this, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this);
             let delta = event.position - I64Vec2::q32_from_i32(this.rect.origin);
             let uv = (delta.q32_as_f64() / this.rect.extend.as_dvec2()).as_vec2();
@@ -116,9 +119,8 @@ impl OklabPolar {
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(this);
-            let mut collider = world.fetch_mut(collider);
             this.enabled = enabled;
-            collider.enabled = enabled;
+            world.queue_trigger(collider, SetWidgetVisible(enabled));
             world.queue_trigger(thumb, SetWidgetVisible(enabled));
             world.queue_trigger(thumb_light, SetWidgetVisible(enabled));
             world.queue_trigger(thumb_shadow, SetWidgetVisible(enabled));
@@ -127,9 +129,7 @@ impl OklabPolar {
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this);
-            let mut collider = world.fetch_mut(collider);
             this.rect = rect;
-            collider.rect = rect;
             let thumb_rect = Rectangle::new_half(
                 this.rect.origin
                     + (Vec2::new(this.color.a / 0.8 + 0.5, this.color.b / 0.8 + 0.5)
@@ -141,6 +141,7 @@ impl OklabPolar {
             world.queue_trigger(thumb_light, SetWidgetRectangle(thumb_rect.expand(1)));
             world.queue_trigger(thumb_shadow, SetWidgetRectangle(thumb_rect.expand(2)));
             world.queue_trigger(quad, SetWidgetRectangle(rect));
+            world.queue_trigger(collider, SetWidgetRectangle(rect));
         });
 
         world.observer(this, move |&SetColorOklab(color), world| {
@@ -209,14 +210,17 @@ impl OklabBar {
             camera: self.camera,
         });
 
-        let collider = world.insert(ToolCollider {
+        let collider = world.insert(ToolRectCollider {
+            common: WidgetCommon {
+                visible: self.enabled,
+                camera: self.camera,
+            },
+            target: this.untyped(),
             rect: self.rect,
             order: 100,
-            enabled: self.enabled,
-            camera: self.camera,
         });
 
-        world.observer(collider, move |event: &PointerHit, world| {
+        world.observer(this, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(this);
             let delta = event.position - I64Vec2::q32_from_i32(this.rect.origin);
             let uv = (delta.q32_as_f64() / this.rect.extend.as_dvec2()).as_vec2();
@@ -228,20 +232,17 @@ impl OklabBar {
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(this);
-            let mut collider = world.fetch_mut(collider);
             this.enabled = enabled;
-            collider.enabled = enabled;
             world.queue_trigger(thumb, SetWidgetVisible(enabled));
             world.queue_trigger(thumb_light, SetWidgetVisible(enabled));
             world.queue_trigger(thumb_shadow, SetWidgetVisible(enabled));
             world.queue_trigger(quad, SetWidgetVisible(enabled));
+            world.queue_trigger(collider, SetWidgetVisible(enabled));
         });
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this);
-            let mut collider = world.fetch_mut(collider);
             this.rect = rect;
-            collider.rect = rect;
             let thumb_rect = Rectangle::new_half(
                 IVec2::new(
                     rect.horizontal_center(),
@@ -253,6 +254,7 @@ impl OklabBar {
             world.queue_trigger(thumb_light, SetWidgetRectangle(thumb_rect.expand(1)));
             world.queue_trigger(thumb_shadow, SetWidgetRectangle(thumb_rect.expand(2)));
             world.queue_trigger(quad, SetWidgetRectangle(rect));
+            world.queue_trigger(collider, SetWidgetRectangle(rect));
         });
 
         world.observer(this, move |&SetColorOklab(color), world| {
@@ -281,7 +283,6 @@ impl OklabBar {
         world.dependency(thumb, this);
         world.dependency(thumb_light, this);
         world.dependency(thumb_shadow, this);
-        world.dependency(collider, this);
     }
 }
 

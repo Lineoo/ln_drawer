@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use glam::{DVec2, UVec2};
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 use winit::{
     cursor::{Cursor, CursorIcon},
     event::{ElementState, PointerKind, WindowEvent},
@@ -17,11 +17,11 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::{MainCamera, MainCameraUtils, UICamera},
     tools::{
-        collider::ToolCollider,
+        collider::ToolRectCollider,
         pointer::{PointerHover, PointerHoverStatus, PointerScroll},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible},
+    widgets::{SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon},
 };
 
 const DRAG_DISTANCE: f64 = 0.005;
@@ -58,10 +58,17 @@ enum LayerInputState {
 impl LayerInput {
     fn init(&mut self, world: &World, this: Handle<Self>) {
         let main_camera = world.single_fetch::<MainCamera>().0;
-        let collider = world.insert(ToolCollider::fullscreen(-100, main_camera));
-        world.dependency(collider, this);
+        let collider = world.insert(ToolRectCollider {
+            common: WidgetCommon {
+                camera: main_camera,
+                visible: true,
+            },
+            target: this.untyped(),
+            rect: Rectangle::FULLSCREEN,
+            order: -100,
+        });
 
-        world.observer(collider, move |event: &PointerHover, world| {
+        world.observer(this, move |event: &PointerHover, world| {
             if let PointerKind::Touch(_) = event.pointer.kind {
                 return;
             }
@@ -143,7 +150,7 @@ impl LayerInput {
             update_icon(&this, &LayerInputState::None, &lnwindow);
         });
 
-        world.observer(collider, move |event: &PointerScroll, world| {
+        world.observer(this, move |event: &PointerScroll, world| {
             let main = world.single_fetch::<MainCamera>().0;
             let utils = world.single_fetch::<MainCameraUtils>().0;
             let mut camera_utils = world.fetch_mut(utils);
@@ -163,7 +170,7 @@ impl LayerInput {
         });
 
         let mut state = LayerInputState::None;
-        world.observer(collider, move |event: &MultiTouchGroup, world| {
+        world.observer(this, move |event: &MultiTouchGroup, world| {
             let main_camera = world.single_fetch::<MainCamera>().0;
             let utils = world.single_fetch::<MainCameraUtils>().0;
             let mut this = world.fetch_mut(this);
@@ -177,7 +184,7 @@ impl LayerInput {
             state = match (prev, event.active.status) {
                 (LayerInputState::None, MultiTouchStatus::Press)
                     if (!this.touch_draw
-                        && matches!(event.active.pointer, PointerKind::Touch(_)))
+                        && matches!(event.active.data.kind, PointerKind::Touch(_)))
                         || this.space =>
                 {
                     camera_utils.camera_cursor_by_anchor_center(center);
@@ -305,7 +312,7 @@ impl LayerInput {
                     lnwindow.window.request_redraw();
 
                     LayerInputState::Paint {
-                        start_position: event.active.screen,
+                        start_position: event.active.data.screen,
                         start_instant: Instant::now(),
                     }
                 }
@@ -344,7 +351,7 @@ impl LayerInput {
                     let lnwindow = world.single_fetch::<Lnwindow>();
                     lnwindow.window.request_redraw();
 
-                    if event.active.screen.distance(start_position) > DRAG_DISTANCE {
+                    if event.active.data.screen.distance(start_position) > DRAG_DISTANCE {
                         LayerInputState::PaintNoErase
                     } else if start_instant.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
                         page.discard();
@@ -470,7 +477,7 @@ fn touch_center(event: &MultiTouchGroup) -> DVec2 {
         if let MultiTouchStatus::Release = member.status {
             continue;
         }
-        sum += member.screen;
+        sum += member.data.screen;
         cnt += 1;
     }
     sum / cnt as f64
@@ -481,7 +488,7 @@ fn touch_pinch(event: &MultiTouchGroup) -> Option<f64> {
         let first = event.members.first().unwrap();
         let last = event.members.last().unwrap();
 
-        Some((first.screen).distance(last.screen))
+        Some((first.data.screen).distance(last.data.screen))
     } else {
         None
     }

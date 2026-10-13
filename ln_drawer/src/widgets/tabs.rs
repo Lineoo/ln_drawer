@@ -12,13 +12,14 @@ use crate::{
     measures::Rectangle,
     render::camera::Camera,
     theme::Theme,
-    tools::collider::ToolCollider,
+    tools::collider::ToolRectCollider,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
         button::{
             ButtonAction, ButtonImage, SetButtonIconColor, SetButtonSelected, ToggleButton,
             ToggleButtonTheme,
         },
+        common::WidgetCommon,
         echo::Echo,
         renderer::rrect::RRect,
     },
@@ -119,13 +120,15 @@ impl Tabs {
             luni_children.push((button.untyped(), LuniChild::default()));
         }
 
-        let collider = world.insert(ToolCollider {
+        let collider = world.insert(ToolRectCollider {
+            common: WidgetCommon {
+                visible: self.visible,
+                camera: self.camera,
+            },
+            target: handle.untyped(),
             rect: self.rect,
             order: -10,
-            enabled: self.visible,
-            camera: self.camera,
         });
-        world.dependency(collider, handle);
 
         let side = world.insert(());
         world.dependency(side, handle);
@@ -173,12 +176,11 @@ impl Tabs {
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(handle);
-            let mut collider = world.fetch_mut(collider);
-
             this.rect = rect;
+
             world.queue_trigger(back, SetWidgetRectangle(rect));
             world.queue_trigger(back_shadow, SetWidgetRectangle(rect + shadow_offset));
-            collider.rect = rect;
+            world.queue_trigger(collider, SetWidgetRectangle(rect));
 
             world.queue_trigger(handle, WidgetRectangle(main_rect(rect)));
             world.queue_trigger(side, WidgetRectangle(side_rect(rect)));
@@ -191,12 +193,10 @@ impl Tabs {
         let children2 = children.clone();
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(handle);
-            let mut collider = world.fetch_mut(collider);
-
             this.visible = visible;
             world.queue_trigger(back, SetWidgetVisible(visible));
             world.queue_trigger(back_shadow, SetWidgetVisible(visible));
-            collider.enabled = visible;
+            world.queue_trigger(collider, SetWidgetVisible(visible));
 
             for (i, tab) in children2.iter().enumerate() {
                 world.queue_trigger(tab.edge, SetWidgetVisible(visible && i == this.active));

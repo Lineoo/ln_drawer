@@ -25,10 +25,7 @@ use crate::{
     },
     save::{Autosave, AutosaveScheduler, Save},
     theme::Theme,
-    tools::{
-        collider::ToolColliderDispatcher, focus::FocusTool, mouse::MouseTool, pointer::PointerTool,
-        touch::MultiTouchTool,
-    },
+    tools::{focus::FocusTool, mouse::MouseTool, pointer::PointerTool, touch::MultiTouchTool},
     widgets::{
         WidgetRectangle,
         common::WidgetCommon,
@@ -151,7 +148,6 @@ impl Element for Lnwindow {
 
             world.flush();
 
-            world.insert(ToolColliderDispatcher);
             world.insert(PointerTool::default());
             world.insert(MouseTool::default());
             world.insert(MultiTouchTool::default());
@@ -164,10 +160,10 @@ impl Element for Lnwindow {
             let lnwindow = world.fetch(this);
 
             let main_camera = Camera::init_main_camera(world);
-            let ui_camera = world.build(CameraDescriptor {
+            let ui_camera = world.insert(world.build(CameraDescriptor {
                 center: I64Vec2::ZERO,
                 zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
-            });
+            }));
 
             drop(lnwindow);
 
@@ -220,14 +216,14 @@ impl Element for Lnwindow {
             side_docker(world, ui_camera);
             world.flush();
 
-            // world.named("desktop_ui");
-            // world.insert(DesktopUi {
-            //     common: WidgetCommon {
-            //         camera: ui_camera,
-            //         visible: true,
-            //     },
-            // });
-            // world.flush();
+            world.named("desktop_ui");
+            world.insert(DesktopUi {
+                common: WidgetCommon {
+                    camera: ui_camera,
+                    visible: true,
+                },
+            });
+            world.flush();
         });
     }
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use image::DynamicImage;
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 use palette::Srgba;
 
 use crate::{
@@ -11,11 +11,12 @@ use crate::{
     render::camera::Camera,
     theme::Theme,
     tools::{
-        collider::ToolCollider,
+        collider::ToolRectCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus, PointerScroll},
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetHover,
+        common::WidgetCommon,
         renderer::{
             canvas::{Canvas, SetCanvasColor},
             rrect::{RRect, SetRRectColor},
@@ -97,13 +98,15 @@ impl ToggleButton {
             },
         });
 
-        let collider = world.insert(ToolCollider {
+        let collider = world.insert(ToolRectCollider {
+            common: WidgetCommon {
+                visible: self.visible,
+                camera: self.camera,
+            },
+            target: handle.untyped(),
             rect: self.rect,
             order: 10,
-            enabled: self.visible,
-            camera: self.camera,
         });
-        world.dependency(collider, handle);
 
         let canvas = if let Some(image) = &self.image {
             let data = image.bytes.to_rgba8();
@@ -140,10 +143,9 @@ impl ToggleButton {
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(handle);
-            let mut collider = world.fetch_mut(collider);
             this.rect = rect;
             world.queue_trigger(frame, SetWidgetRectangle(rect));
-            collider.rect = rect;
+            world.queue_trigger(collider, SetWidgetRectangle(rect));
 
             if let Some(canvas) = canvas
                 && let Some(image) = &this.image
@@ -154,10 +156,9 @@ impl ToggleButton {
 
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(handle);
-            let mut collider = world.fetch_mut(collider);
             this.visible = visible;
             world.queue_trigger(frame, SetWidgetVisible(visible));
-            collider.enabled = visible;
+            world.queue_trigger(collider, SetWidgetVisible(visible));
 
             if let Some(canvas) = canvas {
                 world.queue_trigger(canvas, SetWidgetVisible(visible));
@@ -172,7 +173,7 @@ impl ToggleButton {
 
         let mut drag_start = None;
         let mut dragging = false;
-        world.observer(collider, move |event: &PointerHit, world| {
+        world.observer(handle, move |event: &PointerHit, world| {
             const DRAG_DISTANCE: f64 = 0.01;
 
             match event.status {
@@ -230,11 +231,11 @@ impl ToggleButton {
             }
         });
 
-        world.observer(collider, move |event: &PointerScroll, world| {
+        world.observer(handle, move |event: &PointerScroll, world| {
             world.trigger(handle, event);
         });
 
-        world.observer(collider, move |event: &PointerHover, world| {
+        world.observer(handle, move |event: &PointerHover, world| {
             let mut this = world.fetch_mut(handle);
             match event.status {
                 PointerHoverStatus::Enter => {

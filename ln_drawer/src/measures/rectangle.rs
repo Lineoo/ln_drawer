@@ -76,6 +76,11 @@ impl ops::SubAssign<IVec2> for Rectangle {
 }
 
 impl Rectangle {
+    pub const FULLSCREEN: Rectangle = Rectangle {
+        origin: IVec2::MIN,
+        extend: UVec2::MAX,
+    };
+
     pub fn new(left: i32, down: i32, right: i32, up: i32) -> Rectangle {
         Rectangle {
             origin: IVec2::new(left.min(right), down.min(up)),

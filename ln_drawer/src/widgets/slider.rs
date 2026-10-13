@@ -1,6 +1,6 @@
 use cosmic_text::{Align, Metrics};
 use glam::{IVec2, UVec2};
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
     animation::{
@@ -10,11 +10,12 @@ use crate::{
     render::camera::Camera,
     theme::Theme,
     tools::{
-        collider::ToolCollider,
+        collider::ToolRectCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetHover,
+        common::WidgetCommon,
         renderer::{
             rrect::{RRect, SetRRectColor},
             text::{SetText, Text},
@@ -26,11 +27,11 @@ pub struct SliderValue(pub f32);
 pub struct SetSliderValue(pub f32);
 
 pub struct Slider {
+    pub common: WidgetCommon,
     pub value: f32,
     pub axis: Axis,
     pub rect: Rectangle,
     pub pressed: bool,
-    pub camera: Handle<Camera>,
 }
 
 pub struct SliderLabel {
@@ -52,8 +53,8 @@ impl Slider {
             color: theme.secondary_color,
             radius: theme.roundness,
             width: 0.0,
-            enabled: true,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         let position = into_position(self.rect, self.axis, self.value);
@@ -64,8 +65,8 @@ impl Slider {
             color: theme.theme_color,
             radius: theme.roundness,
             width: 0.0,
-            enabled: true,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         let knob = world.insert(RRect {
@@ -74,8 +75,8 @@ impl Slider {
             color: theme.blank_color,
             radius: theme.roundness,
             width: 0.0,
-            enabled: true,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         let knob_split = world.insert(RRect {
@@ -84,8 +85,8 @@ impl Slider {
             color: theme.primary_color,
             radius: 2.0,
             width: 0.0,
-            enabled: true,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         world.dependency(back, handle);
@@ -117,13 +118,12 @@ impl Slider {
             },
         });
 
-        let collider = world.insert(ToolCollider {
+        let collider = world.insert(ToolRectCollider {
+            common: self.common,
+            target: handle.untyped(),
             rect: self.rect,
             order: 10,
-            enabled: true,
-            camera: self.camera,
         });
-        world.dependency(collider, handle);
 
         world.observer(handle, move |&SetSliderValue(value), world| {
             let mut this = world.fetch_mut(handle);
@@ -133,7 +133,6 @@ impl Slider {
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(handle);
             let mut back_rect_anim = world.fetch_mut(back_rect_anim);
-            let mut collider = world.fetch_mut(collider);
             this.set_rect(
                 world,
                 rect,
@@ -141,20 +140,19 @@ impl Slider {
                 front,
                 knob,
                 knob_split,
-                &mut collider,
+                collider,
             );
         });
 
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
-            let mut collider = world.fetch_mut(collider);
             world.queue_trigger(back, SetWidgetVisible(visible));
             world.queue_trigger(front, SetWidgetVisible(visible));
             world.queue_trigger(knob, SetWidgetVisible(visible));
             world.queue_trigger(knob_split, SetWidgetVisible(visible));
-            collider.enabled = visible;
+            world.queue_trigger(collider, SetWidgetVisible(visible));
         });
 
-        world.observer(collider, move |event: &PointerHover, world| {
+        world.observer(handle, move |event: &PointerHover, world| {
             if let PointerHoverStatus::Enter = event.status {
                 world.queue_trigger(handle, WidgetHover::Enter);
             } else if let PointerHoverStatus::Leave = event.status {
@@ -162,7 +160,7 @@ impl Slider {
             }
         });
 
-        world.observer(collider, move |event: &PointerHit, world| {
+        world.observer(handle, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(handle);
             let theme = world.single_fetch::<Theme>();
 
@@ -234,10 +232,9 @@ impl Slider {
         front: Handle<RRect>,
         knob: Handle<RRect>,
         knob_split: Handle<RRect>,
-        collider: &mut ToolCollider,
+        collider: Handle<ToolRectCollider>,
     ) {
         self.rect = rect;
-        collider.rect = rect;
 
         let back_rect = back_rect(rect, self.axis);
         back_rect_anim.dst = back_rect.into_storage();
@@ -252,6 +249,7 @@ impl Slider {
             knob_split,
             SetWidgetRectangle(knob_split_rect(self.rect, self.axis, position)),
         );
+        world.queue_trigger(collider, SetWidgetRectangle(rect));
 
         match self.pressed {
             true => world.queue_trigger(

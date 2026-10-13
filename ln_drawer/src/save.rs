@@ -14,7 +14,7 @@ use toml_edit::{DocumentMut, Item};
 use crate::lnwin::LnAndroid;
 use crate::{
     lnwin::Lnwindow,
-    render::camera::RootCameraDescriptor,
+    render::camera::MainCameraArchive,
     tools::timer::{Timer, TimerHit},
 };
 
@@ -186,7 +186,7 @@ impl Save {
 pub struct Scene {
     pub database_version: u32,
     pub compact_on_startup: bool,
-    pub main_camera: RootCameraDescriptor,
+    pub main_camera: MainCameraArchive,
 }
 
 impl Scene {
@@ -226,7 +226,7 @@ impl Default for Scene {
         Self {
             database_version: DATABASE_VERSION,
             compact_on_startup: false,
-            main_camera: RootCameraDescriptor::default(),
+            main_camera: MainCameraArchive::default(),
         }
     }
 }

@@ -1,5 +1,5 @@
 use glam::{I64Vec2, UVec2};
-use ln_world::{Descriptor, Element, Handle, World};
+use ln_world::{Descriptor, Element, Handle, HandleGeneric, World};
 use winit::dpi::PhysicalSize;
 
 use crate::{
@@ -12,11 +12,11 @@ use crate::{
     },
     theme::Theme,
     tools::{
-        collider::ToolCollider,
+        collider::{ToolControl, ToolHitResult},
         pointer::{PointerHit, PointerHitStatus, PointerScroll},
     },
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
+        SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible, common::WidgetCommon,
         renderer::rrect::RRect,
     },
 };
@@ -42,10 +42,10 @@ impl Descriptor for ContainerDescriptor {
 
     fn when_build(self, world: &World) -> Self::Target {
         let parent = world.fetch(self.parent);
-        let camera = world.build(CameraDescriptor {
+        let camera = world.insert(world.build(CameraDescriptor {
             center: parent.center,
             zoom: parent.zoom,
-        });
+        }));
 
         let container = world.insert(Container {
             parent: self.parent,
@@ -99,13 +99,6 @@ impl Container {
             camera: parent,
         });
 
-        let collider = world.insert(ToolCollider {
-            rect: self.rect,
-            order: 0,
-            enabled: self.visible,
-            camera: parent,
-        });
-
         let state = world.insert(ContainerState {
             parent,
             scroll: I64Vec2::ZERO,
@@ -113,7 +106,6 @@ impl Container {
 
         world.dependency(back, handle);
         world.dependency(state, handle);
-        world.dependency(collider, handle);
         world.dependency(camera, handle);
 
         world.observer(parent, move |&SetCameraOutdated, world| {
@@ -174,13 +166,31 @@ impl Container {
         RenderControl::reorder(parent, Some(isize::MAX), world, control);
         world.dependency(control, handle);
 
-        world.observer(collider, move |event: &PointerHit, world| {
-            world.trigger(handle, event);
+        let tool = world.insert(ToolControl {
+            common: WidgetCommon {
+                camera: self.parent,
+                visible: self.visible,
+            },
+            order: isize::MAX,
+            hit: Box::new(move |world, screen| {
+                let this = world.fetch(handle);
+                let parent = world.fetch(parent);
+                let position = parent.screen_to_world(screen);
+                if this.rect.contains(position.q32_floor()) {
+                    if let Some(hit) = ToolControl::intersect(world, screen, camera) {
+                        Some(hit)
+                    } else {
+                        Some(ToolHitResult {
+                            camera,
+                            handle: handle.untyped(),
+                        })
+                    }
+                } else {
+                    None
+                }
+            }),
         });
-
-        world.observer(collider, move |event: &PointerScroll, world| {
-            world.trigger(handle, event);
-        });
+        world.dependency(tool, handle);
 
         let mut status = None;
         world.observer(handle, move |event: &PointerHit, world| {
@@ -228,10 +238,6 @@ impl Container {
             let relayout = this.inner.extend != extend;
             this.inner = Rectangle::new_extend(0, 0, extend.x, extend.y);
 
-            let mut collider = world.fetch_mut(collider);
-            collider.rect = rect;
-            drop(collider);
-
             world.queue_trigger(back, SetWidgetRectangle(rect));
             if relayout {
                 world.queue_trigger(handle, WidgetRectangle(this.inner));
@@ -248,9 +254,8 @@ impl Container {
 
         world.observer(handle, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(handle);
-            let mut collider = world.fetch_mut(collider);
             this.visible = enabled;
-            collider.enabled = enabled;
+            world.queue_trigger(tool, SetWidgetVisible(enabled));
             world.queue_trigger(back, SetWidgetVisible(enabled));
             world.queue_trigger(handle, WidgetVisible(enabled));
         });

@@ -1,5 +1,5 @@
 use glam::{DVec2, I8Vec2, I64Vec2, Vec2};
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleAny, World};
 use winit::event::{
     ButtonSource, ElementState, MouseButton, MouseScrollDelta, PointerKind, PointerSource,
     WindowEvent,
@@ -8,7 +8,7 @@ use winit::event::{
 use crate::{
     lnwin::Lnwindow,
     render::camera::Camera,
-    tools::collider::{ToolCollider, ToolColliderChanged, ToolColliderDispatcher},
+    tools::collider::{ToolControl, ToolControlUpdate},
 };
 
 /// Guaranteed for single-pointer operations like mouse cursor or the first-touch finger.
@@ -79,7 +79,7 @@ struct Pointer {
 struct Hover {
     position: I64Vec2,
     camera: Handle<Camera>,
-    handle: Handle<ToolCollider>,
+    handle: HandleAny,
 }
 
 #[derive(Clone, Copy)]
@@ -290,18 +290,14 @@ impl Element for PointerTool {
             }
         });
 
-        let dispatcher = world.single::<ToolColliderDispatcher>();
-        let ob = world.observer(dispatcher, |&ToolColliderChanged(collider), world| {
-            let mut tool = world.single_fetch_mut::<PointerTool>();
-            if let Some(pointer) = &mut tool.pointer
-                && pointer.hovering.is_some_and(|x| x.handle == collider)
-            {
+        let ob = world.observer(lnwindow, move |ToolControlUpdate, world| {
+            let mut tool = world.fetch_mut(this);
+            if let Some(pointer) = &mut tool.pointer {
                 pointer.recalculate_hovering(world);
             }
         });
 
         world.dependency(ob, this);
-        world.dependency(this, dispatcher);
     }
 }
 
@@ -409,13 +405,16 @@ impl Pointer {
                     handle: hovering.handle,
                 }),
             );
-        } else if let Some(hit) = ToolCollider::intersect(world, self.data.screen) {
+        } else if let Some(hit) = ToolControl::intersect_main(world, self.data.screen) {
+            let camera = world.fetch(hit.camera);
+            let position = camera.screen_to_world(self.data.screen);
+
             self.update_hovering(
                 world,
                 Some(Hover {
-                    position: hit.position,
+                    position,
                     camera: hit.camera,
-                    handle: hit.collider,
+                    handle: hit.handle,
                 }),
             );
         } else {
