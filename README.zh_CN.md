@@ -28,11 +28,11 @@ $ cargo apk build --package=ln_drawer --lib
 
 ## 许可证
 
-整个仓库基于 **GNU 宽通用公共许可证 v3.0 或更高版本**（LICENSE 或 https://opensource.org/license/LGPL-3.0）授权。
+整个仓库基于 **GNU Affero 通用公共许可证 v3.0 或更高版本**（LICENSE 或 https://opensource.org/license/AGPL-3.0）授权。
 
 此工作区包含多个具有不同许可证的 crate：
 
-- **ln_drawer** crate 基于 **LGPL-3.0-or-later** 授权。
+- **ln_drawer** crate 基于 **AGPL-3.0-or-later** 授权。
 - **ln_world** crate 基于 **MIT OR Apache-2.0** 双许可证授权。
 
 详情请参阅 crate 级别的 README 文件或 license 字段。

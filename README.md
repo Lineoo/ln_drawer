@@ -28,11 +28,11 @@ $ cargo apk build --package=ln_drawer --lib
 
 ## License
 
-The entire repository is licensed under **GNU Lesser General Public License v3.0 or later** (LICENSE or https://opensource.org/license/LGPL-3.0).
+The entire repository is licensed under **GNU Affero General Public License v3.0 or later** (LICENSE or https://opensource.org/license/AGPL-3.0).
 
 This workspace contains multiple crates with different licenses:
 
-- Crate **ln_drawer** is licensed under **LGPL-3.0-or-later**.
+- Crate **ln_drawer** is licensed under **AGPL-3.0-or-later**.
 - Crate **ln_world** is dual-licensed under **MIT OR Apache-2.0**.
 
 See the crate-level README file or license field for details.
