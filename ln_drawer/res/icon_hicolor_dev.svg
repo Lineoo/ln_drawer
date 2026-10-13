@@ -20,9 +20,9 @@
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="2.8828125"
-     inkscape:cx="-22.373984"
-     inkscape:cy="41.626017"
+     inkscape:zoom="8.1538251"
+     inkscape:cx="20.726469"
+     inkscape:cy="35.934055"
      inkscape:window-width="1707"
      inkscape:window-height="995"
      inkscape:window-x="0"
@@ -45,10 +45,10 @@
        id="linearGradient4"><stop
          id="stop8"
          offset="0"
-         style="stop-color:#ffb65c;stop-opacity:1;" /><stop
+         style="stop-color:#deac5a;stop-opacity:1;" /><stop
          id="stop4"
          offset="1"
-         style="stop-color:#ff86a9;stop-opacity:1;" /></linearGradient><linearGradient
+         style="stop-color:#ff939c;stop-opacity:1;" /></linearGradient><linearGradient
        id="fg-5"
        x1="7.628"
        x2="7.628"
@@ -127,5 +127,5 @@
      id="path3" /><path
      d="m 20.981399,59.094327 h 2.502062 c 2.04076,0 3.855883,-0.817307 3.855883,-3.785685 0,-2.968377 -1.815123,-3.534976 -3.855883,-3.534976 h -2.502062 z m 1.479175,-1.168297 v -4.989081 h 1.032915 c 1.413992,0 2.296482,0.541528 2.296482,2.497047 0,1.609543 -0.47133,2.131015 -0.777193,2.30651 -0.315892,0.18051 -0.757137,0.185524 -1.263566,0.185524 z m 6.493328,1.168297 h 5.806389 l 0.14541,-1.223453 h -4.472624 v -1.890335 h 3.680388 V 54.82227 h -3.680388 v -1.825152 h 4.472624 l -0.14541,-1.223452 h -5.806389 z m 9.005419,-7.320661 h -1.664699 c 0.305864,2.406792 1.253539,4.96401 2.697615,7.320661 h 1.338778 c 1.444076,-2.356651 2.381722,-4.913869 2.687585,-7.320661 h -1.539344 c -0.275778,1.895349 -0.877477,3.740557 -1.679741,5.345085 h -0.160453 c -0.802264,-1.604528 -1.408977,-3.449736 -1.679741,-5.345085 z"
      id="text3"
-     style="font-weight:bold;font-stretch:expanded;font-size:16.4124px;font-family:'Monaspace Argon';-inkscape-font-specification:'Monaspace Argon, Bold Expanded';fill:#ff708f;fill-opacity:1;stroke-width:2.37783;stroke-linecap:round;stroke-linejoin:round"
+     style="font-weight:bold;font-stretch:expanded;font-size:16.4124px;font-family:'Monaspace Argon';-inkscape-font-specification:'Monaspace Argon, Bold Expanded';fill:#ef8294;fill-opacity:1;stroke-width:2.37783;stroke-linecap:round;stroke-linejoin:round"
      aria-label="DEV" /></svg>
