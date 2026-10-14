@@ -12,7 +12,7 @@ use crate::{
     theme::Theme,
     tools::{
         collider::ToolRectCollider,
-        pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus, PointerScroll},
+        pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetHover,
@@ -229,10 +229,6 @@ impl ToggleButton {
                     dragging = false;
                 }
             }
-        });
-
-        world.observer(handle, move |event: &PointerScroll, world| {
-            world.trigger(handle, event);
         });
 
         world.observer(handle, move |event: &PointerHover, world| {
