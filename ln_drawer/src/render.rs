@@ -129,8 +129,9 @@ impl ScissorRect {
 
 pub struct RenderDiagnosis<'a> {
     pub query: &'a QuerySet,
-    pub slots: Vec<((usize, usize), String)>,
-    pub front: usize,
+    pub slots: Vec<((u32, u32), String)>,
+    pub front: u32,
+    pub enable: bool,
 }
 
 impl Render {
@@ -382,6 +383,7 @@ impl Render {
             query: &render.timestamp_query,
             slots: vec![((0, 1), "main".into())],
             front: 2,
+            enable: render.timestamp_poll,
         };
 
         // redraw
@@ -415,13 +417,13 @@ impl Render {
         // GPU timestamp resolve
 
         let timestamp_mapped = render.timestamp_mapped.load(Ordering::Acquire);
-        encoder.resolve_query_set(
-            &render.timestamp_query,
-            0..TIMESTAMP_COUNT,
-            &render.timestamp_resolver,
-            0,
-        );
-        if !timestamp_mapped {
+        if render.timestamp_poll &&  !timestamp_mapped {
+            encoder.resolve_query_set(
+                &render.timestamp_query,
+                0..TIMESTAMP_COUNT,
+                &render.timestamp_resolver,
+                0,
+            );
             encoder.copy_buffer_to_buffer(
                 &render.timestamp_resolver,
                 0,
@@ -431,15 +433,13 @@ impl Render {
             );
         }
 
-        // active refreshing
-
-        // tasks submission
+        // submission
 
         let commands = [early_encoder.finish(), encoder.finish()];
         render.queue.submit(commands);
         render.queue.present(surface);
 
-        // GPU profiling
+        // CPU + GPU profiling
 
         if render.timestamp_poll && !timestamp_mapped {
             let mapper = render.timestamp_mapper.clone();
@@ -450,6 +450,7 @@ impl Render {
             let period = render.queue.get_timestamp_period() as u64;
             let cpu_redraw = now.elapsed();
             let cpu_frame = render.last_redraw.map(|last| now.duration_since(last));
+            render.last_redraw = Some(now);
 
             render.timestamp_mapped.store(true, Ordering::Release);
             render
@@ -473,7 +474,9 @@ impl Render {
                     let mut pairs = indexmap::IndexMap::<String, Duration>::new();
                     for ((start, end), name) in slots {
                         let duration = pairs.entry(name).or_default();
-                        *duration += Duration::from_nanos(timestamps[end] - timestamps[start]);
+                        *duration += Duration::from_nanos(
+                            timestamps[end as usize] - timestamps[start as usize],
+                        );
                     }
 
                     pairs.sort_unstable_keys();
@@ -497,11 +500,9 @@ impl Render {
                         world.trigger(target, &output);
                     });
                 });
+        } else {
+            render.last_redraw = Some(now);
         }
-
-        // CPU time tracing
-
-        render.last_redraw = Some(now);
     }
 }
 
@@ -529,7 +530,7 @@ fn msaa_rpass<'encoder>(
             },
             depth_slice: None,
         })],
-        timestamp_writes: Some(RenderPassTimestampWrites {
+        timestamp_writes: render.timestamp_poll.then(|| RenderPassTimestampWrites {
             query_set: &render.timestamp_query,
             beginning_of_pass_write_index: Some(0),
             end_of_pass_write_index: Some(1),
@@ -554,7 +555,7 @@ fn plain_rpass<'encoder>(
             },
             depth_slice: None,
         })],
-        timestamp_writes: Some(RenderPassTimestampWrites {
+        timestamp_writes: render.timestamp_poll.then(|| RenderPassTimestampWrites {
             query_set: &render.timestamp_query,
             beginning_of_pass_write_index: Some(0),
             end_of_pass_write_index: Some(1),
@@ -597,19 +598,23 @@ impl RenderDiagnosis<'_> {
     }
 
     pub fn assign_string(&mut self, name: String) -> (u32, u32) {
-        assert!(
-            self.front + 1 < TIMESTAMP_BUFFER_SIZE as usize,
-            "too many timestamps"
-        );
+        assert!(self.front + 1 < TIMESTAMP_COUNT, "too many timestamps");
 
-        let pair = (self.front, self.front + 1);
-        self.slots.push((pair, name));
-        self.front += 2;
-        (pair.0 as u32, pair.1 as u32)
+        if self.enable {
+            let pair = (self.front, self.front + 1);
+            self.slots.push((pair, name));
+            self.front += 2;
+            (pair.0, pair.1)
+        } else {
+            let pair = (0, 0);
+            pair
+        }
     }
 
     pub fn write(&mut self, rpass: &mut RenderPass, index: u32) {
-        rpass.write_timestamp(&self.query, index);
+        if self.enable {
+            rpass.write_timestamp(&self.query, index);
+        }
     }
 }
 
