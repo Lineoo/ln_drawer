@@ -11,12 +11,12 @@ use wgpu::{
 };
 
 use crate::{
-    measures::Rectangle,
-    render::{
-        MSAA_STATE, Render, RenderControl,
+    lnwin::Lnwindow, measures::Rectangle, render::{
+        MSAA_STATE, Render, RenderDrawControl,
         camera::{Camera, CameraBind},
+    }, widgets::{
+        SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, shaders::shader_compile,
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::shader_compile},
 };
 
 pub struct VtorPipeline {
@@ -121,9 +121,13 @@ impl Vtor {
         });
 
         let camera = self.camera;
-        let control = world.insert(RenderControl {
-            prepare: None,
-            draw: Some(Box::new(move |world, rpass, extra| {
+        let control = world.insert(RenderDrawControl {
+            common: WidgetCommon {
+                camera,
+                visible: self.visible,
+            },
+            order: self.order,
+            draw: Box::new(move |world, rpass, extra| {
                 let pipeline = world.single_fetch::<VtorPipeline>();
                 let camera = extra.camera;
 
@@ -139,10 +143,8 @@ impl Vtor {
                 rpass.draw_indexed(0..l, 0, 0..1);
 
                 extra.diagnosis.write(rpass, end);
-            })),
+            }),
         });
-
-        RenderControl::reorder(camera, self.visible.then_some(self.order), world, control);
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this);
@@ -150,14 +152,14 @@ impl Vtor {
             this.rect = rect;
             let bytes = bytemuck::bytes_of(&rect);
             render.queue.write_buffer(&rect_uniform, 0, bytes);
-            RenderControl::request_redraw(world);
+            let lnwindow = world.single_fetch::<Lnwindow>();
+            lnwindow.window.request_redraw();
         });
 
         world.observer(this, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(this);
             this.visible = visible;
-            RenderControl::reorder(camera, visible.then_some(this.order), world, control);
-            RenderControl::request_redraw(world);
+            world.queue_trigger(control, SetWidgetVisible(visible));
         });
     }
 }

@@ -1,13 +1,12 @@
-use glam::{I64Vec2, UVec2};
+use glam::{I64Vec2, IVec2};
 use ln_world::{Descriptor, Element, Handle, HandleGeneric, World};
-use winit::dpi::PhysicalSize;
 
 use crate::{
     layout::transform::TransformValue,
     lnwin::Lnwindow,
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, Rectangle, ScissorRect},
     render::{
-        RenderControl, ScissorRect,
+        Render, RenderDrawControl, RenderExtra,
         camera::{Camera, CameraDescriptor, SetCameraOutdated},
     },
     theme::Theme,
@@ -21,73 +20,50 @@ use crate::{
     },
 };
 
-/// Builds a container together with its dedicated child camera.
-///
-/// A container is an embedded sub-interface with its own local coordinates and camera, but it no
-/// longer owns an ECS view: the child camera is an ordinary element inserted next to its parent,
-/// and the camera tree (`Camera::parent`) records the nesting. This keeps every element in a
-/// single root view while still allowing independent scroll/zoom.
-///
-/// The returned child camera must be threaded explicitly into whatever is built inside the
-/// container.
-pub struct ContainerDescriptor {
-    pub parent: Handle<Camera>,
+pub struct ContainerWithCamera {
+    pub common: WidgetCommon,
     pub rect: Rectangle,
-    pub inner_transform: TransformValue,
-    pub visible: bool,
+    pub inner: TransformValue,
+    pub scroll: I64Vec2,
 }
 
-impl Descriptor for ContainerDescriptor {
+impl Descriptor for ContainerWithCamera {
     type Target = (Handle<Container>, Handle<Camera>);
 
     fn when_build(self, world: &World) -> Self::Target {
-        let parent = world.fetch(self.parent);
+        let parent = world.fetch(self.common.camera);
         let camera = world.insert(world.build(CameraDescriptor {
             center: parent.center,
             zoom: parent.zoom,
         }));
 
         let container = world.insert(Container {
-            parent: self.parent,
-            camera,
+            common: self.common,
+            child: camera,
             rect: self.rect,
-            inner: Rectangle::default(),
-            inner_transform: self.inner_transform,
-            visible: self.visible,
+            inner: self.inner,
+            scroll: self.scroll,
         });
 
         (container, camera)
     }
 }
 
+/// separated coordination
 pub struct Container {
-    /// The camera this container renders into and is positioned by.
-    pub parent: Handle<Camera>,
-    /// The container's own camera; contents built inside use this and are laid out locally.
-    pub camera: Handle<Camera>,
+    pub common: WidgetCommon,
+    pub child: Handle<Camera>,
     pub rect: Rectangle,
-    pub inner: Rectangle,
-    pub inner_transform: TransformValue,
-    pub visible: bool,
+    pub inner: TransformValue,
+    /// raw data to keep precision
+    pub scroll: I64Vec2,
 }
-
-/// Per-container state that survives across the container's own lifetime.
-///
-/// `scroll` is the position of the container's local origin in the parent's coordinate space;
-/// the container camera is always `parent.center - scroll`, so nested containers compose
-/// correctly.
-struct ContainerState {
-    parent: Handle<Camera>,
-    scroll: I64Vec2,
-}
-
-impl Element for ContainerState {}
 
 impl Container {
     pub fn init(&mut self, world: &World, handle: Handle<Self>) {
         let theme = world.single_fetch::<Theme>();
-        let parent = self.parent;
-        let camera = self.camera;
+        let parent_camera = world.fetch(self.common.camera);
+        let mut child_camera = world.fetch_mut(self.child);
 
         let back = world.insert(RRect {
             rect: self.rect,
@@ -95,93 +71,81 @@ impl Container {
             color: theme.primary_color,
             radius: theme.roundness,
             width: 0.0,
-            enabled: self.visible,
-            camera: parent,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
-        let state = world.insert(ContainerState {
-            parent,
-            scroll: I64Vec2::ZERO,
-        });
-
-        world.dependency(back, handle);
-        world.dependency(state, handle);
-        world.dependency(camera, handle);
-
-        world.observer(parent, move |&SetCameraOutdated, world| {
-            let Ok(state) = world.try_fetch(state) else {
-                return;
-            };
-            let parent_center = match world.try_fetch(state.parent) {
-                Ok(parent) => parent.center,
-                Err(_) => return,
-            };
-            let scroll = state.scroll;
-            drop(state);
-            set_camera_center(world, camera, compose_center(parent_center, scroll));
-        });
-
-        let control = world.insert(RenderControl {
-            prepare: None,
-            draw: Some(Box::new(move |world, rpass, extra| {
+        let control = world.insert(RenderDrawControl {
+            common: self.common,
+            order: 100,
+            draw: Box::new(move |world, rpass, extra| {
                 let lnwindow = world.single_fetch::<Lnwindow>();
-                let parent_camera = extra.camera;
-                let panel_rect = world.fetch(handle).rect;
+                let this = world.fetch(handle);
+                let child = world.fetch(this.child);
+
+                let camera = extra.camera;
+                let panel_rect = this.rect;
                 let window_size = lnwindow.window.surface_size();
 
-                let scissor = extra.scissor;
-                let enclosing = scissor.get();
-                let own = scissor_rect(&lnwindow, parent_camera, panel_rect, window_size);
+                let left_up = lnwindow.screen_to_cursor(
+                    camera.world_to_screen(I64Vec2::q32_from_i32(panel_rect.left_up())),
+                );
+                let right_down = lnwindow.screen_to_cursor(
+                    camera.world_to_screen(I64Vec2::q32_from_i32(panel_rect.right_down())),
+                );
 
-                // A container clips to its own rect, intersected with whatever clip is already
-                // active so nested containers cannot leak outside their parent.
-                let clipped = match enclosing {
-                    Some(prev) => prev.intersect(own).unwrap_or(ScissorRect {
-                        x: 0,
-                        y: 0,
-                        width: 0,
-                        height: 0,
-                    }),
-                    None => own,
+                let x = (left_up.x.max(0.0) as u32).min(window_size.width);
+                let y = (left_up.y.max(0.0) as u32).min(window_size.height);
+                let right = (right_down.x.max(0.0) as u32).min(window_size.width);
+                let down = (right_down.y.max(0.0) as u32).min(window_size.height);
+
+                let clip = ScissorRect {
+                    x,
+                    y,
+                    width: right.saturating_sub(x),
+                    height: down.saturating_sub(y),
                 };
-                scissor.set(Some(clipped));
 
-                if clipped.width > 0 && clipped.height > 0 {
-                    rpass.set_scissor_rect(clipped.x, clipped.y, clipped.width, clipped.height);
-                    let mut child = world.fetch_mut(camera);
-                    child.reorder();
-                    child.draw(world, rpass, extra);
-                }
+                let clipped = match extra.scissor.intersect(clip) {
+                    Some(result) => result,
+                    // nothing to draw here, skip
+                    None => return,
+                };
 
-                scissor.set(enclosing);
-                let restore = enclosing.unwrap_or(ScissorRect {
-                    x: 0,
-                    y: 0,
-                    width: window_size.width,
-                    height: window_size.height,
-                });
-                rpass.set_scissor_rect(restore.x, restore.y, restore.width, restore.height);
-            })),
+                rpass.set_scissor_rect(clipped.x, clipped.y, clipped.width, clipped.height);
+                Render::draw(
+                    &child,
+                    world,
+                    rpass,
+                    RenderExtra {
+                        scissor: clipped,
+                        ..extra
+                    },
+                );
+
+                // revert
+                rpass.set_scissor_rect(
+                    extra.scissor.x,
+                    extra.scissor.y,
+                    extra.scissor.width,
+                    extra.scissor.height,
+                );
+            }),
         });
-        RenderControl::reorder(parent, Some(isize::MAX), world, control);
-        world.dependency(control, handle);
 
         let tool = world.insert(ToolControl {
-            common: WidgetCommon {
-                camera: self.parent,
-                visible: self.visible,
-            },
+            common: self.common,
             order: isize::MAX,
             hit: Box::new(move |world, screen| {
                 let this = world.fetch(handle);
-                let parent = world.fetch(parent);
+                let parent = world.fetch(this.common.camera);
                 let position = parent.screen_to_world(screen);
                 if this.rect.contains(position.q32_floor()) {
-                    if let Some(hit) = ToolControl::intersect(world, screen, camera) {
+                    if let Some(hit) = ToolControl::intersect(world, screen, this.child) {
                         Some(hit)
                     } else {
                         Some(ToolHitResult {
-                            camera,
+                            camera: this.child,
                             handle: handle.untyped(),
                         })
                     }
@@ -190,7 +154,20 @@ impl Container {
                 }
             }),
         });
+
+        world.dependency(back, handle);
+        world.dependency(self.child, handle);
+        world.dependency(handle, self.common.camera);
+        world.dependency(control, handle);
         world.dependency(tool, handle);
+
+        world.observer(self.common.camera, move |SetCameraOutdated, world| {
+            let mut this = world.fetch_mut(handle);
+            let parent_camera = world.fetch(this.common.camera);
+            let mut child_camera = world.fetch_mut(this.child);
+            this.update_camera(&parent_camera, &mut child_camera);
+            world.queue_trigger(this.child, SetCameraOutdated);
+        });
 
         let mut status = None;
         world.observer(handle, move |event: &PointerHit, world| {
@@ -201,218 +178,115 @@ impl Container {
                 (None, PointerHitStatus::Release) => None,
                 (Some(_), PointerHitStatus::Press) => Some(event.pointer.screen),
                 (Some(position), PointerHitStatus::Moving) => {
-                    let parent_camera = world.fetch(parent);
+                    let mut this = world.fetch_mut(handle);
+                    let parent_camera = world.fetch(this.common.camera);
+                    let mut child_camera = world.fetch_mut(this.child);
                     let delta =
                         parent_camera.screen_to_world_relative(event.pointer.screen - position);
-                    drop(parent_camera);
-                    move_camera(world, camera, handle, state, delta);
+                    this.scroll -= delta;
+                    this.clamp_scroll();
+                    this.update_camera(&parent_camera, &mut child_camera);
+                    world.queue_trigger(this.child, SetCameraOutdated);
                     Some(event.pointer.screen)
                 }
                 (Some(position), PointerHitStatus::Release) => {
-                    let parent_camera = world.fetch(parent);
+                    let mut this = world.fetch_mut(handle);
+                    let parent_camera = world.fetch(this.common.camera);
+                    let mut child_camera = world.fetch_mut(this.child);
                     let delta =
                         parent_camera.screen_to_world_relative(event.pointer.screen - position);
-                    drop(parent_camera);
-                    move_camera(world, camera, handle, state, delta);
+                    this.scroll -= delta;
+                    this.clamp_scroll();
+                    this.update_camera(&parent_camera, &mut child_camera);
+                    world.queue_trigger(this.child, SetCameraOutdated);
                     None
                 }
             }
         });
 
         world.observer(handle, move |event: &PointerScroll, world| {
-            move_camera(
-                world,
-                camera,
-                handle,
-                state,
-                I64Vec2::q32_from_f64(event.delta),
-            );
+            let mut this = world.fetch_mut(handle);
+            let parent_camera = world.fetch(this.common.camera);
+            let mut child_camera = world.fetch_mut(this.child);
+
+            this.scroll -= I64Vec2::q32_from_f64(event.delta);
+            this.clamp_scroll();
+            this.update_camera(&parent_camera, &mut child_camera);
+            world.queue_trigger(child_camera.handle(), SetCameraOutdated);
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(handle);
-            let old_origin = this.rect.origin;
-            this.rect = rect;
+            let parent_camera = world.fetch(this.common.camera);
+            let mut child_camera = world.fetch_mut(this.child);
 
-            let extend = this.inner_transform.compute(rect).extend;
-            let relayout = this.inner.extend != extend;
-            this.inner = Rectangle::new_extend(0, 0, extend.x, extend.y);
+            let old = this.inner_rect();
+            this.rect = rect;
+            let new = this.inner_rect();
+
+            this.update_camera(&parent_camera, &mut child_camera);
+            world.queue_trigger(child_camera.handle(), SetCameraOutdated);
 
             world.queue_trigger(back, SetWidgetRectangle(rect));
-            if relayout {
-                world.queue_trigger(handle, WidgetRectangle(this.inner));
+            if old != new {
+                world.queue_trigger(handle, WidgetRectangle(new));
             }
-            drop(this);
-            move_camera(
-                world,
-                camera,
-                handle,
-                state,
-                I64Vec2::q32_from_i32(rect.origin - old_origin),
-            );
         });
 
         world.observer(handle, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(handle);
-            this.visible = enabled;
+            this.common.visible = enabled;
             world.queue_trigger(tool, SetWidgetVisible(enabled));
+            world.queue_trigger(control, SetWidgetVisible(enabled));
             world.queue_trigger(back, SetWidgetVisible(enabled));
             world.queue_trigger(handle, WidgetVisible(enabled));
         });
+
+        self.clamp_scroll();
+        self.update_camera(&parent_camera, &mut child_camera);
+        world.queue_trigger(self.child, SetCameraOutdated);
     }
-}
 
-/// Move the container's internal camera by `delta` while keeping the contents inside the
-/// container bounds.
-///
-/// `delta` is in the container's parent coordinate space. The scroll offset is converted into an
-/// absolute camera center through the parent camera so nested containers compose.
-fn move_camera(
-    world: &World,
-    camera: Handle<Camera>,
-    handle: Handle<Container>,
-    state: Handle<ContainerState>,
-    delta: I64Vec2,
-) {
-    let parent_center = {
-        let state = world.fetch(state);
-        world.fetch(state.parent).center
-    };
-
-    let mut state = world.fetch_mut(state);
-    let this = world.fetch(handle);
-    state.scroll = rect_contain(state.scroll + delta, this.inner.extend, this.rect);
-    let center = compose_center(parent_center, state.scroll);
-    drop(this);
-    drop(state);
-
-    set_camera_center(world, camera, center);
-}
-
-/// Absolute camera center for a container whose parent camera is centered at `parent_center` and
-/// whose content origin sits at `scroll` in the parent's coordinate space.
-fn compose_center(parent_center: I64Vec2, scroll: I64Vec2) -> I64Vec2 {
-    parent_center - scroll
-}
-
-/// Point a camera at `center` (absolute, in its parent camera's space).
-fn set_camera_center(world: &World, camera: Handle<Camera>, center: I64Vec2) {
-    let Ok(mut camera) = world.try_fetch_mut(camera) else {
-        return;
-    };
-    if camera.center != center {
-        world.queue_trigger(camera.handle(), SetCameraOutdated);
-        camera.center = center;
+    fn inner_rect(&self) -> Rectangle {
+        let zero_aligned = Rectangle {
+            origin: IVec2::ZERO,
+            extend: self.rect.extend,
+        };
+        self.inner.compute(zero_aligned)
     }
-}
 
-/// Convert a rectangle in the parent camera's space into a pixel scissor clamped to the window.
-fn scissor_rect(
-    lnwindow: &Lnwindow,
-    camera: &Camera,
-    rect: Rectangle,
-    window_size: PhysicalSize<u32>,
-) -> ScissorRect {
-    let left_up =
-        lnwindow.screen_to_cursor(camera.world_to_screen(I64Vec2::q32_from_i32(rect.left_up())));
-    let right_down =
-        lnwindow.screen_to_cursor(camera.world_to_screen(I64Vec2::q32_from_i32(rect.right_down())));
+    fn clamp_scroll(&mut self) {
+        let inner = self.inner_rect();
+        let view = self.rect.extend;
 
-    let x = (left_up.x.max(0.0) as u32).min(window_size.width);
-    let y = (left_up.y.max(0.0) as u32).min(window_size.height);
-    let right = (right_down.x.max(0.0) as u32).min(window_size.width);
-    let down = (right_down.y.max(0.0) as u32).min(window_size.height);
+        let x = match view.x < inner.width() {
+            true => {
+                let min = i64::q32_from_i32(inner.left());
+                let max = i64::q32_from_i32(inner.right() - view.x as i32);
+                self.scroll.x.clamp(min, max)
+            }
+            false => i64::q32_from_i32(inner.left()),
+        };
+        let y = match view.y < inner.height() {
+            true => {
+                let min = i64::q32_from_i32(inner.down());
+                let max = i64::q32_from_i32(inner.up() - view.y as i32);
+                self.scroll.y.clamp(min, max)
+            }
+            false => i64::q32_from_i32(inner.down()),
+        };
 
-    ScissorRect {
-        x,
-        y,
-        width: right.saturating_sub(x),
-        height: down.saturating_sub(y),
+        self.scroll = I64Vec2::new(x, y);
     }
-}
 
-/// Keep a fixed-point content rectangle inside `viewport`.
-///
-/// Axes that overflow their viewport axis scroll normally. Axes that are too small to fill the
-/// viewport cannot scroll, so the content is pinned to the top / left edge instead of drifting
-/// freely (the conventional list behavior).
-///
-/// `origin` stays in q32 fixed point on purpose: rounding it to whole pixels on every move throws
-/// away the sub-pixel remainder, so slow drags snap between pixels and the content drifts away
-/// from the pointer. The shader already consumes the fractional camera offset, so keep it.
-fn rect_contain(origin: I64Vec2, extend: UVec2, viewport: Rectangle) -> I64Vec2 {
-    let x = match extend.x >= viewport.width() {
-        true => {
-            let min = i64::q32_from_i32(viewport.right() - extend.x as i32);
-            let max = i64::q32_from_i32(viewport.left());
-            origin.x.clamp(min, max)
-        }
-        false => i64::q32_from_i32(viewport.left()),
-    };
-    let y = match extend.y >= viewport.height() {
-        true => {
-            let min = i64::q32_from_i32(viewport.up() - extend.y as i32);
-            let max = i64::q32_from_i32(viewport.down());
-            origin.y.clamp(min, max)
-        }
-        false => i64::q32_from_i32(viewport.up() - extend.y as i32),
-    };
-
-    I64Vec2::new(x, y)
+    fn update_camera(&mut self, parent_camera: &Camera, child_camera: &mut Camera) {
+        child_camera.center =
+            parent_camera.center + self.scroll - I64Vec2::q32_from_i32(self.rect.origin)
+    }
 }
 
 impl Element for Container {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.init(world, this);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use glam::IVec2;
-
-    use super::*;
-
-    fn q(x: i32, y: i32) -> I64Vec2 {
-        I64Vec2::q32_from_i32(IVec2::new(x, y))
-    }
-
-    fn rect(left: i32, down: i32, right: i32, up: i32) -> Rectangle {
-        Rectangle::new(left, down, right, up)
-    }
-
-    #[test]
-    fn rect_contain_clamps_overflowing_axis() {
-        // Content taller than the viewport: it scrolls and stays within bounds.
-        let viewport = rect(0, 0, 100, 100);
-        let extend = UVec2::new(100, 300);
-        let min = i64::q32_from_i32(100 - 300);
-        let max = i64::q32_from_i32(0);
-
-        assert_eq!(rect_contain(q(0, 0), extend, viewport).y, max);
-        assert_eq!(rect_contain(q(0, -300), extend, viewport).y, min);
-        // Overscrolling past the ends is clamped.
-        assert_eq!(rect_contain(q(0, -1000), extend, viewport).y, min);
-    }
-
-    #[test]
-    fn rect_contain_pins_undersized_axis() {
-        // Content shorter than the viewport is pinned to the top / left.
-        let viewport = rect(10, 20, 110, 120);
-        let extend = UVec2::new(50, 40);
-
-        assert_eq!(rect_contain(q(0, 0), extend, viewport), q(10, 80));
-    }
-
-    #[test]
-    fn compose_center_nests_additively() {
-        let parent = q(100, -50);
-        let outer_scroll = q(10, 20);
-        let inner_scroll = q(3, 4);
-
-        let outer_center = compose_center(parent, outer_scroll);
-        let inner_center = compose_center(outer_center, inner_scroll);
-
-        assert_eq!(inner_center, q(100 - 10 - 3, -50 - 20 - 4));
     }
 }

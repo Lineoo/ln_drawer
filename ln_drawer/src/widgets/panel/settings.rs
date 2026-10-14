@@ -1,4 +1,5 @@
 use cosmic_text::{Attrs, Metrics, Weight};
+use glam::I64Vec2;
 use ln_world::{Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
@@ -20,7 +21,7 @@ use crate::{
     widgets::{
         brush_preview::{BrushPreview, BrushPreviewGenerator},
         common::WidgetCommon,
-        container::{Container, ContainerDescriptor},
+        container::{Container, ContainerWithCamera},
         echo::EchoWidget,
         renderer::text::{SetText, Text},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
@@ -51,10 +52,9 @@ pub fn new_panel_settings(
         preview.brush = Some(layer_instance.active().dup());
     });
 
-    let (settings, cam_settings) = world.build(ContainerDescriptor {
-        parent: camera,
+    let (settings, cam_settings) = world.build(ContainerWithCamera {
         rect: Rectangle::default(),
-        inner_transform: TransformValue {
+        inner: TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
                 offset: 0,
@@ -72,7 +72,11 @@ pub fn new_panel_settings(
                 offset: 0,
             },
         },
-        visible: true,
+        common: WidgetCommon {
+            camera,
+            visible: true,
+        },
+        scroll: I64Vec2::ZERO,
     });
 
     world.dependency(preview, panel);

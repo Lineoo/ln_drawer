@@ -28,11 +28,11 @@ use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{
-        Render, RenderControl, RenderExtra, RenderInformation,
+        Render, RenderDrawControl, RenderExtra, RenderPrepareControl,
         camera::{CameraBind, MainCamera, SetCameraOutdated, UICamera},
     },
     save::{Autosave, Save},
-    widgets::renderer::rrect::RRect,
+    widgets::{common::WidgetCommon, renderer::rrect::RRect},
 };
 
 const BRIDGE_CHUNK_SIZE: UVec2 = UVec2::splat(1024);
@@ -612,22 +612,27 @@ impl Element for LayerPage {
                 .unwrap();
         });
 
-        let control = world.insert(RenderControl {
-            prepare: Some(Box::new(move |world| {
+        let prepare_control = world.insert(RenderPrepareControl {
+            prepare: Box::new(move |world| {
                 let this = &mut *world.fetch_mut(this);
                 this.process_stream(world);
-
-                Some(RenderInformation {
-                    keep_redrawing: false,
-                })
-            })),
-            draw: Some(Box::new(move |world, rpass, extra| {
-                let mut this = world.single_fetch_mut::<LayerPage>();
-                this.render(rpass, extra);
-            })),
+                None
+            }),
         });
 
-        RenderControl::reorder(main_camera, Some(-100), world, control);
+        let control = world.insert(RenderDrawControl {
+            common: WidgetCommon {
+                camera: main_camera,
+                visible: true,
+            },
+            order: -100,
+            draw: Box::new(move |world, rpass, extra| {
+                let mut this = world.single_fetch_mut::<LayerPage>();
+                this.render(rpass, extra);
+            }),
+        });
+
+        world.dependency(prepare_control, this);
         world.dependency(control, this);
     }
 }

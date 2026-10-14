@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use cosmic_text::{Attrs, Metrics};
-use glam::{IVec2, UVec2};
+use glam::{I64Vec2, IVec2, UVec2};
 use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
@@ -25,7 +25,8 @@ use crate::{
             ButtonClick, ButtonDrag, ButtonDragStatus, ButtonImage, ButtonSelected,
             SetButtonSelected, ToggleButton, ToggleButtonTheme,
         },
-        container::{Container, ContainerDescriptor},
+        common::WidgetCommon,
+        container::{Container, ContainerWithCamera},
         echo::Echo,
         renderer::{
             rrect::{RRect, SetRRectColor},
@@ -48,10 +49,13 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
     let content_height =
         count as i32 * ITEM_HEIGHT + (count as i32 - 1).max(0) * ITEM_GAP + LIST_PADDING * 2;
 
-    let (list_container, cam_list) = world.build(ContainerDescriptor {
-        parent: camera,
+    let (list_container, cam_list) = world.build(ContainerWithCamera {
+        common: WidgetCommon {
+            camera,
+            visible: false,
+        },
         rect: Rectangle::default(),
-        inner_transform: TransformValue {
+        inner: TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
                 offset: 0,
@@ -69,14 +73,17 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
                 offset: 0,
             },
         },
-        visible: false,
+        scroll: I64Vec2::Y * 10000,
     });
 
-    let (settings_container, cam_settings) = world.build(ContainerDescriptor {
-        parent: camera,
+    let (list_settings, cam_settings) = world.build(ContainerWithCamera {
         rect: Rectangle::default(),
-        inner_transform: TransformValue::copy(),
-        visible: false,
+        inner: TransformValue::copy(),
+        common: WidgetCommon {
+            camera,
+            visible: false,
+        },
+        scroll: I64Vec2::Y * 10000,
     });
 
     let tabs = world.insert(Tabs {
@@ -90,7 +97,7 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
             ),
             (
                 tab_icon(include_bytes!("../../../res/interface/settings.svg")),
-                settings_container.untyped(),
+                list_settings.untyped(),
             ),
         ],
         camera,
@@ -103,13 +110,13 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
     });
 
     world.dependency(list_container, toggle_button);
-    world.dependency(settings_container, toggle_button);
+    world.dependency(list_settings, toggle_button);
     world.dependency(tabs, toggle_button);
     world.dependency(generator, toggle_button);
 
     world.queue(move |world| brush_list(world, list_container, generator, cam_list));
     world.queue(move |world| {
-        super::settings::new_panel_settings(world, settings_container, generator, cam_settings)
+        super::settings::new_panel_settings(world, list_settings, generator, cam_settings)
     });
 
     world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {

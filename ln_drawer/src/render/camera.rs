@@ -9,7 +9,7 @@ use winit::event::WindowEvent;
 use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
-    render::{Render, RenderControl, RenderExtra},
+    render::{Render, RenderDrawControl},
     save::{Autosave, Save},
     tools::collider::ToolControl,
 };
@@ -23,10 +23,7 @@ pub struct Camera {
     pub bind: BindGroup,
     pub uniform: Buffer,
 
-    pub seq_dirty: Vec<(Handle<RenderControl>, isize)>,
-    pub seq_remove: Vec<Handle<RenderControl>>,
-    pub sequence: Vec<(Handle<RenderControl>, isize)>,
-
+    pub renderers: Vec<Handle<RenderDrawControl>>,
     pub colliders: Vec<Handle<ToolControl>>,
 
     queue: Queue,
@@ -109,9 +106,7 @@ impl Descriptor for CameraDescriptor {
             surface_size: size,
             bind,
             uniform,
-            seq_dirty: Vec::new(),
-            seq_remove: Vec::new(),
-            sequence: Vec::new(),
+            renderers: Vec::new(),
             colliders: Vec::new(),
             queue: render.queue.clone(),
         }
@@ -141,43 +136,6 @@ impl Element for Camera {
 impl Element for CameraBind {}
 
 impl Camera {
-    pub fn reorder(&mut self) {
-        'r: for (dirty, ord) in self.seq_dirty.drain(..) {
-            for (control, old_ord) in &mut self.sequence {
-                if *control == dirty {
-                    *old_ord = ord;
-                    continue 'r;
-                }
-            }
-
-            // if new
-            self.sequence.push((dirty, ord));
-        }
-
-        (self.sequence).retain(|(control, ..)| !self.seq_remove.contains(control));
-        self.seq_remove.clear();
-
-        self.sequence.sort_by(|(.., a), (.., b)| a.cmp(b));
-    }
-
-    pub fn draw(&self, world: &World, rpass: &mut RenderPass, extra: RenderExtra) {
-        for &(control, _) in &self.sequence {
-            let extra = RenderExtra {
-                device: extra.device,
-                queue: extra.queue,
-                camera: self,
-                early_encoder: extra.early_encoder,
-                surface_config: extra.surface_config,
-                diagnosis: extra.diagnosis,
-                scissor: extra.scissor,
-            };
-            let mut control = world.fetch_mut(control);
-            if let Some(draw) = &mut control.draw {
-                draw(world, rpass, extra);
-            }
-        }
-    }
-
     #[inline]
     pub fn screen_to_world(&self, point: DVec2) -> I64Vec2 {
         self.center + self.screen_to_world_relative(point)

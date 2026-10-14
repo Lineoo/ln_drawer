@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use glam::{IVec2, UVec2};
+use glam::{I64Vec2, IVec2, UVec2};
 use ln_world::{Element, Handle, HandleGeneric, World};
 use palette::{Hsla, IntoColor, Oklab, RgbHue, Srgba};
 
@@ -13,7 +13,7 @@ use crate::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
-        container::{Container, ContainerDescriptor},
+        container::{Container, ContainerWithCamera},
         echo::Echo,
         palette::{
             hsl::{ColorHsla, HslPanel, SetColorHsla},
@@ -60,32 +60,44 @@ pub fn color_picker_panel(
         world.queue_trigger(toggle_button_color_icon, SetWidgetRectangle(target));
     });
 
-    let (tab_palette_hsl, cam_palette_hsl) = world.build(ContainerDescriptor {
-        parent: camera,
+    let (tab_palette_hsl, cam_palette_hsl) = world.build(ContainerWithCamera {
         rect: Rectangle::default(),
-        inner_transform: TransformValue::copy(),
-        visible: false,
+        inner: TransformValue::copy(),
+        common: WidgetCommon {
+            camera,
+            visible: false,
+        },
+        scroll: I64Vec2::ZERO,
     });
 
-    let (tab_palette_oklch, cam_palette_oklch) = world.build(ContainerDescriptor {
-        parent: camera,
+    let (tab_palette_oklch, cam_palette_oklch) = world.build(ContainerWithCamera {
         rect: Rectangle::default(),
-        inner_transform: TransformValue::copy(),
-        visible: false,
+        inner: TransformValue::copy(),
+        common: WidgetCommon {
+            camera,
+            visible: false,
+        },
+        scroll: I64Vec2::ZERO,
     });
 
-    let (tab_layer_selection, cam_layer_selection) = world.build(ContainerDescriptor {
-        parent: camera,
+    let (tab_layer_selection, cam_layer_selection) = world.build(ContainerWithCamera {
         rect: Rectangle::default(),
-        inner_transform: TransformValue::copy(),
-        visible: false,
+        inner: TransformValue::copy(),
+        common: WidgetCommon {
+            camera,
+            visible: false,
+        },
+        scroll: I64Vec2::ZERO,
     });
 
-    let (tab_debug, cam_debug) = world.build(ContainerDescriptor {
-        parent: camera,
+    let (tab_debug, cam_debug) = world.build(ContainerWithCamera {
         rect: Rectangle::default(),
-        inner_transform: TransformValue::copy(),
-        visible: false,
+        inner: TransformValue::copy(),
+        common: WidgetCommon {
+            camera,
+            visible: false,
+        },
+        scroll: I64Vec2::ZERO,
     });
 
     let tabs = world.insert(Tabs {

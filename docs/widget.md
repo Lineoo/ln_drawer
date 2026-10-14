@@ -92,20 +92,11 @@ world.insert(world.insert(Panel {
 4. 开始重绘，由 Render 创建 RenderPass 和 RenderExtra
     - 逐级下发
 
-## 7. 内嵌容器
+## 7. 推荐顺序
 
-容器是一块**内嵌子界面**，拥有自己的局部坐标系与独立相机。内部元素的渲染与交互都基于
-该相机，与外层界面无关。
-
-- 容器子相机是插入在**同一个 `Lnwindow` 视图**中的普通元素，
-  `Container` 显式持有父相机与子相机句柄，嵌套关系由 `Container::parent` 表达。
-- 内容按本地坐标布局；平移与滚动只改变子相机，不触发子元素重排或重新上传。
-- 渲染仍由外层的一个渲染控制（portal）负责：先按父相机设置裁剪，再绘制子相机序列，最后
-  恢复；子相机的 `sequence` 在 portal 绘制时重排。
-- 绘画与界面绘制顺序由显式的根相机顺序（`MainCamera` 先、`UICamera` 后）
-  决定。
-- 归属解析全部显式：渲染图元、`RenderControl`、`ToolCollider` 都携带 `Handle<Camera>`，
-  不再依赖逐视图的 `CurrentCamera` 单例。
-
-相机语义参见 `world.md` 的「元素视图」。
-
+1. **fetch** 必要组件
+2. **insert** 子节点
+3. **dependency** 刚刚插入的子节点
+4. **dependency** 父节点
+5. **observer** 声明事件流
+6. **queue_trigger** 进行初始化

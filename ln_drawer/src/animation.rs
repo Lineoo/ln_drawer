@@ -4,8 +4,9 @@ use ln_world::{Descriptor, Element, Handle, RefMut, World};
 use palette::Srgba;
 
 use crate::{
+    lnwin::Lnwindow,
     measures::Rectangle,
-    render::{RenderControl, RenderInformation},
+    render::{RenderInformation, RenderPrepareControl},
 };
 
 pub struct Animation<T: AnimationType> {
@@ -153,8 +154,8 @@ where
 
 impl<T: AnimationType> Element for Animation<T> {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let control = world.insert(RenderControl {
-            prepare: Some(Box::new(move |world| {
+        let control = world.insert(RenderPrepareControl {
+            prepare: Box::new(move |world| {
                 let mut this = world.fetch_mut(this);
 
                 // calculate next value
@@ -182,8 +183,7 @@ impl<T: AnimationType> Element for Animation<T> {
                 Some(RenderInformation {
                     keep_redrawing: this.src != this.dst,
                 })
-            })),
-            draw: None,
+            }),
         });
 
         world.observer(this, move |&SetAnimationDst(dst), world| {
@@ -197,7 +197,8 @@ impl<T: AnimationType> Element for Animation<T> {
     fn when_modify(&mut self, world: &World, _this: Handle<Self>) {
         if self.src != self.dst || self.data_pushed != T::from_storage(self.src) {
             self.last_update = Instant::now();
-            RenderControl::request_redraw(world);
+            let lnwindow = world.single_fetch::<Lnwindow>();
+            lnwindow.window.request_redraw();
         }
     }
 }

@@ -1,7 +1,6 @@
 pub mod camera;
 
 use std::{
-    cell::Cell,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -25,7 +24,9 @@ use winit::{dpi::PhysicalSize, event::WindowEvent};
 
 use crate::{
     lnwin::Lnwindow,
+    measures::ScissorRect,
     render::camera::{Camera, MainCamera, UICamera},
+    widgets::{SetWidgetVisible, common::WidgetCommon},
 };
 
 pub const MSAA_SAMPLE_COUNT: u32 = 1;
@@ -72,17 +73,20 @@ pub struct Render {
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation> + Send>;
 type RenderDrawCommand = Box<dyn FnMut(&World, &mut RenderPass<'_>, RenderExtra<'_, '_>) + Send>;
 
-/// Need to call `RenderControl::reorder` before it can render normally.
-pub struct RenderControl {
-    /// prepare to render and give related information
-    pub prepare: Option<RenderPrepareCommand>,
-
-    /// draw with given render pass
-    pub draw: Option<RenderDrawCommand>,
+/// prepare to render and give related information
+pub struct RenderPrepareControl {
+    pub prepare: RenderPrepareCommand,
 }
 
 pub struct RenderInformation {
     pub keep_redrawing: bool,
+}
+
+/// draw with given render pass
+pub struct RenderDrawControl {
+    pub common: WidgetCommon,
+    pub order: isize,
+    pub draw: RenderDrawCommand,
 }
 
 #[non_exhaustive]
@@ -93,38 +97,7 @@ pub struct RenderExtra<'a, 'b> {
     pub early_encoder: &'a mut CommandEncoder,
     pub surface_config: &'a SurfaceConfiguration,
     pub diagnosis: &'a mut RenderDiagnosis<'b>,
-    pub scissor: &'a Cell<Option<ScissorRect>>,
-}
-
-/// A pixel scissor rectangle, from the top-left of the surface.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ScissorRect {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
-}
-
-impl ScissorRect {
-    /// Intersection of two scissors; `None` when they do not overlap.
-    pub fn intersect(self, other: ScissorRect) -> Option<ScissorRect> {
-        let x = self.x.max(other.x);
-        let y = self.y.max(other.y);
-        let right = self
-            .x
-            .saturating_add(self.width)
-            .min(other.x.saturating_add(other.width));
-        let down = self
-            .y
-            .saturating_add(self.height)
-            .min(other.y.saturating_add(other.height));
-        (right > x && down > y).then_some(ScissorRect {
-            x,
-            y,
-            width: right - x,
-            height: down - y,
-        })
-    }
+    pub scissor: ScissorRect,
 }
 
 pub struct RenderDiagnosis<'a> {
@@ -318,16 +291,15 @@ impl Render {
         drop(render);
 
         let mut refreshing = false;
-        world.foreach_fetch_mut::<RenderControl>(|mut control| {
-            if let Some(prepare) = &mut control.prepare
-                && let Some(info) = prepare(world)
-            {
+        world.foreach_fetch_mut::<RenderPrepareControl>(|mut control| {
+            if let Some(info) = (control.prepare)(world) {
                 refreshing |= info.keep_redrawing;
             };
         });
-        if world.queue_cache::<RenderControl>() {
+        if world.queue_cache::<RenderDrawControl>() {
             log::debug!("control cached");
         }
+        world.queue_cache::<RenderPrepareControl>();
 
         let mut render = world.single_fetch_mut::<Render>();
         render.preparing = false;
@@ -336,7 +308,25 @@ impl Render {
         refreshing
     }
 
-    fn redraw(world: &World) {
+    pub fn draw(camera: &Camera, world: &World, rpass: &mut RenderPass, extra: RenderExtra) {
+        for &control in &camera.renderers {
+            let extra = RenderExtra {
+                device: extra.device,
+                queue: extra.queue,
+                camera,
+                early_encoder: extra.early_encoder,
+                surface_config: extra.surface_config,
+                diagnosis: extra.diagnosis,
+                scissor: extra.scissor,
+            };
+            let mut control = world.fetch_mut(control);
+            if control.common.visible {
+                (control.draw)(world, rpass, extra);
+            }
+        }
+    }
+
+    fn render_main(world: &World) {
         // start redrawing
 
         let render = &mut *world.single_fetch_mut::<Render>();
@@ -391,13 +381,10 @@ impl Render {
         let main_camera = world.single_fetch::<MainCamera>().0;
         let ui_camera = world.single_fetch::<UICamera>().0;
 
-        let scissor = Cell::new(None);
-        // The painting camera draws first, the interface camera over it.
         for camera_handle in [main_camera, ui_camera] {
-            scissor.set(None);
             let camera = &mut *world.fetch_mut(camera_handle);
-            camera.reorder();
-            camera.draw(
+            Render::draw(
+                camera,
                 world,
                 &mut rpass,
                 RenderExtra {
@@ -407,7 +394,12 @@ impl Render {
                     early_encoder: &mut early_encoder,
                     surface_config: &render.config,
                     diagnosis: &mut diagnosis,
-                    scissor: &scissor,
+                    scissor: ScissorRect {
+                        x: 0,
+                        y: 0,
+                        width: camera.surface_size.x,
+                        height: camera.surface_size.y,
+                    },
                 },
             );
         }
@@ -417,7 +409,7 @@ impl Render {
         // GPU timestamp resolve
 
         let timestamp_mapped = render.timestamp_mapped.load(Ordering::Acquire);
-        if render.timestamp_poll &&  !timestamp_mapped {
+        if render.timestamp_poll && !timestamp_mapped {
             encoder.resolve_query_set(
                 &render.timestamp_query,
                 0..TIMESTAMP_COUNT,
@@ -564,34 +556,6 @@ fn plain_rpass<'encoder>(
     })
 }
 
-impl RenderControl {
-    /// Safer functions to request redraw.
-    pub fn request_redraw(world: &World) {
-        let render = world.single_fetch::<Render>();
-        let lnwindow = world.single_fetch::<Lnwindow>();
-
-        if !render.preparing {
-            lnwindow.window.request_redraw();
-        }
-    }
-
-    pub fn reorder(
-        camera: Handle<Camera>,
-        order: Option<isize>,
-        world: &World,
-        handle: Handle<Self>,
-    ) {
-        let camera = &mut *world.fetch_mut(camera);
-
-        if let Some(order) = order {
-            camera.seq_dirty.push((handle, order));
-            camera.seq_remove.retain(|&x| x != handle);
-        } else {
-            camera.seq_remove.push(handle);
-        }
-    }
-}
-
 impl RenderDiagnosis<'_> {
     pub fn assign(&mut self, name: &str) -> (u32, u32) {
         self.assign_string(name.into())
@@ -635,7 +599,7 @@ impl Element for Render {
                         lnwindow.window.request_redraw();
                     }
                     world.flush();
-                    Render::redraw(world);
+                    Render::render_main(world);
                 });
             }
 
@@ -644,11 +608,33 @@ impl Element for Render {
     }
 }
 
-impl Element for RenderControl {
-    fn when_remove(&mut self, world: &World, this: Handle<Self>) {
-        world.foreach::<Camera>(|camera| {
-            // Temp solution before we got relationship system
-            Self::reorder(camera, None, world, this);
+impl Element for RenderDrawControl {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.dependency(this, self.common.camera);
+        let mut camera = world.fetch_mut(self.common.camera);
+        camera.renderers.push(this);
+        camera
+            .renderers
+            .sort_by_key(|&control| match control == this {
+                true => self.order,
+                false => world.fetch(control).order,
+            });
+        let lnwindow = world.single_fetch::<Lnwindow>();
+        lnwindow.window.request_redraw();
+        world.observer(this, move |&SetWidgetVisible(visible), world| {
+            let mut this = world.fetch_mut(this);
+            this.common.visible = visible;
+            let lnwindow = world.single_fetch::<Lnwindow>();
+            lnwindow.window.request_redraw();
         });
     }
+
+    fn when_remove(&mut self, world: &World, this: Handle<Self>) {
+        let mut camera = world.fetch_mut(self.common.camera);
+        camera.renderers.retain(|&x| x != this);
+        let lnwindow = world.single_fetch::<Lnwindow>();
+        lnwindow.window.request_redraw();
+    }
 }
+
+impl Element for RenderPrepareControl {}

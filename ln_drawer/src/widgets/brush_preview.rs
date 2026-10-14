@@ -12,7 +12,7 @@ use crate::{
         wrapper::LayerPage,
     },
     measures::{FI64Ext, Rectangle},
-    render::{RenderControl, camera::Camera},
+    render::{RenderPrepareControl, camera::Camera},
     widgets::{SetWidgetRectangle, SetWidgetVisible, renderer::texture_quad::TextureQuad},
 };
 
@@ -69,8 +69,8 @@ impl BrushPreview {
             quad,
             canvas: preview_canvas,
         });
-        let control = world.insert(RenderControl {
-            prepare: Some(Box::new(move |world| {
+        let control = world.insert(RenderPrepareControl {
+            prepare: Box::new(move |world| {
                 let mut this = world.fetch_mut(this);
                 let instance = world.fetch(instance);
                 if let Some(brush) = &this.brush
@@ -82,8 +82,7 @@ impl BrushPreview {
                     this.outdated = false;
                 }
                 None
-            })),
-            draw: None,
+            }),
         });
 
         let camera = self.camera;

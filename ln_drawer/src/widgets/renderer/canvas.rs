@@ -16,12 +16,10 @@ use wgpu::{
 };
 
 use crate::{
-    measures::Rectangle,
-    render::{
-        MSAA_STATE, Render, RenderControl,
+    lnwin::Lnwindow, measures::Rectangle, render::{
+        MSAA_STATE, Render, RenderDrawControl,
         camera::{Camera, CameraBind},
-    },
-    widgets::{SetWidgetRectangle, SetWidgetVisible, shaders::shader_compile},
+    }, widgets::{SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, shaders::shader_compile},
 };
 
 pub struct Canvas {
@@ -73,9 +71,13 @@ impl Canvas {
         drop(render);
 
         let camera = self.camera;
-        let control = world.insert(RenderControl {
-            prepare: None,
-            draw: Some(Box::new(move |world, rpass, extra| {
+        let control = world.insert(RenderDrawControl {
+            common: WidgetCommon {
+                camera,
+                visible: self.visible,
+            },
+            order: self.order,
+            draw: Box::new(move |world, rpass, extra| {
                 let instance = world.fetch(instance);
                 let pipeline = world.single_fetch::<CanvasPipeline>();
                 let camera = extra.camera;
@@ -89,10 +91,8 @@ impl Canvas {
                 rpass.draw(0..4, 0..1);
 
                 extra.diagnosis.write(rpass, end);
-            })),
+            }),
         });
-
-        RenderControl::reorder(camera, self.visible.then_some(self.order), world, control);
 
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this);
@@ -109,12 +109,14 @@ impl Canvas {
             render
                 .queue
                 .write_buffer(&instance.rectangle_uniform, 0, bytes);
+            let lnwindow = world.single_fetch::<Lnwindow>();
+            lnwindow.window.request_redraw();
         });
 
         world.observer(this, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(this);
             this.visible = visible;
-            RenderControl::reorder(camera, this.visible.then_some(this.order), world, control);
+            world.queue_trigger(control, SetWidgetVisible(visible));
         });
 
         world.observer(this, move |&SetCanvasColor(color), world| {

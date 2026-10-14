@@ -7,7 +7,7 @@ use swash::scale::image::Content;
 use crate::{
     lnwin::Lnwindow,
     measures::Rectangle,
-    render::{RenderControl, camera::Camera},
+    render::{RenderPrepareControl, camera::Camera},
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         renderer::canvas::{Canvas, RemakeCanvasTexture, UploadCanvasData},
@@ -24,7 +24,7 @@ pub struct Text {
     pub extra_upscale: f32,
     pub order: isize,
     pub visible: bool,
-    /// Owning camera. `None` falls back to the ambient camera at insert time.
+    // TODO: we need TextAttr for default attr
     pub camera: Option<Handle<Camera>>,
     /// will delay text draw to next render prepare phase
     pub outdated: bool,
@@ -59,8 +59,6 @@ impl Default for Text {
 
 impl Text {
     pub fn init(&mut self, world: &World, this: Handle<Text>) {
-        let camera = self.camera.expect("Text must be given an owning camera");
-
         let lnwindow = world.single_fetch::<Lnwindow>();
         let canvas = world.insert(self.fresh_canvas(self.upscaled_rect(&lnwindow)));
 
@@ -68,18 +66,13 @@ impl Text {
         let pipeline = &mut *world.single_fetch_mut::<TextPipeline>();
         let mut buffer = Buffer::new(&mut pipeline.font_system, upscale_metrics);
 
-        let control = world.insert(RenderControl {
-            prepare: Some(Box::new(move |world| {
+        world.insert(RenderPrepareControl {
+            prepare: Box::new(move |world| {
                 let mut this = world.fetch_mut(this);
-
                 this.prepare(&mut buffer, world, canvas);
-
                 None
-            })),
-            draw: None,
+            }),
         });
-
-        RenderControl::reorder(camera, Some(0), world, control);
 
         world.observer(this, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(this);
@@ -102,7 +95,6 @@ impl Text {
         });
 
         world.dependency(canvas, this);
-        world.dependency(control, this);
 
         self.outdated = true;
     }
