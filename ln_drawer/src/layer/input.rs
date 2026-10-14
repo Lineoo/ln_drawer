@@ -178,7 +178,7 @@ impl LayerInput {
             let camera_utils = &mut *world.fetch_mut(utils);
             let page = &mut *world.single_fetch_mut::<LayerPage>();
             let center = touch_center(event);
-            let pinch = touch_pinch(event);
+            let pinch = touch_pinch(event, center);
 
             let prev = std::mem::replace(&mut state, LayerInputState::None);
             state = match (prev, event.active.status) {
@@ -483,12 +483,18 @@ fn touch_center(event: &MultiTouchGroup) -> DVec2 {
     sum / cnt as f64
 }
 
-fn touch_pinch(event: &MultiTouchGroup) -> Option<f64> {
-    if event.members.len() == 2 {
-        let first = event.members.first().unwrap();
-        let last = event.members.last().unwrap();
-
-        Some((first.data.screen).distance(last.data.screen))
+fn touch_pinch(event: &MultiTouchGroup, center: DVec2) -> Option<f64> {
+    if event.members.len() >= 2 {
+        let mut sum = 0.0;
+        let mut cnt = 0;
+        for member in &event.members {
+            if let MultiTouchStatus::Release = member.status {
+                continue;
+            }
+            sum += DVec2::distance(member.data.screen, center);
+            cnt += 1;
+        }
+        Some(sum / cnt as f64)
     } else {
         None
     }
