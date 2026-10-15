@@ -249,11 +249,24 @@ impl TextPipeline {
         let mut font_system = FontSystem::new();
         let database = font_system.db_mut();
 
-        let sans = include_bytes!("../../../fonts/SourceHanSansCN-Regular.otf").to_vec();
-        let serif = include_bytes!("../../../fonts/SourceHanSerifCN-Regular.otf").to_vec();
+        // cosmic text cannot find system fonts on android, so we load them by ourselves
+        #[cfg(target_os = "android")]
+        {
+            let sans_reg = include_bytes!("../../../fonts/SourceHanSansCN-Regular.otf").to_vec();
+            let serif_reg = include_bytes!("../../../fonts/SourceHanSerifCN-Regular.otf").to_vec();
+            let sans_bld = include_bytes!("../../../fonts/SourceHanSansCN-Bold.otf").to_vec();
+            let serif_bld = include_bytes!("../../../fonts/SourceHanSerifCN-Bold.otf").to_vec();
 
-        database.load_font_data(sans);
-        database.load_font_data(serif);
+            database.load_font_data(sans_reg);
+            database.load_font_data(serif_reg);
+            database.load_font_data(sans_bld);
+            database.load_font_data(serif_bld);
+        }
+
+        // default fonts
+        database.set_monospace_family("Noto Sans Mono");
+        database.set_sans_serif_family("Source Han Sans CN");
+        database.set_serif_family("Source Han Serif CN");
 
         let swash_cache = SwashCache::new();
 
