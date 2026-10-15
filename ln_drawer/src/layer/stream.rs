@@ -76,7 +76,6 @@ pub struct StreamThread {
     base: ChunksBase,
     queue: LoadQueue,
     camera: CameraInfo,
-    debug: DebugInfo,
 }
 
 /// Static database of real textures that are loaded.
@@ -117,18 +116,6 @@ struct CameraInfo {
     center: (i32, i32, u8),
     rect: Rectangle,
     range: ((i32, i32), (i32, i32)),
-}
-
-/// Debug information for diagnosis.
-#[derive(Default)]
-struct DebugInfo {
-    decode: usize,
-    load: usize,
-    load_real: usize,
-    encode: usize,
-    unload: usize,
-    unload_real: usize,
-    clean: usize,
 }
 
 impl StreamThread {
@@ -172,7 +159,6 @@ impl StreamThread {
                 rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(50)),
                 range: ((0, 0), (0, 0)),
             },
-            debug: DebugInfo::default(),
         }
     }
 
@@ -304,26 +290,18 @@ impl StreamThread {
         self.output_tx
             .send(ThreadOutput::ThreadDebugMessage(format!(
                 "\
-Loading Queue: length {} - pending {}
-Texture Index: real {} total {}
-Load Counter:
-    decode {}
-    real {} total {}
-    Unload Counter:
-    encode {} clean {}
-    real {} total {} 
-Camera Center: {:?}",
+Queue: length {} - pending {}
+Raw: real {}/{CHUNK_RAW_REAL_CAP} | total {}/{CHUNK_RAW_HARD_CAP}
+Cache: real {}/{CHUNK_CACHE_REAL_CAP} | total {}/{CHUNK_CACHE_HARD_CAP}
+Pool: {}/{CHUNK_POOL_CAP}
+Camera: {:?}",
                 self.queue.cache.len(),
                 self.queue.cache.len() - self.queue.cache_front,
                 self.base.raw_real_cnt,
+                self.base.raw.len(),
+                self.base.cache_real_cnt,
                 self.base.cache.len(),
-                self.debug.decode,
-                self.debug.load_real,
-                self.debug.load,
-                self.debug.encode,
-                self.debug.clean,
-                self.debug.unload_real,
-                self.debug.unload,
+                self.pool.list.len(),
                 self.camera.center
             )))?;
         Ok(())
@@ -357,9 +335,6 @@ Camera Center: {:?}",
 
                         self.base.cache_insert(key, chunk.clone());
                         self.output_tx.send(ThreadOutput::CacheInsert(key, chunk))?;
-
-                        self.debug.decode += 1;
-                        self.debug.load_real += 1;
                     } else {
                         self.base.cache_insert(key, CacheLayerChunk::Transparent);
                         self.output_tx
@@ -392,9 +367,6 @@ Camera Center: {:?}",
 
                         self.base.raw_insert(key, chunk.clone());
                         self.output_tx.send(ThreadOutput::RawInsert(key, chunk))?;
-
-                        self.debug.decode += 1;
-                        self.debug.load_real += 1;
                     } else if result.associated {
                         self.base.raw_insert(key, RawLayerChunk::Associated);
                         self.output_tx
@@ -409,8 +381,6 @@ Camera Center: {:?}",
                     }
                 }
             }
-
-            self.debug.load += 1;
         }
 
         Ok(())
@@ -525,15 +495,11 @@ Camera Center: {:?}",
         if self.base.raw_unsaved.contains(&key) {
             self.persist_raw(save, key, &chunk)?;
             self.base.raw_unsaved.remove(&key);
-            self.debug.encode += 1;
-            self.debug.unload_real += 1;
         }
 
         if let RawLayerChunk::Filled(chunk) | RawLayerChunk::AssociatedCached(chunk) = chunk {
             self.pool.list.push(chunk);
         }
-
-        self.debug.unload += 1;
 
         Ok(())
     }
@@ -551,15 +517,11 @@ Camera Center: {:?}",
         if self.base.cache_unsaved.contains(&key) {
             self.persist_cache(save, key, &chunk)?;
             self.base.cache_unsaved.remove(&key);
-            self.debug.encode += 1;
-            self.debug.unload_real += 1;
         }
 
         if let CacheLayerChunk::Filled(chunk) = chunk {
             self.pool.list.push(chunk);
         }
-
-        self.debug.unload += 1;
 
         Ok(())
     }

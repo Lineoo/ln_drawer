@@ -64,9 +64,9 @@ pub struct Render {
 
     // diagnosis
     pub timestamp_poll: bool,
-    pub timestamp_resolver: Buffer,
-    pub timestamp_mapper: Buffer,
-    pub timestamp_query: QuerySet,
+    timestamp_resolver: Buffer,
+    timestamp_mapper: Buffer,
+    timestamp_query: QuerySet,
     timestamp_mapped: Arc<AtomicBool>,
 }
 
@@ -285,29 +285,6 @@ impl Render {
         config
     }
 
-    fn prepare(world: &World) -> bool {
-        let mut render = world.single_fetch_mut::<Render>();
-        render.preparing = true;
-        drop(render);
-
-        let mut refreshing = false;
-        world.foreach_fetch_mut::<RenderPrepareControl>(|mut control| {
-            if let Some(info) = (control.prepare)(world) {
-                refreshing |= info.keep_redrawing;
-            };
-        });
-        if world.queue_cache::<RenderDrawControl>() {
-            log::debug!("control cached");
-        }
-        world.queue_cache::<RenderPrepareControl>();
-
-        let mut render = world.single_fetch_mut::<Render>();
-        render.preparing = false;
-        drop(render);
-
-        refreshing
-    }
-
     pub fn draw(camera: &Camera, world: &World, rpass: &mut RenderPass, extra: RenderExtra) {
         for &control in &camera.renderers {
             let extra = RenderExtra {
@@ -327,10 +304,34 @@ impl Render {
     }
 
     fn render_main(world: &World) {
-        // start redrawing
+        let timestamp_prepare = Instant::now();
+
+        let mut render = world.single_fetch_mut::<Render>();
+        render.preparing = true;
+        drop(render);
+
+        let mut refreshing = false;
+        world.foreach_fetch_mut::<RenderPrepareControl>(|mut control| {
+            if let Some(info) = (control.prepare)(world) {
+                refreshing |= info.keep_redrawing;
+            };
+        });
+
+        world.queue_cache::<RenderDrawControl>();
+        world.queue_cache::<RenderPrepareControl>();
+
+        let mut render = world.single_fetch_mut::<Render>();
+        render.preparing = false;
+        drop(render);
+
+        if refreshing {
+            let lnwindow = world.single_fetch::<Lnwindow>();
+            lnwindow.window.request_redraw();
+        }
+
+        let timestamp_draw = Instant::now();
 
         let render = &mut *world.single_fetch_mut::<Render>();
-        let now = Instant::now();
 
         // setup render pass
 
@@ -433,6 +434,8 @@ impl Render {
 
         // CPU + GPU profiling
 
+        let timestamp_profiling = Instant::now();
+
         if render.timestamp_poll && !timestamp_mapped {
             let mapper = render.timestamp_mapper.clone();
             let mapped = render.timestamp_mapped.clone();
@@ -440,9 +443,12 @@ impl Render {
             let target = world.single::<Render>();
             let slots = std::mem::take(&mut diagnosis.slots);
             let period = render.queue.get_timestamp_period() as u64;
-            let cpu_redraw = now.elapsed();
-            let cpu_frame = render.last_redraw.map(|last| now.duration_since(last));
-            render.last_redraw = Some(now);
+
+            let cpu_frametime = render
+                .last_redraw
+                .map(|last| timestamp_prepare.duration_since(last));
+            let cpu_prepare_time = timestamp_draw.duration_since(timestamp_prepare);
+            let cpu_draw_time = timestamp_profiling.duration_since(timestamp_draw);
 
             render.timestamp_mapped.store(true, Ordering::Release);
             render
@@ -473,14 +479,22 @@ impl Render {
 
                     pairs.sort_unstable_keys();
 
+                    let cpu_profiling_time = timestamp_profiling.elapsed();
+
                     let mut output = String::new();
 
-                    output += &format!("CPU redraw time: {:.3?}\n", cpu_redraw);
-
-                    if let Some(cpu_frame) = cpu_frame {
-                        output += &format!("CPU frame time: {:.3?}\n", cpu_frame);
+                    if let Some(cpu_frame) = cpu_frametime {
+                        output += &format!(
+                            "CPU frame time: {:>7.2}ms / {:>7.2} FPS\n",
+                            cpu_frame.as_secs_f64() * (1e3f64),
+                            1. / cpu_frame.as_secs_f32()
+                        );
                     };
 
+                    output += &format!("CPU prepare time: {:>7.2} ms\n", cpu_prepare_time.as_secs_f64() * (1e3f64));
+                    output += &format!("CPU draw time: {:>7.2} ms\n", cpu_draw_time.as_secs_f64() * (1e3f64));
+                    output += &format!("CPU profiling time: {:>7.2} ms\n", cpu_profiling_time.as_secs_f64() * (1e3f64));
+                    output += "\n";
                     output += &format!("GPU timestamp period: {} ns\n", period);
 
                     for (name, duration) in pairs {
@@ -492,9 +506,9 @@ impl Render {
                         world.trigger(target, &output);
                     });
                 });
-        } else {
-            render.last_redraw = Some(now);
         }
+
+        render.last_redraw = Some(timestamp_prepare);
     }
 }
 
@@ -592,15 +606,7 @@ impl Element for Render {
             }
 
             WindowEvent::RedrawRequested => {
-                world.queue(|world| {
-                    let refreshing = Render::prepare(world);
-                    if refreshing {
-                        let lnwindow = world.single_fetch::<Lnwindow>();
-                        lnwindow.window.request_redraw();
-                    }
-                    world.flush();
-                    Render::render_main(world);
-                });
+                Render::render_main(world);
             }
 
             _ => (),
