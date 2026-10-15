@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use glam::{DVec2, UVec2};
+use glam::{DVec2, I64Vec2, Mat3, UVec2};
 use ln_world::{Element, Handle, HandleGeneric, World};
 use winit::{
     cursor::{Cursor, CursorIcon},
@@ -16,6 +16,7 @@ use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::camera::{MainCamera, MainCameraUtils, UICamera},
+    save::Save,
     tools::{
         collider::ToolRectCollider,
         pointer::{PointerHover, PointerHoverStatus, PointerScroll},
@@ -35,6 +36,7 @@ pub struct LayerInput {
     pub shift: bool,
     pub pick: bool,
     pub hold_pick: bool,
+    pub input_offset_main: I64Vec2,
 }
 
 enum LayerInputState {
@@ -55,6 +57,24 @@ enum LayerInputState {
     PickColor,
 }
 
+/// based on tilt data generate an actual used tilt data
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct TiltCorrection {
+    #[serde(default)]
+    portrait: Mat3,
+    #[serde(default)]
+    landscape: Mat3,
+}
+
+/// based on tilt data generate an offset on position
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct OffsetCorrection {
+    #[serde(default)]
+    portrait: Mat3,
+    #[serde(default)]
+    landscape: Mat3,
+}
+
 impl LayerInput {
     fn init(&mut self, world: &World, this: Handle<Self>) {
         let main_camera = world.single_fetch::<MainCamera>().0;
@@ -73,14 +93,48 @@ impl LayerInput {
                 return;
             }
 
+            let mut this = world.fetch_mut(this);
+            let main_camera = world.single_fetch::<MainCamera>().0;
+            let main_camera = world.fetch(main_camera);
             let ui_camera = world.single_fetch::<UICamera>().0;
             let camera = world.fetch(ui_camera);
             let wrapper = world.single_fetch::<LayerPage>();
-            let brush_rect = Rectangle::new_half(
-                camera.screen_to_world(event.pointer.screen).q32_round(),
-                UVec2::new(1, 1),
-            );
-            let shadow_rect = brush_rect + (event.pointer.tilt * 48.0).as_ivec2();
+            let save = world.single_fetch::<Save>();
+
+            let mut offset = DVec2::ZERO;
+            let mut screen = event.pointer.screen;
+            let mut tilt = event.pointer.tilt;
+            if let Some(tilt_correction) = &save.sn.tilt_correction {
+                tilt = match is_portrait(world) {
+                    true => {
+                        let transformed = tilt_correction.portrait * tilt.extend(1.);
+                        transformed.truncate() / transformed.z
+                    }
+                    false => {
+                        let transformed = tilt_correction.landscape * tilt.extend(1.);
+                        transformed.truncate() / transformed.z
+                    }
+                }
+            }
+            if let Some(offset_correction) = &save.sn.offset_correction {
+                offset = match is_portrait(world) {
+                    true => {
+                        let transformed = offset_correction.portrait * tilt.extend(1.);
+                        transformed.truncate() / transformed.z
+                    }
+                    false => {
+                        let transformed = offset_correction.landscape * tilt.extend(1.);
+                        transformed.truncate() / transformed.z
+                    }
+                }
+                .as_dvec2()
+            }
+            screen += offset;
+            this.input_offset_main = main_camera.screen_to_world_relative(offset);
+
+            let brush_rect =
+                Rectangle::new_half(camera.screen_to_world(screen).q32_round(), UVec2::new(1, 1));
+            let shadow_rect = brush_rect + (tilt * 48.0).as_ivec2();
             world.queue_trigger(wrapper.cursor, SetWidgetRectangle(brush_rect));
             world.queue_trigger(wrapper.cursor_shadow, SetWidgetRectangle(shadow_rect));
 
@@ -177,6 +231,7 @@ impl LayerInput {
             let lnwindow = world.fetch(lnwindow);
             let camera_utils = &mut *world.fetch_mut(utils);
             let page = &mut *world.single_fetch_mut::<LayerPage>();
+
             let center = touch_center(event);
             let pinch = touch_pinch(event, center);
 
@@ -205,7 +260,7 @@ impl LayerInput {
                     }
                 }
                 (LayerInputState::None, MultiTouchStatus::Press) if this.ctrl || this.pick => {
-                    page.pick_color(event.active.position, world);
+                    page.pick_color(event.active.position + this.input_offset_main, world);
                     LayerInputState::PickColor
                 }
 
@@ -302,7 +357,7 @@ impl LayerInput {
                 // Paint
                 (LayerInputState::None, MultiTouchStatus::Press) => {
                     let draw = Draw {
-                        position: event.active.position,
+                        position: event.active.position + this.input_offset_main,
                         force: event.active.data.force.unwrap_or(1.0),
                     };
 
@@ -342,7 +397,7 @@ impl LayerInput {
                     MultiTouchStatus::Holding,
                 ) => {
                     let draw = Draw {
-                        position: event.active.position,
+                        position: event.active.position + this.input_offset_main,
                         force: event.active.data.force.unwrap_or(1.0),
                     };
 
@@ -369,7 +424,7 @@ impl LayerInput {
                 }
                 (LayerInputState::PaintNoErase, MultiTouchStatus::Holding) => {
                     let draw = Draw {
-                        position: event.active.position,
+                        position: event.active.position + this.input_offset_main,
                         force: event.active.data.force.unwrap_or(1.0),
                     };
 
@@ -382,7 +437,7 @@ impl LayerInput {
                 }
                 (LayerInputState::PaintErase, MultiTouchStatus::Holding) => {
                     let draw = Draw {
-                        position: event.active.position,
+                        position: event.active.position + this.input_offset_main,
                         force: event.active.data.force.unwrap_or(1.0),
                     };
 
@@ -411,11 +466,11 @@ impl LayerInput {
                     LayerInputState::PickColor,
                     MultiTouchStatus::Press | MultiTouchStatus::Holding,
                 ) => {
-                    page.pick_color(event.active.position, world);
+                    page.pick_color(event.active.position + this.input_offset_main, world);
                     LayerInputState::PickColor
                 }
                 (LayerInputState::PickColor, MultiTouchStatus::Release) => {
-                    page.pick_color(event.active.position, world);
+                    page.pick_color(event.active.position + this.input_offset_main, world);
                     this.pick = false;
                     world.queue_trigger(world.single::<LayerPage>(), BrushConfigurationChanged);
                     LayerInputState::None
@@ -500,8 +555,23 @@ fn touch_pinch(event: &MultiTouchGroup, center: DVec2) -> Option<f64> {
     }
 }
 
+#[cfg(not(target_os = "android"))]
+fn is_portrait(_world: &World) -> bool {
+    false
+}
+
+#[cfg(target_os = "android")]
+fn is_portrait(world: &World) -> bool {
+    // Android NativeActivity due to some reason won't update configuration's
+    // orientation attribute (keep init state), so we use surface size to tell
+    // if it's portrait
+    let app = world.single_fetch::<Lnwindow>();
+    let size = app.window.surface_size();
+    size.height > size.width
+}
+
 impl Element for LayerInput {
-    fn when_insert(&mut self, world: &ln_world::World, this: ln_world::Handle<Self>) {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         self.init(world, this);
     }
 }

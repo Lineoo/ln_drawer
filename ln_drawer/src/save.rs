@@ -13,9 +13,7 @@ use toml_edit::{DocumentMut, Item};
 #[cfg(target_os = "android")]
 use crate::lnwin::LnAndroid;
 use crate::{
-    lnwin::Lnwindow,
-    render::camera::MainCameraArchive,
-    tools::timer::{Timer, TimerHit},
+    layer::input::{OffsetCorrection, TiltCorrection}, lnwin::Lnwindow, render::camera::MainCameraArchive, tools::timer::{Timer, TimerHit},
 };
 
 /// The format version of the database.
@@ -187,6 +185,8 @@ pub struct Scene {
     pub database_version: u32,
     pub compact_on_startup: bool,
     pub main_camera: MainCameraArchive,
+    pub tilt_correction: Option<TiltCorrection>,
+    pub offset_correction: Option<OffsetCorrection>,
 }
 
 impl Scene {
@@ -227,6 +227,8 @@ impl Default for Scene {
             database_version: DATABASE_VERSION,
             compact_on_startup: false,
             main_camera: MainCameraArchive::default(),
+            tilt_correction: None,
+            offset_correction: None,
         }
     }
 }
