@@ -255,6 +255,68 @@ impl LayerPipeline {
         }
     }
 
+    pub fn raw_fill_all(
+        &self,
+        cpass: &mut ComputePass,
+        raw: &mut RawLayer,
+        cache: &CacheLayers,
+        pool: &mut ChunkPool,
+        dirty: Rectangle,
+    ) {
+        for chunk_key in rect_chunks_iter(dirty, raw.chunk_size) {
+            let chunk_rect = chunks_key_to_rect(chunk_key, raw.chunk_size);
+
+            let Some(cache_chunk) = cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) else {
+                log::error!("cache not loaded");
+                continue;
+            };
+            let Some(raw_chunk) = raw.chunks.get(&chunk_key) else {
+                log::error!("raw not loaded");
+                continue;
+            };
+
+            match (cache_chunk, raw_chunk) {
+                (CacheLayerChunk::Filled(cache_chunk), RawLayerChunk::Associated) => {
+                    let raw_chunk = pool.create_empty_chunk(
+                        self,
+                        raw.chunk_size,
+                        chunks_key_to_rect(chunk_key, raw.chunk_size),
+                    );
+                    self.copy_chunk_direct(cpass, cache_chunk, chunk_rect, &raw_chunk, chunk_rect);
+                    raw.swap_chunk(chunk_key, RawLayerChunk::AssociatedCached(raw_chunk));
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Associated) => {
+                    let raw_chunk = pool.create_empty_chunk(
+                        self,
+                        raw.chunk_size,
+                        chunks_key_to_rect(chunk_key, raw.chunk_size),
+                    );
+                    raw.swap_chunk(chunk_key, RawLayerChunk::AssociatedCached(raw_chunk));
+                }
+                (CacheLayerChunk::Filled(_), RawLayerChunk::Transparent) => {
+                    let raw_chunk = pool.create_empty_chunk(
+                        self,
+                        raw.chunk_size,
+                        chunks_key_to_rect(chunk_key, raw.chunk_size),
+                    );
+                    raw.swap_chunk(chunk_key, RawLayerChunk::Filled(raw_chunk));
+                }
+                (CacheLayerChunk::Transparent, RawLayerChunk::Transparent) => {
+                    let raw_chunk = pool.create_empty_chunk(
+                        self,
+                        raw.chunk_size,
+                        chunks_key_to_rect(chunk_key, raw.chunk_size),
+                    );
+                    raw.swap_chunk(chunk_key, RawLayerChunk::Filled(raw_chunk));
+                }
+                (CacheLayerChunk::Filled(_), RawLayerChunk::Filled(_)) => {}
+                (CacheLayerChunk::Filled(_), RawLayerChunk::AssociatedCached(_)) => {}
+                (CacheLayerChunk::Transparent, RawLayerChunk::Filled(_)) => {}
+                (CacheLayerChunk::Transparent, RawLayerChunk::AssociatedCached(_)) => {}
+            }
+        }
+    }
+
     pub fn cache_mipmaps(
         &self,
         cpass: &mut ComputePass,
