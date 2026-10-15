@@ -16,10 +16,15 @@ use wgpu::{
 };
 
 use crate::{
-    lnwin::Lnwindow, measures::Rectangle, render::{
+    lnwin::Lnwindow,
+    measures::Rectangle,
+    render::{
         MSAA_STATE, Render, RenderDrawControl,
         camera::{Camera, CameraBind},
-    }, widgets::{SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, shaders::shader_compile},
+    },
+    widgets::{
+        SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, shaders::shader_compile,
+    },
 };
 
 pub struct Canvas {

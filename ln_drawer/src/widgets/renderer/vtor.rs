@@ -11,10 +11,13 @@ use wgpu::{
 };
 
 use crate::{
-    lnwin::Lnwindow, measures::Rectangle, render::{
+    lnwin::Lnwindow,
+    measures::Rectangle,
+    render::{
         MSAA_STATE, Render, RenderDrawControl,
         camera::{Camera, CameraBind},
-    }, widgets::{
+    },
+    widgets::{
         SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, shaders::shader_compile,
     },
 };

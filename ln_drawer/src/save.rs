@@ -13,7 +13,10 @@ use toml_edit::{DocumentMut, Item};
 #[cfg(target_os = "android")]
 use crate::lnwin::LnAndroid;
 use crate::{
-    layer::input::{OffsetCorrection, TiltCorrection}, lnwin::Lnwindow, render::camera::MainCameraArchive, tools::timer::{Timer, TimerHit},
+    layer::input::{OffsetCorrection, TiltCorrection},
+    lnwin::Lnwindow,
+    render::camera::MainCameraArchive,
+    tools::timer::{Timer, TimerHit},
 };
 
 /// The format version of the database.
