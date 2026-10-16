@@ -119,17 +119,14 @@ impl Element for Lnwindow {
                 }
             });
 
-            // Setup render
-
-            let lnwindow = world.fetch(this);
-            world.insert(pollster::block_on(Render::new(&lnwindow)));
-            drop(lnwindow);
-
             Save::init(world);
             world.insert(AutosaveScheduler {
                 autosave_duration: Duration::from_secs(180),
             });
 
+            let lnwindow = world.fetch(this);
+            world.insert(pollster::block_on(Render::new(&lnwindow)));
+            drop(lnwindow);
             world.flush();
 
             Camera::init(world);

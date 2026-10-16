@@ -9,17 +9,7 @@ use std::{
 };
 
 use ln_world::{Element, Handle, World};
-use wgpu::{
-    Adapter, BackendOptions, Backends, Buffer, BufferDescriptor, BufferUsages, Color,
-    CommandEncoder, CommandEncoderDescriptor, CompositeAlphaMode, CurrentSurfaceTexture, Device,
-    DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, Instance, InstanceDescriptor,
-    InstanceFlags, Limits, LoadOp, MapMode, MemoryBudgetThresholds, MemoryHints, MultisampleState,
-    Operations, PowerPreference, PresentMode, QuerySet, QuerySetDescriptor, QueryType, Queue,
-    RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPassTimestampWrites,
-    RequestAdapterOptions, StoreOp, Surface, SurfaceColorSpace, SurfaceConfiguration, Texture,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
-    TextureViewDescriptor, Trace,
-};
+use wgpu::*;
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
 use crate::{
@@ -49,6 +39,7 @@ pub struct Render {
     pub adapter: Adapter,
     pub device: Device,
     pub queue: Queue,
+    pub cache: Option<PipelineCache>,
 
     // msaa
     msaa_texture: Option<Texture>,
@@ -60,6 +51,9 @@ pub struct Render {
     preparing: bool,
 
     // time tracing
+    time_avg_prepare: Option<Duration>,
+    time_avg_draw: Option<Duration>,
+    time_avg_frametime: Option<Duration>,
     last_redraw: Option<Instant>,
 
     // diagnosis
@@ -133,7 +127,8 @@ impl Render {
 
         let ideal_features = Features::TIMESTAMP_QUERY
             | Features::TIMESTAMP_QUERY_INSIDE_PASSES
-            | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES;
+            | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+            | Features::PIPELINE_CACHE;
 
         let (device, queue) = adapter
             .request_device(&DeviceDescriptor {
@@ -178,13 +173,17 @@ impl Render {
             adapter,
             device,
             queue,
+            cache: None,
             msaa_texture: None,
             clear_color: Color::WHITE,
             preparing: false,
+            time_avg_prepare: None,
+            time_avg_draw: None,
+            time_avg_frametime: None,
             last_redraw: None,
             timestamp_poll: false,
-            timestamp_mapper,
             timestamp_resolver,
+            timestamp_mapper,
             timestamp_query,
             timestamp_mapped: Arc::new(AtomicBool::new(false)),
         }
@@ -436,6 +435,34 @@ impl Render {
 
         let timestamp_profiling = Instant::now();
 
+        if render.timestamp_poll {
+            let cpu_frametime = render
+                .last_redraw
+                .map(|last| timestamp_prepare.duration_since(last));
+            let cpu_prepare_time = timestamp_draw.duration_since(timestamp_prepare);
+            let cpu_draw_time = timestamp_profiling.duration_since(timestamp_draw);
+
+            if let Some(cpu_frametime) = cpu_frametime {
+                if let Some(prev_frametime) = &mut render.time_avg_frametime {
+                    *prev_frametime = (*prev_frametime + cpu_frametime) / 2
+                } else {
+                    render.time_avg_frametime = Some(cpu_frametime);
+                }
+            }
+
+            if let Some(prev_prepare) = &mut render.time_avg_prepare {
+                *prev_prepare = (*prev_prepare + cpu_prepare_time) / 2
+            } else {
+                render.time_avg_prepare = Some(cpu_prepare_time);
+            }
+
+            if let Some(prev_draw) = &mut render.time_avg_draw {
+                *prev_draw = (*prev_draw + cpu_draw_time) / 2
+            } else {
+                render.time_avg_draw = Some(cpu_draw_time);
+            }
+        }
+
         if render.timestamp_poll && !timestamp_mapped {
             let mapper = render.timestamp_mapper.clone();
             let mapped = render.timestamp_mapped.clone();
@@ -443,12 +470,9 @@ impl Render {
             let target = world.single::<Render>();
             let slots = std::mem::take(&mut diagnosis.slots);
             let period = render.queue.get_timestamp_period() as u64;
-
-            let cpu_frametime = render
-                .last_redraw
-                .map(|last| timestamp_prepare.duration_since(last));
-            let cpu_prepare_time = timestamp_draw.duration_since(timestamp_prepare);
-            let cpu_draw_time = timestamp_profiling.duration_since(timestamp_draw);
+            let cpu_frametime = render.time_avg_frametime;
+            let cpu_prepare_time = render.time_avg_prepare;
+            let cpu_draw_time = render.time_avg_draw;
 
             render.timestamp_mapped.store(true, Ordering::Release);
             render
@@ -491,18 +515,25 @@ impl Render {
                         );
                     };
 
-                    output += &format!(
-                        "CPU prepare time: {:>7.2} ms\n",
-                        cpu_prepare_time.as_secs_f64() * (1e3f64)
-                    );
-                    output += &format!(
-                        "CPU draw time: {:>7.2} ms\n",
-                        cpu_draw_time.as_secs_f64() * (1e3f64)
-                    );
+                    if let Some(cpu_prepare_time) = cpu_prepare_time {
+                        output += &format!(
+                            "CPU prepare time: {:>7.2} ms\n",
+                            cpu_prepare_time.as_secs_f64() * (1e3f64)
+                        );
+                    }
+
+                    if let Some(cpu_draw_time) = cpu_draw_time {
+                        output += &format!(
+                            "CPU draw time: {:>7.2} ms\n",
+                            cpu_draw_time.as_secs_f64() * (1e3f64)
+                        );
+                    }
+
                     output += &format!(
                         "CPU profiling time: {:>7.2} ms\n",
                         cpu_profiling_time.as_secs_f64() * (1e3f64)
                     );
+
                     output += "\n";
                     output += &format!("GPU timestamp period: {} ns\n", period);
 
@@ -620,6 +651,44 @@ impl Element for Render {
 
             _ => (),
         });
+
+        #[cfg(target_os = "android")]
+        if self.device.features().contains(Features::PIPELINE_CACHE) {
+            use wgpu::util::pipeline_cache_key;
+
+            use crate::save::{Autosave, Save, get_file_path};
+
+            let filename = pipeline_cache_key(&self.adapter.get_info());
+            let path = get_file_path(world, &filename.unwrap());
+
+            let save = world.single_fetch::<Save>();
+            let data = match save.sn().compact_on_startup {
+                // drop previous cache so we could start over
+                true => None,
+                false => std::fs::read(path).ok(),
+            };
+
+            // SAFETY: NOT safe. The cache is on users' device, we cannot determine that by ourselves.
+            self.cache = Some(unsafe {
+                self.device.create_pipeline_cache(&PipelineCacheDescriptor {
+                    label: Some("main_cache"),
+                    data: data.as_ref().map(|vec| &vec[..]),
+                    fallback: true,
+                })
+            });
+
+            world.insert(Autosave(Box::new(move |world, _| {
+                let this = world.fetch(this);
+                let cache = this.cache.as_ref().unwrap();
+                if let Some(data) = cache.get_data() {
+                    let filename = pipeline_cache_key(&this.adapter.get_info());
+                    let path = get_file_path(world, &filename.unwrap());
+                    if let Err(err) = std::fs::write(path, data) {
+                        log::error!("failed to write pipeline cache: {err}");
+                    }
+                }
+            })));
+        }
     }
 }
 

@@ -346,7 +346,7 @@ impl VtorPipeline {
             depth_stencil: None,
             multisample: MSAA_STATE,
             multiview_mask: None,
-            cache: None,
+            cache: render.cache.as_ref(),
         });
 
         VtorPipeline {

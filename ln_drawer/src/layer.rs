@@ -21,7 +21,7 @@ use wgpu::{
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
     Buffer, BufferBinding, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
     ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState, MapMode,
+    ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState, MapMode, PipelineCache,
     PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState,
     PrimitiveTopology, Queue, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType,
     SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess,
@@ -107,6 +107,7 @@ impl LayerPipeline {
         _adapter: Adapter,
         device: Device,
         queue: Queue,
+        cache: Option<&PipelineCache>,
         surface_format: TextureFormat,
         camera_bind_layout: &BindGroupLayout,
     ) -> Self {
@@ -148,18 +149,20 @@ impl LayerPipeline {
 
         let render_pipelines = render_pipelines(
             &device,
+            cache,
             surface_format,
             camera_bind_layout,
             sampler_layout,
             &chunk_layout.render,
         );
 
-        let brush_pipelines = brush_pipelines(&device, &draw_dispatch_layout, &chunk_layout);
-        let merge_pipelines = merge_pipelines(&device, &chunk_layout);
-        let mipmap_pipeline = mipmap_pipeline(&device, &chunk_layout);
-        let copy_pipeline = copy_pipeline(&device, &chunk_layout);
-        let readback_pipeline = readback_pipeline(&device, &color_readback_layout, &chunk_layout);
-        let clear_pipeline = clear_pipeline(&device, &chunk_layout);
+        let brush_pipelines = brush_pipelines(&device, cache, &draw_dispatch_layout, &chunk_layout);
+        let merge_pipelines = merge_pipelines(&device, cache, &chunk_layout);
+        let mipmap_pipeline = mipmap_pipeline(&device, cache, &chunk_layout);
+        let copy_pipeline = copy_pipeline(&device, cache, &chunk_layout);
+        let readback_pipeline =
+            readback_pipeline(&device, cache, &color_readback_layout, &chunk_layout);
+        let clear_pipeline = clear_pipeline(&device, cache, &chunk_layout);
 
         LayerPipeline {
             _adapter,
@@ -1653,6 +1656,7 @@ impl CompositeMode {
 
 fn render_pipelines(
     device: &Device,
+    cache: Option<&PipelineCache>,
     surface_format: TextureFormat,
     camera_bind_layout: &BindGroupLayout,
     sampler_layout: BindGroupLayout,
@@ -1700,7 +1704,7 @@ fn render_pipelines(
             depth_stencil: None,
             multisample: Default::default(),
             multiview_mask: None,
-            cache: None,
+            cache,
         })
     };
 
@@ -1710,7 +1714,11 @@ fn render_pipelines(
     }
 }
 
-fn mipmap_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
+fn mipmap_pipeline(
+    device: &Device,
+    cache: Option<&PipelineCache>,
+    chunk_layout: &ChunkLayout,
+) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_mipmap"),
         source: ShaderSource::Wgsl(shader_compile(include_str!("layer/mipmap.wgsl"), &[]).into()),
@@ -1732,11 +1740,15 @@ fn mipmap_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeli
         module: &shader,
         entry_point: Some("cs_main"),
         compilation_options: PipelineCompilationOptions::default(),
-        cache: None,
+        cache,
     })
 }
 
-fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipelines {
+fn merge_pipelines(
+    device: &Device,
+    cache: Option<&PipelineCache>,
+    chunk_layout: &ChunkLayout,
+) -> MergePipelines {
     let layout_out_of_place = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("layer_merge"),
         bind_group_layouts: &[
@@ -1764,36 +1776,58 @@ fn merge_pipelines(device: &Device, chunk_layout: &ChunkLayout) -> MergePipeline
     MergePipelines {
         over: merge_pipeline(
             device,
+            cache,
             &layout_out_of_place,
             WriteMode::OutOfPlace,
             CompositeMode::Over,
         ),
         replace: merge_pipeline(
             device,
+            cache,
             &layout_out_of_place,
             WriteMode::OutOfPlace,
             CompositeMode::Replace,
         ),
         erase: merge_pipeline(
             device,
+            cache,
             &layout_out_of_place,
             WriteMode::OutOfPlace,
             CompositeMode::Erase,
         ),
-        over_in_place: layout_in_place
-            .as_ref()
-            .map(|layout| merge_pipeline(device, layout, WriteMode::InPlace, CompositeMode::Over)),
-        replace_in_place: layout_in_place.as_ref().map(|layout| {
-            merge_pipeline(device, layout, WriteMode::InPlace, CompositeMode::Replace)
+        over_in_place: layout_in_place.as_ref().map(|layout| {
+            merge_pipeline(
+                device,
+                cache,
+                layout,
+                WriteMode::InPlace,
+                CompositeMode::Over,
+            )
         }),
-        erase_in_place: layout_in_place
-            .as_ref()
-            .map(|layout| merge_pipeline(device, layout, WriteMode::InPlace, CompositeMode::Erase)),
+        replace_in_place: layout_in_place.as_ref().map(|layout| {
+            merge_pipeline(
+                device,
+                cache,
+                layout,
+                WriteMode::InPlace,
+                CompositeMode::Replace,
+            )
+        }),
+        erase_in_place: layout_in_place.as_ref().map(|layout| {
+            merge_pipeline(
+                device,
+                cache,
+                layout,
+                WriteMode::InPlace,
+                CompositeMode::Erase,
+            )
+        }),
     }
 }
 
 fn merge_pipeline(
     device: &Device,
+    cache: Option<&PipelineCache>,
     layout: &PipelineLayout,
     write: WriteMode,
     composite: CompositeMode,
@@ -1815,11 +1849,15 @@ fn merge_pipeline(
         module: &shader,
         entry_point: Some("cs_main"),
         compilation_options: PipelineCompilationOptions::default(),
-        cache: None,
+        cache,
     })
 }
 
-fn copy_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
+fn copy_pipeline(
+    device: &Device,
+    cache: Option<&PipelineCache>,
+    chunk_layout: &ChunkLayout,
+) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_copy"),
         source: ShaderSource::Wgsl(shader_compile(include_str!("layer/copy.wgsl"), &[]).into()),
@@ -1841,12 +1879,13 @@ fn copy_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline
         module: &shader,
         entry_point: Some("cs_main"),
         compilation_options: PipelineCompilationOptions::default(),
-        cache: None,
+        cache,
     })
 }
 
 fn readback_pipeline(
     device: &Device,
+    cache: Option<&PipelineCache>,
     color_readback_layout: &BindGroupLayout,
     chunk_layout: &ChunkLayout,
 ) -> ComputePipeline {
@@ -1867,11 +1906,15 @@ fn readback_pipeline(
         module: &shader,
         entry_point: Some("cs_main"),
         compilation_options: PipelineCompilationOptions::default(),
-        cache: None,
+        cache,
     })
 }
 
-fn clear_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipeline {
+fn clear_pipeline(
+    device: &Device,
+    cache: Option<&PipelineCache>,
+    chunk_layout: &ChunkLayout,
+) -> ComputePipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("layer_clear"),
         source: ShaderSource::Wgsl(shader_compile(include_str!("layer/clear.wgsl"), &[]).into()),
@@ -1889,12 +1932,13 @@ fn clear_pipeline(device: &Device, chunk_layout: &ChunkLayout) -> ComputePipelin
         module: &shader,
         entry_point: Some("cs_main"),
         compilation_options: PipelineCompilationOptions::default(),
-        cache: None,
+        cache,
     })
 }
 
 fn brush_pipelines(
     device: &Device,
+    cache: Option<&PipelineCache>,
     dispatch_draw_layout: &BindGroupLayout,
     chunk_layout: &ChunkLayout,
 ) -> BrushPipelines {
@@ -1935,6 +1979,7 @@ fn brush_pipelines(
     BrushPipelines {
         blur: brush_pipeline(
             device,
+            cache,
             &layout_out_of_place,
             BrushKind::Blur,
             BrushStage::Draw,
@@ -1943,6 +1988,7 @@ fn brush_pipelines(
         ),
         smudge: brush_pipeline(
             device,
+            cache,
             &layout_out_of_place,
             BrushKind::Smudge,
             BrushStage::Draw,
@@ -1951,6 +1997,7 @@ fn brush_pipelines(
         ),
         smudge_prepare_stroke: brush_pipeline(
             device,
+            cache,
             &layout_prepare_stroke,
             BrushKind::Smudge,
             BrushStage::PrepareStroke,
@@ -1959,6 +2006,7 @@ fn brush_pipelines(
         ),
         smudge_prepare_draw: brush_pipeline(
             device,
+            cache,
             &layout_prepare_draw,
             BrushKind::Smudge,
             BrushStage::PrepareDraw,
@@ -1967,6 +2015,7 @@ fn brush_pipelines(
         ),
         tint: brush_pipeline(
             device,
+            cache,
             &layout_out_of_place,
             BrushKind::Tint,
             BrushStage::Draw,
@@ -1975,6 +2024,7 @@ fn brush_pipelines(
         ),
         round_over: brush_pipeline(
             device,
+            cache,
             &layout_out_of_place,
             BrushKind::Round,
             BrushStage::Draw,
@@ -1983,6 +2033,7 @@ fn brush_pipelines(
         ),
         round_erase: brush_pipeline(
             device,
+            cache,
             &layout_out_of_place,
             BrushKind::Round,
             BrushStage::Draw,
@@ -1991,6 +2042,7 @@ fn brush_pipelines(
         ),
         pixel_replace: brush_pipeline(
             device,
+            cache,
             &layout_out_of_place,
             BrushKind::Pixel,
             BrushStage::Draw,
@@ -1999,6 +2051,7 @@ fn brush_pipelines(
         ),
         pixel_erase: brush_pipeline(
             device,
+            cache,
             &layout_out_of_place,
             BrushKind::Pixel,
             BrushStage::Draw,
@@ -2008,6 +2061,7 @@ fn brush_pipelines(
         tint_in_place: layout_in_place.as_ref().map(|layout| {
             brush_pipeline(
                 device,
+                cache,
                 layout,
                 BrushKind::Tint,
                 BrushStage::Draw,
@@ -2018,6 +2072,7 @@ fn brush_pipelines(
         blur_in_place: layout_in_place.as_ref().map(|layout| {
             brush_pipeline(
                 device,
+                cache,
                 layout,
                 BrushKind::Blur,
                 BrushStage::Draw,
@@ -2028,6 +2083,7 @@ fn brush_pipelines(
         smudge_in_place: layout_in_place.as_ref().map(|layout| {
             brush_pipeline(
                 device,
+                cache,
                 layout,
                 BrushKind::Smudge,
                 BrushStage::Draw,
@@ -2038,6 +2094,7 @@ fn brush_pipelines(
         round_over_in_place: layout_in_place.as_ref().map(|layout| {
             brush_pipeline(
                 device,
+                cache,
                 layout,
                 BrushKind::Round,
                 BrushStage::Draw,
@@ -2048,6 +2105,7 @@ fn brush_pipelines(
         round_erase_in_place: layout_in_place.as_ref().map(|layout| {
             brush_pipeline(
                 device,
+                cache,
                 layout,
                 BrushKind::Round,
                 BrushStage::Draw,
@@ -2058,6 +2116,7 @@ fn brush_pipelines(
         pixel_replace_in_place: layout_in_place.as_ref().map(|layout| {
             brush_pipeline(
                 device,
+                cache,
                 layout,
                 BrushKind::Pixel,
                 BrushStage::Draw,
@@ -2068,6 +2127,7 @@ fn brush_pipelines(
         pixel_erase_in_place: layout_in_place.as_ref().map(|layout| {
             brush_pipeline(
                 device,
+                cache,
                 layout,
                 BrushKind::Pixel,
                 BrushStage::Draw,
@@ -2080,6 +2140,7 @@ fn brush_pipelines(
 
 fn brush_pipeline(
     device: &Device,
+    cache: Option<&PipelineCache>,
     layout: &PipelineLayout,
     brush: BrushKind,
     stage: BrushStage,
@@ -2109,6 +2170,6 @@ fn brush_pipeline(
         module: &shader,
         entry_point: Some("cs_main"),
         compilation_options: PipelineCompilationOptions::default(),
-        cache: None,
+        cache,
     })
 }
