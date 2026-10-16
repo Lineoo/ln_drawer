@@ -24,10 +24,10 @@ use crate::{
 const DATABASE_VERSION: u32 = 0;
 
 /// The number of backup files.
-const BACKUP_SLOT: u32 = 6;
+const BACKUP_SLOT: u32 = 3;
 
 /// The minimum duration before creating another save backup
-const BACKUP_MINIMUM_DURATION: Duration = Duration::from_hours(24);
+const BACKUP_MINIMUM_DURATION: Duration = Duration::from_hours(72);
 
 /// The core database.
 pub struct Save {
