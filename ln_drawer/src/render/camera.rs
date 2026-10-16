@@ -191,16 +191,16 @@ impl Camera {
     pub fn init_main_camera(world: &World) -> Handle<Camera> {
         let save = world.single_fetch::<Save>();
         let camera = world.insert(world.build(CameraDescriptor {
-            center: save.sn.main_camera.center,
-            zoom: save.sn.main_camera.zoom,
+            center: save.sn().main_camera.center,
+            zoom: save.sn().main_camera.zoom,
         }));
 
         let autosave = world.insert(Autosave(Box::new(move |world, task| {
             let camera = world.fetch(camera);
-            task.scene.main_camera = MainCameraArchive {
+            task.sn_doc.set_main_camera(MainCameraArchive {
                 center: camera.center,
                 zoom: camera.zoom,
-            };
+            });
         })));
 
         world.dependency(autosave, camera);

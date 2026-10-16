@@ -12,7 +12,7 @@ use crate::{
         Render,
         camera::{Camera, MainCamera, MainCameraUtils},
     },
-    save::Save,
+    save::{Save, SceneDocument},
     theme::Theme,
     widgets::{
         SetWidgetVisible,
@@ -95,9 +95,12 @@ pub fn debug_panel(world: &World, submenu: Handle<Container>, camera: Handle<Cam
 
     let compact = docker_button(include_bytes!("../../../res/interface/database-zap.svg"));
     world.observer(compact, move |&ButtonClick, world| {
-        let mut save = world.single_fetch_mut::<Save>();
         log::debug!("on next startup database will be compacted");
-        save.sn.compact_on_startup = true;
+        let sn_file = Save::sn_file(world);
+        let sn_tmp_file = Save::sn_tmp_file(world);
+        let mut sn_doc = SceneDocument::read(&sn_file);
+        sn_doc.set_compact_on_startup(true);
+        sn_doc.write(&sn_file, &sn_tmp_file);
     });
 
     world.insert(Transform {

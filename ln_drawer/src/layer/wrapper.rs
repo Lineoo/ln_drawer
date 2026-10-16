@@ -114,7 +114,7 @@ impl LayerPage {
 
         let traveler = Traveler::new(lp.clone());
 
-        let database = world.single_fetch::<Save>().db.clone();
+        let database = world.single_fetch::<Save>().db();
         let window = world.single_fetch::<Lnwindow>().window.clone();
 
         let (input_tx, input_rx) = channel();

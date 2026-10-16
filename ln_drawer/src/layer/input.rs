@@ -104,7 +104,7 @@ impl LayerInput {
             let mut offset = DVec2::ZERO;
             let mut screen = event.pointer.screen;
             let mut tilt = event.pointer.tilt;
-            if let Some(tilt_correction) = &save.sn.tilt_correction {
+            if let Some(tilt_correction) = &save.sn().tilt_correction {
                 tilt = match is_portrait(world) {
                     true => {
                         let transformed = tilt_correction.portrait * tilt.extend(1.);
@@ -116,7 +116,7 @@ impl LayerInput {
                     }
                 }
             }
-            if let Some(offset_correction) = &save.sn.offset_correction {
+            if let Some(offset_correction) = &save.sn().offset_correction {
                 offset = match is_portrait(world) {
                     true => {
                         let transformed = offset_correction.portrait * tilt.extend(1.);
