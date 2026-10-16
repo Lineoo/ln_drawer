@@ -110,31 +110,6 @@ impl<M: QuadMaterial> Element for QuadMesh<M> {
 actual ownership lifecycle      ===> where `drop` runs
 ```
 
-### 有关生命周期事件
-
-之前是有一个 `Destroy` 事件的，但是被 `when_remove` 代替了。
-
-完全取消生命周期事件的原因很简单——**减少隐式逻辑**。
-
-- 提供一个统一的生命周期事件会导致任何元素都会能够读取同种生命周期事件而不加区分，往往会导致难以分离的循环调用问题
-- 使用 hook 模式可以将事件触发下降到高级逻辑层面，这可以限定其作用范围，缩小调试范围并提供更稳定的代码
-
-### `Ref` 与 `RefMut` 的 `.handle()` 函数
-
-可以让 Rust 的 variable shadow 更好地发挥作用
-
-```rust
-let fetched = world.fetch(this);
-fetched.perform();
-world.observer(this, /**/);
-```
-
-```rust
-let this = world.fetch(this);
-this.perform();
-world.observer(this.handle(), /**/);
-```
-
 ## Observer & Trigger  ##
 
 推荐 observer 的正统用法。这意味着绑定到监听节点是不推荐的：
@@ -169,42 +144,22 @@ that.trigger(that, ElementUpdate);
 - 需要变量所有权而不是引用
 - 一般来说更好用，代码库里用这个的也更多
 
+## 业务逻辑顺序 ##
+
+`observer` 或者 `when_*` 家族推荐以下顺序进行书写：
+
+1. **fetch** 必要组件
+2. **insert** 子节点
+3. **dependency** 刚刚插入的子节点
+4. **dependency** 父节点
+5. **observer** 声明事件流
+6. **queue_trigger** 进行初始化
+
+不是强制的，有复杂控制流的时候怎么方便怎么来。
+
 ## 元素视图 ##
 
-元素视图主要是为了解决管理**可见性**，**权限管理**与**元素分层**等需求。
-
-### 典型用法
-
-
-```
-|                  INITELEM                     |
-|-----------------------------------------------|
-|            LnAndroid (on Mobile)              |
-|               Lnwindow (Main)                 |
-|---------------vvvvvvvvvvvvvvv-----------------|
-|   Render, Tools, Theme, Pipelines             |
-|   Camera (Paint)     Camera (UI)              |
-|   MainCameraUtils                             |
-|   LayerPage, LayerInput                       |
-|   RenderControl ...  RenderControl ...        |
-|   ToolCollider       ToolCollider             |
-|   Container                                   |
-|       Camera (Sub)                            |
-|       RenderControl ...                       |
-|-----------------------------------------------|
-```
-
-### 独立相机与子界面
-
-`Container` 拥有**独立相机**，但不创建子视图：子相机与容器内容都插入在同一个 `Lnwindow`
-视图里，`Container::parent` 指回父相机、`Container::camera` 是其子相机。内部渲染与交互都
-显式使用这台子相机（渲染图元、`RenderControl`、`ToolCollider` 均携带 `Handle<Camera>`）。
-
-这样坐标系就与外层解耦：内容按本地坐标布局，移动子界面只需移动子相机，子元素不必重排或
-重新上传。子相机同样是普通元素，只由容器的 portal 渲染控制负责绘制与裁剪。逐视图的
-`CurrentCamera` 单例已移除；绘画相机的 `CameraUtils` 通过 `MainCameraUtils` 单例包装暴露。
-
-## 管理保证 ##
+元素视图主要是为了解决管理**可见性**，**权限管理**与**元素分层**等需求。目前用于多窗口支持。
 
 world 世界模型会严格限制视图之间的可见性，以提供良好的并发安全和内存安全。
 
