@@ -491,9 +491,18 @@ impl Render {
                         );
                     };
 
-                    output += &format!("CPU prepare time: {:>7.2} ms\n", cpu_prepare_time.as_secs_f64() * (1e3f64));
-                    output += &format!("CPU draw time: {:>7.2} ms\n", cpu_draw_time.as_secs_f64() * (1e3f64));
-                    output += &format!("CPU profiling time: {:>7.2} ms\n", cpu_profiling_time.as_secs_f64() * (1e3f64));
+                    output += &format!(
+                        "CPU prepare time: {:>7.2} ms\n",
+                        cpu_prepare_time.as_secs_f64() * (1e3f64)
+                    );
+                    output += &format!(
+                        "CPU draw time: {:>7.2} ms\n",
+                        cpu_draw_time.as_secs_f64() * (1e3f64)
+                    );
+                    output += &format!(
+                        "CPU profiling time: {:>7.2} ms\n",
+                        cpu_profiling_time.as_secs_f64() * (1e3f64)
+                    );
                     output += "\n";
                     output += &format!("GPU timestamp period: {} ns\n", period);
 

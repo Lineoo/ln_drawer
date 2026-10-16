@@ -9,7 +9,6 @@ use std::{
 use glam::{I64Vec2, IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
 use ln_world::{Element, Handle, World};
-use palette::{IntoColor, Srgba};
 use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor, RenderPass};
 
 use crate::{
@@ -88,7 +87,7 @@ pub struct LayerPage {
 
     active: Box<dyn BrushParams>,
     erase: RoundBrush,
-    color: Srgba,
+    color: Vec4,
 
     pub debug: bool,
 
@@ -151,7 +150,7 @@ impl LayerPage {
         let cursor = world.insert(RRect {
             rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
             order: -10,
-            color: Srgba::new(0.5, 0.5, 0.5, 0.4),
+            color: Vec4::new(0.5, 0.5, 0.5, 1.0) * 0.4,
             radius: 0.5,
             width: 0.0,
             enabled: false,
@@ -160,14 +159,14 @@ impl LayerPage {
         let cursor_shadow = world.insert(RRect {
             rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
             order: -11,
-            color: Srgba::new(0.0, 0.0, 0.0, 0.3),
+            color: Vec4::new(0.0, 0.0, 0.0, 1.0) * 0.3,
             radius: 0.5,
             width: BRUSH_PREVIEW_SHADOW_BLUR as f32,
             enabled: false,
             camera: ui_camera,
         });
 
-        let color = Srgba::new(0.0, 0.0, 0.0, 1.0);
+        let color = Vec4::new(0.0, 0.0, 0.0, 1.0);
 
         let brushes: Vec<BrushPreset> = vec![
             BrushPreset {
@@ -282,7 +281,7 @@ impl LayerPage {
                 flow: BrushParam::force_index(0.9, 1.0, 0.5),
                 softness: BrushParam::constant(0.3),
                 spacing: BrushParam::constant(0.1),
-                color: Srgba::new(1.0, 1.0, 1.0, 1.0),
+                color: Vec4::new(1.0, 1.0, 1.0, 1.0),
                 erase: true,
             },
             color,
@@ -413,11 +412,11 @@ impl LayerPage {
         self.active.set_color(self.color);
     }
 
-    pub fn color(&self) -> Srgba {
+    pub fn color(&self) -> Vec4 {
         self.active.color().unwrap_or(self.color)
     }
 
-    pub fn set_color(&mut self, color: Srgba) {
+    pub fn set_color(&mut self, color: Vec4) {
         self.color = color;
         self.active.set_color(color);
     }
@@ -428,7 +427,7 @@ impl LayerPage {
             .pick_color(&self.raw, &self.cache, cursor.q32_floor(), move |color| {
                 cmd.queue(move |world| {
                     let mut wrapper = world.single_fetch_mut::<LayerPage>();
-                    wrapper.set_color(color.into_color());
+                    wrapper.set_color(color.with_w(1.0));
                     world.queue_trigger(wrapper.handle(), BrushConfigurationChanged);
                 });
             });
@@ -481,7 +480,7 @@ impl LayerPage {
         let pixel = camera.zoom.q32_as_f64().exp2() > 4.0;
 
         match self.debug {
-            false => rpass.set_pipeline(&self.lp.render_pipelines.over),
+            false => rpass.set_pipeline(&self.lp.render_pipelines.main),
             true => rpass.set_pipeline(&self.lp.render_pipelines.debug),
         }
 

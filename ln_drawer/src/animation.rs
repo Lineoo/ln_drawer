@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
+use glam::Vec4;
 use ln_world::{Descriptor, Element, Handle, RefMut, World};
-use palette::Srgba;
 
 use crate::{
     lnwin::Lnwindow,
@@ -266,7 +266,7 @@ impl<const N: usize> AnimationType for [f32; N] {
     }
 }
 
-impl AnimationType for Srgba {
+impl AnimationType for Vec4 {
     type Storage = [f32; 4];
 
     fn into_storage(self) -> Self::Storage {

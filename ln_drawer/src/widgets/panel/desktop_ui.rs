@@ -1,3 +1,4 @@
+use glam::Vec4;
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -30,6 +31,7 @@ impl Element for DesktopUi {
                 visible: self.common.visible,
                 camera: self.common.camera,
             },
+            oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
         });
 
         world.insert(Transform {

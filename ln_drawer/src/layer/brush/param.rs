@@ -1,5 +1,4 @@
 use glam::Vec4;
-use palette::Srgba;
 
 use crate::layer::brush::Draw;
 
@@ -36,14 +35,14 @@ pub enum BrushParamKey {
 pub enum BrushValue<'a> {
     Scalar(&'a BrushParam<f32>),
     Vec4(&'a Vec4),
-    Color(&'a Srgba),
+    Color(&'a Vec4),
     Toggle(&'a bool),
 }
 
 pub enum BrushValueMut<'a> {
     Scalar(&'a mut BrushParam<f32>),
     Vec4(&'a mut Vec4),
-    Color(&'a mut Srgba),
+    Color(&'a mut Vec4),
     Toggle(&'a mut bool),
 }
 

@@ -213,7 +213,8 @@ impl Traveler {
         stroke.upload(&self.lp);
         self.lp
             .raw_remove_associated(&mut cpass, raw, cache, pool, snapshot.dirty);
-        self.lp.raw_fill_all(&mut cpass, raw, cache, pool, snapshot.dirty);
+        self.lp
+            .raw_fill_all(&mut cpass, raw, cache, pool, snapshot.dirty);
 
         drop(cpass);
 
@@ -310,7 +311,8 @@ impl Traveler {
         stroke.upload(&self.lp);
         self.lp
             .raw_remove_associated(&mut cpass, raw, cache, pool, snapshot.dirty);
-        self.lp.raw_fill_all(&mut cpass, raw, cache, pool, snapshot.dirty);
+        self.lp
+            .raw_fill_all(&mut cpass, raw, cache, pool, snapshot.dirty);
 
         drop(cpass);
 

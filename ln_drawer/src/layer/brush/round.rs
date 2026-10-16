@@ -1,8 +1,8 @@
 use glam::{IVec2, UVec2, Vec4};
 use ln_world::Element;
-use palette::Srgba;
 
 use crate::{
+    brush_params,
     layer::{
         BrushKind, BrushStage, CompositeMode, LayerPipeline, WriteMode,
         brush::{
@@ -19,7 +19,7 @@ pub struct RoundBrush {
     pub flow: BrushParam<f32>,
     pub softness: BrushParam<f32>,
     pub spacing: BrushParam<f32>,
-    pub color: Srgba,
+    pub color: Vec4,
     pub erase: bool,
 }
 
@@ -76,7 +76,7 @@ impl DrawsProcessor for RoundBrush {
         let overlap = overlap(size, step);
 
         RoundDraw {
-            color: Vec4::from(self.color.into_components()),
+            color: self.color,
             position: draw.position.q32_floor(),
             position_fract: draw.position.q32_fract(),
             softness: self.softness.get(draw),
@@ -94,5 +94,14 @@ impl DrawsProcessor for RoundBrush {
         Rectangle::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
     }
 }
+
+brush_params!(RoundBrush, {
+    Size => Scalar(size),
+    Flow => Scalar(flow),
+    Softness => Scalar(softness),
+    Spacing => Scalar(spacing),
+    Color => Color(color),
+    Erase => Toggle(erase),
+});
 
 impl Element for RoundBrush {}

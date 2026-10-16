@@ -1,7 +1,6 @@
 use cosmic_text::{Align, Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache};
-use glam::prelude::UVec2;
+use glam::{Vec4, prelude::UVec2};
 use ln_world::{Element, Handle, World};
-use palette::{Srgba, WithAlpha};
 use swash::scale::image::Content;
 
 use crate::{
@@ -20,7 +19,7 @@ pub struct Text {
     pub metrics: Metrics,
     pub attrs: Attrs<'static>,
     pub align: Align,
-    pub color: Srgba,
+    pub color: Vec4,
     pub extra_upscale: f32,
     pub order: isize,
     pub visible: bool,
@@ -46,7 +45,7 @@ impl Default for Text {
             metrics: Metrics::new(24.0, 20.0),
             attrs: Attrs::new(),
             align: Align::Justified,
-            color: Srgba::new(0.0, 0.0, 0.0, 1.0),
+            color: Vec4::new(0.0, 0.0, 0.0, 1.0),
             extra_upscale: 1.0,
             order: 100,
             visible: true,
@@ -190,7 +189,7 @@ impl Text {
                                 canvas.draw_over(
                                     physical_glyph.x + x + off_x,
                                     run.line_y as i32 + physical_glyph.y + y + off_y,
-                                    self.color.with_alpha(image.data[i] as f32 / 255.),
+                                    self.color.with_w(image.data[i] as f32 / 255.),
                                 );
                                 i += 1;
                             }
@@ -203,13 +202,12 @@ impl Text {
                                 canvas.draw_over(
                                     x + off_x,
                                     y + off_y,
-                                    Srgba::<u8>::new(
-                                        image.data[i],
-                                        image.data[i + 1],
-                                        image.data[i + 2],
-                                        image.data[i + 3],
-                                    )
-                                    .into_format(),
+                                    Vec4::new(
+                                        image.data[i] as f32 / 255.,
+                                        image.data[i + 1] as f32 / 255.,
+                                        image.data[i + 2] as f32 / 255.,
+                                        image.data[i + 3] as f32 / 255.,
+                                    ),
                                 );
                                 i += 4;
                             }

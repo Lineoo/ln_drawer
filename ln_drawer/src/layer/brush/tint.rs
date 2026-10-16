@@ -1,8 +1,8 @@
 use glam::{IVec2, UVec2, Vec4};
 use ln_world::Element;
-use palette::Srgba;
 
 use crate::{
+    brush_params,
     layer::{
         BrushKind, BrushStage, CompositeMode, LayerPipeline, WriteMode,
         brush::{
@@ -18,7 +18,7 @@ pub struct TintBrush {
     pub size: BrushParam<f32>,
     pub softness: BrushParam<f32>,
     pub spacing: BrushParam<f32>,
-    pub color: Srgba,
+    pub color: Vec4,
     pub flow: Vec4,
 }
 
@@ -80,7 +80,7 @@ impl DrawsProcessor for TintBrush {
         );
 
         TintDraw {
-            color: Vec4::from(self.color.into_components()),
+            color: self.color,
             flow,
             position: draw.position.q32_floor(),
             position_fract: draw.position.q32_fract(),
@@ -98,5 +98,13 @@ impl DrawsProcessor for TintBrush {
         Rectangle::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
     }
 }
+
+brush_params!(TintBrush, {
+    Size => Scalar(size),
+    Softness => Scalar(softness),
+    Spacing => Scalar(spacing),
+    Color => Color(color),
+    Flow => Vec4(flow),
+});
 
 impl Element for TintBrush {}

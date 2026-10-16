@@ -3,6 +3,7 @@ use ln_world::Element;
 use wgpu::ComputePass;
 
 use crate::{
+    brush_params,
     layer::{
         BrushKind, BrushStage, CompositeMode, LayerPipeline, WriteMode,
         brush::{
@@ -85,5 +86,12 @@ impl DrawsProcessor for BlurBrush {
         Rectangle::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
     }
 }
+
+brush_params!(BlurBrush, {
+    Size => Scalar(size),
+    Sigma => Scalar(sigma),
+    Softness => Scalar(softness),
+    Spacing => Scalar(spacing),
+});
 
 impl Element for BlurBrush {}

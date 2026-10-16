@@ -1,6 +1,7 @@
-use glam::I64Vec2;
+use std::f32::consts::TAU;
+
+use glam::{I64Vec2, Vec4};
 use ln_world::{Element, Handle, HandleGeneric, World};
-use palette::{Hsla, RgbHue};
 
 use crate::{
     measures::{FI64Ext, Rectangle},
@@ -25,7 +26,7 @@ const BAND_WIDTH: f32 = 0.1;
 /// Corresponding material is [`PaletteHslMaterial`].
 pub struct HslPanel {
     pub rect: Rectangle,
-    pub color: Hsla,
+    pub hsl: Vec4,
     pub enabled: bool,
     pub camera: Handle<Camera>,
 }
@@ -41,8 +42,8 @@ pub struct HslPanelMaterial {
     lightness: f32,
 }
 
-pub struct ColorHsla(pub Hsla);
-pub struct SetColorHsla(pub Hsla);
+pub struct ColorHsla(pub Vec4);
+pub struct SetColorHsla(pub Vec4);
 
 impl HslPanel {
     fn init(&mut self, world: &World, this: Handle<Self>) {
@@ -55,9 +56,9 @@ impl HslPanel {
                 band_width: BAND_WIDTH,
                 main_knob_size: 0.015,
                 hue_knob_size: 0.005,
-                hue: self.color.hue.into_degrees() / 360.0,
-                saturation: self.color.saturation,
-                lightness: self.color.lightness,
+                hue: self.hsl.x,
+                saturation: self.hsl.y,
+                lightness: self.hsl.z,
             },
         });
 
@@ -88,13 +89,13 @@ impl HslPanel {
 
             if lock == 1 || (lock == 0 && suv.x > 0. && suv.x < 1. && suv.y > 0. && suv.y < 1.) {
                 lock = 1;
-                this.color.saturation = (suv.x).clamp(0.0, 1.0);
-                this.color.lightness = (suv.y).clamp(0.0, 1.0);
-                world.queue_trigger(this.handle(), ColorHsla(this.color));
+                this.hsl.y = (suv.x).clamp(0.0, 1.0);
+                this.hsl.z = (suv.y).clamp(0.0, 1.0);
+                world.queue_trigger(this.handle(), ColorHsla(this.hsl));
             } else if lock == 2 || (lock == 0 && radius > 0.5 - BAND_WIDTH && radius < 0.5) {
                 lock = 2;
-                this.color.hue = RgbHue::from_radians(angle);
-                world.queue_trigger(this.handle(), ColorHsla(this.color));
+                this.hsl.x = angle / TAU;
+                world.queue_trigger(this.handle(), ColorHsla(this.hsl));
             } else {
                 lock = 3;
             }
@@ -118,16 +119,16 @@ impl HslPanel {
             world.queue_trigger(quad, SetWidgetRectangle(rect));
         });
 
-        world.observer(this, move |&SetColorHsla(color), world| {
+        world.observer(this, move |&SetColorHsla(hsl), world| {
             let mut this = world.fetch_mut(this);
             let quad = world.fetch(quad);
-            this.color = color;
+            this.hsl = hsl;
             world.queue_trigger(
                 quad.handle(),
                 SetQuadMaterial(HslPanelMaterial {
-                    hue: color.hue.into_positive_degrees() / 360.0,
-                    saturation: color.saturation,
-                    lightness: color.lightness,
+                    hue: hsl.x,
+                    saturation: hsl.y,
+                    lightness: hsl.z,
                     ..quad.material
                 }),
             );

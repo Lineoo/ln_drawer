@@ -1,6 +1,5 @@
-use glam::{IVec2, UVec2};
+use glam::{IVec2, UVec2, Vec4};
 use ln_world::{Element, Handle, World};
-use palette::{Srgba, blend::Compose};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBinding,
@@ -32,7 +31,7 @@ pub struct Canvas {
     pub order: isize,
     pub visible: bool,
     pub camera: Handle<Camera>,
-    pub color: Srgba,
+    pub color: Vec4,
 
     pub data: Vec<u8>,
     pub data_width: u32,
@@ -51,7 +50,7 @@ pub struct CanvasPipeline {
     instance: BindGroupLayout,
 }
 
-pub struct SetCanvasColor(pub Srgba);
+pub struct SetCanvasColor(pub Vec4);
 pub struct UploadCanvasData;
 pub struct RemakeCanvasTexture;
 
@@ -129,9 +128,7 @@ impl Canvas {
             let instance = world.fetch(instance);
             this.color = color;
 
-            let uniform = <[f32; 4]>::from(color.into_linear());
-
-            let bytes = bytemuck::bytes_of(&uniform);
+            let bytes = bytemuck::bytes_of(&color);
             let render = world.single_fetch::<Render>();
             render.queue.write_buffer(&instance.color_uniform, 0, bytes);
         });
@@ -167,44 +164,42 @@ impl Canvas {
             order,
             visible,
             camera,
-            color: Srgba::new(1.0, 1.0, 1.0, 1.0),
+            color: Vec4::new(1.0, 1.0, 1.0, 1.0),
             data: vec![0u8; (size.x * size.y * 4) as usize],
             data_width: size.x,
             data_height: size.y,
         }
     }
 
-    pub fn read(&self, x: i32, y: i32) -> Srgba {
+    pub fn read(&self, x: i32, y: i32) -> Vec4 {
         let start = self.offset(x, y);
         if start + 3 >= self.data.len() {
-            return Srgba::new(0.0, 0.0, 0.0, 0.0);
+            return Vec4::new(0.0, 0.0, 0.0, 0.0);
         }
 
-        Srgba::new(
-            self.data[start],
-            self.data[start + 1],
-            self.data[start + 2],
-            self.data[start + 3],
+        Vec4::new(
+            self.data[start] as f32 / 255.,
+            self.data[start + 1] as f32 / 255.,
+            self.data[start + 2] as f32 / 255.,
+            self.data[start + 3] as f32 / 255.,
         )
-        .into_format()
     }
 
-    pub fn write(&mut self, x: i32, y: i32, color: Srgba) {
+    pub fn write(&mut self, x: i32, y: i32, color: Vec4) {
         let start = self.offset(x, y);
         if start + 3 >= self.data.len() {
             return;
         }
 
-        let color = Srgba::<u8>::from_format(color);
-        self.data[start] = color.red;
-        self.data[start + 1] = color.green;
-        self.data[start + 2] = color.blue;
-        self.data[start + 3] = color.alpha;
+        self.data[start] = (color.x * 255.).clamp(0., 255.).round() as u8;
+        self.data[start + 1] = (color.y * 255.).clamp(0., 255.).round() as u8;
+        self.data[start + 2] = (color.z * 255.).clamp(0., 255.).round() as u8;
+        self.data[start + 3] = (color.w * 255.).clamp(0., 255.).round() as u8;
     }
 
-    pub fn draw_over(&mut self, x: i32, y: i32, color: Srgba) {
+    pub fn draw_over(&mut self, x: i32, y: i32, color: Vec4) {
         let prev = self.read(x, y);
-        let next = color.over(prev);
+        let next = color + prev * (1. - color.w);
         self.write(x, y, next);
     }
 

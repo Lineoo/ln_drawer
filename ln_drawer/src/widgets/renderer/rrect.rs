@@ -1,6 +1,5 @@
 use glam::{UVec2, Vec4};
 use ln_world::{Element, Handle, World};
-use palette::Srgba;
 
 use crate::{
     measures::Rectangle,
@@ -15,7 +14,7 @@ use crate::{
 pub struct RRect {
     pub rect: Rectangle,
     pub order: isize,
-    pub color: Srgba,
+    pub color: Vec4,
     pub radius: f32,
     pub width: f32,
     pub enabled: bool,
@@ -31,7 +30,7 @@ pub struct RRectMaterial {
     _pad: [u32; 2],
 }
 
-pub struct SetRRectColor(pub Srgba);
+pub struct SetRRectColor(pub Vec4);
 
 impl RRect {
     fn init(&mut self, world: &World, this: Handle<Self>) {
@@ -41,7 +40,7 @@ impl RRect {
             order: self.order,
             camera: self.camera,
             material: RRectMaterial {
-                color: Vec4::from(self.color.into_linear().into_components()),
+                color: self.color,
                 radius: self.radius,
                 width: self.width,
                 _pad: [0; 2],
@@ -66,7 +65,7 @@ impl RRect {
             world.queue_trigger(
                 quad,
                 SetQuadMaterial(RRectMaterial {
-                    color: Vec4::from(color.into_linear().into_components()),
+                    color,
                     radius: this.radius,
                     width: this.width,
                     _pad: [0; 2],

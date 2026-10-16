@@ -16,7 +16,6 @@ use std::{
 use bytemuck::bytes_of;
 use glam::{IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
-use palette::Srgba;
 use wgpu::{
     Adapter, AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
@@ -386,7 +385,7 @@ impl LayerPipeline {
         raw: &RawLayer,
         cache: &CacheLayers,
         point: IVec2,
-        f: impl FnOnce(Srgba) + WasmNotSend + 'static,
+        f: impl FnOnce(Vec4) + WasmNotSend + 'static,
     ) {
         let mapped = self.readback_mapped.load(Ordering::Acquire);
         if mapped {
@@ -400,7 +399,7 @@ impl LayerPipeline {
                 match cache.chunks.get(&(chunk_key.0, chunk_key.1, 0)) {
                     Some(CacheLayerChunk::Filled(chunk)) => chunk,
                     Some(CacheLayerChunk::Transparent) => {
-                        f(Srgba::new(0.0, 0.0, 0.0, 0.0));
+                        f(Vec4::new(0.0, 0.0, 0.0, 0.0));
                         return;
                     }
                     None => {
@@ -409,7 +408,7 @@ impl LayerPipeline {
                 }
             }
             Some(RawLayerChunk::Transparent) => {
-                f(Srgba::new(0.0, 0.0, 0.0, 0.0));
+                f(Vec4::new(0.0, 0.0, 0.0, 0.0));
                 return;
             }
             None => {
@@ -456,12 +455,8 @@ impl LayerPipeline {
                     return;
                 }
                 let view = readback_share.get_mapped_range(..).unwrap();
-                let color = Srgba::from(
-                    *bytemuck::cast_slice::<_, f32>(&view[..])
-                        .as_array::<4>()
-                        .unwrap(),
-                );
-                f(color.into_format());
+                let color = *bytemuck::from_bytes::<Vec4>(&view[..]);
+                f(color);
                 drop(view);
                 readback_mapped.store(false, Ordering::Release);
                 readback_share.unmap();
@@ -1465,7 +1460,7 @@ fn create_chunk(
 // --- Pipelines --- //
 
 struct RenderPipelines {
-    over: RenderPipeline,
+    main: RenderPipeline,
     debug: RenderPipeline,
 }
 
@@ -1678,7 +1673,7 @@ fn render_pipelines(
         immediate_size: 0,
     });
 
-    let new_pipeline = |blend: BlendState, label: &str, fs_entry: &str| {
+    let new_pipeline = |label: &str, fs_entry: &str| {
         device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some(label),
             layout: Some(&render_pipeline_layout),
@@ -1698,7 +1693,7 @@ fn render_pipelines(
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
                     format: surface_format,
-                    blend: Some(blend),
+                    blend: Some(BlendState::REPLACE),
                     write_mask: ColorWrites::ALL,
                 })],
             }),
@@ -1710,8 +1705,8 @@ fn render_pipelines(
     };
 
     RenderPipelines {
-        over: new_pipeline(BlendState::REPLACE, "layer_chunk_over", "fs_main"),
-        debug: new_pipeline(BlendState::REPLACE, "layer_chunk_over_debug", "fs_debug"),
+        main: new_pipeline("layer_chunk_over", "fs_main"),
+        debug: new_pipeline("layer_chunk_over_debug", "fs_debug"),
     }
 }
 

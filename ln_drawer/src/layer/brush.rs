@@ -8,22 +8,14 @@ pub mod tint;
 use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable, bytes_of};
-use glam::{I64Vec2, UVec2};
-use palette::Srgba;
+use glam::{I64Vec2, UVec2, Vec4};
 use wgpu::{BindGroup, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor};
 
 use crate::{
     layer::{
         CacheLayerChunk, CacheLayers, ChunkPool, DRAWS_ARRAY_CAPACITY, LayerPipeline, PlainLayer,
         RawLayer, RawLayerChunk, Standalone, WriteMode,
-        brush::{
-            blur::BlurBrush,
-            param::{BrushParam, BrushParamKey, BrushValue, BrushValueMut},
-            pixel::PixelBrush,
-            round::RoundBrush,
-            smudge::SmudgeBrush,
-            tint::TintBrush,
-        },
+        brush::param::{BrushParam, BrushParamKey, BrushValue, BrushValueMut},
         chunks_key_to_rect, rect_chunks_iter, rect_chunks_stack_iter,
         stream::ThreadInput,
         write_dispatch,
@@ -803,6 +795,7 @@ trait DrawsProcessor {
     }
 }
 
+#[macro_export]
 macro_rules! brush_params {
     ($ty:ty, { $( $key:ident => $variant:ident($field:ident) ),* $(,)? }) => {
         impl $crate::layer::brush::BrushParams for $ty {
@@ -841,47 +834,6 @@ macro_rules! brush_params {
     };
 }
 
-brush_params!(RoundBrush, {
-    Size => Scalar(size),
-    Flow => Scalar(flow),
-    Softness => Scalar(softness),
-    Spacing => Scalar(spacing),
-    Color => Color(color),
-    Erase => Toggle(erase),
-});
-
-brush_params!(PixelBrush, {
-    Size => Scalar(size),
-    Color => Color(color),
-    Erase => Toggle(erase),
-});
-
-brush_params!(BlurBrush, {
-    Size => Scalar(size),
-    Sigma => Scalar(sigma),
-    Softness => Scalar(softness),
-    Spacing => Scalar(spacing),
-});
-
-brush_params!(SmudgeBrush, {
-    Size => Scalar(size),
-    Flow => Scalar(flow),
-    Softness => Scalar(softness),
-    Spacing => Scalar(spacing),
-    Color => Color(color),
-    ColorRatio => Scalar(color_ratio),
-    SampleRadius => Scalar(sample_radius),
-    SampleRate => Scalar(sample_rate),
-});
-
-brush_params!(TintBrush, {
-    Size => Scalar(size),
-    Softness => Scalar(softness),
-    Spacing => Scalar(spacing),
-    Color => Color(color),
-    Flow => Vec4(flow),
-});
-
 /// Convenience accessors layered on top of the type-erased reflection interface.
 impl dyn BrushParams + '_ {
     pub fn scalar(&self, key: BrushParamKey) -> Option<&BrushParam<f32>> {
@@ -898,14 +850,14 @@ impl dyn BrushParams + '_ {
         }
     }
 
-    pub fn color(&self) -> Option<Srgba> {
+    pub fn color(&self) -> Option<Vec4> {
         match self.param(BrushParamKey::Color)? {
             BrushValue::Color(color) => Some(*color),
             _ => None,
         }
     }
 
-    pub fn set_color(&mut self, value: Srgba) {
+    pub fn set_color(&mut self, value: Vec4) {
         if let Some(BrushValueMut::Color(color)) = self.param_mut(BrushParamKey::Color) {
             *color = value;
         }

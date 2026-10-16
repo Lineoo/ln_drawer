@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use glam::Vec4;
 use image::DynamicImage;
 use ln_world::{Element, Handle, HandleGeneric, World};
-use palette::Srgba;
 
 use crate::{
     animation::{AnimationDescriptor, SetAnimationDst, SimpleAnimationDescriptor},
@@ -35,10 +35,10 @@ pub struct ToggleButton {
 }
 
 pub struct ToggleButtonTheme {
-    pub idle_color: Srgba,
-    pub hover_color: Srgba,
-    pub press_color: Srgba,
-    pub selected_color: Srgba,
+    pub idle_color: Vec4,
+    pub hover_color: Vec4,
+    pub press_color: Vec4,
+    pub selected_color: Vec4,
 }
 
 #[derive(Clone)]
@@ -63,7 +63,7 @@ pub enum ButtonAction {
 pub struct ButtonSelected(pub bool);
 pub struct SetButtonSelected(pub bool);
 
-pub struct SetButtonIconColor(pub Srgba);
+pub struct SetButtonIconColor(pub Vec4);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ButtonDragStatus {

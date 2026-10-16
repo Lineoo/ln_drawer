@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use glam::{DVec2, I64Vec2};
+use glam::{DVec2, I64Vec2, Vec4};
 use ln_world::{Element, Handle, World};
-use palette::Srgba;
 use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor, TextureViewDescriptor};
 
 use crate::{
@@ -169,8 +168,8 @@ impl BrushPreviewGenerator {
         let h = canvas.rect.height() as f32;
         let radius = w / 4.0 + 5.0;
         let bands = [
-            (w * 0.25, Srgba::new(0.624, 0.951, 0.865, 1.0)),
-            (w * 0.75, Srgba::new(0.959, 0.869, 0.601, 1.0)),
+            (w * 0.25, Vec4::new(0.624, 0.951, 0.865, 1.0)),
+            (w * 0.75, Vec4::new(0.959, 0.869, 0.601, 1.0)),
         ];
 
         for (x, color) in bands {

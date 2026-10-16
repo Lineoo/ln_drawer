@@ -173,7 +173,7 @@ pub mod legacy_classic {
     use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 
     use crate::{
-        color::srgb::{srgb_gamma_decode, srgb_gamma_encode},
+        color::srgb::{srgb_gamma_decode_f32, srgb_gamma_encode_f32},
         save::chunk::ChunkSave,
     };
 
@@ -251,9 +251,9 @@ pub mod legacy_classic {
                 0 => {
                     let (chunks, _) = bytes.as_chunks_mut();
                     for [r, g, b, _] in chunks {
-                        *r = (srgb_gamma_encode(*r as f32 / 255.) * 255.) as u8;
-                        *g = (srgb_gamma_encode(*g as f32 / 255.) * 255.) as u8;
-                        *b = (srgb_gamma_encode(*b as f32 / 255.) * 255.) as u8;
+                        *r = (srgb_gamma_encode_f32(*r as f32 / 255.) * 255.) as u8;
+                        *g = (srgb_gamma_encode_f32(*g as f32 / 255.) * 255.) as u8;
+                        *b = (srgb_gamma_encode_f32(*b as f32 / 255.) * 255.) as u8;
                     }
                 }
                 1 => {
@@ -262,14 +262,14 @@ pub mod legacy_classic {
                 2 => {
                     let (chunks, _) = bytes.as_chunks_mut();
                     for [r, g, b, a] in chunks {
-                        *r = (srgb_gamma_encode(
-                            srgb_gamma_decode(*r as f32 / 255.) * (*a as f32 / 255.),
+                        *r = (srgb_gamma_encode_f32(
+                            srgb_gamma_decode_f32(*r as f32 / 255.) * (*a as f32 / 255.),
                         ) * 255.) as u8;
-                        *g = (srgb_gamma_encode(
-                            srgb_gamma_decode(*g as f32 / 255.) * (*a as f32 / 255.),
+                        *g = (srgb_gamma_encode_f32(
+                            srgb_gamma_decode_f32(*g as f32 / 255.) * (*a as f32 / 255.),
                         ) * 255.) as u8;
-                        *b = (srgb_gamma_encode(
-                            srgb_gamma_decode(*b as f32 / 255.) * (*a as f32 / 255.),
+                        *b = (srgb_gamma_encode_f32(
+                            srgb_gamma_decode_f32(*b as f32 / 255.) * (*a as f32 / 255.),
                         ) * 255.) as u8;
                     }
                 }

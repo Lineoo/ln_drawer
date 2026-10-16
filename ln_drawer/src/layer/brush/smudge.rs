@@ -1,9 +1,9 @@
 use glam::{IVec2, UVec2, Vec4};
 use ln_world::Element;
-use palette::Srgba;
 use wgpu::{BindGroup, ComputePass};
 
 use crate::{
+    brush_params,
     layer::{
         BrushKind, BrushStage, CompositeMode, LayerPipeline, WriteMode,
         brush::{
@@ -20,7 +20,7 @@ pub struct SmudgeBrush {
     pub flow: BrushParam<f32>,
     pub softness: BrushParam<f32>,
     pub spacing: BrushParam<f32>,
-    pub color: Srgba,
+    pub color: Vec4,
     pub color_ratio: BrushParam<f32>,
     pub sample_radius: BrushParam<f32>,
     pub sample_rate: BrushParam<f32>,
@@ -86,7 +86,7 @@ impl DrawsProcessor for SmudgeBrush {
         let overlap = overlap(size, step);
 
         SmudgeDraw {
-            color: Vec4::from(self.color.into_components()),
+            color: self.color,
             position: draw.position.q32_floor(),
             position_fract: draw.position.q32_fract(),
             softness: self.softness.get(draw),
@@ -111,5 +111,16 @@ impl DrawsProcessor for SmudgeBrush {
         )
     }
 }
+
+brush_params!(SmudgeBrush, {
+    Size => Scalar(size),
+    Flow => Scalar(flow),
+    Softness => Scalar(softness),
+    Spacing => Scalar(spacing),
+    Color => Color(color),
+    ColorRatio => Scalar(color_ratio),
+    SampleRadius => Scalar(sample_radius),
+    SampleRate => Scalar(sample_rate),
+});
 
 impl Element for SmudgeBrush {}

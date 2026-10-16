@@ -2,9 +2,9 @@ use std::mem::size_of;
 
 use glam::{I64Vec2, IVec2, UVec2, Vec4};
 use ln_world::Element;
-use palette::Srgba;
 
 use crate::{
+    brush_params,
     layer::{
         BrushKind, BrushStage, CompositeMode, DRAWS_ARRAY_CAPACITY, LayerPipeline, WriteMode,
         brush::{Brush, Draw, DrawsProcessor, param::BrushParam},
@@ -15,7 +15,7 @@ use crate::{
 #[derive(Clone)]
 pub struct PixelBrush {
     pub size: BrushParam<f32>,
-    pub color: Srgba,
+    pub color: Vec4,
     pub erase: bool,
 }
 
@@ -65,7 +65,7 @@ impl DrawsProcessor for PixelBrush {
 
     fn process(&self, draw: Draw) -> Self::Draw {
         PixelDraw {
-            color: Vec4::from(self.color.into_components()),
+            color: self.color,
             position: draw.position.q32_floor(),
             size: self.size.get(draw),
             _pad: 0,
@@ -142,5 +142,11 @@ impl DrawsProcessor for PixelBrush {
         (curr, dirty, cnt)
     }
 }
+
+brush_params!(PixelBrush, {
+    Size => Scalar(size),
+    Color => Color(color),
+    Erase => Toggle(erase),
+});
 
 impl Element for PixelBrush {}
