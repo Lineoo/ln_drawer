@@ -27,10 +27,8 @@ impl Element for DesktopUi {
         });
 
         let oklab = world.insert(LayerOklabPalette {
-            common: WidgetCommon {
-                visible: self.common.visible,
-                camera: self.common.camera,
-            },
+            common: self.common,
+            rect: Rectangle::default(),
             oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
         });
 

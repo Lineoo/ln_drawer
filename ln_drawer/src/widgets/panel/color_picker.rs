@@ -64,23 +64,23 @@ pub fn color_picker_panel(
     });
 
     let (tab_palette_hsl, cam_palette_hsl) = world.build(ContainerWithCamera {
-        rect: Rectangle::default(),
-        inner: TransformValue::copy(),
         common: WidgetCommon {
             camera,
             visible: false,
         },
+        rect: Rectangle::default(),
+        inner: TransformValue::copy(),
         scroll: I64Vec2::ZERO,
     });
 
-    let (tab_palette_oklab, cam_palette_oklch) = world.build(ContainerWithCamera {
-        rect: Rectangle::default(),
-        inner: TransformValue::copy(),
+    world.named("palette_oklab");
+    let tab_palette_oklab = world.insert(LayerOklabPalette {
         common: WidgetCommon {
             camera,
             visible: false,
         },
-        scroll: I64Vec2::ZERO,
+        rect: Rectangle::default(),
+        oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
     });
 
     let (tab_layer_selection, cam_layer_selection) = world.build(ContainerWithCamera {
@@ -163,21 +163,6 @@ pub fn color_picker_panel(
     world.named("palette_hsl");
     palette_hsl(world, tab_palette_hsl, cam_palette_hsl);
 
-    world.named("palette_oklab");
-    let palette_oklab = world.insert(LayerOklabPalette {
-        common: WidgetCommon {
-            camera: cam_palette_oklch,
-            visible: false,
-        },
-        oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
-    });
-    world.insert(Transform {
-        value: TransformValue::copy(),
-        source: tab_palette_oklab.untyped(),
-        target: palette_oklab.untyped(),
-    });
-    world.dependency(palette_oklab, tab_palette_oklab);
-
     world.named("layer_selection");
     super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection);
 }
@@ -216,41 +201,56 @@ fn palette_hsl(world: &World, bg: Handle<Container>, camera: Handle<Camera>) {
 
 pub struct LayerOklabPalette {
     pub common: WidgetCommon,
+    pub rect: Rectangle,
     pub oklab: Vec4,
 }
 
 impl Element for LayerOklabPalette {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let (container, camera) = world.build(ContainerWithCamera {
+            common: self.common,
+            rect: self.rect,
+            inner: TransformValue::copy(),
+            scroll: I64Vec2::ZERO,
+        });
+
         let polar = world.insert(OklabPolar {
             rect: Rectangle::default(),
             oklab: self.oklab,
             enabled: self.common.visible,
-            camera: self.common.camera,
+            camera,
         });
+
         let bar = world.insert(OklabBar {
             rect: Rectangle::default(),
             oklab: self.oklab,
             enabled: self.common.visible,
-            camera: self.common.camera,
+            camera,
         });
 
-        world.dependency(polar, this);
-        world.dependency(bar, this);
+        Echo::new(world, this).widget_rectangle().widget_visible();
+
+        world.insert(Transform {
+            value: TransformValue::copy(),
+            source: this.untyped(),
+            target: container.untyped(),
+        });
 
         world.insert(Transform {
             value: TransformValue::anchor(
                 (0.5, 0.5),
                 Rectangle::new_half(IVec2::new(-30, 0), UVec2::splat(100)),
             ),
-            source: this.untyped(),
+            source: container.untyped(),
             target: polar.untyped(),
         });
+
         world.insert(Transform {
             value: TransformValue::anchor(
                 (0.5, 0.5),
                 Rectangle::new_half(IVec2::new(110, 0), UVec2::new(20, 100)),
             ),
-            source: this.untyped(),
+            source: container.untyped(),
             target: bar.untyped(),
         });
 
@@ -272,6 +272,9 @@ impl Element for LayerOklabPalette {
             world.trigger(bar, &SetColorOklab(oklab));
         });
 
-        Echo::new(world, this).widget_rectangle().widget_visible();
+        world.dependency(container, this);
+        world.dependency(camera, this);
+        world.dependency(polar, this);
+        world.dependency(bar, this);
     }
 }
