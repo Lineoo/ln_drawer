@@ -294,8 +294,13 @@ fn chroma_to_path(c: f32) -> Path {
 fn clip_to_srgb_gamut(oklab: Vec4) -> Vec4 {
     let l = oklab.x.clamp(0.0, 1.0);
     let (a, b) = (oklab.y, oklab.z);
-    let c = (a * a + b * b).sqrt().max(1e-5);
-    let t = find_gamut_intersection(a / c, b / c, l, c, l).min(1.0);
+    let c = (a * a + b * b).sqrt();
+    if !c.is_normal() {
+        return oklab;
+    }
+    let t = find_gamut_intersection(a / c, b / c, l, c, l)
+        .min(1.0)
+        .max(0.0);
     Vec4::new(l, t * a, t * b, oklab.w)
 }
 
