@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use cosmic_text::{Attrs, Metrics};
-use glam::{I64Vec2, IVec2, UVec2};
+use glam::I64Vec2;
 use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
@@ -22,8 +20,8 @@ use crate::{
         SetWidgetRectangle, SetWidgetVisible,
         brush_preview::{BrushPreview, BrushPreviewGenerator},
         button::{
-            ButtonClick, ButtonDrag, ButtonDragStatus, ButtonImage, ButtonSelected,
-            SetButtonSelected, ToggleButton, ToggleButtonTheme,
+            ButtonClick, ButtonDrag, ButtonDragStatus, ButtonSelected, SetButtonSelected,
+            ToggleButton, ToggleButtonTheme,
         },
         common::WidgetCommon,
         container::{Container, ContainerWithCamera},
@@ -92,11 +90,11 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
         visible: false,
         tabs: vec![
             (
-                tab_icon(include_bytes!("../../../res/interface/brush.svg")),
+                svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
                 list_container.untyped(),
             ),
             (
-                tab_icon(include_bytes!("../../../res/interface/settings.svg")),
+                svg_render(include_bytes!("../../../res/interface/settings.svg"), 12),
                 list_settings.untyped(),
             ),
         ],
@@ -351,14 +349,4 @@ fn brush_list(
         ),
         children,
     });
-}
-
-fn tab_icon(bytes: &[u8]) -> ButtonImage {
-    ButtonImage {
-        transform: TransformValue::anchor(
-            (0.5, 0.5),
-            Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-        ),
-        bytes: Arc::new(image::DynamicImage::from(svg_render(bytes, 1.0))),
-    }
 }

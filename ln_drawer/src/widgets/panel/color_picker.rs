@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use glam::{I64Vec2, IVec2, UVec2, Vec4};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
@@ -15,7 +13,7 @@ use crate::{
     render::camera::Camera,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
-        button::{ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
+        button::{ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         container::{Container, ContainerWithCamera},
         echo::Echo,
@@ -110,55 +108,19 @@ pub fn color_picker_panel(
         visible: false,
         tabs: vec![
             (
-                ButtonImage {
-                    transform: TransformValue::anchor(
-                        (0.5, 0.5),
-                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                    ),
-                    bytes: Arc::new(image::DynamicImage::from(svg_render(
-                        include_bytes!("../../../res/interface/palette.svg"),
-                        1.0,
-                    ))),
-                },
+                svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
                 tab_palette_hsl.untyped(),
             ),
             (
-                ButtonImage {
-                    transform: TransformValue::anchor(
-                        (0.5, 0.5),
-                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                    ),
-                    bytes: Arc::new(image::DynamicImage::from(svg_render(
-                        include_bytes!("../../../res/interface/palette.svg"),
-                        1.0,
-                    ))),
-                },
+                svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
                 tab_palette_oklch.untyped(),
             ),
             (
-                ButtonImage {
-                    transform: TransformValue::anchor(
-                        (0.5, 0.5),
-                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                    ),
-                    bytes: Arc::new(image::DynamicImage::from(svg_render(
-                        include_bytes!("../../../res/interface/layers.svg"),
-                        1.0,
-                    ))),
-                },
+                svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
                 tab_layer_selection.untyped(),
             ),
             (
-                ButtonImage {
-                    transform: TransformValue::anchor(
-                        (0.5, 0.5),
-                        Rectangle::new_half(IVec2::ZERO, UVec2::splat(12)),
-                    ),
-                    bytes: Arc::new(image::DynamicImage::from(svg_render(
-                        include_bytes!("../../../res/interface/bug.svg"),
-                        1.0,
-                    ))),
-                },
+                svg_render(include_bytes!("../../../res/interface/bug.svg"), 12),
                 tab_debug.untyped(),
             ),
         ],

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use cosmic_text::{Attrs, Family, Metrics};
 use glam::{I64Vec2, IVec2, UVec2};
 use ln_world::{Handle, HandleGeneric, World};
@@ -16,10 +14,7 @@ use crate::{
     theme::Theme,
     widgets::{
         SetWidgetVisible,
-        button::{
-            ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton,
-            ToggleButtonTheme,
-        },
+        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         container::Container,
         renderer::{svg::svg_render, text::Text},
     },
@@ -140,13 +135,7 @@ pub fn docker_button(
                 press_color: theme.highlight_color,
                 selected_color: theme.highlight_color,
             },
-            image: Some(ButtonImage {
-                transform: TransformValue::anchor(
-                    (0.5, 0.5),
-                    Rectangle::new_half(IVec2::ZERO, UVec2::splat(8)),
-                ),
-                bytes: Arc::new(image::DynamicImage::from(svg_render(image_bytes, 1.0))),
-            }),
+            image: Some(svg_render(image_bytes, 8)),
             selected: false,
             visible: false,
             hovering: false,

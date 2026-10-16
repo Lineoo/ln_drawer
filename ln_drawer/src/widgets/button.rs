@@ -1,7 +1,4 @@
-use std::sync::Arc;
-
 use glam::Vec4;
-use image::DynamicImage;
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -44,7 +41,9 @@ pub struct ToggleButtonTheme {
 #[derive(Clone)]
 pub struct ButtonImage {
     pub transform: TransformValue,
-    pub bytes: Arc<DynamicImage>,
+    pub bytes: Vec<u8>,
+    pub bytes_width: u32,
+    pub bytes_height: u32,
 }
 
 pub struct ButtonDrag {
@@ -109,16 +108,15 @@ impl ToggleButton {
         });
 
         let canvas = if let Some(image) = &self.image {
-            let data = image.bytes.to_rgba8();
             let canvas = world.insert(Canvas {
-                data_width: data.width(),
-                data_height: data.height(),
                 rect: image.transform.compute(self.rect),
                 order: 11,
                 visible: self.visible,
                 camera: self.camera,
-                data: data.into_raw(),
                 color: theme.symbolic_color,
+                data: image.bytes.clone(),
+                data_width: image.bytes_width,
+                data_height: image.bytes_height,
             });
             world.dependency(canvas, handle);
             Some(canvas)

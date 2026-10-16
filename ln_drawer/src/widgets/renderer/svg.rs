@@ -1,13 +1,16 @@
+use glam::{IVec2, UVec2};
+
+use crate::{layout::transform::TransformValue, measures::Rectangle, widgets::button::ButtonImage};
+
 const GLOBAL_UPSCALE: f32 = 4.0;
 
-pub fn svg_render(svg1: &[u8], upscale: f32) -> image::GrayAlphaImage {
+pub fn svg_render(svg1: &[u8], size: u32) -> ButtonImage {
     let tree = usvg::Tree::from_data(svg1, &usvg::Options::default()).unwrap();
-    let upscale = upscale * GLOBAL_UPSCALE;
     let svg_size = tree.size();
-    let real_width = (svg_size.width() * upscale).ceil() as usize;
-    let real_height = (svg_size.height() * upscale).ceil() as usize;
+    let real_width = (svg_size.width() * GLOBAL_UPSCALE).ceil() as usize;
+    let real_height = (svg_size.height() * GLOBAL_UPSCALE).ceil() as usize;
     let mut mask_image = vec![0u8; real_width * real_height];
-    let mut final_image = image::GrayAlphaImage::new(real_width as u32, real_height as u32);
+    let mut final_image = vec![0u8; 4 * real_width * real_height];
     for node in tree.root().children() {
         if let usvg::Node::Path(path) = node {
             let points = path
@@ -48,10 +51,10 @@ pub fn svg_render(svg1: &[u8], upscale: f32) -> image::GrayAlphaImage {
                 mask.style(zeno_stroke);
             }
             mask.transform(Some(zeno::Transform {
-                xx: upscale,
+                xx: GLOBAL_UPSCALE,
                 xy: 0.0,
                 yx: 0.0,
-                yy: upscale,
+                yy: GLOBAL_UPSCALE,
                 x: 0.0,
                 y: 0.0,
             }));
@@ -61,13 +64,23 @@ pub fn svg_render(svg1: &[u8], upscale: f32) -> image::GrayAlphaImage {
             for (i, &luma) in mask_image.iter().enumerate() {
                 let slice = &mut *final_image;
                 let src = luma as f32 / 255.;
-                let dst = slice[i * 2 + 1] as f32 / 255.;
+                let dst = slice[i * 4 + 3] as f32 / 255.;
                 let rst = src + dst * (1. - src);
-                slice[i * 2] = 255;
-                slice[i * 2 + 1] = (rst * 255.) as u8;
+                slice[i * 4] = 255;
+                slice[i * 4 + 1] = 255;
+                slice[i * 4 + 2] = 255;
+                slice[i * 4 + 3] = (rst * 255.) as u8;
             }
         }
     }
 
-    final_image
+    ButtonImage {
+        transform: TransformValue::anchor(
+            (0.5, 0.5),
+            Rectangle::new_half(IVec2::ZERO, UVec2::splat(size)),
+        ),
+        bytes: final_image,
+        bytes_width: real_width as u32,
+        bytes_height: real_height as u32,
+    }
 }
