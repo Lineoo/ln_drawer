@@ -17,6 +17,8 @@ GPU-accelerated drawing app featured infinite canvas in Rust (winit + wgpu). Car
 ## Conventions
 
 - No `foo/mod.rs`, please use new module style - `foo.rs` and `foo/*.rs`.
+- Minimalistic comments or no comments at all. Don't leave any outdated, unrelated or redundant information.
+- Panic is fine. As long as panic condition is clear, use `unwrap()` instead of silent return or messing up code structures. 
 - Observer system design follows a three-part data-flow model. See `docs/observer.en.md` and `docs/observer.md` (Chinese).
 - If you are adding new `Element`s, see `docs/world.md` (Chinese) first to see what happens.
 - Render system architecture overview: `docs/widget.md` (Chinese).
