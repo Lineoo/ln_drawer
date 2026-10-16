@@ -41,11 +41,11 @@ pub struct CameraBind {
 
 pub struct SetCameraOutdated;
 
-pub struct MainCamera(pub Handle<Camera>);
-pub struct MainCameraUtils(pub Handle<CameraUtils>);
+pub struct PageCamera(pub Handle<Camera>);
+pub struct PageCameraUtils(pub Handle<CameraUtils>);
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct MainCameraArchive {
+pub struct PageCameraArchive {
     pub center: I64Vec2,
     pub zoom: i64,
 }
@@ -188,16 +188,16 @@ impl Camera {
         world.insert(CameraBind { layout });
     }
 
-    pub fn init_main_camera(world: &World) -> Handle<Camera> {
+    pub fn init_page_camera(world: &World) -> Handle<Camera> {
         let save = world.single_fetch::<Save>();
         let camera = world.insert(world.build(CameraDescriptor {
-            center: save.sn().main_camera.center,
-            zoom: save.sn().main_camera.zoom,
+            center: save.sn().page_camera.center,
+            zoom: save.sn().page_camera.zoom,
         }));
 
         let autosave = world.insert(Autosave(Box::new(move |world, task| {
             let camera = world.fetch(camera);
-            task.sn_doc.set_main_camera(MainCameraArchive {
+            task.sn_doc.set_page_camera(PageCameraArchive {
                 center: camera.center,
                 zoom: camera.zoom,
             });
@@ -399,9 +399,9 @@ impl CameraUtils {
     }
 }
 
-impl Element for MainCamera {}
+impl Element for PageCamera {}
 impl Element for UICamera {}
-impl Element for MainCameraUtils {}
+impl Element for PageCameraUtils {}
 impl Element for CameraUtils {}
 
 #[cfg(test)]

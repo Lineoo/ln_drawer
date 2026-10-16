@@ -16,7 +16,7 @@ use crate::lnwin::LnAndroid;
 use crate::{
     layer::input::{OffsetCorrection, TiltCorrection},
     lnwin::Lnwindow,
-    render::camera::MainCameraArchive,
+    render::camera::PageCameraArchive,
     tools::timer::{Timer, TimerHit},
 };
 
@@ -212,7 +212,7 @@ pub struct SceneFile {
     #[serde(default)]
     pub compact_on_startup: bool,
     #[serde(default)]
-    pub main_camera: MainCameraArchive,
+    pub page_camera: PageCameraArchive,
     pub tilt_correction: Option<TiltCorrection>,
     pub offset_correction: Option<OffsetCorrection>,
 }
@@ -246,7 +246,7 @@ impl Default for SceneFile {
         Self {
             database_version: DATABASE_VERSION,
             compact_on_startup: false,
-            main_camera: MainCameraArchive::default(),
+            page_camera: PageCameraArchive::default(),
             tilt_correction: None,
             offset_correction: None,
         }
@@ -291,9 +291,9 @@ impl SceneDocument {
         self.doc["compact_on_startup"] = toml_edit::value(compact);
     }
 
-    pub fn set_main_camera(&mut self, camera: MainCameraArchive) {
+    pub fn set_page_camera(&mut self, camera: PageCameraArchive) {
         let camera = toml_edit::ser::to_document(&camera).unwrap();
-        self.doc["main_camera"] = match camera.into_item() {
+        self.doc["page_camera"] = match camera.into_item() {
             Item::Table(t) => Item::Table(t),
             Item::Value(Value::InlineTable(t)) => Item::Table(t.into_table()),
             it => it,

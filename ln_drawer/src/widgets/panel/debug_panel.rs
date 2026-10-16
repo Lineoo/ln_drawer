@@ -8,7 +8,7 @@ use crate::{
     measures::Rectangle,
     render::{
         Render,
-        camera::{Camera, MainCamera, MainCameraUtils},
+        camera::{Camera, PageCamera, PageCameraUtils},
     },
     save::{Save, SceneDocument},
     theme::Theme,
@@ -89,13 +89,13 @@ impl Element for DebugPanel {
 
         let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
         world.observer(compass, move |&ButtonClick, world| {
-            let main_camera = world.single_fetch::<MainCamera>().0;
-            let utils = world.single_fetch::<MainCameraUtils>().0;
+            let page_camera = world.single_fetch::<PageCamera>().0;
+            let utils = world.single_fetch::<PageCameraUtils>().0;
             let mut camera = world.fetch_mut(utils);
             camera.force_clear();
             camera.force_camera_center(I64Vec2::ZERO);
             camera.force_camera_zoom(0);
-            camera.apply_to_camera(world, main_camera);
+            camera.apply_to_camera(world, page_camera);
         });
 
         let page_debug = docker_button(include_bytes!("../../../res/interface/bug.svg"));

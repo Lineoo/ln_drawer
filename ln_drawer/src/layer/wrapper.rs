@@ -28,9 +28,10 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{
         Render, RenderDrawControl, RenderExtra, RenderPrepareControl,
-        camera::{CameraBind, MainCamera, SetCameraOutdated, UICamera},
+        camera::{CameraBind, PageCamera, SetCameraOutdated, UICamera},
     },
     save::{Autosave, Save},
+    tools::collider::ToolControl,
     widgets::{common::WidgetCommon, renderer::rrect::RRect},
 };
 
@@ -130,8 +131,8 @@ impl LayerPage {
             mipmap_caps: DEFAULT_MIPMAP_CAP,
         };
 
-        let main_camera = world.single_fetch::<MainCamera>();
-        let camera = world.fetch(main_camera.0);
+        let page_camera = world.single_fetch::<PageCamera>();
+        let camera = world.fetch(page_camera.0);
         input_tx
             .send(ThreadInput::SetStreamCamera(
                 camera.zoom,
@@ -598,10 +599,12 @@ impl Element for LayerPage {
 
         world.dependency(save, this);
 
-        let main_camera = world.single_fetch::<MainCamera>().0;
-        world.observer(main_camera, move |&SetCameraOutdated, world| {
+        let page_camera = world.single_fetch::<PageCamera>().0;
+        let ui_camera = world.single_fetch::<UICamera>().0;
+
+        world.observer(page_camera, move |&SetCameraOutdated, world| {
             let this = world.single_fetch::<LayerPage>();
-            let camera = world.fetch(main_camera);
+            let camera = world.fetch(page_camera);
 
             this.thread_tx
                 .send(ThreadInput::SetStreamCamera(
@@ -620,12 +623,47 @@ impl Element for LayerPage {
             }),
         });
 
-        let control = world.insert(RenderDrawControl {
+        let control_container = world.insert(RenderDrawControl {
             common: WidgetCommon {
-                camera: main_camera,
+                camera: ui_camera,
                 visible: true,
             },
             order: -100,
+            draw: Box::new(move |world, rpass, extra| {
+                let page_camera = world.fetch(page_camera);
+                Render::draw(
+                    &page_camera,
+                    world,
+                    rpass,
+                    RenderExtra {
+                        camera: &page_camera,
+                        ..extra
+                    },
+                );
+            }),
+        });
+
+        let tool = world.insert(ToolControl {
+            common: WidgetCommon {
+                camera: ui_camera,
+                visible: true,
+            },
+            order: -100,
+            hit: Box::new(move |world, screen| {
+                if let Some(hit) = ToolControl::intersect(world, screen, page_camera) {
+                    Some(hit)
+                } else {
+                    None
+                }
+            }),
+        });
+
+        let control_page = world.insert(RenderDrawControl {
+            common: WidgetCommon {
+                camera: page_camera,
+                visible: true,
+            },
+            order: 0,
             draw: Box::new(move |world, rpass, extra| {
                 let mut this = world.single_fetch_mut::<LayerPage>();
                 this.render(rpass, extra);
@@ -633,6 +671,8 @@ impl Element for LayerPage {
         });
 
         world.dependency(prepare_control, this);
-        world.dependency(control, this);
+        world.dependency(control_container, this);
+        world.dependency(control_page, this);
+        world.dependency(tool, this);
     }
 }

@@ -15,7 +15,7 @@ use crate::{
     },
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
-    render::camera::{MainCamera, MainCameraUtils, UICamera},
+    render::camera::{PageCamera, PageCameraUtils, UICamera},
     save::Save,
     tools::{
         collider::ToolRectCollider,
@@ -77,10 +77,10 @@ pub struct OffsetCorrection {
 
 impl LayerInput {
     fn init(&mut self, world: &World, this: Handle<Self>) {
-        let main_camera = world.single_fetch::<MainCamera>().0;
+        let page_camera = world.single_fetch::<PageCamera>().0;
         world.insert(ToolRectCollider {
             common: WidgetCommon {
-                camera: main_camera,
+                camera: page_camera,
                 visible: true,
             },
             target: this.untyped(),
@@ -94,8 +94,8 @@ impl LayerInput {
             }
 
             let mut this = world.fetch_mut(this);
-            let main_camera = world.single_fetch::<MainCamera>().0;
-            let main_camera = world.fetch(main_camera);
+            let page_camera = world.single_fetch::<PageCamera>().0;
+            let page_camera = world.fetch(page_camera);
             let ui_camera = world.single_fetch::<UICamera>().0;
             let camera = world.fetch(ui_camera);
             let wrapper = world.single_fetch::<LayerPage>();
@@ -130,7 +130,7 @@ impl LayerInput {
                 .as_dvec2()
             }
             screen += offset;
-            this.input_offset_main = main_camera.screen_to_world_relative(offset);
+            this.input_offset_main = page_camera.screen_to_world_relative(offset);
 
             let brush_rect =
                 Rectangle::new_half(camera.screen_to_world(screen).q32_round(), UVec2::new(1, 1));
@@ -205,8 +205,8 @@ impl LayerInput {
         });
 
         world.observer(this, move |event: &PointerScroll, world| {
-            let main = world.single_fetch::<MainCamera>().0;
-            let utils = world.single_fetch::<MainCameraUtils>().0;
+            let main = world.single_fetch::<PageCamera>().0;
+            let utils = world.single_fetch::<PageCameraUtils>().0;
             let mut camera_utils = world.fetch_mut(utils);
 
             let zoom_delta = -event.delta.y;
@@ -225,8 +225,8 @@ impl LayerInput {
 
         let mut state = LayerInputState::None;
         world.observer(this, move |event: &MultiTouchGroup, world| {
-            let main_camera = world.single_fetch::<MainCamera>().0;
-            let utils = world.single_fetch::<MainCameraUtils>().0;
+            let page_camera = world.single_fetch::<PageCamera>().0;
+            let utils = world.single_fetch::<PageCameraUtils>().0;
             let mut this = world.fetch_mut(this);
             let lnwindow = world.fetch(lnwindow);
             let camera_utils = &mut *world.fetch_mut(utils);
@@ -294,7 +294,7 @@ impl LayerInput {
                     if let Some(distance) = pinch {
                         camera_utils.camera_distance_by_camera_zoom_center(distance);
                     }
-                    camera_utils.apply_to_camera(world, main_camera);
+                    camera_utils.apply_to_camera(world, page_camera);
 
                     if this.ctrl {
                         camera_utils.camera_cursor_by_anchor_center(center);
@@ -338,7 +338,7 @@ impl LayerInput {
                             (center - start_position).element_sum().exp2(),
                         );
                     }
-                    camera_utils.apply_to_camera(world, main_camera);
+                    camera_utils.apply_to_camera(world, page_camera);
 
                     if this.ctrl {
                         LayerInputState::Scale { start_position }

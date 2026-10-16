@@ -5,7 +5,7 @@ use winit::event::{ButtonSource, ElementState, MouseButton, PointerSource, Windo
 use crate::{
     lnwin::Lnwindow,
     measures::FI64Ext,
-    render::camera::{MainCamera, MainCameraUtils},
+    render::camera::{PageCamera, PageCameraUtils},
     tools::collider::ToolControl,
 };
 
@@ -52,7 +52,7 @@ impl Element for MouseTool {
                 button: ButtonSource::Mouse(MouseButton::Middle),
                 ..
             } => {
-                let utils = world.single_fetch::<MainCameraUtils>().0;
+                let utils = world.single_fetch::<PageCameraUtils>().0;
                 let lnwindow = world.single_fetch::<Lnwindow>();
                 let cursor = lnwindow.cursor_to_screen(*position);
                 middle = true;
@@ -67,8 +67,8 @@ impl Element for MouseTool {
                 source: PointerSource::Mouse,
                 ..
             } => {
-                let main = world.single_fetch::<MainCamera>().0;
-                let utils = world.single_fetch::<MainCameraUtils>().0;
+                let main = world.single_fetch::<PageCamera>().0;
+                let utils = world.single_fetch::<PageCameraUtils>().0;
                 let lnwindow = world.single_fetch::<Lnwindow>();
                 let cursor = lnwindow.cursor_to_screen(*position);
                 drop(lnwindow);

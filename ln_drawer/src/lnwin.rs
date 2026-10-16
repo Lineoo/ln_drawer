@@ -19,7 +19,7 @@ use crate::{
     render::{
         Render,
         camera::{
-            Camera, CameraDescriptor, CameraUtils, MainCamera, MainCameraUtils, SetCameraOutdated,
+            Camera, CameraDescriptor, CameraUtils, PageCamera, PageCameraUtils, SetCameraOutdated,
             UICamera,
         },
     },
@@ -157,7 +157,7 @@ impl Element for Lnwindow {
 
             let lnwindow = world.fetch(this);
 
-            let main_camera = Camera::init_main_camera(world);
+            let page_camera = Camera::init_page_camera(world);
             let ui_camera = world.insert(world.build(CameraDescriptor {
                 center: I64Vec2::ZERO,
                 zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
@@ -165,18 +165,18 @@ impl Element for Lnwindow {
 
             drop(lnwindow);
 
-            world.insert(MainCamera(main_camera));
+            world.insert(PageCamera(page_camera));
             world.insert(UICamera(ui_camera));
 
             world.flush();
 
-            let camera = world.fetch(main_camera);
-            let main_camera_utils = world.insert(CameraUtils::new(&camera));
-            world.insert(MainCameraUtils(main_camera_utils));
+            let camera = world.fetch(page_camera);
+            let page_camera_utils = world.insert(CameraUtils::new(&camera));
+            world.insert(PageCameraUtils(page_camera_utils));
 
             world.observer(this, move |event: &WindowEvent, world| {
                 if let WindowEvent::SurfaceResized(size) = event {
-                    let mut camera = world.fetch_mut(main_camera_utils);
+                    let mut camera = world.fetch_mut(page_camera_utils);
                     camera.camera_size(UVec2::new(size.width, size.height));
                 }
             });

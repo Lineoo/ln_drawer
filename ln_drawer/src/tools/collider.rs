@@ -4,7 +4,7 @@ use ln_world::{Element, Handle, HandleAny, World};
 use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
-    render::camera::{Camera, MainCamera, UICamera},
+    render::camera::{Camera, UICamera},
     widgets::{SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon},
 };
 
@@ -31,13 +31,10 @@ pub struct ToolControlUpdate;
 
 impl ToolControl {
     pub fn intersect_main(world: &World, screen: DVec2) -> Option<ToolHitResult> {
-        let main = world.single_fetch::<MainCamera>().0;
         let ui = world.single_fetch::<UICamera>().0;
 
-        for camera in [ui, main] {
-            if let Some(value) = Self::intersect(world, screen, camera) {
-                return Some(value);
-            }
+        if let Some(value) = Self::intersect(world, screen, ui) {
+            return Some(value);
         }
 
         None

@@ -15,7 +15,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent};
 use crate::{
     lnwin::Lnwindow,
     measures::ScissorRect,
-    render::camera::{Camera, MainCamera, UICamera},
+    render::camera::{Camera, UICamera},
     widgets::{SetWidgetVisible, common::WidgetCommon},
 };
 
@@ -378,31 +378,27 @@ impl Render {
 
         // redraw
 
-        let main_camera = world.single_fetch::<MainCamera>().0;
         let ui_camera = world.single_fetch::<UICamera>().0;
-
-        for camera_handle in [main_camera, ui_camera] {
-            let camera = &mut *world.fetch_mut(camera_handle);
-            Render::draw(
-                camera,
-                world,
-                &mut rpass,
-                RenderExtra {
-                    device: &render.device,
-                    queue: &render.queue,
-                    camera: &camera,
-                    early_encoder: &mut early_encoder,
-                    surface_config: &render.config,
-                    diagnosis: &mut diagnosis,
-                    scissor: ScissorRect {
-                        x: 0,
-                        y: 0,
-                        width: camera.surface_size.x,
-                        height: camera.surface_size.y,
-                    },
+        let camera = &mut *world.fetch_mut(ui_camera);
+        Render::draw(
+            camera,
+            world,
+            &mut rpass,
+            RenderExtra {
+                device: &render.device,
+                queue: &render.queue,
+                camera: &camera,
+                early_encoder: &mut early_encoder,
+                surface_config: &render.config,
+                diagnosis: &mut diagnosis,
+                scissor: ScissorRect {
+                    x: 0,
+                    y: 0,
+                    width: camera.surface_size.x,
+                    height: camera.surface_size.y,
                 },
-            );
-        }
+            },
+        );
 
         drop(rpass);
 
