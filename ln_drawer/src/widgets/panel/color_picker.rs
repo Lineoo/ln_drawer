@@ -21,6 +21,7 @@ use crate::{
             hsl::{ColorHsla, HslPanel, SetColorHsla},
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
+        panel::debug_panel::DebugPanel,
         renderer::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
@@ -92,14 +93,13 @@ pub fn color_picker_panel(
         scroll: I64Vec2::ZERO,
     });
 
-    let (tab_debug, cam_debug) = world.build(ContainerWithCamera {
-        rect: Rectangle::default(),
-        inner: TransformValue::copy(),
+    world.named("debug_panel");
+    let tab_debug = world.insert(DebugPanel {
         common: WidgetCommon {
             camera,
             visible: false,
         },
-        scroll: I64Vec2::ZERO,
+        rect: Rectangle::default(),
     });
 
     let tabs = world.insert(Tabs {
@@ -180,8 +180,6 @@ pub fn color_picker_panel(
 
     world.named("layer_selection");
     super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection);
-    world.named("debug_panel");
-    super::debug_panel::debug_panel(world, tab_debug, cam_debug);
 }
 
 fn palette_hsl(world: &World, bg: Handle<Container>, camera: Handle<Camera>) {

@@ -1,6 +1,6 @@
 use cosmic_text::{Attrs, Family, Metrics};
 use glam::{I64Vec2, IVec2, UVec2};
-use ln_world::{Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
     layer::wrapper::{LayerDebugMessage, LayerPage},
@@ -13,115 +13,149 @@ use crate::{
     save::{Save, SceneDocument},
     theme::Theme,
     widgets::{
-        SetWidgetVisible,
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
-        container::Container,
+        common::WidgetCommon,
+        container::ContainerWithCamera,
+        echo::Echo,
         renderer::{svg::svg_render, text::Text},
     },
 };
 
-pub fn debug_panel(world: &World, submenu: Handle<Container>, camera: Handle<Camera>) {
-    let debug_text = world.insert(Text {
-        text: "Hi there".into(),
-        rect: Rectangle::new_half(IVec2::ZERO, UVec2::ONE),
-        metrics: Metrics::new(12.0, 18.0),
-        attrs: Attrs::new().family(Family::Monospace),
-        order: 50,
-        visible: false,
-        camera: Some(camera),
-        ..Default::default()
-    });
+pub struct DebugPanel {
+    pub common: WidgetCommon,
+    pub rect: Rectangle,
+}
 
-    world.insert(Transform {
-        value: TransformValue::shrink(24, 24),
-        source: submenu.untyped(),
-        target: debug_text.untyped(),
-    });
+impl Element for DebugPanel {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let (container, camera) = world.build(ContainerWithCamera {
+            common: self.common,
+            rect: self.rect,
+            inner: TransformValue::copy(),
+            scroll: I64Vec2::ZERO,
+        });
 
-    world.observer(submenu, move |&SetWidgetVisible(visible), world| {
-        let mut layer = world.single_fetch_mut::<LayerPage>();
-        layer.debug = visible;
-    });
+        let debug_text = world.insert(Text {
+            text: "Hi there".into(),
+            rect: Rectangle::new_half(IVec2::ZERO, UVec2::ONE),
+            metrics: Metrics::new(12.0, 18.0),
+            attrs: Attrs::new().family(Family::Monospace),
+            order: 50,
+            visible: false,
+            camera: Some(camera),
+            ..Default::default()
+        });
 
-    world.observer(world.single::<Render>(), move |msg: &String, world| {
-        let mut text = world.fetch_mut(debug_text);
-        if text.text != *msg {
-            text.text.clone_from(msg);
-            text.outdated = true;
-        }
-    });
+        Echo::new(world, this).widget_rectangle().widget_visible();
 
-    world.observer(
-        world.single::<LayerPage>(),
-        move |LayerDebugMessage(msg), world| {
-            let render = world.single_fetch::<Render>();
-            if render.timestamp_poll {
-                return;
-            }
+        world.insert(Transform {
+            value: TransformValue::copy(),
+            source: this.untyped(),
+            target: container.untyped(),
+        });
 
+        world.insert(Transform {
+            value: TransformValue::shrink(24, 24),
+            source: container.untyped(),
+            target: debug_text.untyped(),
+        });
+
+        world.observer(world.single::<Render>(), move |msg: &String, world| {
             let mut text = world.fetch_mut(debug_text);
             if text.text != *msg {
                 text.text.clone_from(msg);
                 text.outdated = true;
             }
-        },
-    );
+        });
 
-    let theme = world.single_fetch::<Theme>();
-    let docker_button = docker_button(world, &theme, camera);
+        world.observer(
+            world.single::<LayerPage>(),
+            move |LayerDebugMessage(msg), world| {
+                let render = world.single_fetch::<Render>();
+                if render.timestamp_poll {
+                    return;
+                }
 
-    let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
-    world.observer(compass, move |&ButtonClick, world| {
-        let main_camera = world.single_fetch::<MainCamera>().0;
-        let utils = world.single_fetch::<MainCameraUtils>().0;
-        let mut camera = world.fetch_mut(utils);
-        camera.force_clear();
-        camera.force_camera_center(I64Vec2::ZERO);
-        camera.force_camera_zoom(0);
-        camera.apply_to_camera(world, main_camera);
-    });
+                let mut text = world.fetch_mut(debug_text);
+                if text.text != *msg {
+                    text.text.clone_from(msg);
+                    text.outdated = true;
+                }
+            },
+        );
 
-    let render_profile = docker_button(include_bytes!("../../../res/interface/timer.svg"));
-    world.observer(render_profile, move |&ButtonSelected(val), world| {
-        let mut render = world.single_fetch_mut::<Render>();
-        render.timestamp_poll = val;
-        world.queue_trigger(render_profile, SetButtonSelected(val));
-    });
+        let theme = world.single_fetch::<Theme>();
+        let docker_button = smol_butt(world, &theme, camera);
 
-    let compact = docker_button(include_bytes!("../../../res/interface/database-zap.svg"));
-    world.observer(compact, move |&ButtonClick, world| {
-        log::debug!("on next startup database will be compacted");
-        let sn_file = Save::sn_file(world);
-        let sn_tmp_file = Save::sn_tmp_file(world);
-        let mut sn_doc = SceneDocument::read(&sn_file);
-        sn_doc.set_compact_on_startup(true);
-        sn_doc.write(&sn_file, &sn_tmp_file);
-    });
+        let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
+        world.observer(compass, move |&ButtonClick, world| {
+            let main_camera = world.single_fetch::<MainCamera>().0;
+            let utils = world.single_fetch::<MainCameraUtils>().0;
+            let mut camera = world.fetch_mut(utils);
+            camera.force_clear();
+            camera.force_camera_center(I64Vec2::ZERO);
+            camera.force_camera_zoom(0);
+            camera.apply_to_camera(world, main_camera);
+        });
 
-    world.insert(Transform {
-        value: TransformValue::anchor((0.0, 0.0), Rectangle::new(20, 20, 40, 40)),
-        source: submenu.untyped(),
-        target: compass.untyped(),
-    });
-    world.insert(Transform {
-        value: TransformValue::anchor((0.5, 0.0), Rectangle::new(-10, 20, 10, 40)),
-        source: submenu.untyped(),
-        target: render_profile.untyped(),
-    });
+        let page_debug = docker_button(include_bytes!("../../../res/interface/bug.svg"));
+        world.observer(page_debug, move |&ButtonSelected(val), world| {
+            let mut layer = world.single_fetch_mut::<LayerPage>();
+            layer.debug = val;
+            world.queue_trigger(page_debug, SetButtonSelected(val));
+        });
 
-    world.insert(Transform {
-        value: TransformValue::anchor((1.0, 0.0), Rectangle::new(-40, 20, -20, 40)),
-        source: submenu.untyped(),
-        target: compact.untyped(),
-    });
+        let render_profile = docker_button(include_bytes!("../../../res/interface/timer.svg"));
+        world.observer(render_profile, move |&ButtonSelected(val), world| {
+            let mut render = world.single_fetch_mut::<Render>();
+            render.timestamp_poll = val;
+            world.queue_trigger(render_profile, SetButtonSelected(val));
+        });
 
-    world.dependency(debug_text, submenu);
-    world.dependency(render_profile, submenu);
-    world.dependency(compass, submenu);
-    world.dependency(compact, submenu);
+        let compact = docker_button(include_bytes!("../../../res/interface/database-zap.svg"));
+        world.observer(compact, move |&ButtonClick, world| {
+            log::debug!("on next startup database will be compacted");
+            let sn_file = Save::sn_file(world);
+            let sn_tmp_file = Save::sn_tmp_file(world);
+            let mut sn_doc = SceneDocument::read(&sn_file);
+            sn_doc.set_compact_on_startup(true);
+            sn_doc.write(&sn_file, &sn_tmp_file);
+        });
+
+        world.insert(Transform {
+            value: TransformValue::anchor((0.0, 0.0), Rectangle::new(20, 20, 40, 40)),
+            source: container.untyped(),
+            target: compass.untyped(),
+        });
+
+        world.insert(Transform {
+            value: TransformValue::anchor((0.33, 0.0), Rectangle::new(-10, 20, 10, 40)),
+            source: container.untyped(),
+            target: page_debug.untyped(),
+        });
+
+        world.insert(Transform {
+            value: TransformValue::anchor((0.67, 0.0), Rectangle::new(-10, 20, 10, 40)),
+            source: container.untyped(),
+            target: render_profile.untyped(),
+        });
+
+        world.insert(Transform {
+            value: TransformValue::anchor((1.0, 0.0), Rectangle::new(-40, 20, -20, 40)),
+            source: container.untyped(),
+            target: compact.untyped(),
+        });
+
+        world.dependency(debug_text, this);
+        world.dependency(render_profile, this);
+        world.dependency(compass, this);
+        world.dependency(compact, this);
+        world.dependency(container, this);
+        world.dependency(camera, this);
+    }
 }
 
-pub fn docker_button(
+pub fn smol_butt(
     world: &World,
     theme: &Theme,
     camera: Handle<Camera>,

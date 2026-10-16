@@ -35,10 +35,11 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
 @fragment
 fn fs_debug(vertex: VertexOutput) -> @location(0) vec4f {
     let color = mul_alpha(srgb_gamma_encode(demul_alpha(textureSample(texture, texture_sampler, vertex.uv))));
-    let grid = max(1 - step(vec2f(5. / 512), vertex.uv), step(vec2f(1 - 5. / 512), vertex.uv));
-    let grid_float = max(grid.x, grid.y);
+    let grid_pixel = floor(vertex.uv * 512.);
+    let grid = (grid_pixel % 2 * 0.5 + 0.5)
+        * max(smoothstep(vec2f(16), vec2f(0), grid_pixel), smoothstep(vec2f(496), vec2f(512), grid_pixel));
 
-    let a = vec4f(vertex.uv, 0.5, 0.5) * (grid_float * 0.8 + 0.2);
+    let a = vec4f(vertex.uv * 0.5 + 0.25, 0.5, max(grid.x, grid.y));
     let b = color;
     let c = vec4f(1 - color.a, color.a, 0, 1) * fract(color.a * 8);
 
