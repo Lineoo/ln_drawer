@@ -72,7 +72,7 @@ pub fn color_picker_panel(
         scroll: I64Vec2::ZERO,
     });
 
-    let (tab_palette_oklch, cam_palette_oklch) = world.build(ContainerWithCamera {
+    let (tab_palette_oklab, cam_palette_oklch) = world.build(ContainerWithCamera {
         rect: Rectangle::default(),
         inner: TransformValue::copy(),
         common: WidgetCommon {
@@ -113,7 +113,7 @@ pub fn color_picker_panel(
             ),
             (
                 svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
-                tab_palette_oklch.untyped(),
+                tab_palette_oklab.untyped(),
             ),
             (
                 svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
@@ -155,21 +155,29 @@ pub fn color_picker_panel(
 
     world.dependency(toggle_button_color_icon, toggle_button);
     world.dependency(tab_palette_hsl, toggle_button);
-    world.dependency(tab_palette_oklch, toggle_button);
+    world.dependency(tab_palette_oklab, toggle_button);
     world.dependency(tab_layer_selection, toggle_button);
     world.dependency(tab_debug, toggle_button);
     world.dependency(tabs, toggle_button);
 
     world.named("palette_hsl");
     palette_hsl(world, tab_palette_hsl, cam_palette_hsl);
+
     world.named("palette_oklab");
-    world.insert(LayerOklabPalette {
+    let palette_oklab = world.insert(LayerOklabPalette {
         common: WidgetCommon {
             camera: cam_palette_oklch,
             visible: false,
         },
         oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
     });
+    world.insert(Transform {
+        value: TransformValue::copy(),
+        source: tab_palette_oklab.untyped(),
+        target: palette_oklab.untyped(),
+    });
+    world.dependency(palette_oklab, tab_palette_oklab);
+
     world.named("layer_selection");
     super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection);
     world.named("debug_panel");
