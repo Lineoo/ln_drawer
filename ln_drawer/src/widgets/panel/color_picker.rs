@@ -215,17 +215,21 @@ impl Element for LayerOklabPalette {
         });
 
         let polar = world.insert(OklabPolar {
+            common: WidgetCommon {
+                camera,
+                visible: self.common.visible,
+            },
             rect: Rectangle::default(),
             oklab: self.oklab,
-            enabled: self.common.visible,
-            camera,
         });
 
         let bar = world.insert(OklabBar {
+            common: WidgetCommon {
+                camera,
+                visible: self.common.visible,
+            },
             rect: Rectangle::default(),
             oklab: self.oklab,
-            enabled: self.common.visible,
-            camera,
         });
 
         Echo::new(world, this).widget_rectangle().widget_visible();

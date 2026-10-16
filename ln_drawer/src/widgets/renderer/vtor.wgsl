@@ -14,6 +14,7 @@ struct VertexOutput {
 }
 
 @group(1) @binding(0) var<uniform> quad: Quad;
+@group(1) @binding(1) var<uniform> color: vec4f;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32, in: VertexInput) -> VertexOutput {
@@ -24,5 +25,5 @@ fn vs_main(@builtin(vertex_index) index: u32, in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    return vec4f(0.7, 0.96, 1, 1);
+    return color;
 }

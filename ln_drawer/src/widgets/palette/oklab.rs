@@ -1,10 +1,13 @@
 use glam::{I64Vec2, IVec2, UVec2, Vec2, Vec4};
 use ln_world::{Element, Handle, HandleGeneric, World};
+use lyon::{
+    math::Point,
+    path::{Path, Winding},
+};
 
 use crate::{
     color::{oklab::oklab_to_linear_srgb, srgb::mul_alpha},
     measures::{FI64Ext, Rectangle},
-    render::camera::Camera,
     tools::{collider::ToolRectCollider, pointer::PointerHit},
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
@@ -13,6 +16,7 @@ use crate::{
         renderer::{
             quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
             rrect::{RRect, SetRRectColor},
+            vtor::{SetVtorPath, Vtor},
         },
         shaders::shader_compile,
     },
@@ -21,17 +25,15 @@ use crate::{
 const THUMB_RADIUS: f32 = 5.0;
 
 pub struct OklabPolar {
+    pub common: WidgetCommon,
     pub rect: Rectangle,
     pub oklab: Vec4,
-    pub enabled: bool,
-    pub camera: Handle<Camera>,
 }
 
 pub struct OklabBar {
+    pub common: WidgetCommon,
     pub rect: Rectangle,
     pub oklab: Vec4,
-    pub enabled: bool,
-    pub camera: Handle<Camera>,
 }
 
 #[repr(C)]
@@ -53,10 +55,19 @@ impl OklabPolar {
     fn init(&mut self, world: &World, this: Handle<Self>) {
         let quad = world.insert(QuadMesh {
             rect: self.rect,
-            visible: self.enabled,
+            visible: self.common.visible,
             order: 60,
-            camera: self.camera,
+            camera: self.common.camera,
             material: OklabPolarMaterial { oklab: self.oklab },
+        });
+
+        let chroma_indicator = world.insert(Vtor {
+            common: self.common,
+            rect: self.rect,
+            order: 70,
+            color: Vec4::new(0.2, 0.2, 0.2, 0.4),
+            path: chroma_to_path(Vec2::new(self.oklab.y, self.oklab.z).length()),
+            outdated: false,
         });
 
         let thumb = world.insert(RRect {
@@ -65,8 +76,8 @@ impl OklabPolar {
             color: mul_alpha(oklab_to_linear_srgb(self.oklab)),
             radius: THUMB_RADIUS,
             width: 0.0,
-            enabled: self.enabled,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         let thumb_light = world.insert(RRect {
@@ -75,8 +86,8 @@ impl OklabPolar {
             color: Vec4::new(1.0, 1.0, 1.0, 1.0),
             radius: THUMB_RADIUS + 1.0,
             width: 0.0,
-            enabled: self.enabled,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         let thumb_shadow = world.insert(RRect {
@@ -85,21 +96,19 @@ impl OklabPolar {
             color: Vec4::new(0.0, 0.0, 0.0, 1.0),
             radius: THUMB_RADIUS + 2.0,
             width: 0.0,
-            enabled: self.enabled,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         let collider = world.insert(ToolRectCollider {
-            common: WidgetCommon {
-                visible: self.enabled,
-                camera: self.camera,
-            },
+            common: self.common,
             target: this.untyped(),
             rect: self.rect,
             order: 100,
         });
 
         world.dependency(quad, this);
+        world.dependency(chroma_indicator, this);
         world.dependency(thumb, this);
         world.dependency(thumb_light, this);
         world.dependency(thumb_shadow, this);
@@ -117,11 +126,12 @@ impl OklabPolar {
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(this);
-            this.enabled = enabled;
+            this.common.visible = enabled;
             world.queue_trigger(collider, SetWidgetVisible(enabled));
             world.queue_trigger(thumb, SetWidgetVisible(enabled));
             world.queue_trigger(thumb_light, SetWidgetVisible(enabled));
             world.queue_trigger(thumb_shadow, SetWidgetVisible(enabled));
+            world.queue_trigger(chroma_indicator, SetWidgetVisible(enabled));
             world.queue_trigger(quad, SetWidgetVisible(enabled));
         });
 
@@ -139,6 +149,7 @@ impl OklabPolar {
             world.queue_trigger(thumb_light, SetWidgetRectangle(thumb_rect.expand(1)));
             world.queue_trigger(thumb_shadow, SetWidgetRectangle(thumb_rect.expand(2)));
             world.queue_trigger(quad, SetWidgetRectangle(rect));
+            world.queue_trigger(chroma_indicator, SetWidgetRectangle(rect));
             world.queue_trigger(collider, SetWidgetRectangle(rect));
         });
 
@@ -146,6 +157,10 @@ impl OklabPolar {
             let mut this = world.fetch_mut(this);
             this.oklab = oklab;
             world.queue_trigger(quad, SetQuadMaterial(OklabPolarMaterial { oklab }));
+            world.queue_trigger(
+                chroma_indicator,
+                SetVtorPath(chroma_to_path(Vec2::new(oklab.y, oklab.z).length())),
+            );
             let thumb_rect = Rectangle::new_half(
                 this.rect.origin
                     + (Vec2::new(oklab.y / 0.8 + 0.5, oklab.z / 0.8 + 0.5)
@@ -165,9 +180,9 @@ impl OklabBar {
     fn init(&mut self, world: &World, this: Handle<Self>) {
         let quad = world.insert(QuadMesh {
             rect: self.rect,
-            visible: self.enabled,
+            visible: self.common.visible,
             order: 60,
-            camera: self.camera,
+            camera: self.common.camera,
             material: OklabBarMaterial { oklab: self.oklab },
         });
 
@@ -177,8 +192,8 @@ impl OklabBar {
             color: mul_alpha(oklab_to_linear_srgb(self.oklab)),
             radius: THUMB_RADIUS,
             width: 0.0,
-            enabled: self.enabled,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         let thumb_light = world.insert(RRect {
@@ -187,8 +202,8 @@ impl OklabBar {
             color: Vec4::new(1.0, 1.0, 1.0, 1.0),
             radius: THUMB_RADIUS + 1.0,
             width: 0.0,
-            enabled: self.enabled,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         let thumb_shadow = world.insert(RRect {
@@ -197,15 +212,12 @@ impl OklabBar {
             color: Vec4::new(0.0, 0.0, 0.0, 1.0),
             radius: THUMB_RADIUS + 2.0,
             width: 0.0,
-            enabled: self.enabled,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         let collider = world.insert(ToolRectCollider {
-            common: WidgetCommon {
-                visible: self.enabled,
-                camera: self.camera,
-            },
+            common: self.common,
             target: this.untyped(),
             rect: self.rect,
             order: 100,
@@ -223,7 +235,7 @@ impl OklabBar {
 
         world.observer(this, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(this);
-            this.enabled = enabled;
+            this.common.visible = enabled;
             world.queue_trigger(thumb, SetWidgetVisible(enabled));
             world.queue_trigger(thumb_light, SetWidgetVisible(enabled));
             world.queue_trigger(thumb_shadow, SetWidgetVisible(enabled));
@@ -270,6 +282,13 @@ impl OklabBar {
         world.dependency(thumb_light, this);
         world.dependency(thumb_shadow, this);
     }
+}
+
+fn chroma_to_path(c: f32) -> Path {
+    let mut builder = Path::builder();
+    builder.add_circle(Point::new(0.5, 0.5), c / 0.8 + 0.005, Winding::Positive);
+    builder.add_circle(Point::new(0.5, 0.5), c / 0.8 - 0.005, Winding::Negative);
+    builder.build()
 }
 
 fn clip_to_srgb_gamut(oklab: Vec4) -> Vec4 {

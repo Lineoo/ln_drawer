@@ -1,7 +1,7 @@
-use glam::Vec2;
+use glam::{Vec2, Vec4};
 use ln_world::{Element, Handle, World};
 use lyon::{
-    math::Point,
+    math::{Point, Transform, Vector},
     path::Path,
     tessellation::{BuffersBuilder, FillOptions, FillTessellator, FillVertex, VertexBuffers},
 };
@@ -13,89 +13,78 @@ use wgpu::{
 use crate::{
     lnwin::Lnwindow,
     measures::Rectangle,
-    render::{MSAA_STATE, Render, RenderDrawControl, camera::CameraBind},
+    render::{MSAA_STATE, Render, RenderDrawControl, RenderPrepareControl, camera::CameraBind},
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, shaders::shader_compile,
     },
 };
 
 pub struct VtorPipeline {
-    #[expect(unused)]
     pipeline: RenderPipeline,
-    #[expect(unused)]
-    bind: BindGroupLayout,
+    vtor_bind: BindGroupLayout,
 }
 
-#[expect(unused)]
 pub struct Vtor {
     pub common: WidgetCommon,
     pub rect: Rectangle,
+    pub color: Vec4,
     pub order: isize,
     pub path: Path,
+    pub outdated: bool,
 }
 
 struct VtorInstance {
+    len: u32,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     rect_uniform: Buffer,
-    rect_bind: BindGroup,
+    color_uniform: Buffer,
+    vtor_bind: BindGroup,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct VtorUniform {
+    color: Vec4,
 }
 
 pub struct SetVtorPath(pub Path);
+pub struct SetVtorColor(pub Vec4);
 
 impl Vtor {
-    #[expect(unused)]
-    pub fn logo() -> Path {
-        let mut builder = Path::svg_builder();
-
-        // ========== Path 1 ==========
-        builder.move_to(Point::new(13.0, 43.0));
-        builder.line_to(Point::new(11.0, 48.0));
-        builder.line_to(Point::new(37.0, 48.0));
-        builder.line_to(Point::new(39.0, 43.0));
-        builder.line_to(Point::new(22.0, 43.0));
-        builder.line_to(Point::new(22.0, 16.0));
-        builder.line_to(Point::new(15.0, 14.0));
-        builder.line_to(Point::new(15.0, 43.0));
-        builder.close();
-
-        // ========== Path 2 ==========
-        builder.move_to(Point::new(28.0, 37.0));
-        builder.line_to(Point::new(35.0, 39.0));
-        builder.line_to(Point::new(35.0, 27.0));
-        builder.line_to(Point::new(39.0, 27.0));
-        builder.cubic_bezier_to(
-            Point::new(41.519, 27.0),
-            Point::new(43.0, 27.0),
-            Point::new(43.0, 33.0),
-        );
-        builder.line_to(Point::new(43.0, 48.0));
-        builder.line_to(Point::new(50.0, 48.0));
-        builder.line_to(Point::new(50.0, 33.0));
-        builder.cubic_bezier_to(
-            Point::new(50.0, 23.0),
-            Point::new(48.444, 23.0),
-            Point::new(39.0, 23.0),
-        );
-        builder.line_to(Point::new(28.0, 23.0));
-        builder.close();
-
-        builder.build()
-    }
-
-    #[expect(unused)]
-    pub fn init(&self, world: &World, this: Handle<Self>) {
+    pub fn init(&mut self, world: &World, this: Handle<Self>) {
         let render = world.single_fetch::<Render>();
         let pipeline = world.single_fetch::<VtorPipeline>();
 
-        let (len, vertex_buffer, index_buffer, rect_uniform, rect_bind) =
-            self.gen_path_buffer(&pipeline, &render.device);
+        self.outdated = false;
+        let instance = world.insert(Vtor::gen_path_buffer(
+            self.path.clone(),
+            self.rect,
+            self.color,
+            &pipeline,
+            &render.device,
+        ));
 
-        let instance = world.insert(VtorInstance {
-            vertex_buffer,
-            index_buffer,
-            rect_uniform,
-            rect_bind,
+        let prepare = world.insert(RenderPrepareControl {
+            prepare: Box::new(move |world| {
+                let mut this = world.fetch_mut(this);
+                let mut instance = world.fetch_mut(instance);
+                let render = world.single_fetch::<Render>();
+                let pipeline = world.single_fetch::<VtorPipeline>();
+
+                if this.outdated {
+                    this.outdated = false;
+                    *instance = Vtor::gen_path_buffer(
+                        this.path.clone(),
+                        this.rect,
+                        this.color,
+                        &pipeline,
+                        &render.device,
+                    );
+                }
+
+                None
+            }),
         });
 
         let control = world.insert(RenderDrawControl {
@@ -106,6 +95,10 @@ impl Vtor {
                 let instance = world.fetch(instance);
                 let camera = extra.camera;
 
+                if instance.len == 0 {
+                    return;
+                }
+
                 let key = format!("main > vtor");
                 let (start, end) = extra.diagnosis.assign_string(key);
                 extra.diagnosis.write(rpass, start);
@@ -114,8 +107,8 @@ impl Vtor {
                 rpass.set_vertex_buffer(0, instance.vertex_buffer.slice(..));
                 rpass.set_index_buffer(instance.index_buffer.slice(..), IndexFormat::Uint16);
                 rpass.set_bind_group(0, &camera.bind, &[]);
-                rpass.set_bind_group(1, &instance.rect_bind, &[]);
-                rpass.draw_indexed(0..len, 0, 0..1);
+                rpass.set_bind_group(1, &instance.vtor_bind, &[]);
+                rpass.draw_indexed(0..instance.len, 0, 0..1);
 
                 extra.diagnosis.write(rpass, end);
             }),
@@ -140,36 +133,43 @@ impl Vtor {
 
         world.observer(this, move |SetVtorPath(path), world| {
             let mut this = world.fetch_mut(this);
-            let mut instance = world.fetch_mut(instance);
-            let render = world.single_fetch::<Render>();
-            let pipeline = world.single_fetch::<VtorPipeline>();
-
             this.path = path.clone();
-            let (len, vertex_buffer, index_buffer, rect_uniform, rect_bind) =
-                this.gen_path_buffer(&pipeline, &render.device);
-
-            *instance = VtorInstance {
-                vertex_buffer,
-                index_buffer,
-                rect_uniform,
-                rect_bind,
-            };
+            this.outdated = true;
         });
+
+        world.observer(this, move |&SetVtorColor(color), world| {
+            let mut this = world.fetch_mut(this);
+            let instance = world.fetch(instance);
+            let render = world.single_fetch::<Render>();
+
+            this.color = color;
+            render
+                .queue
+                .write_buffer(&instance.color_uniform, 0, bytemuck::bytes_of(&color));
+        });
+
+        world.dependency(control, this);
+        world.dependency(prepare, this);
     }
 
     fn gen_path_buffer(
-        &self,
+        path: Path,
+        rect: Rectangle,
+        color: Vec4,
         pipeline: &VtorPipeline,
         device: &Device,
-    ) -> (u32, Buffer, Buffer, Buffer, BindGroup) {
+    ) -> VtorInstance {
         let mut tessellator = FillTessellator::new();
         let mut geometry: VertexBuffers<Vec2, u16> = VertexBuffers::new();
         tessellator
             .tessellate_path(
-                &self.path,
+                &path.transformed(&Transform::scale(
+                    rect.extend.x as f32,
+                    rect.extend.y as f32,
+                )),
                 &FillOptions::default(),
                 &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| {
-                    Vec2::from_array(vertex.position().to_array()) * Vec2::new(1., -1.)
+                    Vec2::from_array(vertex.position().to_array()) / rect.extend.as_vec2()
                 }),
             )
             .unwrap();
@@ -192,21 +192,81 @@ impl Vtor {
 
         let rect_uniform = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("vtor_rect"),
-            contents: bytemuck::bytes_of(&self.rect),
+            contents: bytemuck::bytes_of(&rect),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let rect_bind = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("vtor_group"),
-            layout: &pipeline.bind,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: rect_uniform.as_entire_binding(),
-            }],
+        let color_uniform = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("vtor_color"),
+            contents: bytemuck::bytes_of(&color),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        (len, vertex_buffer, index_buffer, rect_uniform, rect_bind)
+        let vtor_bind = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("vtor_group"),
+            layout: &pipeline.vtor_bind,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: rect_uniform.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: color_uniform.as_entire_binding(),
+                },
+            ],
+        });
+
+        VtorInstance {
+            len,
+            vertex_buffer,
+            index_buffer,
+            rect_uniform,
+            color_uniform,
+            vtor_bind,
+        }
     }
+}
+
+#[expect(unused)]
+pub fn logo() -> Path {
+    let mut builder = Path::svg_builder();
+
+    // ========== Path 1 ==========
+    builder.move_to(Point::new(13.0, 43.0));
+    builder.line_to(Point::new(11.0, 48.0));
+    builder.line_to(Point::new(37.0, 48.0));
+    builder.line_to(Point::new(39.0, 43.0));
+    builder.line_to(Point::new(22.0, 43.0));
+    builder.line_to(Point::new(22.0, 16.0));
+    builder.line_to(Point::new(15.0, 14.0));
+    builder.line_to(Point::new(15.0, 43.0));
+    builder.close();
+
+    // ========== Path 2 ==========
+    builder.move_to(Point::new(28.0, 37.0));
+    builder.line_to(Point::new(35.0, 39.0));
+    builder.line_to(Point::new(35.0, 27.0));
+    builder.line_to(Point::new(39.0, 27.0));
+    builder.cubic_bezier_to(
+        Point::new(41.519, 27.0),
+        Point::new(43.0, 27.0),
+        Point::new(43.0, 33.0),
+    );
+    builder.line_to(Point::new(43.0, 48.0));
+    builder.line_to(Point::new(50.0, 48.0));
+    builder.line_to(Point::new(50.0, 33.0));
+    builder.cubic_bezier_to(
+        Point::new(50.0, 23.0),
+        Point::new(48.444, 23.0),
+        Point::new(39.0, 23.0),
+    );
+    builder.line_to(Point::new(28.0, 23.0));
+    builder.close();
+
+    builder
+        .transformed(Transform::scale(64.0, -64.0).then_translate(Vector::new(0.0, 64.0)))
+        .build()
 }
 
 impl VtorPipeline {
@@ -220,23 +280,35 @@ impl VtorPipeline {
             source: ShaderSource::Wgsl(shader_compile(include_str!("vtor.wgsl"), &[]).into()),
         });
 
-        let rect_bind = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let vtor_bind = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("vtor"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX_FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
         });
 
         let pipeline = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("vtor"),
-            bind_group_layouts: &[Some(&camera.layout), Some(&rect_bind)],
+            bind_group_layouts: &[Some(&camera.layout), Some(&vtor_bind)],
             immediate_size: 0,
         });
 
@@ -279,7 +351,7 @@ impl VtorPipeline {
 
         VtorPipeline {
             pipeline,
-            bind: rect_bind,
+            vtor_bind,
         }
     }
 }
