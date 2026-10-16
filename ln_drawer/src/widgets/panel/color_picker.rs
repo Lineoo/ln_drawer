@@ -1,3 +1,5 @@
+use std::f32::consts::SQRT_2;
+
 use glam::{I64Vec2, IVec2, UVec2, Vec4};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
@@ -15,10 +17,10 @@ use crate::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
-        container::{Container, ContainerWithCamera},
+        container::ContainerWithCamera,
         echo::Echo,
         palette::{
-            hsl::{ColorHsla, HslPanel, SetColorHsla},
+            hsl::{ColorHsla, HslRing, HslSquare, INNER_RADIUS, SetColorHsla},
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
         panel::debug_panel::DebugPanel,
@@ -63,14 +65,14 @@ pub fn color_picker_panel(
         world.queue_trigger(toggle_button_color_icon, SetWidgetRectangle(target));
     });
 
-    let (tab_palette_hsl, cam_palette_hsl) = world.build(ContainerWithCamera {
+    world.named("palette_hsl");
+    let tab_palette_hsl = world.insert(LayerHslPalette {
         common: WidgetCommon {
             camera,
             visible: false,
         },
         rect: Rectangle::default(),
-        inner: TransformValue::copy(),
-        scroll: I64Vec2::ZERO,
+        hsl: Vec4::new(0.3, 0.5, 0.5, 1.0),
     });
 
     world.named("palette_oklab");
@@ -133,7 +135,6 @@ pub fn color_picker_panel(
         // S(L) -> P(L)
         let color = mul_alpha(srgb_gamma_decode(layer.color()));
         world.queue_trigger(toggle_button_color_icon, SetRRectColor(color));
-        // trigger palette_hsl SetPaletteHsl
     });
 
     world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
@@ -160,43 +161,96 @@ pub fn color_picker_panel(
     world.dependency(tab_debug, toggle_button);
     world.dependency(tabs, toggle_button);
 
-    world.named("palette_hsl");
-    palette_hsl(world, tab_palette_hsl, cam_palette_hsl);
-
     world.named("layer_selection");
     super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection);
 }
 
-fn palette_hsl(world: &World, bg: Handle<Container>, camera: Handle<Camera>) {
-    let panel = world.insert(HslPanel {
-        rect: Rectangle::default(),
-        hsl: Vec4::new(0.3, 0.5, 0.5, 1.0),
-        enabled: false,
-        camera,
-    });
+pub struct LayerHslPalette {
+    pub common: WidgetCommon,
+    pub rect: Rectangle,
+    pub hsl: Vec4,
+}
 
-    world.dependency(panel, bg);
+impl Element for LayerHslPalette {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        const RING_HALF: u32 = 100;
+        const SQUARE_HALF: u32 = (RING_HALF as f32 * INNER_RADIUS * SQRT_2) as u32;
 
-    world.insert(Transform {
-        value: TransformValue::anchor(
-            (0.5, 0.5),
-            Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
-        ),
-        source: bg.untyped(),
-        target: panel.untyped(),
-    });
+        let (container, camera) = world.build(ContainerWithCamera {
+            common: self.common,
+            rect: self.rect,
+            inner: TransformValue::copy(),
+            scroll: I64Vec2::ZERO,
+        });
 
-    let layer = world.single::<LayerPage>();
-    world.observer(panel, move |&ColorHsla(hsla), world| {
-        let mut layer = world.fetch_mut(layer);
-        layer.set_color(hsl_to_srgb(hsla));
-        world.queue_trigger(layer.handle(), BrushConfigurationChanged);
-    });
-    world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let layer = world.fetch(layer);
-        let hsla = srgb_to_hsl(layer.color());
-        world.trigger(panel, &SetColorHsla(hsla));
-    });
+        let ring = world.insert(HslRing {
+            common: WidgetCommon {
+                camera,
+                visible: self.common.visible,
+            },
+            rect: Rectangle::default(),
+            hsl: self.hsl,
+            inner_radius: INNER_RADIUS,
+        });
+
+        let square = world.insert(HslSquare {
+            common: WidgetCommon {
+                camera,
+                visible: self.common.visible,
+            },
+            rect: Rectangle::default(),
+            hsl: self.hsl,
+        });
+
+        Echo::new(world, this).widget_rectangle().widget_visible();
+
+        world.insert(Transform {
+            value: TransformValue::copy(),
+            source: this.untyped(),
+            target: container.untyped(),
+        });
+
+        world.insert(Transform {
+            value: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(RING_HALF)),
+            ),
+            source: container.untyped(),
+            target: ring.untyped(),
+        });
+
+        world.insert(Transform {
+            value: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(SQUARE_HALF)),
+            ),
+            source: container.untyped(),
+            target: square.untyped(),
+        });
+
+        let layer = world.single::<LayerPage>();
+        world.observer(ring, move |&ColorHsla(hsla), world| {
+            let mut layer = world.fetch_mut(layer);
+            layer.set_color(hsl_to_srgb(hsla));
+            world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+        });
+        world.observer(square, move |&ColorHsla(hsla), world| {
+            let mut layer = world.fetch_mut(layer);
+            layer.set_color(hsl_to_srgb(hsla));
+            world.queue_trigger(layer.handle(), BrushConfigurationChanged);
+        });
+        world.observer(layer, move |&BrushConfigurationChanged, world| {
+            let layer = world.fetch(layer);
+            let hsla = srgb_to_hsl(layer.color());
+            world.trigger(ring, &SetColorHsla(hsla));
+            world.trigger(square, &SetColorHsla(hsla));
+        });
+
+        world.dependency(container, this);
+        world.dependency(camera, this);
+        world.dependency(ring, this);
+        world.dependency(square, this);
+    }
 }
 
 pub struct LayerOklabPalette {

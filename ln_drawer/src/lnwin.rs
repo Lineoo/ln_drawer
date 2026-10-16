@@ -30,7 +30,7 @@ use crate::{
         WidgetRectangle,
         common::WidgetCommon,
         palette::{
-            hsl::HslPanelMaterial,
+            hsl::{HslRingMaterial, HslSquareMaterial},
             oklab::{OklabBarMaterial, OklabPolarMaterial},
         },
         panel::{desktop_ui::DesktopUi, side_docker::side_docker},
@@ -135,7 +135,8 @@ impl Element for Lnwindow {
 
             world.insert(CanvasPipeline::from_world(world));
             world.insert(TextureQuadPipeline::from_world(world));
-            world.insert(QuadMeshPipeline::<HslPanelMaterial>::from_world(world));
+            world.insert(QuadMeshPipeline::<HslSquareMaterial>::from_world(world));
+            world.insert(QuadMeshPipeline::<HslRingMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<OklabPolarMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<OklabBarMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<RRectMaterial>::from_world(world));
