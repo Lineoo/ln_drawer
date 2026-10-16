@@ -13,10 +13,7 @@ use wgpu::{
 use crate::{
     lnwin::Lnwindow,
     measures::Rectangle,
-    render::{
-        MSAA_STATE, Render, RenderDrawControl,
-        camera::{Camera, CameraBind},
-    },
+    render::{MSAA_STATE, Render, RenderDrawControl, camera::CameraBind},
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, shaders::shader_compile,
     },
@@ -31,19 +28,24 @@ pub struct VtorPipeline {
 
 #[expect(unused)]
 pub struct Vtor {
+    pub common: WidgetCommon,
     pub rect: Rectangle,
-    pub visible: bool,
     pub order: isize,
-    pub camera: Handle<Camera>,
+    pub path: Path,
 }
+
+struct VtorInstance {
+    vertex_buffer: Buffer,
+    index_buffer: Buffer,
+    rect_uniform: Buffer,
+    rect_bind: BindGroup,
+}
+
+pub struct SetVtorPath(pub Path);
 
 impl Vtor {
     #[expect(unused)]
-    pub fn init(&self, world: &World, this: Handle<Self>) {
-        let render = world.single_fetch::<Render>();
-        let pipeline = world.single_fetch::<VtorPipeline>();
-        let device = &render.device;
-
+    pub fn logo() -> Path {
         let mut builder = Path::svg_builder();
 
         // ========== Path 1 ==========
@@ -78,13 +80,93 @@ impl Vtor {
         builder.line_to(Point::new(28.0, 23.0));
         builder.close();
 
-        let path = builder.build();
+        builder.build()
+    }
 
+    #[expect(unused)]
+    pub fn init(&self, world: &World, this: Handle<Self>) {
+        let render = world.single_fetch::<Render>();
+        let pipeline = world.single_fetch::<VtorPipeline>();
+
+        let (len, vertex_buffer, index_buffer, rect_uniform, rect_bind) =
+            self.gen_path_buffer(&pipeline, &render.device);
+
+        let instance = world.insert(VtorInstance {
+            vertex_buffer,
+            index_buffer,
+            rect_uniform,
+            rect_bind,
+        });
+
+        let control = world.insert(RenderDrawControl {
+            common: self.common,
+            order: self.order,
+            draw: Box::new(move |world, rpass, extra| {
+                let pipeline = world.single_fetch::<VtorPipeline>();
+                let instance = world.fetch(instance);
+                let camera = extra.camera;
+
+                let key = format!("main > vtor");
+                let (start, end) = extra.diagnosis.assign_string(key);
+                extra.diagnosis.write(rpass, start);
+
+                rpass.set_pipeline(&pipeline.pipeline);
+                rpass.set_vertex_buffer(0, instance.vertex_buffer.slice(..));
+                rpass.set_index_buffer(instance.index_buffer.slice(..), IndexFormat::Uint16);
+                rpass.set_bind_group(0, &camera.bind, &[]);
+                rpass.set_bind_group(1, &instance.rect_bind, &[]);
+                rpass.draw_indexed(0..len, 0, 0..1);
+
+                extra.diagnosis.write(rpass, end);
+            }),
+        });
+
+        world.observer(this, move |&SetWidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(this);
+            let instance = world.fetch(instance);
+            let render = world.single_fetch::<Render>();
+            this.rect = rect;
+            let bytes = bytemuck::bytes_of(&rect);
+            render.queue.write_buffer(&instance.rect_uniform, 0, bytes);
+            let lnwindow = world.single_fetch::<Lnwindow>();
+            lnwindow.window.request_redraw();
+        });
+
+        world.observer(this, move |&SetWidgetVisible(visible), world| {
+            let mut this = world.fetch_mut(this);
+            this.common.visible = visible;
+            world.queue_trigger(control, SetWidgetVisible(visible));
+        });
+
+        world.observer(this, move |SetVtorPath(path), world| {
+            let mut this = world.fetch_mut(this);
+            let mut instance = world.fetch_mut(instance);
+            let render = world.single_fetch::<Render>();
+            let pipeline = world.single_fetch::<VtorPipeline>();
+
+            this.path = path.clone();
+            let (len, vertex_buffer, index_buffer, rect_uniform, rect_bind) =
+                this.gen_path_buffer(&pipeline, &render.device);
+
+            *instance = VtorInstance {
+                vertex_buffer,
+                index_buffer,
+                rect_uniform,
+                rect_bind,
+            };
+        });
+    }
+
+    fn gen_path_buffer(
+        &self,
+        pipeline: &VtorPipeline,
+        device: &Device,
+    ) -> (u32, Buffer, Buffer, Buffer, BindGroup) {
         let mut tessellator = FillTessellator::new();
         let mut geometry: VertexBuffers<Vec2, u16> = VertexBuffers::new();
         tessellator
             .tessellate_path(
-                &path,
+                &self.path,
                 &FillOptions::default(),
                 &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| {
                     Vec2::from_array(vertex.position().to_array()) * Vec2::new(1., -1.)
@@ -92,9 +174,9 @@ impl Vtor {
             )
             .unwrap();
 
-        let vertices = dbg!(geometry.vertices);
-        let indices = dbg!(geometry.indices);
-        let l = indices.len() as u32;
+        let vertices = geometry.vertices;
+        let indices = geometry.indices;
+        let len = indices.len() as u32;
 
         let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("vtor_vertices"),
@@ -123,47 +205,7 @@ impl Vtor {
             }],
         });
 
-        let camera = self.camera;
-        let control = world.insert(RenderDrawControl {
-            common: WidgetCommon {
-                camera,
-                visible: self.visible,
-            },
-            order: self.order,
-            draw: Box::new(move |world, rpass, extra| {
-                let pipeline = world.single_fetch::<VtorPipeline>();
-                let camera = extra.camera;
-
-                let key = format!("main > vtor");
-                let (start, end) = extra.diagnosis.assign_string(key);
-                extra.diagnosis.write(rpass, start);
-
-                rpass.set_pipeline(&pipeline.pipeline);
-                rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                rpass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
-                rpass.set_bind_group(0, &camera.bind, &[]);
-                rpass.set_bind_group(1, &rect_bind, &[]);
-                rpass.draw_indexed(0..l, 0, 0..1);
-
-                extra.diagnosis.write(rpass, end);
-            }),
-        });
-
-        world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this);
-            let render = world.single_fetch::<Render>();
-            this.rect = rect;
-            let bytes = bytemuck::bytes_of(&rect);
-            render.queue.write_buffer(&rect_uniform, 0, bytes);
-            let lnwindow = world.single_fetch::<Lnwindow>();
-            lnwindow.window.request_redraw();
-        });
-
-        world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this);
-            this.visible = visible;
-            world.queue_trigger(control, SetWidgetVisible(visible));
-        });
+        (len, vertex_buffer, index_buffer, rect_uniform, rect_bind)
     }
 }
 
@@ -249,3 +291,5 @@ impl Element for Vtor {
         self.init(world, this);
     }
 }
+
+impl Element for VtorInstance {}
