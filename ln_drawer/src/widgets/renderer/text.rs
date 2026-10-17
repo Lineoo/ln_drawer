@@ -88,6 +88,7 @@ impl Text {
             world.queue_trigger(canvas, SetWidgetRectangle(rect));
         });
 
+        // FIXME Sometimes text modification wont take effect immediately 
         world.observer(this, move |SetText(text), world| {
             let mut this = world.fetch_mut(this);
             this.set_text(&text[..]);

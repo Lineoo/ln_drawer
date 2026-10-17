@@ -1,8 +1,8 @@
 use std::{fmt, ops};
 
-use glam::{I64Vec2, IVec2, UVec2};
+use glam::{DVec2, I64Vec2, IVec2, UVec2};
 
-use crate::measures::Axis;
+use crate::measures::{Axis, FI64Ext};
 
 #[repr(C)]
 #[derive(
@@ -221,6 +221,16 @@ impl Rectangle {
         I64Vec2::new(
             ((self.origin.x as i64) << 32).wrapping_add((self.extend.x as i64) << 31),
             ((self.origin.y as i64) << 32).wrapping_add((self.extend.y as i64) << 31),
+        )
+    }
+
+    #[inline]
+    pub fn q32_anchor(self, anchor: DVec2) -> I64Vec2 {
+        I64Vec2::new(
+            ((self.origin.x as i64) << 32)
+                .wrapping_add(i64::q32_from_f64(self.extend.x as f64 * anchor.x)),
+            ((self.origin.y as i64) << 32)
+                .wrapping_add(i64::q32_from_f64(self.extend.y as f64 * anchor.y)),
         )
     }
 

@@ -1,13 +1,12 @@
-use glam::{I64Vec2, IVec2};
+use glam::{DVec2, I64Vec2, UVec2};
 use ln_world::{Descriptor, Element, Handle, HandleGeneric, World};
 
 use crate::{
-    layout::transform::TransformValue,
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle, ScissorRect},
     render::{
         Render, RenderDrawControl, RenderExtra,
-        camera::{Camera, CameraDescriptor, SetCameraOutdated},
+        camera::{Camera, CameraDescriptor, CameraOutdated, SetCameraOutdated},
     },
     theme::Theme,
     tools::{
@@ -22,8 +21,11 @@ use crate::{
 
 pub struct ContainerWithCamera {
     pub common: WidgetCommon,
+    /// outer rectangle
     pub rect: Rectangle,
-    pub inner: TransformValue,
+    /// where is the zero point on outer rectangle
+    pub anchor: DVec2,
+    /// offset insider rect
     pub scroll: I64Vec2,
 }
 
@@ -39,9 +41,10 @@ impl Descriptor for ContainerWithCamera {
 
         let container = world.insert(Container {
             common: self.common,
+            order: 100,
             child: camera,
             rect: self.rect,
-            inner: self.inner,
+            anchor: self.anchor,
             scroll: self.scroll,
         });
 
@@ -52,32 +55,21 @@ impl Descriptor for ContainerWithCamera {
 /// separated coordination
 pub struct Container {
     pub common: WidgetCommon,
+    pub order: isize,
     pub child: Handle<Camera>,
+    /// outer rectangle
     pub rect: Rectangle,
-    pub inner: TransformValue,
-    /// raw data to keep precision
+    /// where is the zero point on outer rectangle
+    pub anchor: DVec2,
+    /// offset insider rect
     pub scroll: I64Vec2,
 }
 
-impl Container {
-    pub fn init(&mut self, world: &World, handle: Handle<Self>) {
-        let theme = world.single_fetch::<Theme>();
-        let parent_camera = world.fetch(self.common.camera);
-        let mut child_camera = world.fetch_mut(self.child);
-
-        let back = world.insert(RRect {
-            rect: self.rect,
-            order: 0,
-            color: theme.primary_color,
-            radius: theme.roundness,
-            width: 0.0,
-            enabled: self.common.visible,
-            camera: self.common.camera,
-        });
-
+impl Element for Container {
+    fn when_insert(&mut self, world: &World, handle: Handle<Self>) {
         let control = world.insert(RenderDrawControl {
             common: self.common,
-            order: 100,
+            order: self.order,
             draw: Box::new(move |world, rpass, extra| {
                 let lnwindow = world.single_fetch::<Lnwindow>();
                 let this = world.fetch(handle);
@@ -135,7 +127,7 @@ impl Container {
 
         let tool = world.insert(ToolControl {
             common: self.common,
-            order: isize::MAX,
+            order: self.order,
             hit: Box::new(move |world, screen| {
                 let this = world.fetch(handle);
                 let parent = world.fetch(this.common.camera);
@@ -155,18 +147,104 @@ impl Container {
             }),
         });
 
-        world.dependency(back, handle);
         world.dependency(self.child, handle);
         world.dependency(handle, self.common.camera);
         world.dependency(control, handle);
         world.dependency(tool, handle);
 
-        world.observer(self.common.camera, move |SetCameraOutdated, world| {
-            let mut this = world.fetch_mut(handle);
+        world.observer(self.common.camera, move |CameraOutdated, world| {
+            let this = world.fetch(handle);
+            world.queue_trigger(this.child, SetCameraOutdated);
+        });
+
+        world.observer(self.child, move |SetCameraOutdated, world| {
+            let this = world.fetch(handle);
+            let lnwindow = world.single_fetch::<Lnwindow>();
             let parent_camera = world.fetch(this.common.camera);
             let mut child_camera = world.fetch_mut(this.child);
+            let size = lnwindow.window.surface_size();
+
             this.update_camera(&parent_camera, &mut child_camera);
-            world.queue_trigger(this.child, SetCameraOutdated);
+            child_camera.surface_size = UVec2::new(size.width, size.height);
+            child_camera.upload();
+            lnwindow.window.request_redraw();
+
+            world.queue_trigger(this.child, CameraOutdated);
+        });
+
+        world.observer(handle, move |&SetWidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(handle);
+            this.rect = rect;
+        });
+
+        world.observer(handle, move |&SetWidgetVisible(enabled), world| {
+            let mut this = world.fetch_mut(handle);
+            this.common.visible = enabled;
+            world.queue_trigger(tool, SetWidgetVisible(enabled));
+            world.queue_trigger(control, SetWidgetVisible(enabled));
+        });
+    }
+}
+
+impl Container {
+    fn update_camera(&self, parent_camera: &Camera, child_camera: &mut Camera) {
+        child_camera.global_center = parent_camera.global_center + child_camera.center
+            - self.rect.q32_anchor(self.anchor)
+            + self.scroll;
+        child_camera.global_zoom = child_camera.zoom;
+    }
+
+    fn clamp_scroll(&mut self, restrict: Rectangle) {
+        let min = I64Vec2::q32_from_i32(self.rect.left_down());
+        let max = I64Vec2::q32_from_i32(self.rect.right_up());
+        let center = self.rect.q32_anchor(self.anchor);
+        let min = min - center;
+        let max = max - center;
+        let x = match self.rect.width() < restrict.width() {
+            true => {
+                let min = i64::q32_from_i32(restrict.left()) - min.x;
+                let max = i64::q32_from_i32(restrict.right()) - max.x;
+                self.scroll.x.clamp(min, max)
+            }
+            false => i64::q32_from_i32(restrict.left()),
+        };
+        let y = match self.rect.height() < restrict.height() {
+            true => {
+                let min = i64::q32_from_i32(restrict.down()) - min.y;
+                let max = i64::q32_from_i32(restrict.up()) - max.y;
+                self.scroll.y.clamp(min, max)
+            }
+            false => i64::q32_from_i32(restrict.down()),
+        };
+
+        self.scroll = I64Vec2::new(x, y);
+    }
+}
+
+/// - pointer scroll interaction
+/// - add a non-shadow panel
+/// - restrict are for scroll, and will emit the restriction area in [`WidgetRectangle`] for container
+pub struct ContainerDeco {
+    pub container: Handle<Container>,
+    pub restriction: Rectangle,
+}
+
+impl Element for ContainerDeco {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let theme = world.single_fetch::<Theme>();
+        let handle = self.container;
+        let mut container = world.fetch_mut(self.container);
+        let parent_camera = world.fetch(container.common.camera);
+        let mut child_camera = world.fetch_mut(container.child);
+
+        let back = world.insert(RRect {
+            rect: container.rect,
+            order: 10,
+            color: theme.primary_color,
+            radius: theme.roundness,
+            width: 0.0,
+            enabled: container.common.visible,
+            camera: container.common.camera,
         });
 
         let mut status = None;
@@ -178,115 +256,112 @@ impl Container {
                 (None, PointerHitStatus::Release) => None,
                 (Some(_), PointerHitStatus::Press) => Some(event.pointer.screen),
                 (Some(position), PointerHitStatus::Moving) => {
-                    let mut this = world.fetch_mut(handle);
-                    let parent_camera = world.fetch(this.common.camera);
-                    let mut child_camera = world.fetch_mut(this.child);
+                    let this = world.fetch(this);
+                    let mut container = world.fetch_mut(handle);
+                    let parent_camera = world.fetch(container.common.camera);
+                    let mut child_camera = world.fetch_mut(container.child);
                     let delta =
                         parent_camera.screen_to_world_relative(event.pointer.screen - position);
-                    this.scroll -= delta;
-                    this.clamp_scroll();
-                    this.update_camera(&parent_camera, &mut child_camera);
-                    world.queue_trigger(this.child, SetCameraOutdated);
+
+                    container.scroll -= delta;
+                    container.clamp_scroll(this.restriction);
+                    container.update_camera(&parent_camera, &mut child_camera);
+                    world.queue_trigger(container.child, SetCameraOutdated);
                     Some(event.pointer.screen)
                 }
                 (Some(position), PointerHitStatus::Release) => {
-                    let mut this = world.fetch_mut(handle);
-                    let parent_camera = world.fetch(this.common.camera);
-                    let mut child_camera = world.fetch_mut(this.child);
+                    let this = world.fetch(this);
+                    let mut container = world.fetch_mut(handle);
+                    let parent_camera = world.fetch(container.common.camera);
+                    let mut child_camera = world.fetch_mut(container.child);
                     let delta =
                         parent_camera.screen_to_world_relative(event.pointer.screen - position);
-                    this.scroll -= delta;
-                    this.clamp_scroll();
-                    this.update_camera(&parent_camera, &mut child_camera);
-                    world.queue_trigger(this.child, SetCameraOutdated);
+
+                    container.scroll -= delta;
+                    container.clamp_scroll(this.restriction);
+                    container.update_camera(&parent_camera, &mut child_camera);
+                    world.queue_trigger(container.child, SetCameraOutdated);
                     None
                 }
             }
         });
 
         world.observer(handle, move |event: &PointerScroll, world| {
-            let mut this = world.fetch_mut(handle);
-            let parent_camera = world.fetch(this.common.camera);
-            let mut child_camera = world.fetch_mut(this.child);
+            let this = world.fetch(this);
+            let mut container = world.fetch_mut(handle);
+            let parent_camera = world.fetch(container.common.camera);
+            let mut child_camera = world.fetch_mut(container.child);
 
-            this.scroll -= I64Vec2::q32_from_f64(event.delta);
-            this.clamp_scroll();
-            this.update_camera(&parent_camera, &mut child_camera);
+            let delta = I64Vec2::q32_from_f64(event.delta);
+            container.scroll -= delta;
+            container.clamp_scroll(this.restriction);
+            container.update_camera(&parent_camera, &mut child_camera);
             world.queue_trigger(child_camera.handle(), SetCameraOutdated);
         });
 
         world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(handle);
-            let parent_camera = world.fetch(this.common.camera);
-            let mut child_camera = world.fetch_mut(this.child);
+            let this = world.fetch(this);
+            let mut container = world.fetch_mut(handle);
+            let parent_camera = world.fetch(container.common.camera);
+            let mut child_camera = world.fetch_mut(container.child);
 
-            let old = this.inner_rect();
-            this.rect = rect;
-            let new = this.inner_rect();
-
-            this.update_camera(&parent_camera, &mut child_camera);
+            container.rect = rect;
+            container.clamp_scroll(this.restriction);
+            container.update_camera(&parent_camera, &mut child_camera);
             world.queue_trigger(child_camera.handle(), SetCameraOutdated);
-
             world.queue_trigger(back, SetWidgetRectangle(rect));
-            if old != new {
-                world.queue_trigger(handle, WidgetRectangle(new));
-            }
         });
 
         world.observer(handle, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(handle);
             this.common.visible = enabled;
-            world.queue_trigger(tool, SetWidgetVisible(enabled));
-            world.queue_trigger(control, SetWidgetVisible(enabled));
-            world.queue_trigger(back, SetWidgetVisible(enabled));
             world.queue_trigger(handle, WidgetVisible(enabled));
+            world.queue_trigger(back, SetWidgetVisible(enabled));
         });
 
-        self.clamp_scroll();
-        self.update_camera(&parent_camera, &mut child_camera);
-        world.queue_trigger(self.child, SetCameraOutdated);
-    }
+        world.observer(this, move |&SetWidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(this);
+            let mut container = world.fetch_mut(handle);
+            let parent_camera = world.fetch(container.common.camera);
+            let mut child_camera = world.fetch_mut(container.child);
+            this.restriction = rect;
 
-    fn inner_rect(&self) -> Rectangle {
-        let zero_aligned = Rectangle {
-            origin: IVec2::ZERO,
-            extend: self.rect.extend,
-        };
-        self.inner.compute(zero_aligned)
-    }
+            container.clamp_scroll(this.restriction);
+            container.update_camera(&parent_camera, &mut child_camera);
+            world.queue_trigger(child_camera.handle(), SetCameraOutdated);
+            world.queue_trigger(handle, WidgetRectangle(this.restriction));
+        });
 
-    fn clamp_scroll(&mut self) {
-        let inner = self.inner_rect();
-        let view = self.rect.extend;
+        container.clamp_scroll(self.restriction);
+        container.update_camera(&parent_camera, &mut child_camera);
+        world.queue_trigger(container.child, SetCameraOutdated);
 
-        let x = match view.x < inner.width() {
-            true => {
-                let min = i64::q32_from_i32(inner.left());
-                let max = i64::q32_from_i32(inner.right() - view.x as i32);
-                self.scroll.x.clamp(min, max)
-            }
-            false => i64::q32_from_i32(inner.left()),
-        };
-        let y = match view.y < inner.height() {
-            true => {
-                let min = i64::q32_from_i32(inner.down());
-                let max = i64::q32_from_i32(inner.up() - view.y as i32);
-                self.scroll.y.clamp(min, max)
-            }
-            false => i64::q32_from_i32(inner.down()),
-        };
-
-        self.scroll = I64Vec2::new(x, y);
-    }
-
-    fn update_camera(&mut self, parent_camera: &Camera, child_camera: &mut Camera) {
-        child_camera.center =
-            parent_camera.center + self.scroll - I64Vec2::q32_from_i32(self.rect.origin)
+        world.dependency(back, this);
+        world.dependency(this, self.container);
     }
 }
 
-impl Element for Container {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        self.init(world, this);
+/// auto setup ContainerDeco's restriction area based on Container's view rect
+pub struct ContainerDecoDropdown {
+    pub height: Option<i32>,
+    pub container: Handle<Container>,
+    pub deco: Handle<ContainerDeco>,
+}
+
+impl Element for ContainerDecoDropdown {
+    fn when_insert(&mut self, world: &World, _this: Handle<Self>) {
+        let deco = self.deco;
+        let height = self.height;
+        world.observer(self.container, move |SetWidgetRectangle(rect), world| {
+            world.queue_trigger(
+                deco,
+                SetWidgetRectangle(Rectangle::new(
+                    0,
+                    0,
+                    rect.extend.x as i32,
+                    height.unwrap_or(rect.extend.y as i32),
+                )),
+            );
+        });
     }
 }

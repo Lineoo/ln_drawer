@@ -1,5 +1,5 @@
 use cosmic_text::{Attrs, Family, Metrics};
-use glam::{I64Vec2, IVec2, UVec2};
+use glam::{DVec2, I64Vec2, IVec2, UVec2};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
     widgets::{
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         common::WidgetCommon,
-        container::ContainerWithCamera,
+        container::{ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         renderer::{svg::svg_render, text::Text},
     },
 };
@@ -33,8 +33,17 @@ impl Element for DebugPanel {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
-            inner: TransformValue::copy(),
             scroll: I64Vec2::ZERO,
+            anchor: DVec2::new(0.0, 0.0),
+        });
+        let deco = world.insert(ContainerDeco {
+            container,
+            restriction: Rectangle::default(),
+        });
+        world.insert(ContainerDecoDropdown {
+            height: None,
+            container,
+            deco,
         });
 
         let debug_text = world.insert(Text {
@@ -97,7 +106,7 @@ impl Element for DebugPanel {
             camera.force_clear();
             camera.force_camera_center(I64Vec2::ZERO);
             camera.force_camera_zoom(0);
-            camera.apply_to_camera(world, page_camera);
+            camera.write_camera(world, page_camera);
         });
 
         let page_debug = docker_button(include_bytes!("../../../res/interface/bug.svg"));

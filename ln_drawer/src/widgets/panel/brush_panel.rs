@@ -1,5 +1,5 @@
 use cosmic_text::{Attrs, Metrics};
-use glam::I64Vec2;
+use glam::{DVec2, I64Vec2};
 use ln_world::{Handle, HandleGeneric, World};
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
         brush_preview::{BrushPreview, BrushPreviewGenerator},
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         common::WidgetCommon,
-        container::{Container, ContainerWithCamera},
+        container::{Container, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         renderer::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
@@ -50,35 +50,36 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
             visible: false,
         },
         rect: Rectangle::default(),
-        inner: TransformValue {
-            left: TransformEdge {
-                anchor: 0.0,
-                offset: 0,
-            },
-            down: TransformEdge {
-                anchor: 1.0,
-                offset: -content_height,
-            },
-            right: TransformEdge {
-                anchor: 1.0,
-                offset: 0,
-            },
-            up: TransformEdge {
-                anchor: 1.0,
-                offset: 0,
-            },
-        },
-        scroll: I64Vec2::Y * 10000,
+        scroll: I64Vec2::ZERO,
+        anchor: DVec2::new(0.0, 0.0),
+    });
+    let list_container_deco = world.insert(ContainerDeco {
+        container: list_container,
+        restriction: Rectangle::default(),
+    });
+    world.insert(ContainerDecoDropdown {
+        height: Some(content_height),
+        container: list_container,
+        deco: list_container_deco,
     });
 
     let (list_settings, cam_settings) = world.build(ContainerWithCamera {
         rect: Rectangle::default(),
-        inner: TransformValue::copy(),
         common: WidgetCommon {
             camera,
             visible: false,
         },
-        scroll: I64Vec2::Y * 10000,
+        scroll: I64Vec2::ZERO,
+        anchor: DVec2::new(0.0, 0.0),
+    });
+    let list_settings_deco = world.insert(ContainerDeco {
+        container: list_settings,
+        restriction: Rectangle::default(),
+    });
+    world.insert(ContainerDecoDropdown {
+        height: None,
+        container: list_settings,
+        deco: list_settings_deco,
     });
 
     let tabs = world.insert(Tabs {

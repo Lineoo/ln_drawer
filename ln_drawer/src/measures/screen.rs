@@ -19,7 +19,7 @@ impl ScissorRect {
             .y
             .saturating_add(self.height)
             .min(other.y.saturating_add(other.height));
-        (right > x && down > y).then_some(ScissorRect {
+        (right > x && down > y).then(|| ScissorRect {
             x,
             y,
             width: right - x,

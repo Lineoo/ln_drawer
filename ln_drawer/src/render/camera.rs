@@ -10,7 +10,6 @@ use crate::{
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{Render, RenderDrawControl},
-    save::{Autosave, Save},
     tools::collider::ToolControl,
 };
 
@@ -18,7 +17,10 @@ pub struct Camera {
     pub center: I64Vec2,
     pub zoom: i64,
 
+    // responsible by lnwindow/container
     pub surface_size: UVec2,
+    pub global_center: I64Vec2,
+    pub global_zoom: i64,
 
     pub bind: BindGroup,
     pub uniform: Buffer,
@@ -40,6 +42,7 @@ pub struct CameraBind {
 }
 
 pub struct SetCameraOutdated;
+pub struct CameraOutdated;
 
 pub struct PageCamera(pub Handle<Camera>);
 pub struct PageCameraUtils(pub Handle<CameraUtils>);
@@ -103,6 +106,9 @@ impl Descriptor for CameraDescriptor {
         Camera {
             center: self.center,
             zoom: self.zoom,
+            // TODO this is not global, obviously
+            global_center: self.center,
+            global_zoom: self.zoom,
             surface_size: size,
             bind,
             uniform,
@@ -122,14 +128,6 @@ impl Element for Camera {
             }
         });
         world.dependency(obs, this);
-        world.observer(this, move |&SetCameraOutdated, world| {
-            let mut this = world.fetch_mut(this);
-            let lnwindow = world.single_fetch::<Lnwindow>();
-            let size = lnwindow.window.surface_size();
-            this.surface_size = UVec2::new(size.width, size.height);
-            this.upload();
-            lnwindow.window.request_redraw();
-        });
     }
 }
 
@@ -138,29 +136,31 @@ impl Element for CameraBind {}
 impl Camera {
     #[inline]
     pub fn screen_to_world(&self, point: DVec2) -> I64Vec2 {
-        self.center + self.screen_to_world_relative(point)
+        self.global_center + self.screen_to_world_relative(point)
     }
 
     pub fn screen_to_world_relative(&self, delta: DVec2) -> I64Vec2 {
-        let scale = self.zoom.q32_as_f64().exp2();
+        let scale = self.global_zoom.q32_as_f64().exp2();
         let pf = delta / scale * self.surface_size.as_dvec2() / 2.0;
         I64Vec2::q32_from_f64(pf)
     }
 
     pub fn world_to_screen(&self, point: I64Vec2) -> DVec2 {
-        self.world_to_screen_relative(point - self.center)
+        self.world_to_screen_relative(point - self.global_center)
     }
 
     pub fn world_to_screen_relative(&self, point: I64Vec2) -> DVec2 {
-        let scale = self.zoom.q32_as_f64().exp2();
+        let scale = self.global_zoom.q32_as_f64().exp2();
         let pf = point.q32_as_f64() * 2.0 / self.surface_size.as_dvec2() * scale;
         pf.into()
     }
 
+    #[deprecated = "view_rect should depend on scope size not surface size"]
     pub fn world_view_rect(&self) -> Rectangle {
         Self::view_rect(self.zoom, self.surface_size, self.center)
     }
 
+    #[deprecated = "view_rect should depend on scope size not surface size"]
     pub fn view_rect(zoom: i64, size: UVec2, center: I64Vec2) -> Rectangle {
         let scale = zoom.q32_as_f64().exp2();
         let view_size = size.as_dvec2() / scale * 0.5;
@@ -188,32 +188,12 @@ impl Camera {
         world.insert(CameraBind { layout });
     }
 
-    pub fn init_page_camera(world: &World) -> Handle<Camera> {
-        let save = world.single_fetch::<Save>();
-        let camera = world.insert(world.build(CameraDescriptor {
-            center: save.sn().page_camera.center,
-            zoom: save.sn().page_camera.zoom,
-        }));
-
-        let autosave = world.insert(Autosave(Box::new(move |world, task| {
-            let camera = world.fetch(camera);
-            task.sn_doc.set_page_camera(PageCameraArchive {
-                center: camera.center,
-                zoom: camera.zoom,
-            });
-        })));
-
-        world.dependency(autosave, camera);
-
-        camera
-    }
-
-    fn upload(&self) {
+    pub fn upload(&self) {
         let transform = Mat2::from_scale_angle(
-            Vec2::splat(self.zoom.q32_as_f64().exp2() as f32) * 2. / self.surface_size.as_vec2(),
+            Vec2::splat(self.global_zoom.q32_as_f64().exp2() as f32) * 2. / self.surface_size.as_vec2(),
             0.0,
         );
-        let translate = self.center;
+        let translate = self.global_center;
         self.queue.write_buffer(
             &self.uniform,
             0,
@@ -330,10 +310,6 @@ impl CameraUtils {
         }
     }
 
-    pub fn camera_size(&mut self, size: UVec2) {
-        self.camera_size = size;
-    }
-
     #[expect(unused)]
     pub fn anchor_lock(&mut self, locked: bool) {
         self.anchor_lock = locked;
@@ -349,7 +325,14 @@ impl CameraUtils {
         self.anchor_lock = false;
     }
 
-    pub fn apply_to_camera(&self, world: &World, camera: Handle<Camera>) {
+    pub fn read_camera(&mut self, world: &World, camera: Handle<Camera>) {
+        let camera = world.fetch(camera);
+        self.camera_zoom = camera.zoom;
+        self.camera_center = camera.center;
+        self.camera_size = camera.surface_size;
+    }
+
+    pub fn write_camera(&self, world: &World, camera: Handle<Camera>) {
         world.queue_trigger(camera, SetCameraOutdated);
         let mut camera = world.fetch_mut(camera);
         camera.zoom = self.camera_zoom;

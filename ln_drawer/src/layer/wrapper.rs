@@ -6,9 +6,9 @@ use std::{
     thread::JoinHandle,
 };
 
-use glam::{I64Vec2, IVec2, UVec2, Vec4};
+use glam::{DVec2, I64Vec2, IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
-use ln_world::{Element, Handle, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor, RenderPass};
 
 use crate::{
@@ -19,20 +19,24 @@ use crate::{
             BrushParams, Draw, Stroke, blur::BlurBrush, param::BrushParam, pixel::PixelBrush,
             round::RoundBrush, smudge::SmudgeBrush, tint::TintBrush,
         },
+        input::LayerInput,
         rect_chunks_stack_layer_iter,
         stream::{StreamConfig, StreamThread, ThreadInput, ThreadOutput},
         traveler::Traveler,
         zoom_to_mipmap,
     },
+    layout::transform::{Transform, TransformValue},
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{
         Render, RenderDrawControl, RenderExtra, RenderPrepareControl,
-        camera::{CameraBind, PageCamera, SetCameraOutdated, UICamera},
+        camera::{
+            CameraBind, CameraDescriptor, CameraUtils, PageCamera, PageCameraArchive,
+            PageCameraUtils, SetCameraOutdated, UICamera,
+        },
     },
-    save::{Autosave, Save},
-    tools::collider::ToolControl,
-    widgets::{common::WidgetCommon, renderer::rrect::RRect},
+    save::{Autosave, Save, object::Objects},
+    widgets::{common::WidgetCommon, container::Container, renderer::rrect::RRect},
 };
 
 const BRIDGE_CHUNK_SIZE: UVec2 = UVec2::splat(1024);
@@ -68,9 +72,10 @@ pub struct BrushPreset {
 /// - brush preview
 /// - undo/redo traveler
 pub struct LayerPage {
+    // TODO: move to ECS after world-multithread support
     pub lp: Arc<LayerPipeline>,
 
-    pub cache: CacheLayers,
+    cache: CacheLayers,
     raw: RawLayer,
     scratch: PlainLayer,
     swap: Option<PlainLayer>,
@@ -95,9 +100,9 @@ pub struct LayerPage {
     pub cursor: Handle<RRect>,
     pub cursor_shadow: Handle<RRect>,
 
-    pub thread_tx: Sender<ThreadInput>,
-    pub thread_rx: Receiver<ThreadOutput>,
-    pub thread: Option<JoinHandle<()>>,
+    thread_tx: Sender<ThreadInput>,
+    thread_rx: Receiver<ThreadOutput>,
+    thread: Option<JoinHandle<()>>,
 }
 
 impl LayerPage {
@@ -130,16 +135,6 @@ impl LayerPage {
             chunk_size: DEFAULT_CHUNK_SIZE,
             mipmap_caps: DEFAULT_MIPMAP_CAP,
         };
-
-        let page_camera = world.single_fetch::<PageCamera>();
-        let camera = world.fetch(page_camera.0);
-        input_tx
-            .send(ThreadInput::SetStreamCamera(
-                camera.zoom,
-                camera.surface_size,
-                camera.center,
-            ))
-            .unwrap();
 
         let thread = std::thread::spawn(move || {
             StreamThread::new(stream_config, input_rx, output_tx)
@@ -590,17 +585,66 @@ impl Drop for LayerPage {
 
 impl Element for LayerPage {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.single::<LayerPage>();
+        let save = world.single_fetch::<Save>();
+        let ui_camera = world.single_fetch::<UICamera>().0;
+        let lnwindow = world.single::<Lnwindow>();
 
-        let save = world.insert(Autosave(Box::new(move |world, _write| {
+        // Camera //
+
+        let page_camera = world.build(CameraDescriptor {
+            center: save.sn().page_camera.center,
+            zoom: save.sn().page_camera.zoom,
+        });
+        let page_camera_utils = CameraUtils::new(&page_camera);
+
+        self.thread_tx
+            .send(ThreadInput::SetStreamCamera(
+                page_camera.zoom,
+                page_camera.surface_size,
+                page_camera.center,
+            ))
+            .unwrap();
+
+        let page_camera = world.insert(page_camera);
+        let page_camera_utils = world.insert(page_camera_utils);
+
+        world.insert(PageCamera(page_camera));
+        world.insert(PageCameraUtils(page_camera_utils));
+
+        let camera_autosave = world.insert(Autosave(Box::new(move |world, task| {
+            let camera = world.fetch(page_camera);
+            task.sn_doc.set_page_camera(PageCameraArchive {
+                center: camera.center,
+                zoom: camera.zoom,
+            });
+        })));
+
+        // Container //
+
+        let container = world.insert(Container {
+            common: WidgetCommon {
+                camera: ui_camera,
+                visible: true,
+            },
+            order: -100,
+            child: page_camera,
+            rect: Rectangle::default(),
+            anchor: DVec2::new(0.5, 0.5),
+            scroll: I64Vec2::ZERO,
+        });
+
+        world.insert(Transform {
+            value: TransformValue::copy(),
+            source: lnwindow.untyped(),
+            target: container.untyped(),
+        });
+
+        // Thread //
+
+        let thread_autosave = world.insert(Autosave(Box::new(move |world, _write| {
             let this = world.single_fetch::<LayerPage>();
             this.thread_tx.send(ThreadInput::Autosave).unwrap();
         })));
-
-        world.dependency(save, this);
-
-        let page_camera = world.single_fetch::<PageCamera>().0;
-        let ui_camera = world.single_fetch::<UICamera>().0;
 
         world.observer(page_camera, move |&SetCameraOutdated, world| {
             let this = world.single_fetch::<LayerPage>();
@@ -615,46 +659,23 @@ impl Element for LayerPage {
                 .unwrap();
         });
 
+        // Interaction //
+
+        world.insert(LayerInput::default());
+        world.insert(Objects {
+            common: WidgetCommon {
+                camera: page_camera,
+                visible: true,
+            },
+        });
+
+        // Render //
+
         let prepare_control = world.insert(RenderPrepareControl {
             prepare: Box::new(move |world| {
                 let this = &mut *world.fetch_mut(this);
                 this.process_stream(world);
                 None
-            }),
-        });
-
-        let control_container = world.insert(RenderDrawControl {
-            common: WidgetCommon {
-                camera: ui_camera,
-                visible: true,
-            },
-            order: -100,
-            draw: Box::new(move |world, rpass, extra| {
-                let page_camera = world.fetch(page_camera);
-                Render::draw(
-                    &page_camera,
-                    world,
-                    rpass,
-                    RenderExtra {
-                        camera: &page_camera,
-                        ..extra
-                    },
-                );
-            }),
-        });
-
-        let tool = world.insert(ToolControl {
-            common: WidgetCommon {
-                camera: ui_camera,
-                visible: true,
-            },
-            order: -100,
-            hit: Box::new(move |world, screen| {
-                if let Some(hit) = ToolControl::intersect(world, screen, page_camera) {
-                    Some(hit)
-                } else {
-                    None
-                }
             }),
         });
 
@@ -670,9 +691,10 @@ impl Element for LayerPage {
             }),
         });
 
+        world.dependency(camera_autosave, this);
+        world.dependency(thread_autosave, this);
         world.dependency(prepare_control, this);
-        world.dependency(control_container, this);
         world.dependency(control_page, this);
-        world.dependency(tool, this);
+        world.dependency(container, this);
     }
 }

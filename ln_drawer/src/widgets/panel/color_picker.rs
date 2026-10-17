@@ -1,6 +1,6 @@
 use std::f32::consts::SQRT_2;
 
-use glam::{I64Vec2, IVec2, UVec2, Vec4};
+use glam::{DVec2, I64Vec2, IVec2, UVec2, Vec4};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
             ButtonDrag, ButtonDragStatus, SetButtonSelected, ToggleButton, ToggleButtonTheme,
         },
         common::WidgetCommon,
-        container::ContainerWithCamera,
+        container::{ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         object::color_snip::{ColorSnip, ColorSnipAttr},
         palette::{
             hsl::{ColorHsla, HslRing, HslSquare, INNER_RADIUS, SetColorHsla},
@@ -66,9 +66,18 @@ impl Element for ColorPickerPanel {
         world.named("layer_selection");
         let (tab_layer_selection, cam_layer_selection) = world.build(ContainerWithCamera {
             rect: Rectangle::default(),
-            inner: TransformValue::copy(),
             common: self.common,
             scroll: I64Vec2::ZERO,
+            anchor: DVec2::new(0.0, 0.0),
+        });
+        let tab_layer_selection_deco = world.insert(ContainerDeco {
+            container: tab_layer_selection,
+            restriction: Rectangle::default(),
+        });
+        world.insert(ContainerDecoDropdown {
+            height: None,
+            container: tab_layer_selection,
+            deco: tab_layer_selection_deco,
         });
         super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection);
 
@@ -249,8 +258,17 @@ impl Element for LayerHslPalette {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
-            inner: TransformValue::copy(),
             scroll: I64Vec2::ZERO,
+            anchor: DVec2::new(0.0, 0.0),
+        });
+        let deco = world.insert(ContainerDeco {
+            container,
+            restriction: Rectangle::default(),
+        });
+        world.insert(ContainerDecoDropdown {
+            height: None,
+            container,
+            deco,
         });
 
         let ring = world.insert(HslRing {
@@ -334,8 +352,17 @@ impl Element for LayerOklabPalette {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
-            inner: TransformValue::copy(),
             scroll: I64Vec2::ZERO,
+            anchor: DVec2::new(0.0, 0.0),
+        });
+        let deco = world.insert(ContainerDeco {
+            container,
+            restriction: Rectangle::default(),
+        });
+        world.insert(ContainerDecoDropdown {
+            height: None,
+            container,
+            deco,
         });
 
         let polar = world.insert(OklabPolar {

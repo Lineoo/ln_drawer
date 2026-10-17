@@ -1,5 +1,5 @@
 use cosmic_text::{Attrs, Metrics, Weight};
-use glam::I64Vec2;
+use glam::{DVec2, I64Vec2};
 use ln_world::{Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
     widgets::{
         brush_preview::{BrushPreview, BrushPreviewGenerator},
         common::WidgetCommon,
-        container::{Container, ContainerWithCamera},
+        container::{Container, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         renderer::text::{SetText, Text},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
@@ -53,30 +53,22 @@ pub fn new_panel_settings(
     });
 
     let (settings, cam_settings) = world.build(ContainerWithCamera {
-        rect: Rectangle::default(),
-        inner: TransformValue {
-            left: TransformEdge {
-                anchor: 0.0,
-                offset: 0,
-            },
-            down: TransformEdge {
-                anchor: 1.0,
-                offset: -(108 + 4) * 7 - 48 - 8,
-            },
-            right: TransformEdge {
-                anchor: 1.0,
-                offset: 0,
-            },
-            up: TransformEdge {
-                anchor: 1.0,
-                offset: 0,
-            },
-        },
         common: WidgetCommon {
             camera,
             visible: true,
         },
+        rect: Rectangle::default(),
         scroll: I64Vec2::ZERO,
+        anchor: DVec2::new(0.0, 0.0),
+    });
+    let settings_deco = world.insert(ContainerDeco {
+        container: settings,
+        restriction: Rectangle::default(),
+    });
+    world.insert(ContainerDecoDropdown {
+        height: Some(-(108 + 4) * 7 - 48 - 8),
+        container: settings,
+        deco: settings_deco,
     });
 
     world.dependency(preview, panel);

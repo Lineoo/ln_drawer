@@ -14,16 +14,13 @@ use winit::{
 };
 
 use crate::{
-    layer::{input::LayerInput, wrapper::LayerPage},
+    layer::wrapper::LayerPage,
     measures::{FI64Ext, Rectangle},
     render::{
         Render,
-        camera::{
-            Camera, CameraDescriptor, CameraUtils, PageCamera, PageCameraUtils, SetCameraOutdated,
-            UICamera,
-        },
+        camera::{Camera, CameraDescriptor, CameraOutdated, SetCameraOutdated, UICamera},
     },
-    save::{Autosave, AutosaveScheduler, Save, object::Objects},
+    save::{Autosave, AutosaveScheduler, Save},
     theme::Theme,
     tools::{focus::FocusTool, mouse::MouseTool, pointer::PointerTool, touch::MultiTouchTool},
     widgets::{
@@ -110,15 +107,6 @@ impl Element for Lnwindow {
         let here = world.here();
         world.enter(this, || world.insert(ViewRef(here)));
         world.enter_queue(this, move |world| {
-            world.observer(this, move |event: &WindowEvent, world| {
-                if let WindowEvent::CloseRequested = event {
-                    Autosave::autosave_all(world);
-                    world.queue(|world| {
-                        world.clear();
-                    });
-                }
-            });
-
             Save::init(world);
             world.insert(AutosaveScheduler {
                 autosave_duration: Duration::from_secs(180),
@@ -153,31 +141,31 @@ impl Element for Lnwindow {
 
             world.flush();
 
-            // Setup cameras
-
             let lnwindow = world.fetch(this);
-
-            let page_camera = Camera::init_page_camera(world);
             let ui_camera = world.insert(world.build(CameraDescriptor {
                 center: I64Vec2::ZERO,
                 zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
             }));
-
-            drop(lnwindow);
-
-            world.insert(PageCamera(page_camera));
             world.insert(UICamera(ui_camera));
+            world.observer(ui_camera, move |&SetCameraOutdated, world| {
+                let mut camera = world.fetch_mut(ui_camera);
+                let lnwindow = world.single_fetch::<Lnwindow>();
+                let size = lnwindow.window.surface_size();
+                camera.surface_size = UVec2::new(size.width, size.height);
+                camera.upload();
+                lnwindow.window.request_redraw();
+                world.queue_trigger(ui_camera, CameraOutdated);
+            });
+            drop(lnwindow);
 
             world.flush();
 
-            let camera = world.fetch(page_camera);
-            let page_camera_utils = world.insert(CameraUtils::new(&camera));
-            world.insert(PageCameraUtils(page_camera_utils));
-
             world.observer(this, move |event: &WindowEvent, world| {
-                if let WindowEvent::SurfaceResized(size) = event {
-                    let mut camera = world.fetch_mut(page_camera_utils);
-                    camera.camera_size(UVec2::new(size.width, size.height));
+                if let WindowEvent::CloseRequested = event {
+                    Autosave::autosave_all(world);
+                    world.queue(|world| {
+                        world.clear();
+                    });
                 }
             });
 
@@ -202,18 +190,8 @@ impl Element for Lnwindow {
                 }
             });
 
-            drop(camera);
-            world.flush();
-
             world.named("page");
             world.insert(LayerPage::new(world));
-            world.insert(LayerInput::default());
-            world.insert(Objects {
-                common: WidgetCommon {
-                    camera: page_camera,
-                    visible: true,
-                },
-            });
             world.flush();
 
             world.named("side_docker");
