@@ -59,14 +59,14 @@ pub fn new_panel_settings(
         },
         rect: Rectangle::default(),
         scroll: I64Vec2::ZERO,
-        anchor: DVec2::new(0.0, 0.0),
+        anchor: DVec2::new(0.0, 1.0),
     });
     let settings_deco = world.insert(ContainerDeco {
         container: settings,
         restriction: Rectangle::default(),
     });
     world.insert(ContainerDecoDropdown {
-        height: Some(-(108 + 4) * 7 - 48 - 8),
+        height: Some((108 + 4) * 7 + 48 + 8),
         container: settings,
         deco: settings_deco,
     });

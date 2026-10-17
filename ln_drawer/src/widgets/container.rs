@@ -357,9 +357,9 @@ impl Element for ContainerDecoDropdown {
                 deco,
                 SetWidgetRectangle(Rectangle::new(
                     0,
-                    0,
+                    -height.unwrap_or(rect.extend.y as i32),
                     rect.extend.x as i32,
-                    height.unwrap_or(rect.extend.y as i32),
+                    0,
                 )),
             );
         });

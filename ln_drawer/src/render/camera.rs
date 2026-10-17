@@ -190,7 +190,8 @@ impl Camera {
 
     pub fn upload(&self) {
         let transform = Mat2::from_scale_angle(
-            Vec2::splat(self.global_zoom.q32_as_f64().exp2() as f32) * 2. / self.surface_size.as_vec2(),
+            Vec2::splat(self.global_zoom.q32_as_f64().exp2() as f32) * 2.
+                / self.surface_size.as_vec2(),
             0.0,
         );
         let translate = self.global_center;

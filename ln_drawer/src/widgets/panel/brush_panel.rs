@@ -51,7 +51,7 @@ pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: H
         },
         rect: Rectangle::default(),
         scroll: I64Vec2::ZERO,
-        anchor: DVec2::new(0.0, 0.0),
+        anchor: DVec2::new(0.0, 1.0),
     });
     let list_container_deco = world.insert(ContainerDeco {
         container: list_container,
