@@ -48,6 +48,16 @@ features = ["android-native-activity"]
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15.1"
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { version = "1.28.0", features = ["v7", "js"] }
+wasm-logger = "0.2"
+console_error_panic_hook = "0.1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-time = "1.1.0"
+web-sys = "0.3"
+sys-locale = { version = "0.3.2", features = ["js"] }
+
 [package.metadata.android]
 package = "dev.linn.lndrawer"
 resources = "build/android"

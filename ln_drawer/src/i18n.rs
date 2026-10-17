@@ -1,7 +1,8 @@
 static TRF: std::sync::LazyLock<toml_edit::Document<&'static str>> =
     std::sync::LazyLock::new(|| {
         let locale = sys_locale::get_locale().unwrap_or_default();
-        let locale = icu_locale::Locale::try_from_str(&locale).unwrap();
+        let locale =
+            icu_locale::Locale::try_from_str(&locale).unwrap_or(icu_locale::Locale::UNKNOWN);
 
         let fallbacker = icu_locale::fallback::LocaleFallbacker::new();
         let mut iter = fallbacker

@@ -1,9 +1,6 @@
-use std::{
-    sync::{
-        Arc,
-        mpsc::{Receiver, Sender, channel},
-    },
-    thread::JoinHandle,
+use std::sync::{
+    Arc,
+    mpsc::{Receiver, Sender, channel},
 };
 
 use glam::{I64Vec2, IVec2, UVec2, Vec4};
@@ -97,7 +94,7 @@ pub struct LayerPage {
 
     pub thread_tx: Sender<ThreadInput>,
     pub thread_rx: Receiver<ThreadOutput>,
-    pub thread: Option<JoinHandle<()>>,
+    pub thread: StreamThread,
 }
 
 impl LayerPage {
@@ -141,11 +138,7 @@ impl LayerPage {
             ))
             .unwrap();
 
-        let thread = std::thread::spawn(move || {
-            StreamThread::new(stream_config, input_rx, output_tx)
-                .run()
-                .unwrap();
-        });
+        let thread = StreamThread::new(stream_config, input_rx, output_tx);
 
         let ui_camera = world.single_fetch::<UICamera>().0;
 
@@ -292,7 +285,7 @@ impl LayerPage {
             cursor_shadow,
             thread_tx: input_tx,
             thread_rx: output_rx,
-            thread: Some(thread),
+            thread,
         }
     }
 
@@ -579,15 +572,6 @@ impl LayerPage {
     }
 }
 
-impl Drop for LayerPage {
-    fn drop(&mut self) {
-        self.thread_tx.send(ThreadInput::Abort).unwrap();
-        if let Some(thread) = self.thread.take() {
-            thread.join().unwrap();
-        }
-    }
-}
-
 impl Element for LayerPage {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.single::<LayerPage>();
@@ -618,6 +602,11 @@ impl Element for LayerPage {
         let prepare_control = world.insert(RenderPrepareControl {
             prepare: Box::new(move |world| {
                 let this = &mut *world.fetch_mut(this);
+                while let Some(msg) = this.thread.recv(false).unwrap() {
+                    this.thread.prc(Some(msg)).unwrap();
+                }
+                this.thread.prc(None).unwrap();
+                this.thread.prc(None).unwrap();
                 this.process_stream(world);
                 None
             }),

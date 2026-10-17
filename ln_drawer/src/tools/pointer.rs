@@ -393,8 +393,9 @@ impl Pointer {
     }
 
     fn recalculate_hovering(&mut self, world: &World) {
-        if self.pressed.is_some() {
-            let hovering = self.hovering.unwrap();
+        if let Some(hovering) = self.hovering
+            && self.pressed.is_some()
+        {
             let camera = world.fetch(hovering.camera);
             let position = camera.screen_to_world(self.data.screen);
 

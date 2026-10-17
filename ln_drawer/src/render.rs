@@ -5,12 +5,13 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use ln_world::{Element, Handle, World};
+use web_time::Instant;
 use wgpu::*;
-use winit::{dpi::PhysicalSize, event::WindowEvent};
+use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::{
     lnwin::Lnwindow,
@@ -102,7 +103,7 @@ pub struct RenderDiagnosis<'a> {
 }
 
 impl Render {
-    pub async fn new(lnwindow: &Lnwindow) -> Render {
+    pub async fn new(window: Arc<dyn Window>) -> Render {
         let instance = Instance::new(InstanceDescriptor {
             backends: Backends::all(),
             flags: InstanceFlags::default(),
@@ -111,12 +112,12 @@ impl Render {
             display: None,
         });
 
-        let surface = instance.create_surface(lnwindow.window.clone()).unwrap();
+        let surface = instance.create_surface(window.clone()).unwrap();
 
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
                 power_preference: PowerPreference::LowPower,
-                force_fallback_adapter: false,
+                force_fallback_adapter: true,
                 compatible_surface: Some(&surface),
                 apply_limit_buckets: false,
             })
@@ -142,7 +143,7 @@ impl Render {
             .await
             .unwrap();
 
-        let size = lnwindow.window.surface_size();
+        let size = window.surface_size();
         let config = Render::configuration(&surface, &adapter, size);
         surface.configure(&device, &config);
 
@@ -251,14 +252,14 @@ impl Render {
             height: size.height.max(1),
             desired_maximum_frame_latency: 2,
             present_mode: {
-                let caps = &caps.present_modes;
-                if caps.contains(&PresentMode::FifoRelaxed) {
-                    PresentMode::FifoRelaxed
-                } else if caps.contains(&PresentMode::Fifo) {
-                    PresentMode::Fifo
-                } else {
-                    *caps.first().unwrap()
-                }
+                *caps
+                    .present_modes
+                    .iter()
+                    .max_by_key(|&format| match format {
+                        PresentMode::AutoVsync => 100,
+                        _ => 0,
+                    })
+                    .unwrap()
             },
             alpha_mode: {
                 let caps = &caps.alpha_modes;

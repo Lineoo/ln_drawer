@@ -24,6 +24,24 @@ pub fn desktop_main() {
     event_loop.run_app(lnwin).unwrap();
 }
 
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen(start)]
+pub fn wasm_main() {
+    use winit::event_loop::EventLoop;
+
+    wasm_logger::init(wasm_logger::Config::default());
+    console_error_panic_hook::set_once();
+
+    log::info!("This is LnDrawer Web. Welcome!");
+
+    let event_loop = EventLoop::builder().build().unwrap();
+    let event_proxy = event_loop.create_proxy();
+
+    let mut lnwin = lnwin::Lnwin::default();
+    lnwin.proxy = Some(event_proxy);
+    event_loop.run_app(lnwin).unwrap();
+}
+
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub fn android_main(app: winit::platform::android::activity::AndroidApp) {

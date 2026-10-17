@@ -16,7 +16,7 @@ use smallvec::SmallVec;
 // Definition //
 
 /// A shared form of objects in the [`World`].
-pub trait Element: Any + Sized + Send {
+pub trait Element: Any + Sized {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let _ = (world, this);
     }
@@ -634,7 +634,7 @@ impl World {
         self.label.set(label.into());
     }
 
-    pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
+    pub fn queue(&self, f: impl FnOnce(&mut World) + 'static) {
         let result = self.commander.send(WorldCommand {
             label: self.label(),
             location: self.location.get(),
@@ -987,7 +987,7 @@ impl World {
     pub fn observer<E: Send + 'static>(
         &self,
         target: impl HandleGeneric,
-        action: impl FnMut(&E, &World) + Send + 'static,
+        action: impl FnMut(&E, &World) + 'static,
     ) -> HandleAny {
         let here = self.location.get();
         let handle = self.enter(INITELEM, || {
@@ -1320,7 +1320,7 @@ impl Element for () {}
 struct WorldCommand {
     label: Cow<'static, str>,
     location: HandleAny,
-    action: Box<dyn FnOnce(&mut World) + Send>,
+    action: Box<dyn FnOnce(&mut World)>,
 }
 
 /// A flexible command access to world.
@@ -1332,7 +1332,7 @@ pub struct Commander {
 }
 
 impl Commander {
-    pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
+    pub fn queue(&self, f: impl FnOnce(&mut World) + 'static) {
         let result = self.inner.send(WorldCommand {
             label: self.label.clone(),
             location: self.location,
@@ -1353,7 +1353,7 @@ struct Observers<E: Send + 'static> {
 
 #[expect(clippy::type_complexity)]
 struct Observer<E: Send> {
-    action: Box<dyn FnMut(&E, &World) + Send>,
+    action: Box<dyn FnMut(&E, &World)>,
     label: Cow<'static, str>,
     view: HandleAny,
     target: HandleAny,

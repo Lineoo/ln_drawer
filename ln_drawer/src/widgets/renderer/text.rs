@@ -248,7 +248,7 @@ impl TextPipeline {
         let database = font_system.db_mut();
 
         // cosmic text cannot find system fonts on android, so we load them by ourselves
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_arch = "wasm32"))]
         {
             let sans_reg = include_bytes!("../../../fonts/SourceHanSansCN-Regular.otf").to_vec();
             let serif_reg = include_bytes!("../../../fonts/SourceHanSerifCN-Regular.otf").to_vec();

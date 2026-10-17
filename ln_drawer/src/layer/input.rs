@@ -1,7 +1,8 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glam::{DVec2, I64Vec2, Mat3, UVec2};
 use ln_world::{Element, Handle, HandleGeneric, World};
+use web_time::Instant;
 use winit::{
     cursor::{Cursor, CursorIcon},
     event::{ElementState, PointerKind, WindowEvent},

@@ -13,7 +13,6 @@ use crate::{
         Render,
         camera::{Camera, PageCamera, PageCameraUtils},
     },
-    save::{Save, SceneDocument},
     theme::Theme,
     widgets::{
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
@@ -115,13 +114,8 @@ impl Element for DebugPanel {
         });
 
         let compact = docker_button(include_bytes!("../../../res/interface/database-zap.svg"));
-        world.observer(compact, move |&ButtonClick, world| {
-            log::debug!("on next startup database will be compacted");
-            let sn_file = Save::sn_file(world);
-            let sn_tmp_file = Save::sn_tmp_file(world);
-            let mut sn_doc = SceneDocument::read(&sn_file);
-            sn_doc.set_compact_on_startup(true);
-            sn_doc.write(&sn_file, &sn_tmp_file);
+        world.observer(compact, move |&ButtonClick, _world| {
+            log::warn!("cannot compact on wasm32");
         });
 
         world.insert(Transform {

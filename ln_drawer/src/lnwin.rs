@@ -9,7 +9,8 @@ use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
     event::WindowEvent,
-    event_loop::ActiveEventLoop,
+    event_loop::{ActiveEventLoop, EventLoopProxy},
+    platform::web::WindowAttributesWeb,
     window::{Window, WindowAttributes, WindowId},
 };
 
@@ -45,12 +46,13 @@ use crate::{
 pub struct Lnwin {
     pub world: World,
     pub windows: HashMap<WindowId, Handle<Lnwindow>>,
+    pub proxy: Option<EventLoopProxy>,
 }
 
 impl ApplicationHandler for Lnwin {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.windows.is_empty() {
-            let lnwindow = Lnwindow::new(event_loop);
+            let lnwindow = Lnwindow::new(event_loop, self.proxy.clone());
             let window_id = lnwindow.window.id();
             let lnwindow = self.world.insert(lnwindow);
             self.windows.insert(window_id, lnwindow);
@@ -64,6 +66,10 @@ impl ApplicationHandler for Lnwin {
             }
         }
 
+        self.world.flush();
+    }
+
+    fn proxy_wake_up(&mut self, _event_loop: &dyn ActiveEventLoop) {
         self.world.flush();
     }
 
@@ -81,9 +87,9 @@ impl ApplicationHandler for Lnwin {
                     self.windows.remove(&window_id);
                 }
             });
-
-            self.world.flush();
         }
+
+        self.world.flush();
 
         if self.windows.is_empty() {
             event_loop.exit()
@@ -102,6 +108,7 @@ impl ApplicationHandler for Lnwin {
 /// The main window.
 pub struct Lnwindow {
     pub window: Arc<dyn Window>,
+    pub proxy: Option<EventLoopProxy>,
 }
 
 impl Element for Lnwindow {
@@ -125,67 +132,126 @@ impl Element for Lnwindow {
             });
 
             let lnwindow = world.fetch(this);
-            world.insert(pollster::block_on(Render::new(&lnwindow)));
-            drop(lnwindow);
-            world.flush();
+            let render_commander = world.commander("render_async_initialization");
+            let render_window = lnwindow.window.clone();
+            let render_proxy = lnwindow.proxy.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                log::debug!("render before await");
+                let render = Render::new(render_window).await;
+                log::debug!("render after await");
+                render_commander.queue(move |world| {
+                    log::debug!("render callback");
+                    world.insert(render);
+                    log::debug!("render insert");
+                    world.flush();
 
-            Camera::init(world);
+                    log::debug!("finish render init");
 
-            world.flush();
+                    Camera::init(world);
 
-            world.insert(CanvasPipeline::from_world(world));
-            world.insert(TextureQuadPipeline::from_world(world));
-            world.insert(QuadMeshPipeline::<HslSquareMaterial>::from_world(world));
-            world.insert(QuadMeshPipeline::<HslRingMaterial>::from_world(world));
-            world.insert(QuadMeshPipeline::<OklabPolarMaterial>::from_world(world));
-            world.insert(QuadMeshPipeline::<OklabBarMaterial>::from_world(world));
-            world.insert(QuadMeshPipeline::<RRectMaterial>::from_world(world));
-            world.insert(VtorPipeline::from_world(world));
-            world.insert(TextPipeline::new());
-            world.insert(Theme::default());
+                    world.flush();
 
-            world.flush();
+                    world.insert(CanvasPipeline::from_world(world));
+                    world.insert(TextureQuadPipeline::from_world(world));
+                    world.insert(QuadMeshPipeline::<HslSquareMaterial>::from_world(world));
+                    world.insert(QuadMeshPipeline::<HslRingMaterial>::from_world(world));
+                    world.insert(QuadMeshPipeline::<OklabPolarMaterial>::from_world(world));
+                    world.insert(QuadMeshPipeline::<OklabBarMaterial>::from_world(world));
+                    world.insert(QuadMeshPipeline::<RRectMaterial>::from_world(world));
+                    world.insert(VtorPipeline::from_world(world));
+                    world.insert(TextPipeline::new());
+                    world.insert(Theme::default());
 
-            world.insert(PointerTool::default());
-            world.insert(MouseTool::default());
-            world.insert(MultiTouchTool::default());
-            world.insert(FocusTool::default());
+                    world.flush();
 
-            world.flush();
+                    world.insert(PointerTool::default());
+                    world.insert(MouseTool::default());
+                    world.insert(MultiTouchTool::default());
+                    world.insert(FocusTool::default());
 
-            // Setup cameras
+                    world.flush();
 
-            let lnwindow = world.fetch(this);
+                    // Setup cameras
 
-            let page_camera = Camera::init_page_camera(world);
-            let ui_camera = world.insert(world.build(CameraDescriptor {
-                center: I64Vec2::ZERO,
-                zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
-            }));
+                    log::debug!("finish pipelines init");
 
-            drop(lnwindow);
-
-            world.insert(PageCamera(page_camera));
-            world.insert(UICamera(ui_camera));
-
-            world.flush();
-
-            let camera = world.fetch(page_camera);
-            let page_camera_utils = world.insert(CameraUtils::new(&camera));
-            world.insert(PageCameraUtils(page_camera_utils));
-
-            world.observer(this, move |event: &WindowEvent, world| {
-                if let WindowEvent::SurfaceResized(size) = event {
-                    let mut camera = world.fetch_mut(page_camera_utils);
-                    camera.camera_size(UVec2::new(size.width, size.height));
-                }
-            });
-
-            world.observer(this, move |event: &WindowEvent, world| {
-                if let WindowEvent::SurfaceResized(size) = event {
                     let lnwindow = world.fetch(this);
-                    let mut camera = world.fetch_mut(ui_camera);
 
+                    let size = lnwindow.window.surface_size();
+                    let page_camera = Camera::init_page_camera(world);
+                    let ui_camera = world.insert(world.build(CameraDescriptor {
+                        center: I64Vec2::ZERO,
+                        zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
+                    }));
+
+                    drop(lnwindow);
+
+                    world.insert(PageCamera(page_camera));
+                    world.insert(UICamera(ui_camera));
+
+                    world.flush();
+
+                    let camera = world.fetch(page_camera);
+                    let page_camera_utils = world.insert(CameraUtils::new(&camera));
+                    world.insert(PageCameraUtils(page_camera_utils));
+
+                    world.observer(this, move |event: &WindowEvent, world| {
+                        if let WindowEvent::SurfaceResized(size) = event {
+                            let mut camera = world.fetch_mut(page_camera_utils);
+                            camera.camera_size(UVec2::new(size.width, size.height));
+                        }
+                    });
+
+                    world.observer(this, move |event: &WindowEvent, world| {
+                        if let WindowEvent::SurfaceResized(size) = event {
+                            let lnwindow = world.fetch(this);
+                            let mut camera = world.fetch_mut(ui_camera);
+
+                            let scale = lnwindow.window.scale_factor();
+                            world.queue_trigger(
+                                lnwindow.handle(),
+                                WidgetRectangle(Rectangle::new_half(
+                                    IVec2::ZERO,
+                                    (UVec2::new(size.width / 2, size.height / 2).as_dvec2()
+                                        / scale)
+                                        .round()
+                                        .as_uvec2(),
+                                )),
+                            );
+
+                            world.queue_trigger(camera.handle(), SetCameraOutdated);
+                            camera.zoom = i64::q32_from_f64(scale.log2());
+                        }
+                    });
+
+                    drop(camera);
+                    world.flush();
+
+                    world.named("page");
+                    world.insert(LayerPage::new(world));
+                    world.insert(LayerInput::default());
+                    world.insert(Objects {
+                        common: WidgetCommon {
+                            camera: page_camera,
+                            visible: true,
+                        },
+                    });
+                    world.flush();
+
+                    world.named("side_docker");
+                    side_docker(world, ui_camera);
+                    world.flush();
+
+                    world.named("desktop_ui");
+                    world.insert(DesktopUi {
+                        common: WidgetCommon {
+                            camera: ui_camera,
+                            visible: true,
+                        },
+                    });
+                    world.flush();
+
+                    let lnwindow = world.single_fetch::<Lnwindow>();
                     let scale = lnwindow.window.scale_factor();
                     world.queue_trigger(
                         lnwindow.handle(),
@@ -196,52 +262,25 @@ impl Element for Lnwindow {
                                 .as_uvec2(),
                         )),
                     );
-
-                    world.queue_trigger(camera.handle(), SetCameraOutdated);
-                    camera.zoom = i64::q32_from_f64(scale.log2());
-                }
+                });
+                render_proxy.unwrap().wake_up();
             });
-
-            drop(camera);
-            world.flush();
-
-            world.named("page");
-            world.insert(LayerPage::new(world));
-            world.insert(LayerInput::default());
-            world.insert(Objects {
-                common: WidgetCommon {
-                    camera: page_camera,
-                    visible: true,
-                },
-            });
-            world.flush();
-
-            world.named("side_docker");
-            side_docker(world, ui_camera);
-            world.flush();
-
-            world.named("desktop_ui");
-            world.insert(DesktopUi {
-                common: WidgetCommon {
-                    camera: ui_camera,
-                    visible: true,
-                },
-            });
-            world.flush();
         });
     }
 }
 
 impl Lnwindow {
-    fn new(event_loop: &dyn ActiveEventLoop) -> Lnwindow {
+    fn new(event_loop: &dyn ActiveEventLoop, proxy: Option<EventLoopProxy>) -> Lnwindow {
         let win_attr = WindowAttributes::default()
             .with_transparent(true)
-            .with_title("LnDrawer");
+            .with_title("LnDrawer")
+            .with_surface_size(winit::dpi::PhysicalSize::new(1920, 1080))
+            .with_platform_attributes(Box::new(WindowAttributesWeb::default().with_append(true)));
 
         let window = event_loop.create_window(win_attr).unwrap();
         let window = Arc::from(window);
 
-        Lnwindow { window }
+        Lnwindow { window, proxy }
     }
 
     pub fn cursor_to_screen(&self, position: PhysicalPosition<f64>) -> DVec2 {

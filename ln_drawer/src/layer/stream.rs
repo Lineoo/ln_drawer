@@ -4,7 +4,6 @@ use std::{
         Arc,
         mpsc::{Receiver, RecvError, Sender, TryRecvError},
     },
-    time::Instant,
 };
 
 use glam::{I64Vec2, IVec2, UVec2};
@@ -12,6 +11,7 @@ use hashbrown::HashSet;
 use indexmap::{IndexMap, IndexSet};
 use redb::{Database, ReadableDatabase};
 use smallvec::SmallVec;
+use web_time::Instant;
 use wgpu::{
     BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Device, Extent3d, MapMode, Origin3d,
     PollType, Queue, TexelCopyBufferInfoBase, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
@@ -162,106 +162,112 @@ impl StreamThread {
         }
     }
 
-    pub fn run(mut self) -> Result<(), Box<dyn Error>> {
+    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         loop {
-            match self.recv()? {
-                Some(ThreadInput::SetPage(page)) => {
-                    self.unload_all()?;
-                    self.config.page = page;
-                    self.queue.outdated = true;
-                }
-                Some(ThreadInput::SetStreamCamera(zoom, size, center)) => {
-                    self.camera.rect = Camera::view_rect(zoom, size, center);
-                    let stream_center_new = point_zoom_to_chunks_stack(
-                        center.q32_round(),
-                        zoom + i64::q32_from_f64(0.5),
-                        self.config.chunk_size,
-                    );
-                    let stream_range_new = rect_chunks_stack_layer_range(
-                        self.camera.rect,
-                        self.config.chunk_size,
-                        stream_center_new.2,
-                    );
-                    if stream_range_new != self.camera.range
-                        || stream_center_new != self.camera.center
-                    {
-                        self.camera.range = stream_range_new;
-                        self.camera.center = stream_center_new;
-                        self.queue.outdated = true;
-                    }
-                }
-                Some(ThreadInput::MarkRawUnsaved(chunks)) => {
-                    for chunk in chunks {
-                        self.base.raw_unsaved.insert(chunk);
-                    }
-                }
-                Some(ThreadInput::MarkCacheUnsaved(chunks)) => {
-                    for chunk in chunks {
-                        self.base.cache_unsaved.insert(chunk);
-                    }
-                }
-                Some(ThreadInput::SwapRaw(key, chunk)) => {
-                    // Loading is controlled by stream thread, but the chunk's content is
-                    // controlled by the main thread. Since this command replace the chunk
-                    // entirely, it is safe to just add chunk into our base (and mark it as
-                    // unsaved), without concerning about loading it from db.
-                    // NOT sending it back to main thread
-                    self.base.raw_insert_recycle(&mut self.pool, key, chunk);
-                    self.base.raw_unsaved.insert(key);
-                }
-                Some(ThreadInput::SwapCache(key, chunk)) => {
-                    self.base.cache_insert_recycle(&mut self.pool, key, chunk);
-                    self.base.cache_unsaved.insert(key);
-                }
-                Some(ThreadInput::RawRemoveAck(keys)) => {
-                    let write = self.config.database.begin_write()?;
-                    let mut save = ChunkSave::new(&write)?;
-                    for key in keys {
-                        self.unload_raw(&mut save, key)?;
-                    }
-                    self.pool.limit();
-                    drop(save);
-                    write.commit()?;
-                }
-                Some(ThreadInput::CacheRemoveAck(keys)) => {
-                    let write = self.config.database.begin_write()?;
-                    let mut save = ChunkSave::new(&write)?;
-                    for key in keys {
-                        self.unload_cache(&mut save, key)?;
-                    }
-                    self.pool.limit();
-                    drop(save);
-                    write.commit()?;
-                }
-                Some(ThreadInput::Autosave) => {
-                    self.save_all()?;
-                }
-                Some(ThreadInput::Abort) => {
-                    return Ok(());
-                }
-                None => {
-                    self.send_debug_message()?;
-
-                    if self.queue.outdated {
-                        self.queue.restock(&self.config, &self.camera);
-                    }
-
-                    self.queue.generate_batch(&mut self.base);
-                    if self.queue.batch.is_empty() {
-                        continue;
-                    }
-
-                    self.load()?;
-                    self.unload_ask_overflow()?;
-
-                    self.config.window.request_redraw();
-                }
-            }
+            let msg = self.recv(true)?;
+            self.prc(msg)?;
         }
     }
 
-    fn recv(&self) -> Result<Option<ThreadInput>, Box<dyn Error>> {
-        let result = if self.queue.still_has_tasks() || self.queue.outdated {
+    pub fn prc(&mut self, msg: Option<ThreadInput>) -> Result<(), Box<dyn Error>> {
+        match msg {
+            Some(ThreadInput::SetPage(page)) => {
+                self.unload_all()?;
+                self.config.page = page;
+                self.queue.outdated = true;
+            }
+            Some(ThreadInput::SetStreamCamera(zoom, size, center)) => {
+                self.camera.rect = Camera::view_rect(zoom, size, center);
+                let stream_center_new = point_zoom_to_chunks_stack(
+                    center.q32_round(),
+                    zoom + i64::q32_from_f64(0.5),
+                    self.config.chunk_size,
+                );
+                let stream_range_new = rect_chunks_stack_layer_range(
+                    self.camera.rect,
+                    self.config.chunk_size,
+                    stream_center_new.2,
+                );
+                if stream_range_new != self.camera.range || stream_center_new != self.camera.center
+                {
+                    self.camera.range = stream_range_new;
+                    self.camera.center = stream_center_new;
+                    self.queue.outdated = true;
+                }
+            }
+            Some(ThreadInput::MarkRawUnsaved(chunks)) => {
+                for chunk in chunks {
+                    self.base.raw_unsaved.insert(chunk);
+                }
+            }
+            Some(ThreadInput::MarkCacheUnsaved(chunks)) => {
+                for chunk in chunks {
+                    self.base.cache_unsaved.insert(chunk);
+                }
+            }
+            Some(ThreadInput::SwapRaw(key, chunk)) => {
+                // Loading is controlled by stream thread, but the chunk's content is
+                // controlled by the main thread. Since this command replace the chunk
+                // entirely, it is safe to just add chunk into our base (and mark it as
+                // unsaved), without concerning about loading it from db.
+                // NOT sending it back to main thread
+                self.base.raw_insert_recycle(&mut self.pool, key, chunk);
+                self.base.raw_unsaved.insert(key);
+            }
+            Some(ThreadInput::SwapCache(key, chunk)) => {
+                self.base.cache_insert_recycle(&mut self.pool, key, chunk);
+                self.base.cache_unsaved.insert(key);
+            }
+            Some(ThreadInput::RawRemoveAck(keys)) => {
+                let write = self.config.database.begin_write()?;
+                let mut save = ChunkSave::new(&write)?;
+                for key in keys {
+                    self.unload_raw(&mut save, key)?;
+                }
+                self.pool.limit();
+                drop(save);
+                write.commit()?;
+            }
+            Some(ThreadInput::CacheRemoveAck(keys)) => {
+                let write = self.config.database.begin_write()?;
+                let mut save = ChunkSave::new(&write)?;
+                for key in keys {
+                    self.unload_cache(&mut save, key)?;
+                }
+                self.pool.limit();
+                drop(save);
+                write.commit()?;
+            }
+            Some(ThreadInput::Autosave) => {
+                self.save_all()?;
+            }
+            Some(ThreadInput::Abort) => {
+                return Ok(());
+            }
+            None => {
+                if self.queue.outdated {
+                    self.queue.restock(&self.config, &self.camera);
+                }
+
+                self.queue.generate_batch(&mut self.base);
+                if self.queue.batch.is_empty() {
+                    return Ok(());
+                }
+
+                self.send_debug_message()?;
+
+                self.load()?;
+                self.unload_ask_overflow()?;
+
+                self.config.window.request_redraw();
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn recv(&self, blocking: bool) -> Result<Option<ThreadInput>, Box<dyn Error>> {
+        let result = if self.queue.still_has_tasks() || self.queue.outdated || !blocking {
             match self.input_rx.try_recv() {
                 Ok(input) => Some(input),
                 Err(TryRecvError::Empty) => None,
@@ -536,6 +542,7 @@ Camera: {:?}",
                     .device
                     .poll(PollType::wait_indefinitely())
                     .unwrap();
+                // FIXME potential blocking
                 let bytes = rx.recv().unwrap();
                 save.save_raw((self.config.page, key), &bytes[..])?;
             }

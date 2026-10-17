@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 pub mod chunk;
 pub mod object;
 
@@ -5,12 +7,13 @@ use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
 
 use ln_world::{Element, Handle, World, WorldError};
-use redb::{Database, WriteTransaction};
+use redb::{Database, WriteTransaction, backends::InMemoryBackend};
 use toml_edit::{DocumentMut, Item, Value};
+use web_time::Instant;
 
 #[cfg(target_os = "android")]
 use crate::lnwin::LnAndroid;
@@ -47,24 +50,13 @@ impl Save {
             return;
         };
 
-        let db_file = Save::db_file(world);
-        let sn_file = Save::sn_file(world);
-        let sn_tmp_file = Save::sn_tmp_file(world);
-
-        std::fs::create_dir_all(&db_file.parent().unwrap()).unwrap();
-        Save::create_backup(&db_file, "old", true, BACKUP_SLOT);
-
-        let sn = SceneFile::read(&sn_file);
-        let db = if let Ok(mut db) = Database::open(&db_file) {
-            log::debug!("database loaded");
-            Save::touch(&sn, &sn_file, &sn_tmp_file, &mut db, &db_file).unwrap();
-            Arc::new(db)
-        } else {
-            let mut db = Database::create(&db_file).unwrap();
-            log::debug!("database created");
-            Save::touch(&sn, &sn_file, &sn_tmp_file, &mut db, &db_file).unwrap();
-            Arc::new(db)
-        };
+        let sn = SceneFile::default();
+        let mut db = Database::builder()
+            .create_with_backend(InMemoryBackend::new())
+            .unwrap();
+        log::debug!("database loaded");
+        Save::touch(&sn, &mut db).unwrap();
+        let db = Arc::new(db);
 
         world.insert(Save { sn, db });
     }
@@ -91,30 +83,8 @@ impl Save {
 
     /// Touch a existed database, including updating necessary timestamps,
     /// validation, and most of all migration data from older versions.
-    fn touch(
-        sn: &SceneFile,
-        sn_file: &Path,
-        sn_tmp_file: &Path,
-        db: &mut Database,
-        db_file: &Path,
-    ) -> Result<(), redb::Error> {
-        let mut sn_doc = SceneDocument::read(sn_file);
-
-        if sn.database_version > DATABASE_VERSION {
-            panic!(
-                "cannot open database from newer version {}",
-                sn.database_version
-            );
-        } else if sn.database_version < DATABASE_VERSION {
-            Self::create_backup(db_file, "migration", false, 256);
-            Self::migrate_format(db, sn.database_version)?;
-            sn_doc.set_database_version(DATABASE_VERSION);
-        }
-
-        if chunk::legacy_classic::need_migration(db)? {
-            Self::create_backup(db_file, "classic", false, 4);
-            chunk::legacy_classic::startup_migration(db)?;
-        }
+    fn touch(sn: &SceneFile, db: &mut Database) -> Result<(), redb::Error> {
+        let mut sn_doc = SceneDocument::default();
 
         {
             let mut write = db.begin_write()?;
@@ -124,13 +94,6 @@ impl Save {
             write.open_table(TABLE_LAYER_OBJECT)?;
             write.commit()?;
         }
-
-        if sn.compact_on_startup {
-            Self::perform_compact(db)?;
-            sn_doc.set_compact_on_startup(false);
-        }
-
-        sn_doc.write(sn_file, sn_tmp_file);
 
         Ok(())
     }
@@ -342,11 +305,8 @@ impl Autosave {
     pub fn autosave_all(world: &World) {
         let start = Instant::now();
 
-        let sn_file = Save::sn_file(world);
-        let sn_tmp_file = Save::sn_tmp_file(world);
-
         let save = world.single_fetch_mut::<Save>();
-        let mut sn_doc = SceneDocument::read(&sn_file);
+        let mut sn_doc = SceneDocument::default();
         let mut write = save.db.begin_write().unwrap();
         write.set_quick_repair(true);
         world.foreach_fetch_mut::<Autosave>(|mut task| {
@@ -359,7 +319,6 @@ impl Autosave {
                 },
             );
         });
-        sn_doc.write(&sn_file, &sn_tmp_file);
         write.commit().unwrap();
 
         let duration = Instant::now().duration_since(start);
@@ -375,7 +334,12 @@ pub fn get_file_path(world: &World, filename: &str) -> PathBuf {
     path
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(target_arch = "wasm32")]
+pub fn get_file_path(_world: &World, _filename: &str) -> PathBuf {
+    panic!("file system not available for wasm");
+}
+
+#[cfg(not(any(target_os = "android", target_arch = "wasm32")))]
 pub fn get_file_path(_world: &World, filename: &str) -> PathBuf {
     let mut path = dirs::data_local_dir().unwrap();
     match option_env!("LNDRAWER_RELEASE").is_some() {

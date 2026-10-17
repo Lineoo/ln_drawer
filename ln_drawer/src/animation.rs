@@ -1,7 +1,8 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glam::Vec4;
 use ln_world::{Descriptor, Element, Handle, RefMut, World};
+use web_time::Instant;
 
 use crate::{
     lnwin::Lnwindow,

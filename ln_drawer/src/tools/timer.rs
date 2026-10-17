@@ -1,6 +1,7 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use ln_world::{Element, Handle, World, WorldError};
+use web_time::Instant;
 use winit::event::WindowEvent;
 
 use crate::lnwin::Lnwindow;
