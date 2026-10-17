@@ -29,8 +29,10 @@ smallvec = "1.15.1"
 swash = "0.2.9"
 sys-locale = "0.3.2"
 thiserror = "2.0.16"
+tiny-skia = { version = "0.12.0", default-features = false }
 toml_edit = { version = "0.25.15", features = ["serde"] }
 usvg = "0.47.0"
+uuid = { version = "1.28.0", features = ["v7"] }
 wgpu = "30.0"
 zeno = "0.3.3"
 zstd = "0.13.3"
