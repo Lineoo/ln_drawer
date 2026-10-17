@@ -23,6 +23,7 @@ pub struct PointerHit {
     pub position: I64Vec2,
     pub pointer: PointerData,
     pub status: PointerHitStatus,
+    #[expect(unused)]
     pub data: PointerHitData,
 }
 

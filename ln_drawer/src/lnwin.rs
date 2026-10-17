@@ -23,7 +23,7 @@ use crate::{
             UICamera,
         },
     },
-    save::{Autosave, AutosaveScheduler, Save},
+    save::{Autosave, AutosaveScheduler, Save, object::Objects},
     theme::Theme,
     tools::{focus::FocusTool, mouse::MouseTool, pointer::PointerTool, touch::MultiTouchTool},
     widgets::{
@@ -208,6 +208,12 @@ impl Element for Lnwindow {
             world.named("page");
             world.insert(LayerPage::new(world));
             world.insert(LayerInput::default());
+            world.insert(Objects {
+                common: WidgetCommon {
+                    camera: page_camera,
+                    visible: true,
+                },
+            });
             world.flush();
 
             world.named("side_docker");

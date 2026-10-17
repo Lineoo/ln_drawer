@@ -18,7 +18,7 @@ use crate::{
     widgets::{
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         common::WidgetCommon,
-        panel::{Panel, brush_panel::brush_panel, color_picker::color_picker_panel},
+        panel::{Panel, brush_panel::brush_panel, color_picker::ColorPickerButton},
         renderer::{svg::svg_render, text::SetText},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
@@ -29,15 +29,22 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
     let theme = world.single_fetch::<Theme>();
     let layer = world.single::<LayerPage>();
 
+    world.named("side_docker_buttons");
     let side_panel = world.insert(Panel {
+        common: WidgetCommon {
+            camera,
+            visible: true,
+        },
         rect: Rectangle::default(),
-        visible: true,
         shadow: true,
-        camera,
     });
 
     let docker_button = |image_bytes| {
         world.insert(ToggleButton {
+            common: WidgetCommon {
+                camera,
+                visible: true,
+            },
             rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
             theme: ToggleButtonTheme {
                 idle_color: theme.primary_color,
@@ -47,9 +54,7 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
             },
             image: Some(svg_render(image_bytes, 8)),
             selected: false,
-            visible: true,
             hovering: false,
-            camera,
         })
     };
 
@@ -59,36 +64,15 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
     let redo = docker_button(include_bytes!("../../../res/interface/redo-2.svg"));
     let touch = docker_button(include_bytes!("../../../res/interface/pointer.svg"));
     let pipette = docker_button(include_bytes!("../../../res/interface/pipette.svg"));
-
-    let color_picker = world.insert(ToggleButton {
-        rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
-        theme: ToggleButtonTheme {
-            idle_color: theme.primary_color,
-            hover_color: theme.secondary_color,
-            press_color: theme.highlight_color,
-            selected_color: theme.highlight_color,
-        },
-        image: None,
-        selected: false,
-        visible: true,
-        hovering: false,
-        camera,
-    });
-
-    // Only one popup may be open at a time, otherwise the overlapping panels cross.
-    world.observer(brush_menu, move |&ButtonSelected(selected), world| {
-        if selected {
-            world.queue_trigger(color_picker, SetButtonSelected(false));
-        }
-    });
-
-    world.observer(color_picker, move |&ButtonSelected(selected), world| {
-        if selected {
-            world.queue_trigger(brush_menu, SetButtonSelected(false));
-        }
-    });
-
     let elastic_blank = world.insert(());
+
+    let color_picker = world.insert(ColorPickerButton {
+        common: WidgetCommon {
+            camera,
+            visible: true,
+        },
+        rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+    });
 
     let slider = world.insert(Slider {
         common: WidgetCommon {
@@ -108,6 +92,20 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
         hover: false,
         visible: true,
         camera,
+    });
+
+    world.named("brush_panel");
+    brush_panel(world, brush_menu, camera);
+
+    world.named("side_docker_observers");
+    world.observer(brush_menu, move |&ButtonSelected(selected), world| {
+        world.queue_trigger(brush_menu, SetButtonSelected(selected));
+        world.queue_trigger(color_picker, SetButtonSelected(false));
+    });
+
+    world.observer(color_picker, move |&ButtonSelected(selected), world| {
+        world.queue_trigger(brush_menu, SetButtonSelected(false));
+        world.queue_trigger(color_picker, SetButtonSelected(selected));
     });
 
     world.observer(eraser, move |&ButtonSelected(val), world| {
@@ -256,12 +254,6 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
     world.dependency(touch, side_panel);
     world.dependency(pipette, side_panel);
     world.dependency(luni, side_panel);
-
-    world.named("color_picker_panel");
-    color_picker_panel(world, color_picker, camera);
-
-    world.named("brush_panel");
-    brush_panel(world, brush_menu, camera);
 
     world.named("layer_init");
     world.queue_trigger(layer, BrushConfigurationChanged);

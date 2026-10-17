@@ -3,6 +3,7 @@ use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
     layout::{
+        echo::Echo,
         luni::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
             LuniParent, LuniRect,
@@ -20,7 +21,6 @@ use crate::{
             ToggleButtonTheme,
         },
         common::WidgetCommon,
-        echo::Echo,
         renderer::rrect::RRect,
     },
 };
@@ -78,6 +78,10 @@ impl Tabs {
         let mut luni_children = Vec::new();
         for (i, (entry, _)) in self.tabs.iter().enumerate() {
             let button = world.insert(ToggleButton {
+                common: WidgetCommon {
+                    camera: self.camera,
+                    visible: self.visible,
+                },
                 rect: self.rect,
                 theme: ToggleButtonTheme {
                     idle_color: theme.secondary_color,
@@ -87,9 +91,7 @@ impl Tabs {
                 },
                 image: Some(entry.clone()),
                 selected: i == self.active,
-                visible: self.visible,
                 hovering: false,
-                camera: self.camera,
             });
 
             Echo::new(world, button).widget_rectangle();

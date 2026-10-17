@@ -4,8 +4,7 @@ use ln_world::{Element, Handle, HandleGeneric, World};
 use crate::{
     animation::{AnimationDescriptor, SetAnimationDst, SimpleAnimationDescriptor},
     layout::transform::TransformValue,
-    measures::Rectangle,
-    render::camera::Camera,
+    measures::{FI64Ext, Rectangle},
     theme::Theme,
     tools::{
         collider::ToolRectCollider,
@@ -22,13 +21,12 @@ use crate::{
 };
 
 pub struct ToggleButton {
+    pub common: WidgetCommon,
     pub rect: Rectangle,
     pub theme: ToggleButtonTheme,
     pub image: Option<ButtonImage>,
     pub selected: bool,
-    pub visible: bool,
     pub hovering: bool,
-    pub camera: Handle<Camera>,
 }
 
 pub struct ToggleButtonTheme {
@@ -84,8 +82,8 @@ impl ToggleButton {
             },
             radius: theme.roundness,
             width: 0.0,
-            enabled: self.visible,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
         world.dependency(frame, handle);
 
@@ -98,10 +96,7 @@ impl ToggleButton {
         });
 
         let collider = world.insert(ToolRectCollider {
-            common: WidgetCommon {
-                visible: self.visible,
-                camera: self.camera,
-            },
+            common: self.common,
             target: handle.untyped(),
             rect: self.rect,
             order: 10,
@@ -111,8 +106,8 @@ impl ToggleButton {
             let canvas = world.insert(Canvas {
                 rect: image.transform.compute(self.rect),
                 order: 11,
-                visible: self.visible,
-                camera: self.camera,
+                visible: self.common.visible,
+                camera: self.common.camera,
                 color: theme.symbolic_color,
                 data: image.bytes.clone(),
                 data_width: image.bytes_width,
@@ -154,7 +149,7 @@ impl ToggleButton {
 
         world.observer(handle, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(handle);
-            this.visible = visible;
+            this.common.visible = visible;
             world.queue_trigger(frame, SetWidgetVisible(visible));
             world.queue_trigger(collider, SetWidgetVisible(visible));
 
@@ -172,7 +167,7 @@ impl ToggleButton {
         let mut drag_start = None;
         let mut dragging = false;
         world.observer(handle, move |event: &PointerHit, world| {
-            const DRAG_DISTANCE: f64 = 0.01;
+            const DRAG_DISTANCE: f64 = 30.0;
 
             match event.status {
                 PointerHitStatus::Press => {
@@ -182,7 +177,7 @@ impl ToggleButton {
                 }
                 PointerHitStatus::Moving => {
                     if let Some(start) = drag_start {
-                        if event.pointer.screen.distance(start.pointer.screen) > DRAG_DISTANCE
+                        if (event.position - start.position).q32_as_f64().length() > DRAG_DISTANCE
                             && !dragging
                         {
                             dragging = true;

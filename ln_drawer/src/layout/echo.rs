@@ -1,11 +1,6 @@
 use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
 
-use crate::widgets::{
-    SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
-    button::{ButtonSelected, SetButtonSelected},
-    slider::{SetSliderValue, SliderValue},
-    tabs::{SetTabsActive, TabsActive},
-};
+use crate::widgets::{SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible};
 
 /// Utility to build certain mysterious echo over specific element,
 /// who receive all kinds of command event and emit out
@@ -36,21 +31,6 @@ impl Echo<'_> {
 
     pub fn widget_visible(&self) -> &Self {
         self.build(|&SetWidgetVisible(val)| WidgetVisible(val))
-    }
-
-    #[expect(unused)]
-    pub fn slider_value(&self) -> &Self {
-        self.build(|&SetSliderValue(val)| SliderValue(val))
-    }
-
-    #[expect(unused)]
-    pub fn tabs_active(&self) -> &Self {
-        self.build(|&SetTabsActive(val)| TabsActive(val))
-    }
-
-    #[expect(unused)]
-    pub fn button_selected(&self) -> &Self {
-        self.build(|&SetButtonSelected(val)| ButtonSelected(val))
     }
 }
 

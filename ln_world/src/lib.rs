@@ -126,9 +126,7 @@ impl HandleAny {
     }
 }
 
-pub trait HandleGeneric:
-    Send + Sync + Clone + Copy + PartialEq + Eq + fmt::Debug + fmt::Display + 'static
-{
+pub trait HandleGeneric: Send + Sync + Clone + Copy + PartialEq + Eq + 'static {
     fn untyped(self) -> HandleAny;
 }
 

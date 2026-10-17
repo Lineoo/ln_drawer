@@ -6,6 +6,7 @@
 |------|-----|-------|
 | layer_chunk     | (u64, (i32, i32, u8)) | &[u8] |
 | layer_chunk_raw | (u64, (i32, i32))     | &[u8] |
+| layer_object    | (u64, u128)           | &[u8]  |
 
 ### layer_chunk 缓存区块表格式
 

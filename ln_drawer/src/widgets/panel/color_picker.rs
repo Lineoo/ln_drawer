@@ -10,15 +10,22 @@ use crate::{
         srgb::{mul_alpha, srgb_gamma_decode, srgb_gamma_encode},
     },
     layer::wrapper::{BrushConfigurationChanged, LayerPage},
-    layout::transform::{Transform, TransformValue},
-    measures::Rectangle,
-    render::camera::Camera,
+    layout::{
+        echo::Echo,
+        transfer::Transfer,
+        transform::{Transform, TransformValue},
+    },
+    measures::{FI64Ext, Rectangle},
+    render::camera::PageCamera,
+    theme::Theme,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
-        button::{ButtonSelected, SetButtonSelected, ToggleButton},
+        button::{
+            ButtonDrag, ButtonDragStatus, SetButtonSelected, ToggleButton, ToggleButtonTheme,
+        },
         common::WidgetCommon,
         container::ContainerWithCamera,
-        echo::Echo,
+        object::color_snip::{ColorSnip, ColorSnipAttr},
         palette::{
             hsl::{ColorHsla, HslRing, HslSquare, INNER_RADIUS, SetColorHsla},
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
@@ -35,134 +42,197 @@ use crate::{
 const PANEL_WIDTH: i32 = 384;
 const PANEL_HEIGHT: i32 = 320;
 
-pub fn color_picker_panel(
-    world: &World,
-    toggle_button: Handle<ToggleButton>,
-    camera: Handle<Camera>,
-) {
-    let toggle_button_color_icon = world.insert(RRect {
-        rect: Rectangle::default(),
-        order: 21,
-        color: Vec4::new(0.9, 0.7, 0.7, 1.0),
-        radius: 10.0,
-        width: 0.0,
-        enabled: true,
-        camera,
-    });
+pub struct ColorPickerPanel {
+    pub common: WidgetCommon,
+    pub button: Handle<ToggleButton>,
+}
 
-    world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
-        let transform = Transform {
-            value: TransformValue::anchor(
+impl Element for ColorPickerPanel {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.named("palette_hsl");
+        let tab_palette_hsl = world.insert(LayerHslPalette {
+            common: self.common,
+            rect: Rectangle::default(),
+            hsl: Vec4::new(0.3, 0.5, 0.5, 1.0),
+        });
+
+        world.named("palette_oklab");
+        let tab_palette_oklab = world.insert(LayerOklabPalette {
+            common: self.common,
+            rect: Rectangle::default(),
+            oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
+        });
+
+        world.named("layer_selection");
+        let (tab_layer_selection, cam_layer_selection) = world.build(ContainerWithCamera {
+            rect: Rectangle::default(),
+            inner: TransformValue::copy(),
+            common: self.common,
+            scroll: I64Vec2::ZERO,
+        });
+        super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection);
+
+        world.named("debug_panel");
+        let tab_debug = world.insert(DebugPanel {
+            common: self.common,
+            rect: Rectangle::default(),
+        });
+
+        let tabs = world.insert(Tabs {
+            active: 0,
+            rect: Rectangle::default(),
+            visible: self.common.visible,
+            tabs: vec![
+                (
+                    svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
+                    tab_palette_hsl.untyped(),
+                ),
+                (
+                    svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
+                    tab_palette_oklab.untyped(),
+                ),
+                (
+                    svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
+                    tab_layer_selection.untyped(),
+                ),
+                (
+                    svg_render(include_bytes!("../../../res/interface/bug.svg"), 12),
+                    tab_debug.untyped(),
+                ),
+            ],
+            camera: self.common.camera,
+        });
+
+        world.observer(self.button, move |&SetWidgetRectangle(rect), world| {
+            let transform = TransformValue::anchor(
+                (1.0, 1.0),
+                Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
+            );
+            let rect = transform.compute(rect);
+            world.queue_trigger(tabs, SetWidgetRectangle(rect));
+        });
+
+        world.observer(self.button, move |&SetButtonSelected(selected), world| {
+            world.queue_trigger(tabs, SetWidgetVisible(selected));
+        });
+
+        world.dependency(tab_palette_hsl, this);
+        world.dependency(tab_palette_oklab, this);
+        world.dependency(tab_layer_selection, this);
+        world.dependency(tab_debug, this);
+        world.dependency(tabs, this);
+    }
+}
+
+pub struct ColorPickerButton {
+    pub common: WidgetCommon,
+    pub rect: Rectangle,
+}
+
+impl Element for ColorPickerButton {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let theme = world.single_fetch::<Theme>();
+        let page = world.single::<LayerPage>();
+
+        let button = world.insert(ToggleButton {
+            common: self.common,
+            rect: self.rect,
+            theme: ToggleButtonTheme {
+                idle_color: theme.primary_color,
+                hover_color: theme.secondary_color,
+                press_color: theme.highlight_color,
+                selected_color: theme.highlight_color,
+            },
+            image: None,
+            selected: false,
+            hovering: false,
+        });
+
+        let button_color_icon = world.insert(RRect {
+            rect: Rectangle::default(),
+            order: 21,
+            color: Vec4::new(0.9, 0.7, 0.7, 1.0),
+            radius: 10.0,
+            width: 0.0,
+            enabled: self.common.visible,
+            camera: self.common.camera,
+        });
+
+        let color_picker_panel = world.insert(ColorPickerPanel {
+            common: WidgetCommon {
+                visible: false,
+                ..self.common
+            },
+            button,
+        });
+
+        Transfer::new(world, this, button)
+            .set_widget_rectangle()
+            .set_widget_visible()
+            .set_button_selected();
+
+        Transfer::new(world, button, this).button_selected();
+
+        world.observer(page, move |&BrushConfigurationChanged, world| {
+            let layer = world.fetch(page);
+            let color = mul_alpha(srgb_gamma_decode(layer.color()));
+            world.queue_trigger(button_color_icon, SetRRectColor(color));
+        });
+
+        world.observer(button, move |&SetWidgetRectangle(rect), world| {
+            let mut this = world.fetch_mut(this);
+            this.rect = rect;
+            let target = TransformValue::anchor(
                 (0.5, 0.5),
                 Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
-            ),
-            source: toggle_button.untyped(),
-            target: toggle_button_color_icon.untyped(),
-        };
+            )
+            .compute(rect);
+            world.queue_trigger(button_color_icon, SetWidgetRectangle(target));
+        });
 
-        let target = transform.value.compute(rect);
+        world.observer(button, move |&SetButtonSelected(selected), world| {
+            world.queue_trigger(color_picker_panel, SetWidgetVisible(selected));
+        });
 
-        world.queue_trigger(toggle_button_color_icon, SetWidgetRectangle(target));
-    });
+        let mut dragging = None;
+        world.observer(button, move |drag: &ButtonDrag, world| {
+            let page_camera = world.single_fetch::<PageCamera>().0;
+            let page_camera = world.fetch(page_camera);
+            let page = world.single_fetch::<LayerPage>();
+            let snip = dragging.get_or_insert_with(|| {
+                world.insert(ColorSnip {
+                    common: WidgetCommon {
+                        camera: page_camera.handle(),
+                        visible: true,
+                    },
+                    attr: ColorSnipAttr {
+                        position: page_camera
+                            .screen_to_world(drag.here.pointer.screen)
+                            .q32_round(),
+                        color: page.color(),
+                    },
+                })
+            });
 
-    world.named("palette_hsl");
-    let tab_palette_hsl = world.insert(LayerHslPalette {
-        common: WidgetCommon {
-            camera,
-            visible: false,
-        },
-        rect: Rectangle::default(),
-        hsl: Vec4::new(0.3, 0.5, 0.5, 1.0),
-    });
+            world.queue_trigger(
+                *snip,
+                SetWidgetRectangle(Rectangle::new_half(
+                    page_camera
+                        .screen_to_world(drag.here.pointer.screen)
+                        .q32_round(),
+                    UVec2::splat(24),
+                )),
+            );
 
-    world.named("palette_oklab");
-    let tab_palette_oklab = world.insert(LayerOklabPalette {
-        common: WidgetCommon {
-            camera,
-            visible: false,
-        },
-        rect: Rectangle::default(),
-        oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
-    });
+            if drag.status == ButtonDragStatus::End {
+                dragging = None;
+            }
+        });
 
-    let (tab_layer_selection, cam_layer_selection) = world.build(ContainerWithCamera {
-        rect: Rectangle::default(),
-        inner: TransformValue::copy(),
-        common: WidgetCommon {
-            camera,
-            visible: false,
-        },
-        scroll: I64Vec2::ZERO,
-    });
-
-    world.named("debug_panel");
-    let tab_debug = world.insert(DebugPanel {
-        common: WidgetCommon {
-            camera,
-            visible: false,
-        },
-        rect: Rectangle::default(),
-    });
-
-    let tabs = world.insert(Tabs {
-        active: 0,
-        rect: Rectangle::default(),
-        visible: false,
-        tabs: vec![
-            (
-                svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
-                tab_palette_hsl.untyped(),
-            ),
-            (
-                svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
-                tab_palette_oklab.untyped(),
-            ),
-            (
-                svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
-                tab_layer_selection.untyped(),
-            ),
-            (
-                svg_render(include_bytes!("../../../res/interface/bug.svg"), 12),
-                tab_debug.untyped(),
-            ),
-        ],
-        camera,
-    });
-
-    let layer = world.single::<LayerPage>();
-    world.observer(layer, move |&BrushConfigurationChanged, world| {
-        let layer = world.fetch(layer);
-        // S(L) -> P(L)
-        let color = mul_alpha(srgb_gamma_decode(layer.color()));
-        world.queue_trigger(toggle_button_color_icon, SetRRectColor(color));
-    });
-
-    world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
-        let transform = TransformValue::anchor(
-            (1.0, 1.0),
-            Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
-        );
-        let rect = transform.compute(rect);
-        world.queue_trigger(tabs, SetWidgetRectangle(rect));
-    });
-
-    world.observer(toggle_button, move |&ButtonSelected(selected), world| {
-        world.queue_trigger(toggle_button, SetButtonSelected(selected));
-    });
-
-    world.observer(toggle_button, move |&SetButtonSelected(selected), world| {
-        world.queue_trigger(tabs, SetWidgetVisible(selected));
-    });
-
-    world.dependency(toggle_button_color_icon, toggle_button);
-    world.dependency(tab_palette_hsl, toggle_button);
-    world.dependency(tab_palette_oklab, toggle_button);
-    world.dependency(tab_layer_selection, toggle_button);
-    world.dependency(tab_debug, toggle_button);
-    world.dependency(tabs, toggle_button);
-
-    world.named("layer_selection");
-    super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection);
+        world.dependency(button, this);
+        world.dependency(button_color_icon, this);
+        world.dependency(color_picker_panel, this);
+    }
 }
 
 pub struct LayerHslPalette {

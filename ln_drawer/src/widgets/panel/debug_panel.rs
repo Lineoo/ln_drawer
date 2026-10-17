@@ -4,7 +4,10 @@ use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
     layer::wrapper::{LayerDebugMessage, LayerPage},
-    layout::transform::{Transform, TransformValue},
+    layout::{
+        echo::Echo,
+        transform::{Transform, TransformValue},
+    },
     measures::Rectangle,
     render::{
         Render,
@@ -16,7 +19,6 @@ use crate::{
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         common::WidgetCommon,
         container::ContainerWithCamera,
-        echo::Echo,
         renderer::{svg::svg_render, text::Text},
     },
 };
@@ -162,6 +164,10 @@ pub fn smol_butt(
 ) -> impl Fn(&[u8]) -> Handle<ToggleButton> {
     move |image_bytes| {
         world.insert(ToggleButton {
+            common: WidgetCommon {
+                camera,
+                visible: false,
+            },
             rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(16)),
             theme: ToggleButtonTheme {
                 idle_color: theme.primary_color,
@@ -171,9 +177,7 @@ pub fn smol_butt(
             },
             image: Some(svg_render(image_bytes, 8)),
             selected: false,
-            visible: false,
             hovering: false,
-            camera,
         })
     }
 }

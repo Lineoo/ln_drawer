@@ -1,4 +1,5 @@
 pub mod chunk;
+pub mod object;
 
 use std::{
     io::ErrorKind,
@@ -17,6 +18,10 @@ use crate::{
     layer::input::{OffsetCorrection, TiltCorrection},
     lnwin::Lnwindow,
     render::camera::PageCameraArchive,
+    save::{
+        chunk::{TABLE_LAYER_CHUNK, TABLE_LAYER_CHUNK_RAW},
+        object::TABLE_LAYER_OBJECT,
+    },
     tools::timer::{Timer, TimerHit},
 };
 
@@ -109,6 +114,15 @@ impl Save {
         if chunk::legacy_classic::need_migration(db)? {
             Self::create_backup(db_file, "classic", false, 4);
             chunk::legacy_classic::startup_migration(db)?;
+        }
+
+        {
+            let mut write = db.begin_write()?;
+            write.set_quick_repair(true);
+            write.open_table(TABLE_LAYER_CHUNK)?;
+            write.open_table(TABLE_LAYER_CHUNK_RAW)?;
+            write.open_table(TABLE_LAYER_OBJECT)?;
+            write.commit()?;
         }
 
         if sn.compact_on_startup {
@@ -314,7 +328,6 @@ impl SceneDocument {
 pub struct Autosave(pub Box<dyn FnMut(&World, AutosaveTask) + Send>);
 
 pub struct AutosaveTask<'a> {
-    #[expect(unused)]
     pub write: &'a WriteTransaction,
     #[expect(unused)]
     pub sn: &'a SceneFile,

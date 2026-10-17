@@ -11,7 +11,6 @@ use ln_world::{Element, Handle, HandleGeneric, World};
 use crate::{
     animation::{AnimationDescriptor, AnimationType, SimpleAnimationDescriptor},
     measures::Rectangle,
-    render::camera::Camera,
     theme::Theme,
     tools::collider::ToolRectCollider,
     widgets::{
@@ -21,10 +20,9 @@ use crate::{
 };
 
 pub struct Panel {
+    pub common: WidgetCommon,
     pub rect: Rectangle,
-    pub visible: bool,
     pub shadow: bool,
-    pub camera: Handle<Camera>,
 }
 
 impl Panel {
@@ -41,8 +39,8 @@ impl Panel {
             color: theme.primary_color,
             radius: roundness,
             width: 0.0,
-            enabled: self.visible,
-            camera: self.camera,
+            enabled: self.common.visible,
+            camera: self.common.camera,
         });
 
         let back_shadow = match self.shadow {
@@ -52,8 +50,8 @@ impl Panel {
                 color: theme.shadow_color,
                 radius: roundness,
                 width: shadow_blur,
-                enabled: self.visible,
-                camera: self.camera,
+                enabled: self.common.visible,
+                camera: self.common.camera,
             })),
             false => None,
         };
@@ -71,8 +69,8 @@ impl Panel {
 
         let collider = world.insert(ToolRectCollider {
             common: WidgetCommon {
-                visible: self.visible,
-                camera: self.camera,
+                visible: self.common.visible,
+                camera: self.common.camera,
             },
             target: handle.untyped(),
             rect: self.rect,
@@ -91,7 +89,7 @@ impl Panel {
 
         world.observer(handle, move |&SetWidgetVisible(enabled), world| {
             let mut this = world.fetch_mut(handle);
-            this.visible = enabled;
+            this.common.visible = enabled;
             world.queue_trigger(back, SetWidgetVisible(enabled));
             if let Some(back_shadow) = back_shadow {
                 world.queue_trigger(back_shadow, SetWidgetVisible(enabled));

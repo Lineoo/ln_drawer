@@ -4,9 +4,9 @@ use redb::{ReadOnlyTable, ReadTransaction, Table, TableDefinition, WriteTransact
 
 const CHUNK_VERSION: u32 = 0;
 
-const TABLE_LAYER_CHUNK: TableDefinition<(u64, (i32, i32, u8)), &[u8]> =
+pub const TABLE_LAYER_CHUNK: TableDefinition<(u64, (i32, i32, u8)), &[u8]> =
     TableDefinition::new("layer_chunk");
-const TABLE_LAYER_CHUNK_RAW: TableDefinition<(u64, (i32, i32)), &[u8]> =
+pub const TABLE_LAYER_CHUNK_RAW: TableDefinition<(u64, (i32, i32)), &[u8]> =
     TableDefinition::new("layer_chunk_raw");
 
 pub struct ChunkLoad {

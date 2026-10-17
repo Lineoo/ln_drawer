@@ -20,10 +20,9 @@ impl Element for DesktopUi {
         let lnwindow = world.single::<Lnwindow>();
 
         let back = world.insert(Panel {
+            common: self.common,
             rect: Rectangle::default(),
-            visible: self.common.visible,
             shadow: true,
-            camera: self.common.camera,
         });
 
         let oklab = world.insert(LayerOklabPalette {

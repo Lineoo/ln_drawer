@@ -6,26 +6,23 @@ use crate::{
     i18n::tr,
     layer::wrapper::{BrushConfigurationChanged, LayerPage},
     layout::{
+        echo::Echo,
         luni::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
             LuniParent, LuniRect,
         },
+        transfer::Transfer,
         transform::{Transform, TransformEdge, TransformValue},
     },
     measures::Rectangle,
     render::camera::Camera,
     theme::Theme,
-    tools::pointer::{PointerHit, PointerScroll},
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         brush_preview::{BrushPreview, BrushPreviewGenerator},
-        button::{
-            ButtonClick, ButtonDrag, ButtonDragStatus, ButtonSelected, SetButtonSelected,
-            ToggleButton, ToggleButtonTheme,
-        },
+        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         common::WidgetCommon,
         container::{Container, ContainerWithCamera},
-        echo::Echo,
         renderer::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
@@ -168,6 +165,10 @@ fn brush_list(
     let mut children = Vec::new();
     for i in 0..count {
         let button = world.insert(ToggleButton {
+            common: WidgetCommon {
+                camera,
+                visible: true,
+            },
             rect: Rectangle::default(),
             theme: ToggleButtonTheme {
                 idle_color: background,
@@ -177,9 +178,7 @@ fn brush_list(
             },
             image: None,
             selected: i == active,
-            visible: true,
             hovering: false,
-            camera,
         });
 
         Echo::new(world, button).widget_rectangle().widget_visible();
@@ -295,34 +294,9 @@ fn brush_list(
             );
         });
 
-        world.observer(button, move |drag: &ButtonDrag, world| match drag.status {
-            ButtonDragStatus::Start => {
-                world.trigger(
-                    container,
-                    &PointerHit {
-                        position: drag.here.position,
-                        pointer: drag.here.pointer,
-                        status: drag.from.status,
-                        data: drag.here.data,
-                    },
-                );
-            }
-            ButtonDragStatus::Dragging | ButtonDragStatus::End => {
-                world.trigger(
-                    container,
-                    &PointerHit {
-                        position: drag.here.position,
-                        pointer: drag.here.pointer,
-                        status: drag.here.status,
-                        data: drag.here.data,
-                    },
-                );
-            }
-        });
-
-        world.observer(button, move |scroll: &PointerScroll, world| {
-            world.trigger(container, scroll);
-        });
+        Transfer::new(world, button, container)
+            .pointer_scroll()
+            .pointer_hit();
 
         children.push((button.untyped(), LuniChild::default()));
     }

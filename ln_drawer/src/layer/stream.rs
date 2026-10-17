@@ -163,7 +163,6 @@ impl StreamThread {
     }
 
     pub fn run(mut self) -> Result<(), Box<dyn Error>> {
-        self.init()?;
         loop {
             match self.recv()? {
                 Some(ThreadInput::SetPage(page)) => {
@@ -259,14 +258,6 @@ impl StreamThread {
                 }
             }
         }
-    }
-
-    fn init(&self) -> Result<(), Box<dyn Error>> {
-        let mut write = self.config.database.begin_write()?;
-        write.set_quick_repair(true);
-        ChunkSave::new(&write)?;
-        write.commit()?;
-        Ok(())
     }
 
     fn recv(&self) -> Result<Option<ThreadInput>, Box<dyn Error>> {

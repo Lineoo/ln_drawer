@@ -4,14 +4,17 @@ use ln_world::{Handle, HandleGeneric, World};
 use crate::{
     i18n::{tr, trp},
     layer::wrapper::LayerPage,
-    layout::transform::{Transform, TransformEdge, TransformValue},
+    layout::{
+        echo::Echo,
+        transform::{Transform, TransformEdge, TransformValue},
+    },
     measures::Rectangle,
     render::camera::Camera,
     theme::Theme,
     widgets::{
         button::{ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+        common::WidgetCommon,
         container::Container,
-        echo::Echo,
         renderer::{rrect::RRect, text::Text},
     },
 };
@@ -95,6 +98,10 @@ pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<C
     let layers_node = world.insert(());
     for i in 0..3i32 {
         let layer0_button = world.insert(ToggleButton {
+            common: WidgetCommon {
+                camera,
+                visible: false,
+            },
             rect: Rectangle::default(),
             theme: ToggleButtonTheme {
                 idle_color: theme.primary_color,
@@ -104,9 +111,7 @@ pub fn layer_selection(world: &World, panel: Handle<Container>, camera: Handle<C
             },
             image: None,
             selected: i == 0,
-            visible: false,
             hovering: false,
-            camera,
         });
 
         let layer0_name = world.insert(Text {

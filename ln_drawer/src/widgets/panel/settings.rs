@@ -9,6 +9,7 @@ use crate::{
         wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::{
+        echo::EchoWidget,
         luni::{
             LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
             LuniRect,
@@ -22,7 +23,6 @@ use crate::{
         brush_preview::{BrushPreview, BrushPreviewGenerator},
         common::WidgetCommon,
         container::{Container, ContainerWithCamera},
-        echo::EchoWidget,
         renderer::text::{SetText, Text},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
