@@ -1,3 +1,5 @@
+title = "LnDrawer v{version}"
+
 [settings.brush]
 title = "笔刷配置"
 flow.label = "流量"

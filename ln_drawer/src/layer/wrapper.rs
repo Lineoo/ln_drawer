@@ -8,7 +8,7 @@ use std::{
 
 use glam::{DVec2, I64Vec2, IVec2, UVec2, Vec4};
 use hashbrown::HashMap;
-use ln_world::{Element, Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor, RenderPass};
 
 use crate::{
@@ -75,6 +75,8 @@ pub struct LayerPage {
     // TODO: move to ECS after world-multithread support
     pub lp: Arc<LayerPipeline>,
 
+    common: WidgetCommon,
+
     cache: CacheLayers,
     raw: RawLayer,
     scratch: PlainLayer,
@@ -106,7 +108,7 @@ pub struct LayerPage {
 }
 
 impl LayerPage {
-    pub fn new(world: &World) -> Self {
+    pub fn new(world: &World, common: WidgetCommon) -> Self {
         let render = world.single_fetch::<Render>();
         let camera_bind = world.single_fetch::<CameraBind>();
 
@@ -146,7 +148,7 @@ impl LayerPage {
 
         let cursor = world.insert(RRect {
             rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
-            order: -10,
+            order: 110,
             color: Vec4::new(0.5, 0.5, 0.5, 1.0) * 0.4,
             radius: 0.5,
             width: 0.0,
@@ -155,7 +157,7 @@ impl LayerPage {
         });
         let cursor_shadow = world.insert(RRect {
             rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
-            order: -11,
+            order: 109,
             color: Vec4::new(0.0, 0.0, 0.0, 1.0) * 0.3,
             radius: 0.5,
             width: BRUSH_PREVIEW_SHADOW_BLUR as f32,
@@ -242,6 +244,7 @@ impl LayerPage {
 
         LayerPage {
             lp,
+            common,
             cache: CacheLayers {
                 chunks: HashMap::new(),
                 chunk_size: DEFAULT_CHUNK_SIZE,
@@ -586,7 +589,6 @@ impl Drop for LayerPage {
 impl Element for LayerPage {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let save = world.single_fetch::<Save>();
-        let ui_camera = world.single_fetch::<UICamera>().0;
 
         // Camera //
 
@@ -621,10 +623,7 @@ impl Element for LayerPage {
         // Container //
 
         let container = world.insert(Container {
-            common: WidgetCommon {
-                camera: ui_camera,
-                visible: true,
-            },
+            common: self.common,
             order: -100,
             child: page_camera,
             rect: Rectangle::default(),

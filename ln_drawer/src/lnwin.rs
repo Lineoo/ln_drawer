@@ -186,16 +186,17 @@ impl Element for Lnwindow {
                 autosave_duration: Duration::from_secs(180),
             });
 
-            let use_mobile_ui = false;
-            if use_mobile_ui {
-                world.insert(MobileUi {
+            let use_desktop = std::env::var_os("LNDRAWER_DESKTOP_UI").is_some();
+            if use_desktop {
+                log::warn!("using experimental desktop ui");
+                world.insert(DesktopUi {
                     common: WidgetCommon {
                         camera: ui_camera,
                         visible: true,
                     },
                 });
             } else {
-                world.insert(DesktopUi {
+                world.insert(MobileUi {
                     common: WidgetCommon {
                         camera: ui_camera,
                         visible: true,

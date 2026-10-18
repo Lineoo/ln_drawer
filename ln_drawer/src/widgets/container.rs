@@ -30,6 +30,7 @@ pub struct ContainerWithCamera {
 }
 
 impl Descriptor for ContainerWithCamera {
+    // TODO return WidgetCommon
     type Target = (Handle<Container>, Handle<Camera>);
 
     fn when_build(self, world: &World) -> Self::Target {
@@ -218,6 +219,32 @@ impl Container {
         };
 
         self.scroll = I64Vec2::new(x, y);
+    }
+}
+
+/// - emit inner area when scroll is zero in [`WidgetRectangle`] for container
+pub struct ContainerEcho {
+    pub container: Handle<Container>,
+}
+
+impl Element for ContainerEcho {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let handle = self.container;
+        world.observer(handle, move |&SetWidgetRectangle(rect), world| {
+            let container = world.fetch(handle);
+            let min = I64Vec2::q32_from_i32(rect.left_down());
+            let max = I64Vec2::q32_from_i32(rect.right_up());
+            let center = rect.q32_anchor(container.anchor);
+            let min = (min - center).q32_round();
+            let max = (max - center).q32_round();
+            world.queue_trigger(handle, WidgetRectangle(Rectangle::new_minmax(min, max)));
+        });
+
+        world.observer(handle, move |&SetWidgetVisible(enabled), world| {
+            world.queue_trigger(handle, WidgetVisible(enabled));
+        });
+
+        world.dependency(this, self.container);
     }
 }
 

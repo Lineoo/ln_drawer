@@ -15,7 +15,7 @@ impl Element for MobileUi {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>();
 
-        let page = world.insert(LayerPage::new(world));
+        let page = world.insert(LayerPage::new(world, self.common));
 
         world.insert(Transform {
             value: TransformValue::shrink(50, 50),
