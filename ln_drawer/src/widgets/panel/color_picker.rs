@@ -30,7 +30,7 @@ use crate::{
             hsl::{ColorHsla, HslRing, HslSquare, INNER_RADIUS, SetColorHsla},
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
-        panel::debug_panel::DebugPanel,
+        panel::{debug_panel::DebugPanel, layer_selection::LayerSelectionPanel},
         renderer::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
@@ -64,22 +64,9 @@ impl Element for ColorPickerPanel {
         });
 
         world.named("layer_selection");
-        let (tab_layer_selection, cam_layer_selection) = world.build(ContainerWithCamera {
-            rect: Rectangle::default(),
+        let tab_layer_selection = world.insert(LayerSelectionPanel {
             common: self.common,
-            scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 0.0),
         });
-        let tab_layer_selection_deco = world.insert(ContainerDeco {
-            container: tab_layer_selection,
-            restriction: Rectangle::default(),
-        });
-        world.insert(ContainerDecoDropdown {
-            height: None,
-            container: tab_layer_selection,
-            deco: tab_layer_selection_deco,
-        });
-        super::layer_selection::layer_selection(world, tab_layer_selection, cam_layer_selection);
 
         world.named("debug_panel");
         let tab_debug = world.insert(DebugPanel {
@@ -91,6 +78,7 @@ impl Element for ColorPickerPanel {
             active: 0,
             rect: Rectangle::default(),
             visible: self.common.visible,
+            // TODO TabItem like SliderLabel
             tabs: vec![
                 (
                     svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),

@@ -18,7 +18,7 @@ use crate::{
     widgets::{
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         common::WidgetCommon,
-        panel::{Panel, brush_panel::brush_panel, color_picker::ColorPickerButton},
+        panel::{Panel, brush_panel::BrushPanel, color_picker::ColorPickerButton},
         renderer::{svg::svg_render, text::SetText},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
@@ -95,7 +95,13 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
     });
 
     world.named("brush_panel");
-    brush_panel(world, brush_menu, camera);
+    world.insert(BrushPanel {
+        common: WidgetCommon {
+            camera,
+            visible: true,
+        },
+        button: brush_menu,
+    });
 
     world.named("side_docker_observers");
     world.observer(brush_menu, move |&ButtonSelected(selected), world| {

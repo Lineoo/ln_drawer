@@ -1,6 +1,6 @@
 use cosmic_text::{Attrs, Metrics};
 use glam::{DVec2, I64Vec2};
-use ln_world::{Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
     i18n::tr,
@@ -38,107 +38,108 @@ const ITEM_HEIGHT: i32 = 80;
 const ITEM_GAP: i32 = 6;
 const LIST_PADDING: i32 = 8;
 
-pub fn brush_panel(world: &World, toggle_button: Handle<ToggleButton>, camera: Handle<Camera>) {
-    let count = world.single_fetch::<LayerPage>().brushes.len();
+pub struct BrushPanel {
+    pub common: WidgetCommon,
+    pub button: Handle<ToggleButton>,
+}
 
-    let content_height =
-        count as i32 * ITEM_HEIGHT + (count as i32 - 1).max(0) * ITEM_GAP + LIST_PADDING * 2;
+impl Element for BrushPanel {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let page = world.single_fetch::<LayerPage>();
+        let count = page.brushes.len();
+        let toggle_button = self.button;
 
-    let (list_container, cam_list) = world.build(ContainerWithCamera {
-        common: WidgetCommon {
-            camera,
+        let generator = world.insert(BrushPreviewGenerator {
+            lp: page.lp.clone(),
+        });
+
+        let content_height =
+            count as i32 * ITEM_HEIGHT + (count as i32 - 1).max(0) * ITEM_GAP + LIST_PADDING * 2;
+
+        let (list_container, cam_list) = world.build(ContainerWithCamera {
+            common: self.common,
+            rect: Rectangle::default(),
+            scroll: I64Vec2::ZERO,
+            anchor: DVec2::new(0.0, 1.0),
+        });
+        let list_container_deco = world.insert(ContainerDeco {
+            container: list_container,
+            restriction: Rectangle::default(),
+        });
+        world.insert(ContainerDecoDropdown {
+            height: Some(content_height),
+            container: list_container,
+            deco: list_container_deco,
+        });
+
+        let (list_settings, cam_settings) = world.build(ContainerWithCamera {
+            rect: Rectangle::default(),
+            common: self.common,
+            scroll: I64Vec2::ZERO,
+            anchor: DVec2::new(0.0, 0.0),
+        });
+        let list_settings_deco = world.insert(ContainerDeco {
+            container: list_settings,
+            restriction: Rectangle::default(),
+        });
+        world.insert(ContainerDecoDropdown {
+            height: None,
+            container: list_settings,
+            deco: list_settings_deco,
+        });
+
+        let tabs = world.insert(Tabs {
+            active: 0,
+            rect: Rectangle::default(),
             visible: false,
-        },
-        rect: Rectangle::default(),
-        scroll: I64Vec2::ZERO,
-        anchor: DVec2::new(0.0, 1.0),
-    });
-    let list_container_deco = world.insert(ContainerDeco {
-        container: list_container,
-        restriction: Rectangle::default(),
-    });
-    world.insert(ContainerDecoDropdown {
-        height: Some(content_height),
-        container: list_container,
-        deco: list_container_deco,
-    });
+            tabs: vec![
+                (
+                    svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
+                    list_container.untyped(),
+                ),
+                (
+                    svg_render(include_bytes!("../../../res/interface/settings.svg"), 12),
+                    list_settings.untyped(),
+                ),
+            ],
+            camera: self.common.camera,
+        });
 
-    let (list_settings, cam_settings) = world.build(ContainerWithCamera {
-        rect: Rectangle::default(),
-        common: WidgetCommon {
-            camera,
-            visible: false,
-        },
-        scroll: I64Vec2::ZERO,
-        anchor: DVec2::new(0.0, 0.0),
-    });
-    let list_settings_deco = world.insert(ContainerDeco {
-        container: list_settings,
-        restriction: Rectangle::default(),
-    });
-    world.insert(ContainerDecoDropdown {
-        height: None,
-        container: list_settings,
-        deco: list_settings_deco,
-    });
+        world.queue(move |world| brush_list(world, list_container, generator, cam_list));
+        world.queue(move |world| {
+            super::settings::new_panel_settings(world, list_settings, generator, cam_settings)
+        });
 
-    let tabs = world.insert(Tabs {
-        active: 0,
-        rect: Rectangle::default(),
-        visible: false,
-        tabs: vec![
-            (
-                svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
-                list_container.untyped(),
-            ),
-            (
-                svg_render(include_bytes!("../../../res/interface/settings.svg"), 12),
-                list_settings.untyped(),
-            ),
-        ],
-        camera,
-    });
+        world.dependency(list_container, this);
+        world.dependency(list_settings, this);
+        world.dependency(tabs, this);
+        world.dependency(generator, this);
 
-    let wrapper = world.single::<LayerPage>();
-    let wrapper_instance = world.fetch(wrapper);
-    let generator = world.insert(BrushPreviewGenerator {
-        lp: wrapper_instance.lp.clone(),
-    });
+        world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
+            let transform = TransformValue::anchor(
+                (1.0, 1.0),
+                Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
+            );
+            let rect = transform.compute(rect);
+            world.queue_trigger(tabs, SetWidgetRectangle(rect));
+        });
 
-    world.dependency(list_container, toggle_button);
-    world.dependency(list_settings, toggle_button);
-    world.dependency(tabs, toggle_button);
-    world.dependency(generator, toggle_button);
+        world.observer(toggle_button, move |&ButtonSelected(selected), world| {
+            world.queue_trigger(toggle_button, SetButtonSelected(selected));
+        });
 
-    world.queue(move |world| brush_list(world, list_container, generator, cam_list));
-    world.queue(move |world| {
-        super::settings::new_panel_settings(world, list_settings, generator, cam_settings)
-    });
+        world.observer(toggle_button, move |&SetButtonSelected(selected), world| {
+            world.queue_trigger(tabs, SetWidgetVisible(selected));
+        });
 
-    world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
-        let transform = TransformValue::anchor(
-            (1.0, 1.0),
-            Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
-        );
-        let rect = transform.compute(rect);
-        world.queue_trigger(tabs, SetWidgetRectangle(rect));
-    });
-
-    world.observer(toggle_button, move |&ButtonSelected(selected), world| {
-        world.queue_trigger(toggle_button, SetButtonSelected(selected));
-    });
-
-    world.observer(toggle_button, move |&SetButtonSelected(selected), world| {
-        world.queue_trigger(tabs, SetWidgetVisible(selected));
-    });
-
-    // initialize layout
-    world.queue(move |world| {
-        let this = world.fetch(tabs);
-        world.queue_trigger(tabs, SetWidgetRectangle(this.rect));
-        world.queue_trigger(tabs, SetWidgetVisible(this.visible));
-        world.queue_trigger(tabs, SetTabsActive(this.active));
-    });
+        // initialize layout
+        world.queue(move |world| {
+            let this = world.fetch(tabs);
+            world.queue_trigger(tabs, SetWidgetRectangle(this.rect));
+            world.queue_trigger(tabs, SetWidgetVisible(this.visible));
+            world.queue_trigger(tabs, SetTabsActive(this.active));
+        });
+    }
 }
 
 fn brush_list(

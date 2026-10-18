@@ -107,11 +107,6 @@ impl Element for Lnwindow {
         let here = world.here();
         world.enter(this, || world.insert(ViewRef(here)));
         world.enter_queue(this, move |world| {
-            Save::init(world);
-            world.insert(AutosaveScheduler {
-                autosave_duration: Duration::from_secs(180),
-            });
-
             let lnwindow = world.fetch(this);
             world.insert(pollster::block_on(Render::new(&lnwindow)));
             drop(lnwindow);
@@ -157,9 +152,6 @@ impl Element for Lnwindow {
                 world.queue_trigger(ui_camera, CameraOutdated);
             });
             drop(lnwindow);
-
-            world.flush();
-
             world.observer(this, move |event: &WindowEvent, world| {
                 if let WindowEvent::CloseRequested = event {
                     Autosave::autosave_all(world);
@@ -189,6 +181,16 @@ impl Element for Lnwindow {
                     camera.zoom = i64::q32_from_f64(scale.log2());
                 }
             });
+
+            world.flush();
+
+            // TODO async save initialization
+            Save::init(world);
+            world.insert(AutosaveScheduler {
+                autosave_duration: Duration::from_secs(180),
+            });
+
+            world.flush();
 
             world.named("page");
             world.insert(LayerPage::new(world));
