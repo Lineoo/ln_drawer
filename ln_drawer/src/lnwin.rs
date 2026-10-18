@@ -14,7 +14,6 @@ use winit::{
 };
 
 use crate::{
-    layer::wrapper::LayerPage,
     measures::{FI64Ext, Rectangle},
     render::{
         Render,
@@ -30,7 +29,7 @@ use crate::{
             hsl::{HslRingMaterial, HslSquareMaterial},
             oklab::{OklabBarMaterial, OklabPolarMaterial},
         },
-        panel::{desktop_ui::DesktopUi, side_docker::side_docker},
+        panel::{desktop_ui::DesktopUi, mobile_ui::MobileUi},
         renderer::{
             canvas::CanvasPipeline, quad::QuadMeshPipeline, rrect::RRectMaterial,
             text::TextPipeline, texture_quad::TextureQuadPipeline, vtor::VtorPipeline,
@@ -190,24 +189,22 @@ impl Element for Lnwindow {
                 autosave_duration: Duration::from_secs(180),
             });
 
-            world.flush();
-
-            world.named("page");
-            world.insert(LayerPage::new(world));
-            world.flush();
-
-            world.named("side_docker");
-            side_docker(world, ui_camera);
-            world.flush();
-
-            world.named("desktop_ui");
-            world.insert(DesktopUi {
-                common: WidgetCommon {
-                    camera: ui_camera,
-                    visible: true,
-                },
-            });
-            world.flush();
+            let use_mobile_ui = false;
+            if use_mobile_ui {
+                world.insert(MobileUi {
+                    common: WidgetCommon {
+                        camera: ui_camera,
+                        visible: true,
+                    },
+                });
+            } else {
+                world.insert(DesktopUi {
+                    common: WidgetCommon {
+                        camera: ui_camera,
+                        visible: true,
+                    },
+                });
+            }
         });
     }
 }

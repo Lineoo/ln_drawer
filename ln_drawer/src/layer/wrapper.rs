@@ -25,7 +25,7 @@ use crate::{
         traveler::Traveler,
         zoom_to_mipmap,
     },
-    layout::transform::{Transform, TransformValue},
+    layout::transfer::Transfer,
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{
@@ -587,7 +587,6 @@ impl Element for LayerPage {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let save = world.single_fetch::<Save>();
         let ui_camera = world.single_fetch::<UICamera>().0;
-        let lnwindow = world.single::<Lnwindow>();
 
         // Camera //
 
@@ -633,11 +632,9 @@ impl Element for LayerPage {
             scroll: I64Vec2::ZERO,
         });
 
-        world.insert(Transform {
-            value: TransformValue::copy(),
-            source: lnwindow.untyped(),
-            target: container.untyped(),
-        });
+        Transfer::new(world, this, container)
+            .set_widget_rectangle()
+            .set_widget_visible();
 
         // Thread //
 

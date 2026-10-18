@@ -3,6 +3,7 @@ pub mod color_picker;
 pub mod debug_panel;
 pub mod desktop_ui;
 pub mod layer_selection;
+pub mod mobile_ui;
 pub mod settings;
 pub mod side_docker;
 
@@ -24,6 +25,8 @@ pub struct Panel {
     pub rect: Rectangle,
     pub shadow: bool,
 }
+
+// enum PanelStyle
 
 impl Panel {
     pub fn init(&mut self, world: &World, handle: Handle<Self>) {

@@ -2,7 +2,14 @@ use glam::Vec4;
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
-    layout::transform::{Transform, TransformEdge, TransformValue},
+    layer::wrapper::LayerPage,
+    layout::{
+        luni::{
+            LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
+            LuniParent, LuniRect,
+        },
+        transform::{Transform, TransformEdge, TransformValue},
+    },
     lnwin::Lnwindow,
     measures::Rectangle,
     widgets::{
@@ -19,7 +26,9 @@ impl Element for DesktopUi {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let lnwindow = world.single::<Lnwindow>();
 
-        let back = world.insert(Panel {
+        let page = world.insert(LayerPage::new(world));
+
+        let right_side = world.insert(Panel {
             common: self.common,
             rect: Rectangle::default(),
             shadow: true,
@@ -31,27 +40,39 @@ impl Element for DesktopUi {
             oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
         });
 
-        world.insert(Transform {
-            value: TransformValue {
-                left: TransformEdge {
-                    anchor: 1.0,
-                    offset: -410,
+        world.insert(LuniFlex {
+            parent: (
+                lnwindow.untyped(),
+                LuniParent {
+                    axis: LuniAxis::Row,
+                    distribution: LuniDistribution::FlexStart,
+                    padding: LuniRect::default(),
+                    gap: 0,
+                    template: LuniChildTemplate {
+                        align: LuniAlign::Stretch,
+                        ..Default::default()
+                    },
                 },
-                down: TransformEdge {
-                    anchor: 0.0,
-                    offset: 10,
-                },
-                right: TransformEdge {
-                    anchor: 1.0,
-                    offset: -10,
-                },
-                up: TransformEdge {
-                    anchor: 1.0,
-                    offset: -10,
-                },
-            },
-            source: lnwindow.untyped(),
-            target: back.untyped(),
+            ),
+            children: vec![
+                (
+                    page.untyped(),
+                    LuniChild {
+                        basis: Some(400),
+                        grow: Some(1.0),
+                        shrink: Some(1.0),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    right_side.untyped(),
+                    LuniChild {
+                        basis: Some(400),
+                        shrink: Some(1.0),
+                        ..Default::default()
+                    },
+                ),
+            ],
         });
 
         world.insert(Transform {
@@ -73,11 +94,12 @@ impl Element for DesktopUi {
                     offset: 0,
                 },
             },
-            source: back.untyped(),
+            source: right_side.untyped(),
             target: oklab.untyped(),
         });
 
-        world.dependency(back, this);
+        world.dependency(page, this);
+        world.dependency(right_side, this);
         world.dependency(oklab, this);
     }
 }

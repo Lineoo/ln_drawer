@@ -394,18 +394,21 @@ impl Pointer {
 
     fn recalculate_hovering(&mut self, world: &World) {
         if self.pressed.is_some() {
-            let hovering = self.hovering.unwrap();
-            let camera = world.fetch(hovering.camera);
-            let position = camera.screen_to_world(self.data.screen);
+            if let Some(hovering) = self.hovering {
+                let camera = world.fetch(hovering.camera);
+                let position = camera.screen_to_world(self.data.screen);
 
-            self.update_hovering(
-                world,
-                Some(Hover {
-                    position,
-                    camera: hovering.camera,
-                    handle: hovering.handle,
-                }),
-            );
+                self.update_hovering(
+                    world,
+                    Some(Hover {
+                        position,
+                        camera: hovering.camera,
+                        handle: hovering.handle,
+                    }),
+                );
+            } else {
+                self.update_hovering(world, None);
+            }
         } else if let Some(hit) = ToolControl::intersect_main(world, self.data.screen) {
             let camera = world.fetch(hit.camera);
             let position = camera.screen_to_world(self.data.screen);
