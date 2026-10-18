@@ -23,7 +23,8 @@ impl Element for MobileUi {
             target: page.untyped(),
         });
 
-        side_docker(world, self.common.camera);
+        let camera = self.common.camera;
+        world.queue(move |world| side_docker(world, camera));
 
         world.dependency(page, this);
     }

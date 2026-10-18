@@ -17,10 +17,14 @@ use crate::{
     measures::Rectangle,
     render::camera::Camera,
     theme::Theme,
+    tools::pointer::PointerHit,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         brush_preview::{BrushPreview, BrushPreviewGenerator},
-        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+        button::{
+            ButtonClick, ButtonDrag, ButtonDragStatus, ButtonSelected, SetButtonSelected,
+            ToggleButton, ToggleButtonTheme,
+        },
         common::WidgetCommon,
         container::{Container, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         renderer::{
@@ -296,9 +300,32 @@ fn brush_list(
             );
         });
 
-        Transfer::new(world, button, container)
-            .pointer_scroll()
-            .pointer_hit();
+        world.observer(button, move |drag: &ButtonDrag, world| match drag.status {
+            ButtonDragStatus::Start => {
+                world.trigger(
+                    container,
+                    &PointerHit {
+                        position: drag.here.position,
+                        pointer: drag.here.pointer,
+                        status: drag.from.status,
+                        data: drag.here.data,
+                    },
+                );
+            }
+            ButtonDragStatus::Dragging | ButtonDragStatus::End => {
+                world.trigger(
+                    container,
+                    &PointerHit {
+                        position: drag.here.position,
+                        pointer: drag.here.pointer,
+                        status: drag.here.status,
+                        data: drag.here.data,
+                    },
+                );
+            }
+        });
+
+        Transfer::new(world, button, container).pointer_scroll();
 
         children.push((button.untyped(), LuniChild::default()));
     }
