@@ -23,17 +23,18 @@ use wgpu::{
     ColorWrites, CommandEncoderDescriptor, ComputePass, ComputePassDescriptor, ComputePipeline,
     ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState, MapMode, PipelineCache,
     PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState,
-    PrimitiveTopology, Queue, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType,
-    SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess,
-    Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureFormatFeatureFlags,
-    TextureSampleType, TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexState,
-    WasmNotSend,
+    PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
+    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, Texture, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureFormatFeatureFlags, TextureSampleType, TextureUsages, TextureViewDescriptor,
+    TextureViewDimension, VertexState, WasmNotSend,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
     layer::{brush::Brush, stream::ThreadInput},
     measures::{FI64Ext, Rectangle},
+    render::camera::Camera,
     widgets::shaders::shader_compile,
 };
 
@@ -639,6 +640,14 @@ impl LayerPipeline {
         cpass.set_bind_group(0, Some(&chunk.dispatch), &[0]);
         cpass.set_bind_group(1, Some(&chunk.write), &[]);
         dispatch_workgroups(cpass, &[chunk_rect]);
+    }
+
+    pub fn render_chunk(&self, rpass: &mut RenderPass, camera: &Camera, chunk: &Chunk) {
+        rpass.set_pipeline(&self.render_pipelines.main);
+        rpass.set_bind_group(0, &camera.bind, &[]);
+        rpass.set_bind_group(1, &self.sampler_group_filtered, &[]);
+        rpass.set_bind_group(2, &chunk.render, &[]);
+        rpass.draw(0..4, 0..1);
     }
 }
 

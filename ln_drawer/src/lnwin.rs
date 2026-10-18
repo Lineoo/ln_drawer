@@ -32,7 +32,7 @@ use crate::{
         panel::{desktop_ui::DesktopUi, mobile_ui::MobileUi},
         renderer::{
             canvas::CanvasPipeline, quad::QuadMeshPipeline, rrect::RRectMaterial,
-            text::TextPipeline, texture_quad::TextureQuadPipeline, vtor::VtorPipeline,
+            text::TextPipeline, vtor::VtorPipeline,
         },
     },
 };
@@ -116,7 +116,6 @@ impl Element for Lnwindow {
             world.flush();
 
             world.insert(CanvasPipeline::from_world(world));
-            world.insert(TextureQuadPipeline::from_world(world));
             world.insert(QuadMeshPipeline::<HslSquareMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<HslRingMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<OklabPolarMaterial>::from_world(world));

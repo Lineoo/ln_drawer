@@ -1,24 +1,28 @@
 use std::sync::Arc;
 
-use glam::{DVec2, I64Vec2, Vec4};
-use ln_world::{Element, Handle, World};
-use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor, TextureViewDescriptor};
+use glam::{DVec2, I64Vec2, UVec2, Vec4};
+use ln_world::{Element, Handle, HandleGeneric, World};
+use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor};
 
 use crate::{
+    color::{oklab::oklab_to_linear_srgb, srgb::srgb_gamma_encode},
     layer::{
         LayerPipeline, Standalone,
         brush::{BrushParams, Draw, Stroke, param::BrushParam, round::RoundBrush},
-        wrapper::LayerPage,
     },
     measures::{FI64Ext, Rectangle},
-    render::{RenderPrepareControl, camera::Camera},
-    widgets::{SetWidgetRectangle, SetWidgetVisible, renderer::texture_quad::TextureQuad},
+    render::{
+        RenderDrawControl, RenderPrepareControl,
+        camera::{Camera, CameraDescriptor, SetCameraOutdated},
+    },
+    tools::collider::ToolRectCollider,
+    widgets::{SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, container::Container},
 };
 
 /// A widget that displays an engine-rendered brush preview.
 ///
-/// It is agnostic of where the brush comes from: callers invoke [`BrushPreview::paint`] from
-/// their own observers when the brush or its settings change.
+/// Set [`BrushPreview::outdated`] and the preview regenerates with [`BrushPreview::brush`] on the
+/// next frame.
 pub struct BrushPreview {
     pub rect: Rectangle,
     pub generator: Handle<BrushPreviewGenerator>,
@@ -29,46 +33,68 @@ pub struct BrushPreview {
 }
 
 struct BrushPreviewInstance {
-    quad: Handle<TextureQuad>,
     canvas: Standalone,
+    container: Handle<Container>,
+    collider: Handle<ToolRectCollider>,
 }
 
 /// Bakes a real brush stroke into a small offscreen [`Standalone`] canvas.
 ///
-/// Uses a dedicated [`DrawPipeline`] so the live stroke and undo state of the drawing engine are
-/// never touched, and draws into the canvas directly through [`DrawPipeline::draw_standalone`]
-/// instead of the scratch layer.
+/// The live stroke and undo state of the drawing engine are never touched:
+/// [`Stroke::batch`] and [`crate::layer::brush::DrawsBatch`] draw into the canvas directly.
 pub struct BrushPreviewGenerator {
     pub lp: Arc<LayerPipeline>,
 }
 
 impl BrushPreview {
     fn init(&self, world: &World, this: Handle<Self>) {
-        let generator_instance = world.fetch(self.generator);
-        let preview_canvas = generator_instance
-            .lp
-            .create_standalone(Rectangle::new_extend(
-                0,
-                0,
-                (self.rect.width() * 2).max(1),
-                (self.rect.height() * 2).max(1),
-            ));
-        let view = preview_canvas
-            .chunk
-            .texture
-            .create_view(&TextureViewDescriptor::default());
-        let quad = world.insert(TextureQuad {
-            rect: Rectangle::default(),
-            visible: true,
+        let lp = world.fetch(self.generator).lp.clone();
+        let canvas = lp.create_standalone(Rectangle::new_extend(
+            0,
+            0,
+            self.rect.width().max(1),
+            self.rect.height().max(1),
+        ));
+
+        // The chunk always lives at `preview_rect`, so the container's child camera is the only
+        // thing that has to follow the widget.
+        let parent = world.fetch(self.camera);
+        let camera = world.insert(world.build(CameraDescriptor {
+            center: canvas.rect.q32_center(),
+            zoom: parent.zoom,
+        }));
+        drop(parent);
+
+        let container = world.insert(Container {
+            common: WidgetCommon {
+                camera: self.camera,
+                visible: self.visible,
+            },
             order: 50,
-            camera: self.camera,
-            view,
+            child: camera,
+            rect: self.rect,
+            anchor: DVec2::splat(0.5),
+            scroll: I64Vec2::ZERO,
         });
+        world.queue_trigger(camera, SetCameraOutdated);
+
+        let collider = world.insert(ToolRectCollider {
+            common: WidgetCommon {
+                camera,
+                visible: self.visible,
+            },
+            target: this.untyped(),
+            rect: canvas.rect,
+            order: 0,
+        });
+
         let instance = world.insert(BrushPreviewInstance {
-            quad,
-            canvas: preview_canvas,
+            canvas,
+            container,
+            collider,
         });
-        let control = world.insert(RenderPrepareControl {
+
+        let prepare = world.insert(RenderPrepareControl {
             prepare: Box::new(move |world| {
                 let mut this = world.fetch_mut(this);
                 let instance = world.fetch(instance);
@@ -84,48 +110,46 @@ impl BrushPreview {
             }),
         });
 
-        let camera = self.camera;
+        world.insert(RenderDrawControl {
+            common: WidgetCommon {
+                camera,
+                visible: true,
+            },
+            order: 0,
+            draw: Box::new(move |world, rpass, extra| {
+                let instance = world.fetch(instance);
+                lp.render_chunk(rpass, extra.camera, &instance.canvas.chunk);
+            }),
+        });
+
         world.observer(this, move |&SetWidgetRectangle(rect), world| {
             let mut this = world.fetch_mut(this);
             let mut instance = world.fetch_mut(instance);
-            if rect.extend != instance.canvas.rect.extend {
-                let quad = world.fetch(instance.quad);
-                let old_visible = quad.visible;
-                drop(quad);
-                world.remove(instance.quad);
-                let wrapper = world.single_fetch::<LayerPage>();
-                instance.canvas = wrapper.lp.create_standalone(Rectangle::new_extend(
-                    0,
-                    0,
-                    (rect.width() * 2).max(1),
-                    (rect.height() * 2).max(1),
-                ));
+
+            let size = UVec2::new(rect.width().max(1), rect.height().max(1));
+            if size != instance.canvas.rect.extend {
+                let lp = world.fetch(this.generator).lp.clone();
+                instance.canvas = lp.create_standalone(Rectangle::new_extend(0, 0, size.x, size.y));
+                world.fetch_mut(camera).center = instance.canvas.rect.q32_center();
                 this.outdated = true;
-                let view = instance
-                    .canvas
-                    .chunk
-                    .texture
-                    .create_view(&TextureViewDescriptor::default());
-                let quad = world.insert(TextureQuad {
-                    rect,
-                    visible: old_visible,
-                    order: 50,
-                    camera,
-                    view,
-                });
-                world.dependency(quad, this.handle());
-                instance.quad = quad;
             }
+
             this.rect = rect;
-            world.queue_trigger(instance.quad, SetWidgetRectangle(rect));
+            world.queue_trigger(instance.container, SetWidgetRectangle(rect));
+            world.queue_trigger(instance.collider, SetWidgetRectangle(instance.canvas.rect));
+            world.queue_trigger(camera, SetCameraOutdated);
         });
+
         world.observer(this, move |&SetWidgetVisible(visible), world| {
             let mut this = world.fetch_mut(this);
-            let instance = world.fetch(instance);
             this.visible = visible;
-            world.queue_trigger(instance.quad, SetWidgetVisible(visible));
+            let instance = world.fetch(instance);
+            world.queue_trigger(instance.container, SetWidgetVisible(visible));
+            world.queue_trigger(instance.collider, SetWidgetVisible(visible));
         });
-        world.dependency(control, this);
+
+        world.dependency(prepare, this);
+        world.dependency(container, this);
         world.dependency(instance, this);
     }
 }
@@ -166,11 +190,10 @@ impl BrushPreviewGenerator {
     fn draw_background(&self, canvas: &Standalone, swap: &Option<Standalone>) {
         let w = canvas.rect.width() as f32;
         let h = canvas.rect.height() as f32;
-        let radius = w / 4.0 + 5.0;
-        let bands = [
-            (w * 0.25, Vec4::new(0.624, 0.951, 0.865, 1.0)),
-            (w * 0.75, Vec4::new(0.959, 0.869, 0.601, 1.0)),
-        ];
+        let radius = w / 4.0 + 2.5;
+        let c1 = srgb_gamma_encode(oklab_to_linear_srgb(Vec4::new(0.98, 0.1, 0.02, 1.0)));
+        let c2 = srgb_gamma_encode(oklab_to_linear_srgb(Vec4::new(0.98, -0.1, 0.02, 1.0)));
+        let bands = [(w * 0.25, c1), (w * 0.75, c2)];
 
         for (x, color) in bands {
             let brush = RoundBrush {
@@ -252,8 +275,8 @@ impl BrushPreviewGenerator {
 
         for i in 0..=STEPS {
             let t = i as f32 / STEPS as f32;
-            let x = canvas.rect.width() as f32 * 0.5 - 250. + 500. * t;
-            let y = canvas.rect.height() as f32 * 0.5 + 20. * (t * std::f32::consts::TAU).sin();
+            let x = canvas.rect.width() as f32 * 0.5 - 125. + 250. * t;
+            let y = canvas.rect.height() as f32 * 0.5 + 10. * (t * std::f32::consts::TAU).sin();
             let f = 4. * t * (1. - t);
             let draw = Draw {
                 position: I64Vec2::q32_from_f64(DVec2::new(x as f64, y as f64)),

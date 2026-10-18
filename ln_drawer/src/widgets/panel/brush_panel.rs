@@ -325,6 +325,13 @@ fn brush_list(
             }
         });
 
+        // TODO temporary: `Container` couples render order with collider order, so the preview
+        // captures pointer events. Forward them to the button until that is decoupled.
+        Transfer::new(world, preview, button)
+            .pointer_hit()
+            .pointer_hover()
+            .pointer_scroll();
+
         Transfer::new(world, button, container).pointer_scroll();
 
         children.push((button.untyped(), LuniChild::default()));
