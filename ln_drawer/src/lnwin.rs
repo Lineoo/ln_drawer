@@ -14,7 +14,7 @@ use winit::{
 };
 
 use crate::{
-    measures::{FI64Ext, Rectangle},
+    measures::Rectangle,
     render::{
         Render,
         camera::{Camera, CameraDescriptor, CameraOutdated, SetCameraOutdated, UICamera},
@@ -138,7 +138,7 @@ impl Element for Lnwindow {
             let lnwindow = world.fetch(this);
             let ui_camera = world.insert(world.build(CameraDescriptor {
                 center: I64Vec2::ZERO,
-                zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
+                zoom: 0,
             }));
             world.insert(UICamera(ui_camera));
             world.observer(ui_camera, move |&SetCameraOutdated, world| {
@@ -163,21 +163,18 @@ impl Element for Lnwindow {
             world.observer(this, move |event: &WindowEvent, world| {
                 if let WindowEvent::SurfaceResized(size) = event {
                     let lnwindow = world.fetch(this);
-                    let mut camera = world.fetch_mut(ui_camera);
 
-                    let scale = lnwindow.window.scale_factor();
                     world.queue_trigger(
                         lnwindow.handle(),
                         WidgetRectangle(Rectangle::new_half(
                             IVec2::ZERO,
-                            (UVec2::new(size.width / 2, size.height / 2).as_dvec2() / scale)
+                            (UVec2::new(size.width / 2, size.height / 2).as_dvec2())
                                 .round()
                                 .as_uvec2(),
                         )),
                     );
 
-                    world.queue_trigger(camera.handle(), SetCameraOutdated);
-                    camera.zoom = i64::q32_from_f64(scale.log2());
+                    world.queue_trigger(ui_camera, SetCameraOutdated);
                 }
             });
 

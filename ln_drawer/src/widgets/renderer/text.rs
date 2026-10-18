@@ -222,8 +222,8 @@ impl Text {
         }
     }
 
-    fn upscale(&self, lnwindow: &Lnwindow) -> f32 {
-        self.extra_upscale * lnwindow.window.scale_factor() as f32
+    fn upscale(&self, _lnwindow: &Lnwindow) -> f32 {
+        self.extra_upscale
     }
 
     fn upscaled_rect(&self, lnwindow: &Lnwindow) -> UVec2 {
