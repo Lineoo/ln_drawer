@@ -18,7 +18,7 @@ impl Element for MobileUi {
         let page = world.insert(LayerPage::new(world, self.common));
 
         world.insert(Transform {
-            value: TransformValue::shrink(50, 50),
+            value: TransformValue::copy(),
             source: lnwindow.untyped(),
             target: page.untyped(),
         });
