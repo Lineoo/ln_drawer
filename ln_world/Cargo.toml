@@ -9,4 +9,5 @@ indexmap = "2.11.0"
 hashbrown = { version = "0.17.1", features = ["serde"] }
 smallvec = "1.15.1"
 thiserror = "2.0.16"
+parking_lot = "0.12.4"
 log = "0.4.27"

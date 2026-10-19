@@ -1258,7 +1258,6 @@ dependencies = [
  "ln_world",
  "log",
  "lyon",
- "parking_lot",
  "pollster",
  "postcard",
  "redb",
@@ -1285,6 +1284,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
  "log",
+ "parking_lot",
  "smallvec",
  "thiserror 2.0.20",
 ]
