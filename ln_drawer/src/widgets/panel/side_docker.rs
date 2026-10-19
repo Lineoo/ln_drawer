@@ -16,6 +16,7 @@ use crate::{
     render::camera::Camera,
     theme::Theme,
     widgets::{
+        SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         common::WidgetCommon,
         panel::{Panel, brush_panel::BrushPanel, color_picker::ColorPickerButton},
@@ -74,6 +75,14 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
         rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
     });
 
+    world.named("brush_panel");
+    let brush_panel = world.insert(BrushPanel {
+        common: WidgetCommon {
+            camera,
+            visible: true,
+        },
+    });
+
     let slider = world.insert(Slider {
         common: WidgetCommon {
             camera,
@@ -94,19 +103,26 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
         camera,
     });
 
-    world.named("brush_panel");
-    world.insert(BrushPanel {
-        common: WidgetCommon {
-            camera,
-            visible: true,
-        },
-        button: brush_menu,
-    });
-
     world.named("side_docker_observers");
+
     world.observer(brush_menu, move |&ButtonSelected(selected), world| {
         world.queue_trigger(brush_menu, SetButtonSelected(selected));
         world.queue_trigger(color_picker, SetButtonSelected(false));
+    });
+
+    world.observer(brush_menu, move |&SetButtonSelected(selected), world| {
+        world.queue_trigger(brush_panel, SetWidgetVisible(selected));
+    });
+
+    world.observer(brush_menu, move |&SetWidgetRectangle(rect), world| {
+        const PANEL_WIDTH: i32 = 364;
+        const PANEL_HEIGHT: i32 = 480;
+        let transform = TransformValue::anchor(
+            (1.0, 1.0),
+            Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
+        );
+        let rect = transform.compute(rect);
+        world.queue_trigger(brush_panel, SetWidgetRectangle(rect));
     });
 
     world.observer(color_picker, move |&ButtonSelected(selected), world| {

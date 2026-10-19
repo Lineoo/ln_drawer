@@ -22,8 +22,8 @@ use crate::{
         SetWidgetRectangle, SetWidgetVisible,
         brush_preview::{BrushPreview, BrushPreviewGenerator},
         button::{
-            ButtonClick, ButtonDrag, ButtonDragStatus, ButtonSelected, SetButtonSelected,
-            ToggleButton, ToggleButtonTheme,
+            ButtonClick, ButtonDrag, ButtonDragStatus, SetButtonSelected, ToggleButton,
+            ToggleButtonTheme,
         },
         common::WidgetCommon,
         container::{Container, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
@@ -36,22 +36,18 @@ use crate::{
     },
 };
 
-const PANEL_WIDTH: i32 = 364;
-const PANEL_HEIGHT: i32 = 480;
 const ITEM_HEIGHT: i32 = 80;
 const ITEM_GAP: i32 = 6;
 const LIST_PADDING: i32 = 8;
 
 pub struct BrushPanel {
     pub common: WidgetCommon,
-    pub button: Handle<ToggleButton>,
 }
 
 impl Element for BrushPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let page = world.single_fetch::<LayerPage>();
         let count = page.brushes.len();
-        let toggle_button = self.button;
 
         let generator = world.insert(BrushPreviewGenerator {
             lp: page.lp.clone(),
@@ -118,23 +114,6 @@ impl Element for BrushPanel {
         world.dependency(list_settings, this);
         world.dependency(tabs, this);
         world.dependency(generator, this);
-
-        world.observer(toggle_button, move |&SetWidgetRectangle(rect), world| {
-            let transform = TransformValue::anchor(
-                (1.0, 1.0),
-                Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
-            );
-            let rect = transform.compute(rect);
-            world.queue_trigger(tabs, SetWidgetRectangle(rect));
-        });
-
-        world.observer(toggle_button, move |&ButtonSelected(selected), world| {
-            world.queue_trigger(toggle_button, SetButtonSelected(selected));
-        });
-
-        world.observer(toggle_button, move |&SetButtonSelected(selected), world| {
-            world.queue_trigger(tabs, SetWidgetVisible(selected));
-        });
 
         // initialize layout
         world.queue(move |world| {

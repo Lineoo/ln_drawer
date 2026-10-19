@@ -19,7 +19,7 @@ use crate::{
     widgets::{
         common::WidgetCommon,
         container::{ContainerEcho, ContainerWithCamera},
-        panel::{Panel, color_picker::LayerOklabPalette},
+        panel::{Panel, brush_panel::BrushPanel, color_picker::LayerOklabPalette},
         renderer::text::Text,
     },
 };
@@ -248,6 +248,13 @@ impl Element for CommandCenter {
             oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
         });
 
+        let brush = world.insert(BrushPanel {
+            common: WidgetCommon {
+                camera,
+                ..self.common
+            },
+        });
+
         world.insert(Transform {
             value: TransformValue::copy(),
             source: container.untyped(),
@@ -275,6 +282,29 @@ impl Element for CommandCenter {
             },
             source: container.untyped(),
             target: oklab.untyped(),
+        });
+
+        world.insert(Transform {
+            value: TransformValue {
+                left: TransformEdge {
+                    anchor: 0.0,
+                    offset: 0,
+                },
+                down: TransformEdge {
+                    anchor: 0.0,
+                    offset: 0,
+                },
+                right: TransformEdge {
+                    anchor: 1.0,
+                    offset: 0,
+                },
+                up: TransformEdge {
+                    anchor: 1.0,
+                    offset: -300,
+                },
+            },
+            source: container.untyped(),
+            target: brush.untyped(),
         });
 
         world.dependency(panel, this);
