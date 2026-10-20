@@ -17,7 +17,7 @@ use crate::{
     theme::Theme,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
-        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         panel::{Panel, PanelAttr, brush_panel::BrushPanel, color_picker::ColorPickerButton},
         renderer::{svg::svg_render, text::SetText},
@@ -50,12 +50,7 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
                 visible: true,
             },
             rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
-            theme: ToggleButtonTheme {
-                idle_color: theme.gray1,
-                hover_color: theme.gray2,
-                press_color: theme.gray3,
-                selected_color: theme.gray3,
-            },
+            theme: theme.button(),
             image: Some(svg_render(image_bytes, 8)),
             selected: false,
             hovering: false,

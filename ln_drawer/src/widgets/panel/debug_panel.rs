@@ -16,7 +16,7 @@ use crate::{
     save::{Save, SceneDocument},
     theme::Theme,
     widgets::{
-        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         renderer::{svg::svg_render, text::Text},
@@ -30,6 +30,8 @@ pub struct DebugPanel {
 
 impl Element for DebugPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let theme = world.single_fetch::<Theme>();
+
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
@@ -51,6 +53,7 @@ impl Element for DebugPanel {
             metrics: Metrics::new(12.0, 18.0),
             attrs: Attrs::new().family(Family::Monospace),
             order: 50,
+            color: theme.distinct,
             visible: false,
             camera: Some(camera),
             ..Default::default()
@@ -177,12 +180,7 @@ pub fn smol_butt(
                 visible: false,
             },
             rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(16)),
-            theme: ToggleButtonTheme {
-                idle_color: theme.gray1,
-                hover_color: theme.gray2,
-                press_color: theme.gray3,
-                selected_color: theme.gray3,
-            },
+            theme: theme.button(),
             image: Some(svg_render(image_bytes, 8)),
             selected: false,
             hovering: false,

@@ -17,7 +17,7 @@ use crate::{
     tools::mouse::MouseMenu,
     widgets::{
         SetWidgetRectangle,
-        button::{ButtonClick, ButtonDrag, ButtonDragStatus, ToggleButton, ToggleButtonTheme},
+        button::{ButtonClick, ButtonDrag, ButtonDragStatus, ToggleButton},
         common::WidgetCommon,
         renderer::rrect::RRect,
     },
@@ -42,12 +42,7 @@ impl Element for ColorSnip {
         let button = world.insert(ToggleButton {
             common: self.common,
             rect: Rectangle::new_half(self.attr.position, UVec2::splat(24)),
-            theme: ToggleButtonTheme {
-                idle_color: theme.gray1,
-                hover_color: theme.gray2,
-                press_color: theme.gray3,
-                selected_color: theme.gray3,
-            },
+            theme: theme.button(),
             image: None,
             selected: false,
             hovering: false,

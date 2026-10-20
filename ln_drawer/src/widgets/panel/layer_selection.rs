@@ -12,7 +12,7 @@ use crate::{
     measures::Rectangle,
     theme::Theme,
     widgets::{
-        button::{ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
+        button::{ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         renderer::{rrect::RRect, text::Text},
@@ -127,12 +127,7 @@ impl Element for LayerSelectionPanel {
                     visible: self.common.visible,
                 },
                 rect: Rectangle::default(),
-                theme: ToggleButtonTheme {
-                    idle_color: theme.gray1,
-                    hover_color: theme.gray2,
-                    press_color: theme.gray3,
-                    selected_color: theme.gray3,
-                },
+                theme: theme.button(),
                 image: None,
                 selected: i == 0,
                 hovering: false,

@@ -16,10 +16,7 @@ use crate::{
     tools::collider::ToolRectCollider,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
-        button::{
-            ButtonAction, ButtonImage, SetButtonIconColor, SetButtonSelected, ToggleButton,
-            ToggleButtonTheme,
-        },
+        button::{ButtonAction, ButtonImage, SetButtonIconColor, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         renderer::rrect::RRect,
     },
@@ -83,12 +80,7 @@ impl Tabs {
                     visible: self.visible,
                 },
                 rect: self.rect,
-                theme: ToggleButtonTheme {
-                    idle_color: theme.gray2,
-                    hover_color: theme.gray3,
-                    press_color: theme.gray0,
-                    selected_color: theme.gray0,
-                },
+                theme: theme.tab_button(),
                 image: Some(entry.clone()),
                 selected: i == self.active,
                 hovering: false,

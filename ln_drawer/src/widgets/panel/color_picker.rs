@@ -20,9 +20,7 @@ use crate::{
     theme::Theme,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
-        button::{
-            ButtonDrag, ButtonDragStatus, SetButtonSelected, ToggleButton, ToggleButtonTheme,
-        },
+        button::{ButtonDrag, ButtonDragStatus, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         object::color_snip::{ColorSnip, ColorSnipAttr},
@@ -134,12 +132,7 @@ impl Element for ColorPickerButton {
         let button = world.insert(ToggleButton {
             common: self.common,
             rect: self.rect,
-            theme: ToggleButtonTheme {
-                idle_color: theme.gray1,
-                hover_color: theme.gray2,
-                press_color: theme.gray3,
-                selected_color: theme.gray3,
-            },
+            theme: theme.button(),
             image: None,
             selected: false,
             hovering: false,

@@ -4,6 +4,7 @@ use ln_world::Element;
 use crate::{
     color::srgb::{hex_to_srgb, srgb_gamma_decode},
     measures::Axis,
+    widgets::button::ToggleButtonTheme,
 };
 
 const DARK_MODE: bool = true;
@@ -58,6 +59,26 @@ impl Default for Theme {
                 axis: Axis::Right,
                 anim_factor: 30.0,
             },
+        }
+    }
+}
+
+impl Theme {
+    pub fn button(&self) -> ToggleButtonTheme {
+        ToggleButtonTheme {
+            idle_color: self.gray1,
+            hover_color: self.gray2,
+            press_color: self.gray3,
+            selected_color: self.gray3,
+        }
+    }
+
+    pub fn tab_button(&self) -> ToggleButtonTheme {
+        ToggleButtonTheme {
+            idle_color: self.gray2,
+            hover_color: self.gray3,
+            press_color: self.gray0,
+            selected_color: self.gray0,
         }
     }
 }
