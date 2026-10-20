@@ -23,6 +23,11 @@ use crate::{
 pub struct Panel {
     pub common: WidgetCommon,
     pub rect: Rectangle,
+    pub attr: PanelAttr,
+}
+
+pub struct PanelAttr {
+    pub round: bool,
     pub shadow: bool,
 }
 
@@ -31,10 +36,13 @@ pub struct Panel {
 impl Panel {
     pub fn init(&mut self, world: &World, handle: Handle<Self>) {
         let theme = world.single_fetch::<Theme>();
-        let roundness = theme.roundness;
         let anim_factor = theme.anim_factor;
         let shadow_offset = theme.shadow_offset.as_ivec2();
         let shadow_blur = theme.shadow_blur;
+        let roundness = match self.attr.round {
+            true => theme.roundness,
+            false => 0.0,
+        };
 
         let back = world.insert(RRect {
             rect: self.rect,
@@ -46,7 +54,7 @@ impl Panel {
             camera: self.common.camera,
         });
 
-        let back_shadow = match self.shadow {
+        let back_shadow = match self.attr.shadow {
             true => Some(world.insert(RRect {
                 rect: self.rect + shadow_offset,
                 order: -1,
@@ -71,10 +79,7 @@ impl Panel {
         });
 
         let collider = world.insert(ToolRectCollider {
-            common: WidgetCommon {
-                visible: self.common.visible,
-                camera: self.common.camera,
-            },
+            common: self.common,
             target: handle.untyped(),
             rect: self.rect,
             order: 0,

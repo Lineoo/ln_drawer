@@ -22,7 +22,7 @@ use crate::{
     widgets::{
         common::WidgetCommon,
         container::{ContainerEcho, ContainerWithCamera},
-        panel::{Panel, brush_panel::BrushPanel, color_picker::LayerOklabPalette},
+        panel::{Panel, PanelAttr, brush_panel::BrushPanel, color_picker::LayerOklabPalette},
         renderer::text::{SetText, Text},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
@@ -193,7 +193,10 @@ impl Element for ToolBar {
                 visible: self.common.visible,
             },
             rect: Rectangle::default(),
-            shadow: false,
+            attr: PanelAttr {
+                shadow: false,
+                round: false,
+            },
         });
 
         let slider = world.insert(Slider {
@@ -293,7 +296,10 @@ impl Element for StatusBar {
                 visible: self.common.visible,
             },
             rect: Rectangle::default(),
-            shadow: false,
+            attr: PanelAttr {
+                shadow: false,
+                round: false,
+            },
         });
 
         let text = world.insert(Text {
@@ -354,7 +360,10 @@ impl Element for CommandCenter {
                 ..self.common
             },
             rect: Rectangle::default(),
-            shadow: true,
+            attr: PanelAttr {
+                shadow: false,
+                round: false,
+            },
         });
 
         let oklab = world.insert(LayerOklabPalette {

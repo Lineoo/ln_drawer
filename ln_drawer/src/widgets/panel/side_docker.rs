@@ -19,7 +19,7 @@ use crate::{
         SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         common::WidgetCommon,
-        panel::{Panel, brush_panel::BrushPanel, color_picker::ColorPickerButton},
+        panel::{Panel, PanelAttr, brush_panel::BrushPanel, color_picker::ColorPickerButton},
         renderer::{svg::svg_render, text::SetText},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
@@ -37,7 +37,10 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
             visible: true,
         },
         rect: Rectangle::default(),
-        shadow: true,
+        attr: PanelAttr {
+            shadow: true,
+            round: true,
+        },
     });
 
     let docker_button = |image_bytes| {
