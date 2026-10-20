@@ -3,7 +3,9 @@ use glam::{DVec2, I64Vec2};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
-    i18n::tr, layer::wrapper::{BrushConfigurationChanged, LayerPage}, layout::{
+    i18n::tr,
+    layer::wrapper::{BrushConfigurationChanged, LayerPage},
+    layout::{
         echo::Echo,
         luni::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
@@ -11,15 +13,26 @@ use crate::{
         },
         transfer::Transfer,
         transform::{Transform, TransformEdge, TransformValue},
-    }, measures::Rectangle, theme::Theme, tools::pointer::PointerHit, widgets::{
-        SetWidgetRectangle, SetWidgetVisible, brush_preview::BrushPreview, button::{
+    },
+    measures::Rectangle,
+    theme::Theme,
+    tools::pointer::PointerHit,
+    widgets::{
+        SetWidgetRectangle, SetWidgetVisible,
+        brush_preview::BrushPreview,
+        button::{
             ButtonClick, ButtonDrag, ButtonDragStatus, SetButtonSelected, ToggleButton,
             ToggleButtonTheme,
-        }, common::WidgetCommon, container::{ContainerDeco, ContainerDecoDropdown, ContainerWithCamera}, panel::settings::SettingPanel, renderer::{
+        },
+        common::WidgetCommon,
+        container::{ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
+        panel::settings::SettingPanel,
+        renderer::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
             text::Text,
-        }, tabs::{SetTabsActive, Tabs},
+        },
+        tabs::{SetTabsActive, Tabs},
     },
 };
 
@@ -111,9 +124,9 @@ impl Element for BrushListPanel {
             .set_widget_rectangle()
             .set_widget_visible();
 
-        let accent = theme.theme_color;
-        let background = theme.secondary_color;
-        let symbolic = theme.symbolic_color;
+        let accent = theme.theme;
+        let background = theme.gray2;
+        let symbolic = theme.distinct;
 
         let mut children = Vec::new();
         for i in 0..count {
@@ -125,8 +138,8 @@ impl Element for BrushListPanel {
                 rect: Rectangle::default(),
                 theme: ToggleButtonTheme {
                     idle_color: background,
-                    hover_color: theme.highlight_color,
-                    press_color: theme.highlight_color,
+                    hover_color: theme.gray3,
+                    press_color: theme.gray3,
                     selected_color: background,
                 },
                 image: None,

@@ -54,7 +54,7 @@ impl Tabs {
         let back = world.insert(RRect {
             rect: self.rect,
             order: -10,
-            color: theme.secondary_color,
+            color: theme.gray2,
             radius: roundness,
             width: 0.0,
             enabled: self.visible,
@@ -84,10 +84,10 @@ impl Tabs {
                 },
                 rect: self.rect,
                 theme: ToggleButtonTheme {
-                    idle_color: theme.secondary_color,
-                    hover_color: theme.highlight_color,
-                    press_color: theme.blank_color,
-                    selected_color: theme.blank_color,
+                    idle_color: theme.gray2,
+                    hover_color: theme.gray3,
+                    press_color: theme.gray0,
+                    selected_color: theme.gray0,
                 },
                 image: Some(entry.clone()),
                 selected: i == self.active,
@@ -99,7 +99,7 @@ impl Tabs {
             let edge = world.insert(RRect {
                 rect: Rectangle::default(),
                 order: 100,
-                color: theme.theme_color,
+                color: theme.theme,
                 radius: 0.0,
                 width: 0.0,
                 enabled: self.visible,
@@ -223,8 +223,8 @@ impl Tabs {
                 world.queue_trigger(
                     tab.button,
                     SetButtonIconColor(match i == active {
-                        true => theme.symbolic_color,
-                        false => theme.significant_color,
+                        true => theme.distinct,
+                        false => theme.gray4,
                     }),
                 );
             }

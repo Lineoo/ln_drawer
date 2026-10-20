@@ -162,7 +162,7 @@ impl Element for TextSettingPanel {
                 line_height: 18.0,
             },
             attrs: Attrs::new().weight(Weight::BOLD),
-            color: theme.significant_color,
+            color: theme.gray4,
             camera: Some(camera),
             ..Default::default()
         });
@@ -478,7 +478,7 @@ fn option_label(
             font_size: 16.0,
             line_height: 20.0,
         },
-        color: theme.symbolic_color,
+        color: theme.distinct,
         camera: Some(camera),
         ..Default::default()
     });
@@ -525,7 +525,7 @@ fn option_desc(
             font_size: 12.0,
             line_height: 14.0,
         },
-        color: theme.significant_color,
+        color: theme.gray4,
         camera: Some(camera),
         ..Default::default()
     });

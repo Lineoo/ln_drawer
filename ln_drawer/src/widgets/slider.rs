@@ -50,7 +50,7 @@ impl Slider {
         let back = world.insert(RRect {
             rect: back_rect(self.rect, self.axis),
             order: 20,
-            color: theme.secondary_color,
+            color: theme.gray2,
             radius: theme.roundness,
             width: 0.0,
             enabled: self.common.visible,
@@ -62,7 +62,7 @@ impl Slider {
         let front = world.insert(RRect {
             rect: front_rect(self.rect, self.axis, position),
             order: 21,
-            color: theme.theme_color,
+            color: theme.theme,
             radius: theme.roundness,
             width: 0.0,
             enabled: self.common.visible,
@@ -72,7 +72,7 @@ impl Slider {
         let knob = world.insert(RRect {
             rect: knob_rect(self.rect, self.axis, position),
             order: 22,
-            color: theme.blank_color,
+            color: theme.gray0,
             radius: theme.roundness,
             width: 0.0,
             enabled: self.common.visible,
@@ -82,7 +82,7 @@ impl Slider {
         let knob_split = world.insert(RRect {
             rect: knob_split_rect(self.rect, self.axis, position),
             order: 23,
-            color: theme.primary_color,
+            color: theme.gray1,
             radius: 2.0,
             width: 0.0,
             enabled: self.common.visible,
@@ -103,7 +103,7 @@ impl Slider {
         });
 
         let knob_color_anim = world.build(SimpleAnimationDescriptor {
-            animation: AnimationDescriptor::new(theme.primary_color, theme.anim_factor),
+            animation: AnimationDescriptor::new(theme.gray1, theme.anim_factor),
             widget: knob,
             action: move |_, world, color| {
                 world.queue_trigger(knob, SetRRectColor(color));
@@ -111,7 +111,7 @@ impl Slider {
         });
 
         let knob_split_color_anim = world.build(SimpleAnimationDescriptor {
-            animation: AnimationDescriptor::new(theme.primary_color, theme.anim_factor),
+            animation: AnimationDescriptor::new(theme.gray1, theme.anim_factor),
             widget: knob_split,
             action: move |_, world, color| {
                 world.queue_trigger(knob_split, SetRRectColor(color));
@@ -176,14 +176,14 @@ impl Slider {
                 this.pressed = true;
                 let back_rect_expanded = back_rect_pressed(this.rect, this.axis);
                 world.trigger(back_rect_anim, &SetAnimationDst(back_rect_expanded));
-                world.trigger(knob_color_anim, &SetAnimationDst(theme.primary_color));
-                world.trigger(knob_split_color_anim, &SetAnimationDst(theme.theme_color));
+                world.trigger(knob_color_anim, &SetAnimationDst(theme.gray1));
+                world.trigger(knob_split_color_anim, &SetAnimationDst(theme.theme));
             } else if let PointerHitStatus::Release = event.status {
                 this.pressed = false;
                 let back_rect = back_rect(this.rect, this.axis);
                 world.trigger(back_rect_anim, &SetAnimationDst(back_rect));
-                world.trigger(knob_color_anim, &SetAnimationDst(theme.blank_color));
-                world.trigger(knob_split_color_anim, &SetAnimationDst(theme.primary_color));
+                world.trigger(knob_color_anim, &SetAnimationDst(theme.gray0));
+                world.trigger(knob_split_color_anim, &SetAnimationDst(theme.gray1));
             }
         });
     }
@@ -274,7 +274,7 @@ impl SliderLabel {
         let back = world.insert(RRect {
             rect: label_back_rect(slider.rect, slider.axis, self.clockwise, position),
             order: 100,
-            color: theme.blank_color,
+            color: theme.gray0,
             radius: LABEL_HALF.y as f32,
             width: 0.0,
             enabled: self.visible && self.hover,

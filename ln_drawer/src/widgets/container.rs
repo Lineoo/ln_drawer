@@ -267,7 +267,7 @@ impl Element for ContainerDeco {
         let back = world.insert(RRect {
             rect: container.rect,
             order: 10,
-            color: theme.primary_color,
+            color: theme.gray1,
             radius: theme.roundness,
             width: 0.0,
             enabled: container.common.visible,

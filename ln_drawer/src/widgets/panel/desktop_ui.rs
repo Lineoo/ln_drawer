@@ -304,7 +304,7 @@ impl Element for StatusBar {
             },
             align: Align::Center,
             attrs: Attrs::new(),
-            color: theme.highlight_color,
+            color: theme.gray3,
             camera: Some(camera),
             visible: self.common.visible,
             order: 120,

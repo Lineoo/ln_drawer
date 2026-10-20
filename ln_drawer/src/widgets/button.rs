@@ -88,7 +88,7 @@ impl ToggleButton {
         world.dependency(frame, handle);
 
         let frame_anim_color = world.build(SimpleAnimationDescriptor {
-            animation: AnimationDescriptor::new(theme.primary_color, theme.anim_factor),
+            animation: AnimationDescriptor::new(theme.gray1, theme.anim_factor),
             widget: frame,
             action: move |_, world, color| {
                 world.queue_trigger(frame, SetRRectColor(color));
@@ -108,7 +108,7 @@ impl ToggleButton {
                 order: 11,
                 visible: self.common.visible,
                 camera: self.common.camera,
-                color: theme.symbolic_color,
+                color: theme.distinct,
                 data: image.bytes.clone(),
                 data_width: image.bytes_width,
                 data_height: image.bytes_height,

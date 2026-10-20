@@ -53,7 +53,7 @@ impl Element for LayerSelectionPanel {
                 line_height: 18.0,
             },
             attrs: Attrs::new(),
-            color: theme.symbolic_color,
+            color: theme.distinct,
             camera: Some(camera),
             visible: false,
             ..Default::default()
@@ -62,7 +62,7 @@ impl Element for LayerSelectionPanel {
         let doc_label_div = world.insert(RRect {
             rect: Rectangle::default(),
             order: 0,
-            color: theme.secondary_color,
+            color: theme.gray2,
             radius: 0.0,
             width: 0.0,
             enabled: false,
@@ -76,7 +76,7 @@ impl Element for LayerSelectionPanel {
                 line_height: 16.0,
             },
             attrs: Attrs::new(),
-            color: theme.symbolic_color,
+            color: theme.distinct,
             camera: Some(camera),
             visible: false,
             ..Default::default()
@@ -130,10 +130,10 @@ impl Element for LayerSelectionPanel {
                 },
                 rect: Rectangle::default(),
                 theme: ToggleButtonTheme {
-                    idle_color: theme.primary_color,
-                    hover_color: theme.secondary_color,
-                    press_color: theme.highlight_color,
-                    selected_color: theme.highlight_color,
+                    idle_color: theme.gray1,
+                    hover_color: theme.gray2,
+                    press_color: theme.gray3,
+                    selected_color: theme.gray3,
                 },
                 image: None,
                 selected: i == 0,
@@ -150,7 +150,7 @@ impl Element for LayerSelectionPanel {
                     line_height: 16.0,
                 },
                 attrs: Attrs::new(),
-                color: theme.symbolic_color,
+                color: theme.distinct,
                 camera: Some(camera),
                 visible: false,
                 ..Default::default()

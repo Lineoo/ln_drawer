@@ -39,7 +39,7 @@ impl Panel {
         let back = world.insert(RRect {
             rect: self.rect,
             order: 0,
-            color: theme.primary_color,
+            color: theme.gray1,
             radius: roundness,
             width: 0.0,
             enabled: self.common.visible,
