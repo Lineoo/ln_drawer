@@ -88,53 +88,57 @@ impl Element for Container {
                 let this = world.fetch(handle);
                 let child = world.fetch(this.child);
 
-                let camera = extra.camera;
-                let panel_rect = this.rect;
-                let window_size = lnwindow.window.surface_size();
+                if this.attr.clip {
+                    let camera = extra.camera;
+                    let panel_rect = this.rect;
+                    let window_size = lnwindow.window.surface_size();
 
-                let left_up = lnwindow.screen_to_cursor(
-                    camera.world_to_screen(I64Vec2::q32_from_i32(panel_rect.left_up())),
-                );
-                let right_down = lnwindow.screen_to_cursor(
-                    camera.world_to_screen(I64Vec2::q32_from_i32(panel_rect.right_down())),
-                );
+                    let left_up = lnwindow.screen_to_cursor(
+                        camera.world_to_screen(I64Vec2::q32_from_i32(panel_rect.left_up())),
+                    );
+                    let right_down = lnwindow.screen_to_cursor(
+                        camera.world_to_screen(I64Vec2::q32_from_i32(panel_rect.right_down())),
+                    );
 
-                let x = (left_up.x.max(0.0) as u32).min(window_size.width);
-                let y = (left_up.y.max(0.0) as u32).min(window_size.height);
-                let right = (right_down.x.max(0.0) as u32).min(window_size.width);
-                let down = (right_down.y.max(0.0) as u32).min(window_size.height);
+                    let x = (left_up.x.max(0.0) as u32).min(window_size.width);
+                    let y = (left_up.y.max(0.0) as u32).min(window_size.height);
+                    let right = (right_down.x.max(0.0) as u32).min(window_size.width);
+                    let down = (right_down.y.max(0.0) as u32).min(window_size.height);
 
-                let clip = ScissorRect {
-                    x,
-                    y,
-                    width: right.saturating_sub(x),
-                    height: down.saturating_sub(y),
-                };
+                    let clip = ScissorRect {
+                        x,
+                        y,
+                        width: right.saturating_sub(x),
+                        height: down.saturating_sub(y),
+                    };
 
-                let clipped = match extra.scissor.intersect(clip) {
-                    Some(result) => result,
-                    // nothing to draw here, skip
-                    None => return,
-                };
+                    let clipped = match extra.scissor.intersect(clip) {
+                        Some(result) => result,
+                        // nothing to draw here, skip
+                        None => return,
+                    };
 
-                rpass.set_scissor_rect(clipped.x, clipped.y, clipped.width, clipped.height);
-                Render::draw(
-                    &child,
-                    world,
-                    rpass,
-                    RenderExtra {
-                        scissor: clipped,
-                        ..extra
-                    },
-                );
+                    rpass.set_scissor_rect(clipped.x, clipped.y, clipped.width, clipped.height);
+                    Render::draw(
+                        &child,
+                        world,
+                        rpass,
+                        RenderExtra {
+                            scissor: clipped,
+                            ..extra
+                        },
+                    );
 
-                // revert
-                rpass.set_scissor_rect(
-                    extra.scissor.x,
-                    extra.scissor.y,
-                    extra.scissor.width,
-                    extra.scissor.height,
-                );
+                    // revert
+                    rpass.set_scissor_rect(
+                        extra.scissor.x,
+                        extra.scissor.y,
+                        extra.scissor.width,
+                        extra.scissor.height,
+                    );
+                } else {
+                    Render::draw(&child, world, rpass, extra);
+                }
             }),
         });
 

@@ -43,6 +43,7 @@ impl Element for DesktopUi {
         let tool = world.insert(ToolBar {
             common: self.common,
         });
+
         let status = world.insert(StatusBar {
             common: self.common,
         });
@@ -178,7 +179,11 @@ impl Element for ToolBar {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: Rectangle::default(),
-            attr: ContainerAttr::default(),
+            attr: ContainerAttr {
+                // cause we need the slider label to display
+                clip: false,
+                ..Default::default()
+            },
         });
         world.insert(ContainerEcho { container });
         Transfer::new(world, this, container)
@@ -200,7 +205,7 @@ impl Element for ToolBar {
         let slider = world.insert(Slider {
             common: WidgetCommon {
                 camera,
-                visible: true,
+                visible: self.common.visible,
             },
             rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
             axis: Axis::Right,
@@ -213,7 +218,7 @@ impl Element for ToolBar {
             clockwise: true,
             source: slider,
             hover: false,
-            visible: true,
+            visible: self.common.visible,
             camera,
         });
 
@@ -235,8 +240,9 @@ impl Element for ToolBar {
                 },
             ),
             children: vec![(
-                slider_label.untyped(),
+                slider.untyped(),
                 LuniChild {
+                    basis: Some(200),
                     shrink: Some(1.0),
                     ..Default::default()
                 },
