@@ -48,7 +48,6 @@ struct VtorUniform {
     color: Vec4,
 }
 
-pub struct SetVtorPath(pub Path);
 pub struct SetVtorColor(pub Vec4);
 
 impl Vtor {
@@ -129,12 +128,6 @@ impl Vtor {
             let mut this = world.fetch_mut(this);
             this.common.visible = visible;
             world.queue_trigger(control, SetWidgetVisible(visible));
-        });
-
-        world.observer(this, move |SetVtorPath(path), world| {
-            let mut this = world.fetch_mut(this);
-            this.path = path.clone();
-            this.outdated = true;
         });
 
         world.observer(this, move |&SetVtorColor(color), world| {

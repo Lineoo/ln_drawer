@@ -16,7 +16,7 @@ use crate::{
         renderer::{
             quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
             rrect::{RRect, SetRRectColor},
-            vtor::{SetVtorPath, Vtor},
+            vtor::Vtor,
         },
         shaders::shader_compile,
     },
@@ -155,12 +155,11 @@ impl OklabPolar {
 
         world.observer(this, move |&SetColorOklab(oklab), world| {
             let mut this = world.fetch_mut(this);
+            let mut chroma_indicator = world.fetch_mut(chroma_indicator);
             this.oklab = oklab;
             world.queue_trigger(quad, SetQuadMaterial(OklabPolarMaterial { oklab }));
-            world.queue_trigger(
-                chroma_indicator,
-                SetVtorPath(chroma_to_path(Vec2::new(oklab.y, oklab.z).length())),
-            );
+            chroma_indicator.path = chroma_to_path(Vec2::new(oklab.y, oklab.z).length());
+            chroma_indicator.outdated = true;
             let thumb_rect = Rectangle::new_half(
                 this.rect.origin
                     + (Vec2::new(oklab.y / 0.8 + 0.5, oklab.z / 0.8 + 0.5)
