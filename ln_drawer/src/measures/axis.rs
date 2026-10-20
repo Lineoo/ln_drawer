@@ -104,4 +104,11 @@ impl Axis {
             false => IVec2::new(position.y, position.x),
         }
     }
+
+    pub fn ivec2(self) -> IVec2 {
+        match self.is_horizontal() {
+            true => IVec2::new(self.sign(), 0),
+            false => IVec2::new(0, self.sign()),
+        }
+    }
 }

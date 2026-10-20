@@ -422,7 +422,7 @@ fn label_back_rect(rect: Rectangle, axis: Axis, clockwise: bool, position: i32) 
     let offset = BAR_HW + BAR_EX + LABEL_GAP + axis.horizontal_uvec2(LABEL_HALF).y as i32;
     Rectangle::new_half(
         axis.horizontal_ivec2(IVec2::new(position, rect.axis_center(axis.rotate())))
-            + raxis.vertical_ivec2(IVec2::new(0, offset)),
+            + raxis.ivec2() * offset,
         LABEL_HALF,
     )
 }
