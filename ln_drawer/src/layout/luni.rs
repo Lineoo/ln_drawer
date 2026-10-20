@@ -12,7 +12,6 @@ pub struct LuniFlex {
 }
 
 #[derive(Default)]
-#[expect(unused)]
 pub struct LuniParent {
     pub axis: LuniAxis,
     pub distribution: LuniDistribution,
@@ -112,24 +111,34 @@ impl LuniFlex {
 
         // Second loop - calculate and distribute real length
 
+        let mut distributed = 0;
         let mut i = 0;
         while i < self.children.len() {
             let (_, child) = &self.children[i];
             let child = child.apply(&parent.template);
 
-            if available > 0 && child.grow > 0.0 {
-                lengths[i] += (available as f32 * (child.grow / grow_sum)).round() as i32;
+            let delta = if available > 0 && child.grow > 0.0 {
+                (available as f32 * (child.grow / grow_sum)).round() as i32
             } else if available < 0 && child.shrink > 0.0 {
-                lengths[i] += (available as f32 * (child.shrink * child.basis as f32 / shrink_sum))
-                    .round() as i32;
-            }
+                (available as f32 * (child.shrink * child.basis as f32 / shrink_sum)).round() as i32
+            } else {
+                0
+            };
 
+            lengths[i] += delta;
+            distributed += delta;
             i += 1;
         }
 
         // Third loop - assign final position
 
-        let mut cursor = rect_main_start(parent.padding, parent.axis);
+        let (offset, extra) = distribute(
+            available - distributed,
+            self.children.len(),
+            parent.distribution,
+        );
+
+        let mut cursor = rect_main_start(parent.padding, parent.axis) + offset;
         for (i, (handle, child)) in self.children.iter().enumerate() {
             let child = child.apply(&parent.template);
             let length = lengths[i];
@@ -147,10 +156,32 @@ impl LuniFlex {
                 ),
             ));
 
-            cursor += length + parent.gap + rect_main_margin(child.margin, parent.axis);
+            cursor += length + parent.gap + extra + rect_main_margin(child.margin, parent.axis);
         }
 
         result
+    }
+}
+
+/// Remaining space at the start, plus extra gap between adjacent children.
+fn distribute(free: i32, count: usize, distr: LuniDistribution) -> (i32, i32) {
+    let free = free.max(0);
+    let count = count as i32;
+    match distr {
+        LuniDistribution::FlexStart => (0, 0),
+        LuniDistribution::FlexEnd => (free, 0),
+        LuniDistribution::Center => (free / 2, 0),
+        LuniDistribution::SpaceBetween if count > 1 => (0, free / (count - 1)),
+        LuniDistribution::SpaceBetween => (0, 0),
+        LuniDistribution::SpaceAround if count > 0 => {
+            let unit = free / count;
+            (unit / 2, unit)
+        }
+        LuniDistribution::SpaceAround => (0, 0),
+        LuniDistribution::SpaceEvenly => {
+            let unit = free / (count + 1);
+            (unit, unit)
+        }
     }
 }
 
