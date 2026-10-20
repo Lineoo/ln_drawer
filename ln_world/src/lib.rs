@@ -1,21 +1,18 @@
+pub mod v2;
+
 use std::{
     any::{Any, TypeId, type_name},
     borrow::Cow,
-    cell::{Cell, RefCell, UnsafeCell},
+    cell::{Cell, RefCell},
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
     ops::{Deref, DerefMut},
-    sync::{
-        Arc,
-        atomic::AtomicBool,
-        mpsc::{Receiver, Sender, channel},
-    },
+    sync::mpsc::{Receiver, Sender, channel},
 };
 
 use hashbrown::{HashMap, HashSet};
 use indexmap::IndexMap;
-use parking_lot::{Mutex, RawRwLock, RwLock, RwLockReadGuard, lock_api::RawRwLock as _};
 use smallvec::SmallVec;
 
 // Definition //
@@ -242,71 +239,6 @@ pub struct World {
 
     queue: Receiver<WorldCommand>,
     commander: Sender<WorldCommand>,
-}
-
-/// new version of [`World`]
-pub struct WorldView {
-    shared: Arc<WorldShare>,
-    validator: WorldValidator,
-}
-
-pub struct WorldShare {
-    syncing: RawRwLock,
-    storage: UnsafeCell<WorldStorage>,
-    threads: Mutex<WorldLock>,
-}
-
-/// shared, only available in flush process
-struct WorldStorage {
-    indices: HashMap<HandleAny, HandleIndex>,
-    tables: HashMap<TypeId, Box<dyn StorageGeneral>>,
-}
-
-/// shared, available as long as no other thread trying to switch view state
-struct WorldLock {
-    /// by ElemRef
-    elem: HashMap<HandleAny, isize>,
-    /// by view entry or ViewRef
-    view: HashMap<HandleAny, isize>,
-}
-
-/// per thread local
-#[derive(Default)]
-struct WorldValidator {
-    occupied: HashMap<HandleAny, isize>,
-    inserted: HashSet<HandleAny>,
-    removed: HashSet<HandleAny>,
-}
-
-impl WorldShare {
-    fn spawn(self: Arc<WorldShare>) -> WorldView {
-        self.syncing.lock_shared();
-        WorldView {
-            shared: self,
-            validator: WorldValidator::default(),
-        }
-    }
-}
-
-impl WorldView {
-    fn flush(&self) {
-        unsafe { self.shared.syncing.unlock_shared() };
-        self.shared.syncing.lock_exclusive();
-        // TODO payload here
-        unsafe { self.shared.syncing.unlock_exclusive() };
-        self.shared.syncing.lock_shared();
-    }
-
-    fn wait_flush(&self) {
-        unsafe { self.shared.syncing.unlock_shared() };
-        self.shared.syncing.lock_shared();
-    }
-}
-
-impl Drop for WorldView {
-    fn drop(&mut self) {
-        unsafe { self.shared.syncing.unlock_shared() };
-    }
 }
 
 struct HandleIndex {
