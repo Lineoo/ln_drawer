@@ -1,5 +1,5 @@
 use cosmic_text::{Align, Attrs, Metrics};
-use glam::{DVec2, I64Vec2, IVec2, UVec2, Vec4};
+use glam::{IVec2, UVec2, Vec4};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
     theme::Theme,
     widgets::{
         common::WidgetCommon,
-        container::{ContainerEcho, ContainerWithCamera},
+        container::{ContainerAttr, ContainerEcho, ContainerWithCamera},
         panel::{Panel, PanelAttr, brush_panel::BrushPanel, color_picker::LayerOklabPalette},
         renderer::text::{SetText, Text},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
@@ -100,8 +100,7 @@ impl Element for MainWorkspace {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: Rectangle::default(),
-            anchor: DVec2::new(0.5, 0.5),
-            scroll: I64Vec2::ZERO,
+            attr: ContainerAttr::default(),
         });
         world.insert(ContainerEcho { container });
         Transfer::new(world, this, container)
@@ -179,8 +178,7 @@ impl Element for ToolBar {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: Rectangle::default(),
-            anchor: DVec2::new(0.5, 0.5),
-            scroll: I64Vec2::ZERO,
+            attr: ContainerAttr::default(),
         });
         world.insert(ContainerEcho { container });
         Transfer::new(world, this, container)
@@ -282,8 +280,7 @@ impl Element for StatusBar {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: Rectangle::default(),
-            anchor: DVec2::new(0.5, 0.5),
-            scroll: I64Vec2::ZERO,
+            attr: ContainerAttr::default(),
         });
         world.insert(ContainerEcho { container });
         Transfer::new(world, this, container)
@@ -346,8 +343,7 @@ impl Element for CommandCenter {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: Rectangle::default(),
-            anchor: DVec2::new(0.5, 0.5),
-            scroll: I64Vec2::ZERO,
+            attr: ContainerAttr::default(),
         });
         world.insert(ContainerEcho { container });
         Transfer::new(world, this, container)

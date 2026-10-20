@@ -1,6 +1,6 @@
 use std::f32::consts::SQRT_2;
 
-use glam::{DVec2, I64Vec2, IVec2, UVec2, Vec4};
+use glam::{IVec2, UVec2, Vec4};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
             ButtonDrag, ButtonDragStatus, SetButtonSelected, ToggleButton, ToggleButtonTheme,
         },
         common::WidgetCommon,
-        container::{ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
+        container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         object::color_snip::{ColorSnip, ColorSnipAttr},
         palette::{
             hsl::{ColorHsla, HslRing, HslSquare, INNER_RADIUS, SetColorHsla},
@@ -246,8 +246,7 @@ impl Element for LayerHslPalette {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
-            scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 1.0),
+            attr: ContainerAttr::default(),
         });
         let deco = world.insert(ContainerDeco {
             container,
@@ -340,8 +339,7 @@ impl Element for LayerOklabPalette {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
-            scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 1.0),
+            attr: ContainerAttr::default(),
         });
         let deco = world.insert(ContainerDeco {
             container,

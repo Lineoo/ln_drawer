@@ -1,5 +1,4 @@
 use cosmic_text::{Attrs, Metrics};
-use glam::{DVec2, I64Vec2};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -25,7 +24,7 @@ use crate::{
             ToggleButtonTheme,
         },
         common::WidgetCommon,
-        container::{ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
+        container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         panel::settings::SettingPanel,
         renderer::{
             rrect::{RRect, SetRRectColor},
@@ -107,8 +106,7 @@ impl Element for BrushListPanel {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: Rectangle::default(),
-            scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 1.0),
+            attr: ContainerAttr::default(),
         });
         let list_container_deco = world.insert(ContainerDeco {
             container,

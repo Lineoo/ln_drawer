@@ -1,5 +1,4 @@
 use cosmic_text::{Attrs, Metrics};
-use glam::{DVec2, I64Vec2};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -15,7 +14,7 @@ use crate::{
     widgets::{
         button::{ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         common::WidgetCommon,
-        container::{ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
+        container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         renderer::{rrect::RRect, text::Text},
     },
 };
@@ -33,8 +32,7 @@ impl Element for LayerSelectionPanel {
         let (panel, camera) = world.build(ContainerWithCamera {
             rect: Rectangle::default(),
             common: self.common,
-            scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 1.0),
+            attr: ContainerAttr::default(),
         });
         let tab_layer_selection_deco = world.insert(ContainerDeco {
             container: panel,

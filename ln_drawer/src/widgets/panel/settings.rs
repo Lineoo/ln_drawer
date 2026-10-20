@@ -1,5 +1,4 @@
 use cosmic_text::{Attrs, Metrics, Weight};
-use glam::{DVec2, I64Vec2};
 use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
 
 use crate::{
@@ -23,7 +22,7 @@ use crate::{
     widgets::{
         brush_preview::BrushPreview,
         common::WidgetCommon,
-        container::{ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
+        container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         renderer::text::{SetText, Text},
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
@@ -40,8 +39,7 @@ impl Element for SettingPanel {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: Rectangle::default(),
-            scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 1.0),
+            attr: ContainerAttr::default(),
         });
         let deco = world.insert(ContainerDeco {
             container,
@@ -129,8 +127,7 @@ impl Element for TextSettingPanel {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: Rectangle::default(),
-            scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 1.0),
+            attr: ContainerAttr::default(),
         });
         let deco = world.insert(ContainerDeco {
             container,

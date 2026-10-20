@@ -15,7 +15,11 @@ use crate::{
         camera::{Camera, CameraDescriptor, SetCameraOutdated},
     },
     tools::collider::ToolRectCollider,
-    widgets::{SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, container::Container},
+    widgets::{
+        SetWidgetRectangle, SetWidgetVisible,
+        common::WidgetCommon,
+        container::{Container, ContainerAttr},
+    },
 };
 
 /// A widget that displays an engine-rendered brush preview.
@@ -63,8 +67,11 @@ impl BrushPreview {
             order: 50,
             child: camera,
             rect: self.rect,
-            anchor: DVec2::splat(0.5),
-            scroll: I64Vec2::ZERO,
+            attr: ContainerAttr {
+                anchor: DVec2::splat(0.5),
+                scroll: I64Vec2::ZERO,
+                clip: true,
+            },
         });
         world.queue_trigger(camera, SetCameraOutdated);
 

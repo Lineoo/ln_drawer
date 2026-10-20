@@ -1,5 +1,5 @@
 use cosmic_text::{Attrs, Family, Metrics};
-use glam::{DVec2, I64Vec2, IVec2, UVec2};
+use glam::{I64Vec2, IVec2, UVec2};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
     widgets::{
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton, ToggleButtonTheme},
         common::WidgetCommon,
-        container::{ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
+        container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         renderer::{svg::svg_render, text::Text},
     },
 };
@@ -33,8 +33,7 @@ impl Element for DebugPanel {
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
-            scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 1.0),
+            attr: ContainerAttr::default(),
         });
         let deco = world.insert(ContainerDeco {
             container,

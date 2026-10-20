@@ -36,7 +36,11 @@ use crate::{
         },
     },
     save::{Autosave, Save, object::Objects},
-    widgets::{common::WidgetCommon, container::Container, renderer::rrect::RRect},
+    widgets::{
+        common::WidgetCommon,
+        container::{Container, ContainerAttr},
+        renderer::rrect::RRect,
+    },
 };
 
 const BRIDGE_CHUNK_SIZE: UVec2 = UVec2::splat(1024);
@@ -627,8 +631,10 @@ impl Element for LayerPage {
             order: -100,
             child: page_camera,
             rect: Rectangle::default(),
-            anchor: DVec2::new(0.5, 0.5),
-            scroll: I64Vec2::ZERO,
+            attr: ContainerAttr {
+                anchor: DVec2::new(0.5, 0.5),
+                ..Default::default()
+            },
         });
 
         Transfer::new(world, this, container)
