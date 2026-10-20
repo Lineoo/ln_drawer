@@ -79,7 +79,7 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
     let brush_panel = world.insert(BrushPanel {
         common: WidgetCommon {
             camera,
-            visible: true,
+            visible: false,
         },
     });
 

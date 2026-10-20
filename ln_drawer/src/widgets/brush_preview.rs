@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use glam::{DVec2, I64Vec2, UVec2, Vec4};
 use ln_world::{Element, Handle, HandleGeneric, World};
 use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor};
@@ -9,6 +7,7 @@ use crate::{
     layer::{
         LayerPipeline, Standalone,
         brush::{BrushParams, Draw, Stroke, param::BrushParam, round::RoundBrush},
+        wrapper::LayerPage,
     },
     measures::{FI64Ext, Rectangle},
     render::{
@@ -25,7 +24,6 @@ use crate::{
 /// next frame.
 pub struct BrushPreview {
     pub rect: Rectangle,
-    pub generator: Handle<BrushPreviewGenerator>,
     pub brush: Option<Box<dyn BrushParams>>,
     pub outdated: bool,
     pub visible: bool,
@@ -38,18 +36,10 @@ struct BrushPreviewInstance {
     collider: Handle<ToolRectCollider>,
 }
 
-/// Bakes a real brush stroke into a small offscreen [`Standalone`] canvas.
-///
-/// The live stroke and undo state of the drawing engine are never touched:
-/// [`Stroke::batch`] and [`crate::layer::brush::DrawsBatch`] draw into the canvas directly.
-pub struct BrushPreviewGenerator {
-    pub lp: Arc<LayerPipeline>,
-}
-
 impl BrushPreview {
     fn init(&self, world: &World, this: Handle<Self>) {
-        let lp = world.fetch(self.generator).lp.clone();
-        let canvas = lp.create_standalone(Rectangle::new_extend(
+        let page = world.single_fetch::<LayerPage>();
+        let canvas = page.lp.create_standalone(Rectangle::new_extend(
             0,
             0,
             self.rect.width().max(1),
@@ -102,8 +92,8 @@ impl BrushPreview {
                     && this.outdated
                     && this.visible
                 {
-                    let generator = world.fetch(this.generator);
-                    generator.generate_preview(&instance.canvas, brush.as_ref());
+                    let page = world.single_fetch::<LayerPage>();
+                    Self::generate_preview(&page.lp, &instance.canvas, brush.as_ref());
                     this.outdated = false;
                 }
                 None
@@ -118,7 +108,9 @@ impl BrushPreview {
             order: 0,
             draw: Box::new(move |world, rpass, extra| {
                 let instance = world.fetch(instance);
-                lp.render_chunk(rpass, extra.camera, &instance.canvas.chunk);
+                let page = world.single_fetch::<LayerPage>();
+                page.lp
+                    .render_chunk(rpass, extra.camera, &instance.canvas.chunk);
             }),
         });
 
@@ -128,8 +120,10 @@ impl BrushPreview {
 
             let size = UVec2::new(rect.width().max(1), rect.height().max(1));
             if size != instance.canvas.rect.extend {
-                let lp = world.fetch(this.generator).lp.clone();
-                instance.canvas = lp.create_standalone(Rectangle::new_extend(0, 0, size.x, size.y));
+                let page = world.single_fetch::<LayerPage>();
+                instance.canvas = page
+                    .lp
+                    .create_standalone(Rectangle::new_extend(0, 0, size.x, size.y));
                 world.fetch_mut(camera).center = instance.canvas.rect.q32_center();
                 this.outdated = true;
             }
@@ -152,18 +146,16 @@ impl BrushPreview {
         world.dependency(container, this);
         world.dependency(instance, this);
     }
-}
 
-impl BrushPreviewGenerator {
     /// Redraw `brush` over a fixed seed into `canvas`.
-    pub fn generate_preview(&self, canvas: &Standalone, brush: &dyn BrushParams) {
+    pub fn generate_preview(lp: &LayerPipeline, canvas: &Standalone, brush: &dyn BrushParams) {
         let swap = canvas
             .chunk
             .read_write
             .is_none()
-            .then(|| self.lp.create_standalone(canvas.rect));
+            .then(|| lp.create_standalone(canvas.rect));
 
-        let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+        let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
             label: Some("preview_paint_clear"),
         });
 
@@ -172,22 +164,21 @@ impl BrushPreviewGenerator {
             timestamp_writes: None,
         });
 
-        self.lp
-            .clear_chunk_direct(&mut cpass, &canvas.chunk, canvas.rect);
+        lp.clear_chunk_direct(&mut cpass, &canvas.chunk, canvas.rect);
 
         drop(cpass);
-        self.lp.queue.submit([encoder.finish()]);
+        lp.queue.submit([encoder.finish()]);
 
         if brush.replace_mode() {
-            self.draw_background(canvas, &swap);
+            Self::draw_background(lp, canvas, &swap);
         }
 
-        self.draw_stroke(canvas, &swap, brush);
+        Self::draw_stroke(lp, canvas, &swap, brush);
     }
 
     /// Two vertical bands, one red on the left and one blue on the right, each half the canvas
     /// wide, used as the preview's background.
-    fn draw_background(&self, canvas: &Standalone, swap: &Option<Standalone>) {
+    fn draw_background(lp: &LayerPipeline, canvas: &Standalone, swap: &Option<Standalone>) {
         let w = canvas.rect.width() as f32;
         let h = canvas.rect.height() as f32;
         let radius = w / 4.0 + 2.5;
@@ -224,9 +215,9 @@ impl BrushPreviewGenerator {
             };
 
             stroke.confirm_batch(&batch);
-            batch.upload_dispatch(&self.lp);
+            batch.upload_dispatch(lp);
 
-            let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("preview_draw_background"),
             });
 
@@ -235,11 +226,11 @@ impl BrushPreviewGenerator {
                 timestamp_writes: None,
             });
 
-            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, swap, &brush);
+            batch.draw_into_standalone(lp, &mut cpass, canvas, swap, &brush);
 
             drop(cpass);
 
-            self.lp.queue.submit([encoder.finish()]);
+            lp.queue.submit([encoder.finish()]);
 
             // end
 
@@ -248,9 +239,9 @@ impl BrushPreviewGenerator {
             };
 
             stroke.confirm_batch(&batch);
-            batch.upload_dispatch(&self.lp);
+            batch.upload_dispatch(lp);
 
-            let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("preview_draw_background"),
             });
 
@@ -259,16 +250,21 @@ impl BrushPreviewGenerator {
                 timestamp_writes: None,
             });
 
-            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, swap, &brush);
+            batch.draw_into_standalone(lp, &mut cpass, canvas, swap, &brush);
 
             drop(cpass);
 
-            self.lp.queue.submit([encoder.finish()]);
+            lp.queue.submit([encoder.finish()]);
         }
     }
 
     /// A gentle S-curve with a pressure ramp, drawn with the previewed brush.
-    fn draw_stroke(&self, canvas: &Standalone, swap: &Option<Standalone>, brush: &dyn BrushParams) {
+    fn draw_stroke(
+        lp: &LayerPipeline,
+        canvas: &Standalone,
+        swap: &Option<Standalone>,
+        brush: &dyn BrushParams,
+    ) {
         const STEPS: i32 = 8;
 
         let mut stroke = Stroke::new(brush);
@@ -288,9 +284,9 @@ impl BrushPreviewGenerator {
             };
 
             stroke.confirm_batch(&batch);
-            batch.upload_dispatch(&self.lp);
+            batch.upload_dispatch(&lp);
 
-            let mut encoder = (self.lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("preview_draw_stroke"),
             });
 
@@ -299,10 +295,10 @@ impl BrushPreviewGenerator {
                 timestamp_writes: None,
             });
 
-            batch.draw_into_standalone(&self.lp, &mut cpass, canvas, swap, brush);
+            batch.draw_into_standalone(&lp, &mut cpass, canvas, swap, brush);
 
             drop(cpass);
-            self.lp.queue.submit([encoder.finish()]);
+            lp.queue.submit([encoder.finish()]);
         }
     }
 }
@@ -314,4 +310,3 @@ impl Element for BrushPreview {
 }
 
 impl Element for BrushPreviewInstance {}
-impl Element for BrushPreviewGenerator {}
