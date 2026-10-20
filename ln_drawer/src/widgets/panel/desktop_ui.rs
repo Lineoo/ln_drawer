@@ -66,7 +66,7 @@ impl Element for DesktopUi {
                 (
                     status.untyped(),
                     LuniChild {
-                        basis: Some(28),
+                        basis: Some(20),
                         ..Default::default()
                     },
                 ),
@@ -184,7 +184,7 @@ impl Element for StatusBar {
         let text = world.insert(Text {
             text: trp("title", &[("version", env!("CARGO_PKG_VERSION"))]).into(),
             metrics: Metrics {
-                font_size: 16.0,
+                font_size: 12.0,
                 line_height: 18.0,
             },
             align: Align::Center,
