@@ -76,7 +76,7 @@ impl Element for BrushPanel {
             rect: Rectangle::default(),
             common: self.common,
             scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 0.0),
+            anchor: DVec2::new(0.0, 1.0),
         });
         let list_settings_deco = world.insert(ContainerDeco {
             container: list_settings,
@@ -91,7 +91,7 @@ impl Element for BrushPanel {
         let tabs = world.insert(Tabs {
             active: 0,
             rect: Rectangle::default(),
-            visible: false,
+            visible: self.common.visible,
             tabs: vec![
                 (
                     svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
@@ -104,6 +104,10 @@ impl Element for BrushPanel {
             ],
             camera: self.common.camera,
         });
+
+        Transfer::new(world, this, tabs)
+            .set_widget_rectangle()
+            .set_widget_visible();
 
         world.queue(move |world| brush_list(world, list_container, generator, cam_list));
         world.queue(move |world| {

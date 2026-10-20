@@ -276,7 +276,4 @@ pub fn side_docker(world: &World, camera: Handle<Camera>) {
     world.dependency(touch, side_panel);
     world.dependency(pipette, side_panel);
     world.dependency(luni, side_panel);
-
-    world.named("layer_init");
-    world.queue_trigger(layer, BrushConfigurationChanged);
 }

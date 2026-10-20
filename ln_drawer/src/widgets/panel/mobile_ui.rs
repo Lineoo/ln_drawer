@@ -1,7 +1,7 @@
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
-    layer::wrapper::LayerPage,
+    layer::wrapper::{BrushConfigurationChanged, LayerPage},
     layout::transform::{Transform, TransformValue},
     lnwin::Lnwindow,
     widgets::{common::WidgetCommon, panel::side_docker::side_docker},
@@ -27,5 +27,8 @@ impl Element for MobileUi {
         world.queue(move |world| side_docker(world, camera));
 
         world.dependency(page, this);
+
+        world.named("layer_init");
+        world.queue_trigger(page, BrushConfigurationChanged);
     }
 }

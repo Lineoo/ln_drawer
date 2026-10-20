@@ -302,7 +302,7 @@ impl Render {
         }
     }
 
-    fn render_main(world: &World) {
+    fn render_main(world: &mut World) {
         let timestamp_prepare = Instant::now();
 
         let mut render = world.single_fetch_mut::<Render>();
@@ -318,6 +318,8 @@ impl Render {
 
         world.queue_cache::<RenderDrawControl>();
         world.queue_cache::<RenderPrepareControl>();
+
+        world.flush();
 
         let mut render = world.single_fetch_mut::<Render>();
         render.preparing = false;
@@ -642,7 +644,7 @@ impl Element for Render {
             }
 
             WindowEvent::RedrawRequested => {
-                Render::render_main(world);
+                world.queue(|world| Render::render_main(world));
             }
 
             _ => (),

@@ -34,7 +34,7 @@ impl Element for LayerSelectionPanel {
             rect: Rectangle::default(),
             common: self.common,
             scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 0.0),
+            anchor: DVec2::new(0.0, 1.0),
         });
         let tab_layer_selection_deco = world.insert(ContainerDeco {
             container: panel,

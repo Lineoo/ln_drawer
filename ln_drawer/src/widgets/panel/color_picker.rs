@@ -247,7 +247,7 @@ impl Element for LayerHslPalette {
             common: self.common,
             rect: self.rect,
             scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 0.0),
+            anchor: DVec2::new(0.0, 1.0),
         });
         let deco = world.insert(ContainerDeco {
             container,
@@ -341,7 +341,7 @@ impl Element for LayerOklabPalette {
             common: self.common,
             rect: self.rect,
             scroll: I64Vec2::ZERO,
-            anchor: DVec2::new(0.0, 0.0),
+            anchor: DVec2::new(0.0, 1.0),
         });
         let deco = world.insert(ContainerDeco {
             container,

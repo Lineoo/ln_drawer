@@ -207,7 +207,7 @@ impl Container {
                 let max = i64::q32_from_i32(restrict.right()) - max.x;
                 self.scroll.x.clamp(min, max)
             }
-            false => i64::q32_from_i32(restrict.left()),
+            false => 0,
         };
         let y = match self.rect.height() < restrict.height() {
             true => {
@@ -215,7 +215,7 @@ impl Container {
                 let max = i64::q32_from_i32(restrict.up()) - max.y;
                 self.scroll.y.clamp(min, max)
             }
-            false => i64::q32_from_i32(restrict.down()),
+            false => 0,
         };
 
         self.scroll = I64Vec2::new(x, y);

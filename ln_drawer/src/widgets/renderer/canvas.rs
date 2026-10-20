@@ -145,7 +145,7 @@ impl Canvas {
             let mut instance = world.fetch_mut(instance);
             let pipeline = world.single_fetch::<CanvasPipeline>();
             let render = world.single_fetch::<Render>();
-            *instance = this.instantiate(&render, &pipeline)
+            *instance = this.instantiate(&render, &pipeline);
         });
 
         world.dependency(instance, this);

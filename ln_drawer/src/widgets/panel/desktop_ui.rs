@@ -4,7 +4,7 @@ use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
     i18n::trp,
-    layer::wrapper::LayerPage,
+    layer::wrapper::{BrushConfigurationChanged, LayerPage},
     layout::{
         luni::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
@@ -147,6 +147,9 @@ impl Element for MainWorkspace {
         world.dependency(container, this);
         world.dependency(page, this);
         world.dependency(command_center, this);
+
+        world.named("layer_init");
+        world.queue_trigger(page, BrushConfigurationChanged);
     }
 }
 

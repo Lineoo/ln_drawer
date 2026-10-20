@@ -88,7 +88,6 @@ impl Text {
             world.queue_trigger(canvas, SetWidgetRectangle(rect));
         });
 
-        // FIXME Sometimes text modification wont take effect immediately
         world.observer(this, move |SetText(text), world| {
             let mut this = world.fetch_mut(this);
             this.set_text(&text[..]);
@@ -176,6 +175,7 @@ impl Text {
                     .swash_cache
                     .get_image(&mut manager.font_system, physical_glyph.cache_key)
                 else {
+                    log::warn!("swash not cannot image");
                     continue;
                 };
 
