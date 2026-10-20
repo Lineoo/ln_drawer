@@ -287,6 +287,7 @@ impl SliderLabel {
             metrics: Metrics::new(12., 2. * LABEL_HALF.y as f32),
             align: Align::Center,
             visible: self.visible && self.hover,
+            color: theme.distinct,
             camera: Some(self.camera),
             ..Default::default()
         });
