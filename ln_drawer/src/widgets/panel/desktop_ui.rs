@@ -4,7 +4,10 @@ use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
     i18n::trp,
-    layer::wrapper::{BrushConfigurationChanged, LayerPage},
+    layer::{
+        brush::param::BrushParamKey,
+        wrapper::{BrushConfigurationChanged, LayerPage},
+    },
     layout::{
         luni::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
@@ -14,13 +17,14 @@ use crate::{
         transform::{Transform, TransformEdge, TransformValue},
     },
     lnwin::Lnwindow,
-    measures::Rectangle,
+    measures::{Axis, Rectangle},
     theme::Theme,
     widgets::{
         common::WidgetCommon,
         container::{ContainerEcho, ContainerWithCamera},
         panel::{Panel, brush_panel::BrushPanel, color_picker::LayerOklabPalette},
-        renderer::text::Text,
+        renderer::text::{SetText, Text},
+        slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
     },
 };
 
@@ -36,6 +40,9 @@ impl Element for DesktopUi {
             common: self.common,
         });
 
+        let tool = world.insert(ToolBar {
+            common: self.common,
+        });
         let status = world.insert(StatusBar {
             common: self.common,
         });
@@ -55,6 +62,13 @@ impl Element for DesktopUi {
                 },
             ),
             children: vec![
+                (
+                    tool.untyped(),
+                    LuniChild {
+                        basis: Some(40),
+                        ..Default::default()
+                    },
+                ),
                 (
                     workspace.untyped(),
                     LuniChild {
@@ -153,6 +167,107 @@ impl Element for MainWorkspace {
     }
 }
 
+/// the top one
+pub struct ToolBar {
+    pub common: WidgetCommon,
+}
+
+impl Element for ToolBar {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let page = world.single::<LayerPage>();
+
+        let (container, camera) = world.build(ContainerWithCamera {
+            common: self.common,
+            rect: Rectangle::default(),
+            anchor: DVec2::new(0.5, 0.5),
+            scroll: I64Vec2::ZERO,
+        });
+        world.insert(ContainerEcho { container });
+        Transfer::new(world, this, container)
+            .set_widget_rectangle()
+            .set_widget_visible();
+
+        let panel = world.insert(Panel {
+            common: WidgetCommon {
+                camera,
+                visible: self.common.visible,
+            },
+            rect: Rectangle::default(),
+            shadow: false,
+        });
+
+        let slider = world.insert(Slider {
+            common: WidgetCommon {
+                camera,
+                visible: true,
+            },
+            rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
+            axis: Axis::Right,
+            value: 0.67,
+            pressed: false,
+        });
+
+        let slider_label = world.insert(SliderLabel {
+            text: String::new(),
+            clockwise: true,
+            source: slider,
+            hover: false,
+            visible: true,
+            camera,
+        });
+
+        world.insert(Transform {
+            value: TransformValue::copy(),
+            source: container.untyped(),
+            target: panel.untyped(),
+        });
+
+        world.insert(LuniFlex {
+            parent: (
+                container.untyped(),
+                LuniParent {
+                    axis: LuniAxis::Row,
+                    distribution: LuniDistribution::Center,
+                    padding: LuniRect::default(),
+                    gap: 0,
+                    template: LuniChildTemplate::default(),
+                },
+            ),
+            children: vec![(
+                slider_label.untyped(),
+                LuniChild {
+                    shrink: Some(1.0),
+                    ..Default::default()
+                },
+            )],
+        });
+
+        world.observer(slider, move |&SliderValue(value), world| {
+            let mut page = world.single_fetch_mut::<LayerPage>();
+            let scale = (value.exp2() - 1.) * 127.5 + 0.5;
+            if let Some(param) = page.active_mut().scalar_mut(BrushParamKey::Size) {
+                param.scale = scale;
+            }
+
+            world.queue_trigger(page.handle(), BrushConfigurationChanged);
+        });
+
+        world.observer(page, move |&BrushConfigurationChanged, world| {
+            let page = world.single_fetch::<LayerPage>();
+            let value = page
+                .active()
+                .scalar(BrushParamKey::Size)
+                .map(|param| param.scale)
+                .unwrap_or(0.0);
+            world.trigger(slider, &SetSliderValue(((value - 0.5) / 127.5 + 1.).log2()));
+            world.queue_trigger(slider_label, SetText(format!("{value:.2} px")));
+        });
+
+        world.dependency(container, this);
+    }
+}
+
+/// the bottom one
 pub struct StatusBar {
     pub common: WidgetCommon,
 }
