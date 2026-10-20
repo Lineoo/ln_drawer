@@ -1,7 +1,12 @@
 use glam::{Vec2, Vec4};
 use ln_world::Element;
 
-use crate::{color::srgb::srgb_gamma_decode, measures::Axis};
+use crate::{
+    color::srgb::{hex_to_srgb, srgb_gamma_decode},
+    measures::Axis,
+};
+
+const DARK_MODE: bool = true;
 
 pub struct Theme {
     pub blank_color: Vec4,
@@ -22,20 +27,37 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Theme {
-            blank_color: srgb_gamma_decode(Vec4::new(1.000, 1.000, 1.000, 1.0)),
-            primary_color: srgb_gamma_decode(Vec4::new(0.949, 0.949, 0.949, 1.0)),
-            secondary_color: srgb_gamma_decode(Vec4::new(0.898, 0.898, 0.898, 1.0)),
-            highlight_color: srgb_gamma_decode(Vec4::new(0.859, 0.859, 0.859, 1.0)),
-            significant_color: srgb_gamma_decode(Vec4::new(0.722, 0.722, 0.722, 1.0)),
-            theme_color: srgb_gamma_decode(Vec4::new(0.863, 0.729, 0.588, 1.0)),
-            symbolic_color: srgb_gamma_decode(Vec4::new(0.0, 0.0, 0.0, 1.0)),
-            shadow_color: srgb_gamma_decode(Vec4::new(0.0, 0.0, 0.0, 0.25)),
-            shadow_offset: Vec2::new(0.0, -4.0),
-            shadow_blur: 4.0,
-            roundness: 4.0,
-            axis: Axis::Right,
-            anim_factor: 30.0,
+        match DARK_MODE {
+            true => Theme {
+                blank_color: srgb_gamma_decode(hex_to_srgb("#333")),
+                primary_color: srgb_gamma_decode(hex_to_srgb("#444")),
+                secondary_color: srgb_gamma_decode(hex_to_srgb("#555")),
+                highlight_color: srgb_gamma_decode(hex_to_srgb("#777")),
+                significant_color: srgb_gamma_decode(hex_to_srgb("#aaa")),
+                theme_color: srgb_gamma_decode(hex_to_srgb("#cc7353")),
+                symbolic_color: srgb_gamma_decode(hex_to_srgb("#fff")),
+                shadow_color: srgb_gamma_decode(Vec4::new(0.0, 0.0, 0.0, 0.25)),
+                shadow_offset: Vec2::new(0.0, -4.0),
+                shadow_blur: 4.0,
+                roundness: 4.0,
+                axis: Axis::Right,
+                anim_factor: 30.0,
+            },
+            false => Theme {
+                blank_color: srgb_gamma_decode(hex_to_srgb("#ffffff")),
+                primary_color: srgb_gamma_decode(hex_to_srgb("#f2f2f2")),
+                secondary_color: srgb_gamma_decode(hex_to_srgb("#e5e5e5")),
+                highlight_color: srgb_gamma_decode(hex_to_srgb("#dbdbdb")),
+                significant_color: srgb_gamma_decode(hex_to_srgb("#b8b8b8")),
+                theme_color: srgb_gamma_decode(hex_to_srgb("#dcba96")),
+                symbolic_color: srgb_gamma_decode(hex_to_srgb("#000000")),
+                shadow_color: srgb_gamma_decode(Vec4::new(0.0, 0.0, 0.0, 0.25)),
+                shadow_offset: Vec2::new(0.0, -4.0),
+                shadow_blur: 4.0,
+                roundness: 4.0,
+                axis: Axis::Right,
+                anim_factor: 30.0,
+            },
         }
     }
 }
