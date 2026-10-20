@@ -155,12 +155,12 @@ impl Camera {
         pf.into()
     }
 
-    #[deprecated = "view_rect should depend on scope size not surface size"]
+    // TODO #[deprecated = "view_rect should depend on scope size not surface size"]
     pub fn world_view_rect(&self) -> Rectangle {
         Self::view_rect(self.zoom, self.surface_size, self.center)
     }
 
-    #[deprecated = "view_rect should depend on scope size not surface size"]
+    // TODO #[deprecated = "view_rect should depend on scope size not surface size"]
     pub fn view_rect(zoom: i64, size: UVec2, center: I64Vec2) -> Rectangle {
         let scale = zoom.q32_as_f64().exp2();
         let view_size = size.as_dvec2() / scale * 0.5;
