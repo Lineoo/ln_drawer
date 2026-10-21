@@ -30,7 +30,7 @@ impl Element for MobileUi {
                 visible: true,
             },
         });
-        
+
         world.dependency(page, this);
 
         world.named("layer_init");

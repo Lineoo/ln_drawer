@@ -70,7 +70,10 @@ impl Element for SideDocker {
 
         world.named("brush_panel");
         let brush_panel = world.insert(BrushPanel {
-            common: self.common,
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: false,
+            },
         });
 
         let slider = world.insert(Slider {

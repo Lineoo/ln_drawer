@@ -233,6 +233,7 @@ impl Element for ToolBar {
         let undo = docker_button(include_bytes!("../../../res/interface/undo-2.svg"));
         let redo = docker_button(include_bytes!("../../../res/interface/redo-2.svg"));
         let touch = docker_button(include_bytes!("../../../res/interface/pointer.svg"));
+        let pipette = docker_button(include_bytes!("../../../res/interface/pipette.svg"));
 
         let slider = world.insert(Slider {
             common: WidgetCommon {
@@ -290,6 +291,7 @@ impl Element for ToolBar {
                     },
                 ),
                 (touch.untyped(), LuniChild::default()),
+                (pipette.untyped(), LuniChild::default()),
             ],
         });
 
@@ -303,6 +305,12 @@ impl Element for ToolBar {
             let mut input = world.single_fetch_mut::<LayerInput>();
             input.touch_draw = val;
             world.queue_trigger(touch, SetButtonSelected(val));
+        });
+
+        world.observer(pipette, move |&ButtonSelected(val), world| {
+            let mut input = world.single_fetch_mut::<LayerInput>();
+            input.hold_pick = val;
+            world.queue_trigger(pipette, SetButtonSelected(val));
         });
 
         world.observer(page, move |&BrushConfigurationChanged, world| {
