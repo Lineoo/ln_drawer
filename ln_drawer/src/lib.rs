@@ -1,3 +1,5 @@
+#[cfg(target_os = "android")]
+mod android;
 mod animation;
 mod color;
 mod i18n;
@@ -27,29 +29,19 @@ pub fn desktop_main() {
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
-    use android_logger::{Config, FilterBuilder};
     use ln_world::World;
     use winit::{
         event_loop::EventLoop,
         platform::android::{EventLoopBuilderExtAndroid, activity::WindowManagerFlags},
     };
 
-    android_logger::init_once(
-        Config::default()
-            .with_max_level(log::LevelFilter::Debug)
-            .with_filter(
-                FilterBuilder::new()
-                    .filter(None, log::LevelFilter::Debug)
-                    .filter(Some("naga"), log::LevelFilter::Warn)
-                    .filter(Some("wgpu"), log::LevelFilter::Warn)
-                    .build(),
-            )
-            .with_tag("ln_drawer"),
-    );
+    android::init_logging();
 
     log::info!("This is LnDrawer Mobile. Welcome!");
 
     app.set_window_flags(WindowManagerFlags::FULLSCREEN, WindowManagerFlags::empty());
+
+    android::notify_java(&app, "android_main started");
 
     let mut world = World::default();
     world.insert(lnwin::LnAndroid(app.clone()));

@@ -19,12 +19,16 @@ $ cd ln_drawer
 $ cargo build --package=ln_drawer --bin ln_drawer
 ```
 
-Android 平台需要 `cargo-apk` 以及 Android SDK 和 NDK。推荐的 SDK 平台版本为 34，NDK 版本为 27.3.13750724。
+Android 平台需要 `cargo-ndk`、Android SDK 34、Build Tools 34.0.0、NDK 29.0.14206865 和 JDK 17 或 21。
 
 ```
-$ cargo install cargo-apk
-$ cargo apk build --package=ln_drawer --lib
+$ cargo install cargo-ndk
+$ cd android
+$ ./gradlew assembleDebug
 ```
+
+Gradle 的 `cargoNdk` 任务会把 Rust 库编译到 `android/app/src/main/jniLibs`。
+需要设置 `ANDROID_HOME` 和 `ANDROID_NDK_HOME`。
 
 ## 许可证
 

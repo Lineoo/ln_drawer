@@ -46,15 +46,4 @@ features = ["android-native-activity"]
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15.1"
-
-[package.metadata.android]
-package = "dev.linn.lndrawer"
-resources = "build/android"
-
-[package.metadata.android.sdk]
-min_sdk_version = 26
-target_sdk_version = 34
-
-[package.metadata.android.application]
-icon = "@mipmap/icon"
-label = "LnDrawer Dev"
+jni = "0.22"

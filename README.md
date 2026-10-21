@@ -19,12 +19,16 @@ $ cd ln_drawer
 $ cargo build --package=ln_drawer --bin ln_drawer
 ```
 
-Android platform needs `cargo-apk` and Android SDK & NDK. Recommanded SDK platform is 34 and NDK version is 27.3.13750724.
+Android platform needs `cargo-ndk`, Android SDK 34, Build Tools 34.0.0, NDK 29.0.14206865 and JDK 17 or 21.
 
 ```
-$ cargo install cargo-apk
-$ cargo apk build --package=ln_drawer --lib
+$ cargo install cargo-ndk
+$ cd ln_drawer/build/android
+$ ./gradlew assembleDebug
 ```
+
+The `cargoNdk` Gradle task builds the Rust library into `ln_drawer/build/android/app/src/main/jniLibs`.
+`ANDROID_HOME` and `ANDROID_NDK_HOME` must be set.
 
 ## License
 

@@ -1,0 +1,8 @@
+# gradle output 
+.gradle
+.kotlin
+build
+app/build
+
+# cargo output
+app/src/main/jniLibs

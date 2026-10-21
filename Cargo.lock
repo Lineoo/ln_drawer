@@ -1255,6 +1255,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "icu_locale",
  "indexmap",
+ "jni",
  "ln_world",
  "log",
  "lyon",
