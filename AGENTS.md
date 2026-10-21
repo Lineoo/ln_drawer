@@ -8,6 +8,7 @@ GPU-accelerated drawing app featured infinite canvas in Rust (winit + wgpu). Car
 - If assigned to review in read-only mode, assume that users has run `cargo check` and `cargo fmt`. Skip cargo tool calls that'll need write-permission, except when significant type errors are spotted.
 - Tests: `cargo test` — tests are all are pure-compute and run headless.
 - If Vulkan backend not found (usually in sandbox env), use Chromium's SwiftShader. However, headless tests are preferred than running actually rendering.
+- Do **NOT** run `cargo check --target aarch64-linux-android`, instead use `cargo ndk check --target aarch64-linux-android` with no platform target specificated. Otherwise it will become a full recompiling (`zstd-sys` detecting `CC` changes). We are not happy with that. 
 
 ## Critical gotchas
 

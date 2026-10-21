@@ -3,15 +3,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val repoRoot = rootProject.projectDir.parentFile.parentFile
-
 android {
     namespace = "dev.linn.lndrawer"
     compileSdk = 34
 
     defaultConfig {
         applicationId = "dev.linn.lndrawer"
-        minSdk = 26
+        minSdk = 21
         targetSdk = 34
         versionCode = 16778496
         versionName = "0.5.0-dev"
@@ -47,19 +45,21 @@ android {
 val cargoProfile = providers.gradleProperty("cargoProfile").orElse("dev")
 
 val cargoNdk = tasks.register<Exec>("cargoNdk") {
-    workingDir = repoRoot
+    // set cargo workspace root
+    workingDir = rootProject.projectDir.parentFile.parentFile
 
     val args = mutableListOf(
         "cargo", "ndk",
-        "-t", "arm64-v8a",
-        "-P", "26",
-        "-o", "build/android/app/src/main/jniLibs",
+        "--target=aarch64-linux-android",
+        "--platform=21",
+        "--output-dir=build/android/app/src/main/jniLibs",
         "build",
+        "--package=ln_drawer",
+        "--lib"
     )
     if (cargoProfile.get() == "release") {
         args += "--release"
     }
-    args += listOf("--package=ln_drawer", "--lib")
     commandLine(args)
 }
 
