@@ -225,6 +225,8 @@ pub struct SceneFile {
     pub database_version: u32,
     #[serde(default)]
     pub compact_on_startup: bool,
+    pub desktop_mode: Option<bool>,
+    pub dark_mode: Option<bool>,
     #[serde(default)]
     pub page_camera: PageCameraArchive,
     pub tilt_correction: Option<TiltCorrection>,
@@ -257,9 +259,11 @@ impl SceneFile {
 
 impl Default for SceneFile {
     fn default() -> Self {
-        Self {
+        SceneFile {
             database_version: DATABASE_VERSION,
             compact_on_startup: false,
+            desktop_mode: None,
+            dark_mode: None,
             page_camera: PageCameraArchive::default(),
             tilt_correction: None,
             offset_correction: None,

@@ -106,6 +106,12 @@ impl Element for Lnwindow {
         let here = world.here();
         world.enter(this, || world.insert(ViewRef(here)));
         world.enter_queue(this, move |world| {
+            // TODO async save initialization
+            Save::init(world);
+            world.insert(AutosaveScheduler {
+                autosave_duration: Duration::from_secs(180),
+            });
+
             let lnwindow = world.fetch(this);
             world.insert(pollster::block_on(Render::new(&lnwindow)));
             drop(lnwindow);
@@ -123,7 +129,12 @@ impl Element for Lnwindow {
             world.insert(QuadMeshPipeline::<RRectMaterial>::from_world(world));
             world.insert(VtorPipeline::from_world(world));
             world.insert(TextPipeline::new());
-            world.insert(Theme::default());
+            let save = world.single_fetch::<Save>();
+            world.insert(match save.sn().dark_mode {
+                None | Some(true) => Theme::dark_mode(),
+                Some(false) => Theme::light_mode(),
+            });
+            drop(save);
 
             world.flush();
 
@@ -181,14 +192,10 @@ impl Element for Lnwindow {
             });
 
             world.flush();
-
-            // TODO async save initialization
-            Save::init(world);
-            world.insert(AutosaveScheduler {
-                autosave_duration: Duration::from_secs(180),
-            });
-
-            let use_desktop = std::env::var_os("LNDRAWER_DESKTOP_UI").is_some();
+            let save = world.single_fetch::<Save>();
+            let use_desktop = std::env::var_os("LNDRAWER_DESKTOP_UI").is_some()
+                || save.sn().desktop_mode.is_some_and(|x| x);
+            drop(save);
             if use_desktop {
                 log::warn!("using experimental desktop ui");
                 world.insert(DesktopUi {
