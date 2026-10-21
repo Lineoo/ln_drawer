@@ -1,6 +1,8 @@
 [Desktop Entry]
+Type=Application
 Name=LnDrawer
 Exec=ln_drawer
 Icon=ln_drawer
-Type=Application
-Categories=Utility;
+Categories=Graphics;2DGraphics;
+Terminal=false
+X-AppImage-Version=@VERSION@

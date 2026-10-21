@@ -91,6 +91,12 @@ jobs:
       if: ${{ matrix.platform == 'desktop' }}
       run: LNDRAWER_RELEASE=1 cargo build --verbose --release --package=ln_drawer --bin=ln_drawer --target ${{ matrix.target }}
 
+    - name: '[Install] AppImage Tool'
+      if: ${{ matrix.package == 'linux-tar' }}
+      run: |
+        curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x "$RUNNER_TEMP/appimagetool"
+
     - name: '[Build] Compile Library and Package (Apk)'
       if: ${{ matrix.platform == 'android' }}
       env:
@@ -122,11 +128,27 @@ jobs:
         tar -czvf ln_drawer.tar.gz ln_drawer
         echo "ARTIFACT=$(readlink -f ln_drawer.tar.gz)" > $GITHUB_ENV
 
+    - name: '[Build] Package for Linux (AppImage)'
+      if: ${{ matrix.package == 'linux-tar' }}
+      env:
+        APPIMAGETOOL: ${{ runner.temp }}/appimagetool
+        BIN: target/${{ matrix.target }}/release/ln_drawer
+      run: |
+        ln_drawer/build/appimage/build.sh
+        echo "APPIMAGE=$(readlink -f target/appimage/ln_drawer.AppImage)" >> $GITHUB_ENV
+
     - name: '[Actions] Upload Artifacts'
       uses: actions/upload-artifact@v7
       with:
         name: artifact-${{ matrix.target }}-${{ matrix.package }}
         path: ${{ env.ARTIFACT }}
+
+    - name: '[Actions] Upload AppImage Artifact'
+      if: ${{ matrix.package == 'linux-tar' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: artifact-${{ matrix.target }}-linux-appimage
+        path: ${{ env.APPIMAGE }}
   
   release:
     name: Release
@@ -184,6 +206,7 @@ jobs:
         REPO: ${{ github.repository }}
         ASSETS: |
           artifact-x86_64-unknown-linux-gnu-linux-tar/ln_drawer.tar.gz|ln_drawer-${{ inputs.version }}-linux-x86_64.tar.gz
+          artifact-x86_64-unknown-linux-gnu-linux-appimage/ln_drawer.AppImage|ln_drawer-${{ inputs.version }}-linux-x86_64.AppImage
           artifact-x86_64-pc-windows-gnu-windows-zip/ln_drawer.zip|ln_drawer-${{ inputs.version }}-windows-x86_64.zip
           artifact-aarch64-linux-android-android-apk/ln_drawer.apk|ln_drawer-${{ inputs.version }}-android-aarch64.apk
       run: |
