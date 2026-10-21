@@ -1,27 +1,42 @@
 package dev.linn.lndrawer
 
 import android.app.NativeActivity
+import android.os.Build
 import android.os.Bundle
-import android.util.Log
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 
 class MainActivity : NativeActivity() {
     companion object {
-        private const val TAG = "ln_drawer"
-
         init {
             System.loadLibrary("ln_drawer")
         }
     }
 
-    external fun nativeInit(filesDir: String): String
-
-    fun onNativeReady(message: String) {
-        Log.i(TAG, "JNI Rust -> Kotlin: $message")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        hideNavigationBar()
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        val pong = nativeInit(filesDir.absolutePath)
-        Log.i(TAG, "JNI Kotlin -> Rust: $pong")
-        super.onCreate(savedInstanceState)
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideNavigationBar()
+    }
+
+    private fun hideNavigationBar() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.run {
+                hide(WindowInsets.Type.navigationBars())
+                systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        }
     }
 }
