@@ -6,6 +6,7 @@ use crate::{
     i18n::trp,
     layer::{
         brush::param::BrushParamKey,
+        input::LayerInput,
         wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::{
@@ -20,11 +21,20 @@ use crate::{
     measures::{Axis, Rectangle},
     theme::Theme,
     widgets::{
+        SetWidgetRectangle, SetWidgetVisible,
+        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         container::{ContainerAttr, ContainerEcho, ContainerWithCamera},
-        panel::{Panel, PanelAttr, brush_panel::BrushPanel, color_picker::LayerOklabPalette},
-        renderer::text::{SetText, Text},
+        panel::{
+            Panel, PanelAttr, brush_panel::BrushListPanel, color_picker::LayerOklabPalette,
+            debug_panel::DebugPanel, layer_selection::LayerSelectionPanel, settings::SettingPanel,
+        },
+        renderer::{
+            svg::svg_render,
+            text::{SetText, Text},
+        },
         slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
+        tabs::{SetTabsActive, Tabs},
     },
 };
 
@@ -89,6 +99,11 @@ impl Element for DesktopUi {
         });
 
         world.dependency(workspace, this);
+
+        world.named("layer_init");
+        world.queue(|world| {
+            world.trigger(world.single::<LayerPage>(), &BrushConfigurationChanged);
+        });
     }
 }
 
@@ -161,9 +176,6 @@ impl Element for MainWorkspace {
         world.dependency(container, this);
         world.dependency(page, this);
         world.dependency(command_center, this);
-
-        world.named("layer_init");
-        world.queue_trigger(page, BrushConfigurationChanged);
     }
 }
 
@@ -175,6 +187,7 @@ pub struct ToolBar {
 impl Element for ToolBar {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         let page = world.single::<LayerPage>();
+        let theme = world.single_fetch::<Theme>();
 
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
@@ -201,6 +214,25 @@ impl Element for ToolBar {
                 round: false,
             },
         });
+
+        let docker_button = |image_bytes| {
+            world.insert(ToggleButton {
+                common: WidgetCommon {
+                    camera,
+                    visible: self.common.visible,
+                },
+                rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+                theme: theme.button(),
+                image: Some(svg_render(image_bytes, 8)),
+                selected: false,
+                hovering: false,
+            })
+        };
+
+        let eraser = docker_button(include_bytes!("../../../res/interface/eraser.svg"));
+        let undo = docker_button(include_bytes!("../../../res/interface/undo-2.svg"));
+        let redo = docker_button(include_bytes!("../../../res/interface/redo-2.svg"));
+        let touch = docker_button(include_bytes!("../../../res/interface/pointer.svg"));
 
         let slider = world.insert(Slider {
             common: WidgetCommon {
@@ -235,18 +267,60 @@ impl Element for ToolBar {
                     axis: LuniAxis::Row,
                     distribution: LuniDistribution::Center,
                     padding: LuniRect::default(),
-                    gap: 0,
-                    template: LuniChildTemplate::default(),
+                    gap: 4,
+                    template: LuniChildTemplate {
+                        basis: 36,
+                        cross: 36,
+                        shrink: 1.0,
+                        align: LuniAlign::Center,
+                        ..Default::default()
+                    },
                 },
             ),
-            children: vec![(
-                slider.untyped(),
-                LuniChild {
-                    basis: Some(200),
-                    shrink: Some(1.0),
-                    ..Default::default()
-                },
-            )],
+            children: vec![
+                (undo.untyped(), LuniChild::default()),
+                (redo.untyped(), LuniChild::default()),
+                (eraser.untyped(), LuniChild::default()),
+                (
+                    slider.untyped(),
+                    LuniChild {
+                        basis: Some(200),
+                        shrink: Some(1.0),
+                        ..Default::default()
+                    },
+                ),
+                (touch.untyped(), LuniChild::default()),
+            ],
+        });
+
+        world.observer(eraser, move |&ButtonSelected(val), world| {
+            let mut page = world.fetch_mut(page);
+            page.active_mut().set_toggle(BrushParamKey::Erase, val);
+            world.queue_trigger(page.handle(), BrushConfigurationChanged);
+        });
+
+        world.observer(touch, move |&ButtonSelected(val), world| {
+            let mut input = world.single_fetch_mut::<LayerInput>();
+            input.touch_draw = val;
+            world.queue_trigger(touch, SetButtonSelected(val));
+        });
+
+        world.observer(page, move |&BrushConfigurationChanged, world| {
+            let is_eraser = {
+                let layer = world.fetch(page);
+                layer.active().toggle(BrushParamKey::Erase).unwrap_or(false)
+            };
+            world.trigger(eraser, &SetButtonSelected(is_eraser));
+        });
+
+        world.observer(undo, move |&ButtonClick, world| {
+            let mut page = world.fetch_mut(page);
+            page.undo();
+        });
+
+        world.observer(redo, move |&ButtonClick, world| {
+            let mut page = world.fetch_mut(page);
+            page.redo();
         });
 
         world.observer(slider, move |&SliderValue(value), world| {
@@ -377,7 +451,7 @@ impl Element for CommandCenter {
             oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
         });
 
-        let brush = world.insert(BrushPanel {
+        let verbose = world.insert(VerbosePanel {
             common: WidgetCommon {
                 camera,
                 ..self.common
@@ -433,10 +507,77 @@ impl Element for CommandCenter {
                 },
             },
             source: container.untyped(),
-            target: brush.untyped(),
+            target: verbose.untyped(),
         });
 
         world.dependency(panel, this);
         world.dependency(oklab, this);
+    }
+}
+
+pub struct VerbosePanel {
+    pub common: WidgetCommon,
+}
+
+impl Element for VerbosePanel {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        let tab_brush_list = world.insert(BrushListPanel {
+            common: self.common,
+        });
+
+        let tab_settings = world.insert(SettingPanel {
+            common: self.common,
+        });
+
+        let tab_layer_selection = world.insert(LayerSelectionPanel {
+            common: self.common,
+        });
+
+        let tab_debug = world.insert(DebugPanel {
+            common: self.common,
+        });
+
+        let tabs = world.insert(Tabs {
+            active: 0,
+            rect: Rectangle::default(),
+            visible: self.common.visible,
+            tabs: vec![
+                (
+                    svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
+                    tab_brush_list.untyped(),
+                ),
+                (
+                    svg_render(include_bytes!("../../../res/interface/settings.svg"), 12),
+                    tab_settings.untyped(),
+                ),
+                (
+                    svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
+                    tab_layer_selection.untyped(),
+                ),
+                (
+                    svg_render(include_bytes!("../../../res/interface/bug.svg"), 12),
+                    tab_debug.untyped(),
+                ),
+            ],
+            camera: self.common.camera,
+        });
+
+        Transfer::new(world, this, tabs)
+            .set_widget_rectangle()
+            .set_widget_visible();
+
+        world.dependency(tab_brush_list, this);
+        world.dependency(tab_settings, this);
+        world.dependency(tab_layer_selection, this);
+        world.dependency(tab_debug, this);
+        world.dependency(tabs, this);
+
+        // initialize layout
+        world.queue(move |world| {
+            let this = world.fetch(tabs);
+            world.queue_trigger(tabs, SetWidgetRectangle(this.rect));
+            world.queue_trigger(tabs, SetWidgetVisible(this.visible));
+            world.queue_trigger(tabs, SetTabsActive(this.active));
+        });
     }
 }

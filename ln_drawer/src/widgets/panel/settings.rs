@@ -106,6 +106,7 @@ impl Element for SettingPanel {
                     settings.untyped(),
                     LuniChild {
                         basis: Some(200),
+                        shrink: Some(1.0),
                         grow: Some(1.0),
                         ..Default::default()
                     },

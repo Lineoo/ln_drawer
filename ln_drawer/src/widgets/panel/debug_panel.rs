@@ -25,7 +25,6 @@ use crate::{
 
 pub struct DebugPanel {
     pub common: WidgetCommon,
-    pub rect: Rectangle,
 }
 
 impl Element for DebugPanel {
@@ -34,7 +33,7 @@ impl Element for DebugPanel {
 
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
-            rect: self.rect,
+            rect: Rectangle::default(),
             attr: ContainerAttr::default(),
         });
         let deco = world.insert(ContainerDeco {

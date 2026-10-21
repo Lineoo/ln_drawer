@@ -69,7 +69,6 @@ impl Element for ColorPickerPanel {
         world.named("debug_panel");
         let tab_debug = world.insert(DebugPanel {
             common: self.common,
-            rect: Rectangle::default(),
         });
 
         let tabs = world.insert(Tabs {

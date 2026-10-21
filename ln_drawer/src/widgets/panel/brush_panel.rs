@@ -88,7 +88,7 @@ impl Element for BrushPanel {
     }
 }
 
-struct BrushListPanel {
+pub struct BrushListPanel {
     pub common: WidgetCommon,
 }
 
