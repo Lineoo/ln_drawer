@@ -8,7 +8,8 @@ GPU-accelerated drawing app featured infinite canvas in Rust (winit + wgpu). Car
 - If assigned to review in read-only mode, assume that users has run `cargo check` and `cargo fmt`. Skip cargo tool calls that'll need write-permission, except when significant type errors are spotted.
 - Tests: `cargo test` — tests are all are pure-compute and run headless.
 - If Vulkan backend not found (usually in sandbox env), use Chromium's SwiftShader. However, headless tests are preferred than running actually rendering.
-- Do **NOT** run `cargo check --target aarch64-linux-android`, instead use `cargo ndk check --target aarch64-linux-android` with no platform target specificated. Otherwise it will become a full recompiling (`zstd-sys` detecting `CC` changes). We are not happy with that. 
+- Do **NOT** run `cargo check --target aarch64-linux-android`, instead use `cargo ndk check --target aarch64-linux-android` with no platform target specificated. Otherwise it will become a full recompiling (`zstd-sys` detecting `CC` changes). We are not happy with that.
+- We don't use clippy. No need to check that (it returns warnings, but we just don't care about that). 
 
 ## Critical gotchas
 
@@ -18,7 +19,7 @@ GPU-accelerated drawing app featured infinite canvas in Rust (winit + wgpu). Car
 ## Conventions
 
 - No `foo/mod.rs`, please use new module style - `foo.rs` and `foo/*.rs`.
-- Minimalistic comments or no comments at all. Don't leave any outdated, unrelated or redundant information.
+- Don't leave comments unless users asked. Don't leave any outdated, unrelated or redundant information.
 - Panic is fine. As long as panic condition is clear, use `unwrap()` instead of silent return or messing up code structures. 
 - Observer system design follows a three-part data-flow model. See `docs/observer.en.md` and `docs/observer.md` (Chinese).
 - If you are adding new `Element`s, see `docs/world.md` (Chinese) first to see what happens.
