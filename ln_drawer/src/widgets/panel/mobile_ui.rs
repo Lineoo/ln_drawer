@@ -4,7 +4,7 @@ use crate::{
     layer::wrapper::{BrushConfigurationChanged, LayerPage},
     layout::transform::{Transform, TransformValue},
     lnwin::Lnwindow,
-    widgets::{common::WidgetCommon, panel::side_docker::side_docker},
+    widgets::{common::WidgetCommon, panel::side_docker::SideDocker},
 };
 
 pub struct MobileUi {
@@ -24,8 +24,13 @@ impl Element for MobileUi {
         });
 
         let camera = self.common.camera;
-        world.queue(move |world| side_docker(world, camera));
-
+        world.insert(SideDocker {
+            common: WidgetCommon {
+                camera,
+                visible: true,
+            },
+        });
+        
         world.dependency(page, this);
 
         world.named("layer_init");
