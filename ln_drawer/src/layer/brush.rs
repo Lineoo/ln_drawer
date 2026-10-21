@@ -23,7 +23,7 @@ use crate::{
     measures::{FI64Ext, Rectangle},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Draw {
     pub position: I64Vec2,
     pub force: f32,
@@ -346,6 +346,34 @@ pub struct DrawsBatch {
 }
 
 impl DrawsBatch {
+    // TODO overflowing merge
+    pub fn merge(self, next: DrawsBatch) -> (DrawsBatch, Option<DrawsBatch>) {
+        let overflowing = self.draws.len() + next.draws.len() > DRAWS_ARRAY_CAPACITY as usize;
+        let compatible = next.prev == Some(self.next)
+            && self.replace == next.replace
+            && self.bridge == next.bridge;
+
+        if overflowing || !compatible {
+            return (self, Some(next));
+        }
+
+        let mut draws = self.draws;
+        draws.extend_from_slice(&next.draws);
+
+        (
+            DrawsBatch {
+                prev: self.prev,
+                next: next.next,
+                draws_cnt: self.draws_cnt + next.draws_cnt,
+                draws,
+                dirty: self.dirty.grow(next.dirty),
+                replace: self.replace,
+                bridge: self.bridge,
+            },
+            None,
+        )
+    }
+
     pub fn draw<T: Brush + ?Sized>(
         &self,
         lp: &LayerPipeline,

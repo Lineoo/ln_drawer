@@ -6,7 +6,7 @@ use crate::{
     color::{oklab::oklab_to_linear_srgb, srgb::srgb_gamma_encode},
     layer::{
         LayerPipeline, Standalone,
-        brush::{BrushParams, Draw, Stroke, param::BrushParam, round::RoundBrush},
+        brush::{BrushParams, Draw, DrawsBatch, Stroke, param::BrushParam, round::RoundBrush},
         wrapper::LayerPage,
     },
     measures::{FI64Ext, Rectangle},
@@ -183,6 +183,30 @@ impl BrushPreview {
         Self::draw_stroke(lp, canvas, &swap, brush);
     }
 
+    fn submit_batch(
+        lp: &LayerPipeline,
+        canvas: &Standalone,
+        swap: &Option<Standalone>,
+        brush: &dyn BrushParams,
+        batch: &DrawsBatch,
+    ) {
+        batch.upload_dispatch(lp);
+
+        let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("preview_draw"),
+        });
+
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("preview_draw"),
+            timestamp_writes: None,
+        });
+
+        batch.draw_into_standalone(lp, &mut cpass, canvas, swap, brush);
+
+        drop(cpass);
+        lp.queue.submit([encoder.finish()]);
+    }
+
     /// Two vertical bands, one red on the left and one blue on the right, each half the canvas
     /// wide, used as the preview's background.
     fn draw_background(lp: &LayerPipeline, canvas: &Standalone, swap: &Option<Standalone>) {
@@ -215,53 +239,24 @@ impl BrushPreview {
 
             let mut stroke = Stroke::new(&brush);
 
-            // first
-
-            let Some(batch) = stroke.batch(&brush, start) else {
-                return;
+            let Some(first) = stroke.batch(&brush, start) else {
+                continue;
             };
 
-            stroke.confirm_batch(&batch);
-            batch.upload_dispatch(lp);
+            stroke.confirm_batch(&first);
 
-            let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("preview_draw_background"),
-            });
-
-            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("preview_draw_background"),
-                timestamp_writes: None,
-            });
-
-            batch.draw_into_standalone(lp, &mut cpass, canvas, swap, &brush);
-
-            drop(cpass);
-
-            lp.queue.submit([encoder.finish()]);
-
-            // end
-
-            let Some(batch) = stroke.batch(&brush, end) else {
-                return;
+            let Some(last) = stroke.batch(&brush, end) else {
+                Self::submit_batch(lp, canvas, swap, &brush, &first);
+                continue;
             };
 
-            stroke.confirm_batch(&batch);
-            batch.upload_dispatch(lp);
+            stroke.confirm_batch(&last);
 
-            let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("preview_draw_background"),
-            });
-
-            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("preview_draw_background"),
-                timestamp_writes: None,
-            });
-
-            batch.draw_into_standalone(lp, &mut cpass, canvas, swap, &brush);
-
-            drop(cpass);
-
-            lp.queue.submit([encoder.finish()]);
+            let (merged, rest) = first.merge(last);
+            Self::submit_batch(lp, canvas, swap, &brush, &merged);
+            if let Some(rest) = rest {
+                Self::submit_batch(lp, canvas, swap, &brush, &rest);
+            }
         }
     }
 
@@ -272,9 +267,10 @@ impl BrushPreview {
         swap: &Option<Standalone>,
         brush: &dyn BrushParams,
     ) {
-        const STEPS: i32 = 8;
+        const STEPS: i32 = 24;
 
         let mut stroke = Stroke::new(brush);
+        let mut batches = Vec::new();
 
         for i in 0..=STEPS {
             let t = i as f32 / STEPS as f32;
@@ -287,25 +283,30 @@ impl BrushPreview {
             };
 
             let Some(batch) = stroke.batch(brush, draw) else {
-                return;
+                break;
             };
 
             stroke.confirm_batch(&batch);
-            batch.upload_dispatch(&lp);
+            batches.push(batch);
+        }
 
-            let mut encoder = (lp.device).create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("preview_draw_stroke"),
-            });
+        let mut merged = Vec::new();
 
-            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("preview_draw_stroke"),
-                timestamp_writes: None,
-            });
+        for batch in batches {
+            let Some(prev) = merged.pop() else {
+                merged.push(batch);
+                continue;
+            };
 
-            batch.draw_into_standalone(&lp, &mut cpass, canvas, swap, brush);
+            let (prev, rest) = prev.merge(batch);
+            merged.push(prev);
+            if let Some(rest) = rest {
+                merged.push(rest);
+            }
+        }
 
-            drop(cpass);
-            lp.queue.submit([encoder.finish()]);
+        for batch in &merged {
+            Self::submit_batch(lp, canvas, swap, brush, batch);
         }
     }
 }
