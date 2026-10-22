@@ -12,13 +12,13 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::{
         RenderDrawControl, RenderPrepareControl,
-        camera::{Camera, CameraDescriptor, SetCameraOutdated},
+        camera::{Camera, SetCameraOutdated},
     },
     tools::collider::ToolRectCollider,
     widgets::{
         SetWidgetRectangle, SetWidgetVisible,
         common::WidgetCommon,
-        container::{Container, ContainerAttr},
+        container::{Container, ContainerAttr, ContainerWithCamera},
     },
 };
 
@@ -50,27 +50,15 @@ impl BrushPreview {
             self.rect.height().max(1),
         ));
 
-        // The chunk always lives at `preview_rect`, so the container's child camera is the only
-        // thing that has to follow the widget.
-        let parent = world.fetch(self.camera);
-        let camera = world.insert(world.build(CameraDescriptor {
-            center: canvas.rect.q32_center(),
-            zoom: parent.zoom,
-        }));
-        drop(parent);
-
-        let container = world.insert(Container {
+        let (container, camera) = world.build(ContainerWithCamera {
             common: WidgetCommon {
                 camera: self.camera,
                 visible: self.visible,
             },
-            order: 50,
-            child: camera,
             rect: self.rect,
             attr: ContainerAttr {
-                anchor: DVec2::splat(0.5),
-                scroll: I64Vec2::ZERO,
-                clip: true,
+                anchor: DVec2::new(0.0, 0.0),
+                ..Default::default()
             },
         });
         world.queue_trigger(camera, SetCameraOutdated);
@@ -131,7 +119,6 @@ impl BrushPreview {
                 instance.canvas = page
                     .lp
                     .create_standalone(Rectangle::new_extend(0, 0, size.x, size.y));
-                world.fetch_mut(camera).center = instance.canvas.rect.q32_center();
                 this.outdated = true;
             }
 

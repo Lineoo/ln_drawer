@@ -243,6 +243,7 @@ impl LayerInput {
                         && matches!(event.active.data.kind, PointerKind::Touch(_)))
                         || this.space =>
                 {
+                    camera_utils.read_camera(world, page_camera);
                     camera_utils.camera_cursor_by_anchor_center(center);
                     if let Some(distance) = pinch {
                         camera_utils.camera_distance_by_anchor_zoom_cursor(distance);
@@ -250,10 +251,12 @@ impl LayerInput {
 
                     if this.ctrl {
                         camera_utils.camera_distance_by_anchor_zoom_cursor(1.0);
+                        camera_utils.write_camera(world, page_camera);
                         LayerInputState::Scale {
                             start_position: center,
                         }
                     } else {
+                        camera_utils.write_camera(world, page_camera);
                         LayerInputState::Grab {
                             start_position: center,
                             start_pinch: pinch,
@@ -271,10 +274,12 @@ impl LayerInput {
                     MultiTouchStatus::Press | MultiTouchStatus::Release,
                 ) => {
                     if event.members.len() > 0 {
+                        camera_utils.read_camera(world, page_camera);
                         camera_utils.camera_cursor_by_anchor_center(center);
                         if let Some(distance) = pinch {
                             camera_utils.camera_distance_by_anchor_zoom_cursor(distance);
                         }
+                        camera_utils.write_camera(world, page_camera);
 
                         LayerInputState::Grab {
                             start_position: center,
@@ -319,12 +324,14 @@ impl LayerInput {
                     MultiTouchStatus::Press | MultiTouchStatus::Release,
                 ) => {
                     if event.members.len() > 0 {
+                        camera_utils.read_camera(world, page_camera);
                         camera_utils.camera_cursor_by_anchor_center(center);
                         if let Some(distance) = pinch {
                             camera_utils.camera_distance_by_anchor_zoom_cursor(distance);
                         } else {
                             camera_utils.camera_distance_by_anchor_zoom_cursor(1.0);
                         }
+                        camera_utils.write_camera(world, page_camera);
 
                         LayerInputState::Scale {
                             start_position: center,
@@ -384,10 +391,12 @@ impl LayerInput {
                 ) => {
                     page.discard();
 
+                    camera_utils.read_camera(world, page_camera);
                     camera_utils.camera_cursor_by_anchor_center(center);
                     if let Some(distance) = pinch {
                         camera_utils.camera_distance_by_anchor_zoom_cursor(distance);
                     }
+                    camera_utils.write_camera(world, page_camera);
 
                     LayerInputState::Grab {
                         start_position: center,

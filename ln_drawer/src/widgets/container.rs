@@ -26,6 +26,8 @@ pub struct ContainerAttr {
     pub scroll: I64Vec2,
     /// whether scissor rect should be set
     pub clip: bool,
+    /// whether to ignore parent camera's linear transform
+    pub top: bool,
 }
 
 impl Default for ContainerAttr {
@@ -34,6 +36,7 @@ impl Default for ContainerAttr {
             anchor: DVec2::new(0.0, 1.0),
             scroll: I64Vec2::ZERO,
             clip: true,
+            top: false,
         }
     }
 }
@@ -53,7 +56,7 @@ impl Descriptor for ContainerWithCamera {
         let parent = world.fetch(self.common.camera);
         let camera = world.insert(world.build(CameraDescriptor {
             center: parent.center,
-            zoom: parent.zoom,
+            zoom: 1,
         }));
 
         let container = world.insert(Container {
@@ -208,7 +211,11 @@ impl Container {
         child_camera.global_center = parent_camera.global_center + child_camera.center
             - self.rect.q32_anchor(self.attr.anchor)
             + self.attr.scroll;
-        child_camera.global_zoom = child_camera.zoom;
+        if !self.attr.top {
+            child_camera.global_zoom = parent_camera.global_zoom + child_camera.zoom;
+        } else {
+            child_camera.global_zoom = child_camera.zoom;
+        }
     }
 
     fn clamp_scroll(&mut self, restrict: Rectangle) {

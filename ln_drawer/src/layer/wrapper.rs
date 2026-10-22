@@ -633,6 +633,7 @@ impl Element for LayerPage {
             rect: Rectangle::default(),
             attr: ContainerAttr {
                 anchor: DVec2::new(0.5, 0.5),
+                top: true,
                 ..Default::default()
             },
         });
