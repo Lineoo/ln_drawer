@@ -37,6 +37,8 @@ const CHUNK_RAW_HARD_CAP: usize = 512;
 const CHUNK_LOAD_BATCH_CAP: usize = 8;
 const CHUNK_POOL_CAP: usize = 32;
 
+const ZOOM_OFFSET: f64 = 0.5;
+
 pub enum ThreadInput {
     SetPage(u64),
     SetStreamCamera(i64, UVec2, I64Vec2),
@@ -174,7 +176,7 @@ impl StreamThread {
                     self.camera.rect = Camera::view_rect(zoom, size, center);
                     let stream_center_new = point_zoom_to_chunks_stack(
                         center.q32_round(),
-                        zoom + i64::q32_from_f64(0.5),
+                        zoom + i64::q32_from_f64(ZOOM_OFFSET),
                         self.config.chunk_size,
                     );
                     let stream_range_new = rect_chunks_stack_layer_range(

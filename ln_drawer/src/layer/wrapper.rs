@@ -45,6 +45,7 @@ use crate::{
 
 const BRIDGE_CHUNK_SIZE: UVec2 = UVec2::splat(1024);
 const SCRATCH_POOL_CAP: usize = 32;
+const DEFAULT_ZOOM_OFFSET: f64 = -2.0;
 
 // TODO rename module to `page`
 
@@ -105,6 +106,7 @@ pub struct LayerPage {
 
     pub cursor: Handle<RRect>,
     pub cursor_shadow: Handle<RRect>,
+    pub zoom_offset: f64,
 
     thread_tx: Sender<ThreadInput>,
     thread_rx: Receiver<ThreadOutput>,
@@ -292,6 +294,7 @@ impl LayerPage {
             debug: false,
             cursor,
             cursor_shadow,
+            zoom_offset: DEFAULT_ZOOM_OFFSET,
             thread_tx: input_tx,
             thread_rx: output_rx,
             thread: Some(thread),
@@ -479,8 +482,8 @@ impl LayerPage {
 
         let camera = extra.camera;
         let view_rect = camera.world_view_rect();
-        let mipmap = zoom_to_mipmap(camera.zoom);
-        let actual_mipmap = mipmap.min(self.cache.mipmap_cap.saturating_sub(1));
+        let mipmap = zoom_to_mipmap(camera.zoom + i64::q32_from_f64(self.zoom_offset))
+            .min(self.cache.mipmap_cap.saturating_sub(1));
         let pixel = camera.zoom.q32_as_f64().exp2() > 4.0;
 
         match self.debug {
@@ -495,7 +498,7 @@ impl LayerPage {
             false => rpass.set_bind_group(1, &self.lp.sampler_group_filtered, &[]),
         }
 
-        for key in rect_chunks_stack_layer_iter(view_rect, self.cache.chunk_size, actual_mipmap) {
+        for key in rect_chunks_stack_layer_iter(view_rect, self.cache.chunk_size, mipmap) {
             if let Some(CacheLayerChunk::Filled(chunk)) = self.cache.chunks.get(&key) {
                 rpass.set_bind_group(2, &chunk.render, &[]);
                 rpass.draw(0..4, 0..1);

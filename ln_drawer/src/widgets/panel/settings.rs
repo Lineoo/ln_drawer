@@ -135,7 +135,7 @@ impl Element for TextSettingPanel {
             restriction: Rectangle::default(),
         });
         world.insert(ContainerDecoDropdown {
-            height: Some((108 + 4) * 7 + 48 + 8),
+            height: Some((108 + 4) * 8 + 48 + 8),
             container,
             deco,
         });
@@ -267,6 +267,28 @@ impl Element for TextSettingPanel {
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
         });
 
+        let zoom_frame = world.insert(EchoWidget);
+        option_label(
+            world,
+            tr("settings.page.zoom.label").into(),
+            zoom_frame.untyped(),
+        );
+        option_desc(
+            world,
+            tr("settings.page.zoom.desc").into(),
+            zoom_frame.untyped(),
+        );
+        let (zoom_slider, zoom_slider_label) = option_slider(world, zoom_frame.untyped());
+        world.observer(zoom_slider, move |&SliderValue(value), world| {
+            let mut layer = world.fetch_mut(layer);
+            layer.zoom_offset = (value as f64 - 0.8) * 3.;
+            world.queue_trigger(zoom_slider, SetSliderValue(value));
+            world.queue_trigger(
+                zoom_slider_label,
+                SetText(format!("{:+.2}", layer.zoom_offset)),
+            );
+        });
+
         world.dependency(container, this);
         world.dependency(label1_frame, this);
         world.dependency(label1, this);
@@ -277,6 +299,7 @@ impl Element for TextSettingPanel {
         world.dependency(color_ratio_frame, this);
         world.dependency(sample_radius_frame, this);
         world.dependency(sample_rate_frame, this);
+        world.dependency(zoom_frame, this);
 
         let ob = world.observer(layer, move |&BrushConfigurationChanged, world| {
             let layer = world.fetch(layer);
@@ -452,6 +475,13 @@ impl Element for TextSettingPanel {
                 ),
                 (
                     sample_rate_frame.untyped(),
+                    LuniChild {
+                        basis: Some(108),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    zoom_frame.untyped(),
                     LuniChild {
                         basis: Some(108),
                         ..Default::default()
