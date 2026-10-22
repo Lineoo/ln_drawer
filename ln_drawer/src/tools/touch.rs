@@ -76,6 +76,7 @@ impl MultiTouchTool {
 
                 let camera = world.fetch(hit.camera);
                 let position = camera.screen_to_world(screen);
+                drop(camera);
 
                 let event = MultiTouch {
                     position,
