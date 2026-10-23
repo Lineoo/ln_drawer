@@ -27,6 +27,9 @@ pub struct LayerSelectionPanel {
 
 impl Element for LayerSelectionPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("layer_selection");
+        world.set_autodeps(Some(this));
+
         let theme = world.single_fetch::<Theme>();
 
         let (panel, camera) = world.build(ContainerWithCamera {
@@ -214,10 +217,5 @@ impl Element for LayerSelectionPanel {
             world.dependency(layer0_button, panel);
             world.dependency(layer0_name, panel);
         }
-
-        world.dependency(doc_label, panel);
-        world.dependency(doc_label_div, panel);
-        world.dependency(layer_label, panel);
-        world.dependency(layers_node, panel);
     }
 }

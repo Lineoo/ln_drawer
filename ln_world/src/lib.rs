@@ -231,12 +231,18 @@ pub struct World {
     inserted: RefCell<HashSet<HandleAny>>,
     removed: RefCell<HashSet<HandleAny>>,
 
-    label: Cell<Cow<'static, str>>,
+    scope: RefCell<WorldScope>,
     location: Cell<HandleAny>,
     dependencies: RefCell<Dependencies>,
 
     queue: Receiver<WorldCommand>,
     commander: Sender<WorldCommand>,
+}
+
+#[derive(Clone)]
+struct WorldScope {
+    label: Cow<'static, str>,
+    autodeps: Option<HandleAny>,
 }
 
 struct HandleIndex {
@@ -336,7 +342,10 @@ impl World {
             occupied: RefCell::default(),
             inserted: RefCell::default(),
             removed: RefCell::default(),
-            label: Cell::new("init".into()),
+            scope: RefCell::new(WorldScope {
+                label: "init".into(),
+                autodeps: None,
+            }),
             location: Cell::new(INITELEM),
             dependencies: RefCell::default(),
             queue,
@@ -382,12 +391,17 @@ impl World {
         let mut inserted = self.inserted.borrow_mut();
         inserted.insert(handle.untyped());
 
+        let scope = self.scope.borrow();
+        if let Some(parent) = scope.autodeps {
+            self.dependency(handle, parent);
+        }
+
         // delay execution
         let location = self.location.get();
         let trace = self.label();
         let label = format!("{} {:?}", trace, handle);
         self.queue(move |world| {
-            world.named(label);
+            world.scope(label);
 
             // get type table ready
             let storage = world.storages.entry(TypeId::of::<T>()).or_insert_with(|| {
@@ -630,8 +644,17 @@ impl World {
         }
     }
 
-    pub fn named(&self, label: impl Into<Cow<'static, str>>) {
-        self.label.set(label.into());
+    pub fn scope(&self, label: impl Into<Cow<'static, str>>) {
+        let mut scope = self.scope.borrow_mut();
+        *scope = WorldScope {
+            label: label.into(),
+            autodeps: None,
+        };
+    }
+
+    pub fn set_autodeps(&self, dep: Option<impl HandleGeneric>) {
+        let mut scope = self.scope.borrow_mut();
+        scope.autodeps = dep.map(|x| x.untyped());
     }
 
     pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
@@ -647,14 +670,20 @@ impl World {
 
     pub fn flush(&mut self) {
         let origin = self.location.get();
+        let scope_origin = self.scope.get_mut().clone();
         let buf = self.queue.try_iter().collect::<Vec<_>>();
         for cmd in buf {
-            let orig = self.label.replace(cmd.label);
+            let scope = self.scope.get_mut();
+            *scope = WorldScope {
+                label: "flush".into(),
+                autodeps: None,
+            };
             self.location.set(cmd.location);
             (cmd.action)(self);
             self.flush();
-            self.label.set(orig);
         }
+        let scope = self.scope.get_mut();
+        *scope = scope_origin;
         self.location.set(origin);
     }
 
@@ -1021,11 +1050,11 @@ impl World {
                     // For example, `init [lnwindow] [brush]` means the event had crossed two observers
                     // in order, which are separately added in `lnwindow` scope and `brush` scope, while
                     // the event itself is triggered in `init` scope.
-                    self.named(format!("{} [{}]", trg_label, observer.label));
+                    self.scope(format!("{} [{}]", trg_label, observer.label));
                     self.enter(observer.view, || (observer.action)(event, self));
                     cnt += 1;
                 }
-                self.named(trg_label);
+                self.scope(trg_label);
             }
         });
 
@@ -1074,9 +1103,8 @@ impl World {
     }
 
     pub fn label(&self) -> Cow<'static, str> {
-        let label = self.label.take();
-        self.label.set(label.clone());
-        label
+        let scope = self.scope.borrow();
+        scope.label.clone()
     }
 
     pub fn stat_deps(&self) -> String {

@@ -33,7 +33,7 @@ impl Element for MobileUi {
 
         world.dependency(page, this);
 
-        world.named("layer_init");
+        world.scope("layer_init");
         world.queue_trigger(page, BrushConfigurationChanged);
     }
 }

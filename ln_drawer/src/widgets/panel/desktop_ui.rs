@@ -100,7 +100,7 @@ impl Element for DesktopUi {
 
         world.dependency(workspace, this);
 
-        world.named("layer_init");
+        world.scope("layer_init");
         world.queue(|world| {
             world.trigger(world.single::<LayerPage>(), &BrushConfigurationChanged);
         });

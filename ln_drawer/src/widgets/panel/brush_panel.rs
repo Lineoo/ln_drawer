@@ -45,6 +45,9 @@ pub struct BrushPanel {
 
 impl Element for BrushPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("brush_panel");
+        world.set_autodeps(Some(this));
+
         let list_container = world.insert(BrushListPanel {
             common: self.common,
         });
@@ -73,10 +76,6 @@ impl Element for BrushPanel {
         Transfer::new(world, this, tabs)
             .set_widget_rectangle()
             .set_widget_visible();
-
-        world.dependency(list_container, this);
-        world.dependency(list_settings, this);
-        world.dependency(tabs, this);
 
         // initialize layout
         world.queue(move |world| {

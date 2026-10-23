@@ -29,6 +29,9 @@ pub struct DebugPanel {
 
 impl Element for DebugPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("debug_panel");
+        world.set_autodeps(Some(this));
+
         let theme = world.single_fetch::<Theme>();
 
         let (container, camera) = world.build(ContainerWithCamera {
@@ -157,13 +160,6 @@ impl Element for DebugPanel {
             source: container.untyped(),
             target: compact.untyped(),
         });
-
-        world.dependency(debug_text, this);
-        world.dependency(render_profile, this);
-        world.dependency(compass, this);
-        world.dependency(compact, this);
-        world.dependency(container, this);
-        world.dependency(camera, this);
     }
 }
 

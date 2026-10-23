@@ -30,11 +30,13 @@ pub struct SideDocker {
 
 impl Element for SideDocker {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("side_docker");
+        world.set_autodeps(Some(this));
+
         let lnwindow = world.single_fetch::<Lnwindow>();
         let theme = world.single_fetch::<Theme>();
         let layer = world.single::<LayerPage>();
 
-        world.named("side_docker_buttons");
         let side_panel = world.insert(Panel {
             common: self.common,
             rect: Rectangle::default(),
@@ -68,7 +70,6 @@ impl Element for SideDocker {
             rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
         });
 
-        world.named("brush_panel");
         let brush_panel = world.insert(BrushPanel {
             common: WidgetCommon {
                 camera: self.common.camera,
@@ -92,8 +93,6 @@ impl Element for SideDocker {
             visible: self.common.visible,
             camera: self.common.camera,
         });
-
-        world.named("side_docker_observers");
 
         world.observer(brush_menu, move |&ButtonSelected(selected), world| {
             world.queue_trigger(brush_menu, SetButtonSelected(selected));
@@ -202,7 +201,7 @@ impl Element for SideDocker {
             target: side_panel.untyped(),
         });
 
-        let luni = world.insert(LuniFlex {
+        world.insert(LuniFlex {
             parent: (
                 side_panel.untyped(),
                 LuniParent {
@@ -255,17 +254,5 @@ impl Element for SideDocker {
                 (pipette.untyped(), LuniChild::default()),
             ],
         });
-
-        world.dependency(side_panel, this);
-        world.dependency(brush_menu, this);
-        world.dependency(eraser, this);
-        world.dependency(color_picker, this);
-        world.dependency(undo, this);
-        world.dependency(redo, this);
-        world.dependency(elastic_blank, this);
-        world.dependency(slider, this);
-        world.dependency(touch, this);
-        world.dependency(pipette, this);
-        world.dependency(luni, this);
     }
 }

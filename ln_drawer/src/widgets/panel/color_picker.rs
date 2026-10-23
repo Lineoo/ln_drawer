@@ -47,26 +47,22 @@ pub struct ColorPickerPanel {
 
 impl Element for ColorPickerPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.named("palette_hsl");
         let tab_palette_hsl = world.insert(LayerHslPalette {
             common: self.common,
             rect: Rectangle::default(),
             hsl: Vec4::new(0.3, 0.5, 0.5, 1.0),
         });
 
-        world.named("palette_oklab");
         let tab_palette_oklab = world.insert(LayerOklabPalette {
             common: self.common,
             rect: Rectangle::default(),
             oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
         });
 
-        world.named("layer_selection");
         let tab_layer_selection = world.insert(LayerSelectionPanel {
             common: self.common,
         });
 
-        world.named("debug_panel");
         let tab_debug = world.insert(DebugPanel {
             common: self.common,
         });
@@ -235,6 +231,9 @@ impl Element for LayerHslPalette {
         const RING_HALF: u32 = 100;
         const SQUARE_HALF: u32 = (RING_HALF as f32 * INNER_RADIUS * SQRT_2) as u32;
 
+        world.scope("palette_hsl");
+        world.set_autodeps(Some(this));
+
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
@@ -312,11 +311,6 @@ impl Element for LayerHslPalette {
             world.trigger(ring, &SetColorHsla(hsla));
             world.trigger(square, &SetColorHsla(hsla));
         });
-
-        world.dependency(container, this);
-        world.dependency(camera, this);
-        world.dependency(ring, this);
-        world.dependency(square, this);
     }
 }
 
@@ -328,6 +322,9 @@ pub struct LayerOklabPalette {
 
 impl Element for LayerOklabPalette {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("palette_oklab");
+        world.set_autodeps(Some(this));
+
         let (container, camera) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
@@ -404,10 +401,5 @@ impl Element for LayerOklabPalette {
             world.trigger(polar, &SetColorOklab(oklab));
             world.trigger(bar, &SetColorOklab(oklab));
         });
-
-        world.dependency(container, this);
-        world.dependency(camera, this);
-        world.dependency(polar, this);
-        world.dependency(bar, this);
     }
 }
