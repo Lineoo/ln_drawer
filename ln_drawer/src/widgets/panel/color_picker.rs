@@ -1,7 +1,7 @@
 use std::f32::consts::SQRT_2;
 
 use glam::{IVec2, UVec2, Vec4};
-use ln_world::{Element, Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 
 use crate::{
     color::{
@@ -11,18 +11,18 @@ use crate::{
     },
     layer::wrapper::{BrushConfigurationChanged, LayerPage},
     layout::{
-        echo::Echo,
-        transfer::Transfer,
         transform::{Transform, TransformValue},
+        val::{Val, ValChanged},
     },
     measures::{FI64Ext, Rectangle},
     render::camera::PageCamera,
     theme::Theme,
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible,
-        button::{ButtonDrag, ButtonDragStatus, SetButtonSelected, ToggleButton},
+        button::{ButtonDrag, ButtonDragStatus, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
-        container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
+        container::{
+            ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerEcho, ContainerWithCamera,
+        },
         object::color_snip::{ColorSnip, ColorSnipAttr},
         palette::{
             hsl::{ColorHsla, HslRing, HslSquare, INNER_RADIUS, SetColorHsla},
@@ -33,7 +33,7 @@ use crate::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
         },
-        tabs::Tabs,
+        tabs::{TabEntry, Tabs},
     },
 };
 
@@ -42,88 +42,103 @@ const PANEL_HEIGHT: i32 = 320;
 
 pub struct ColorPickerPanel {
     pub common: WidgetCommon,
-    pub button: Handle<ToggleButton>,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for ColorPickerPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let tab_palette_hsl = world.insert(LayerHslPalette {
-            common: self.common,
-            rect: Rectangle::default(),
+        world.scope("color_picker_panel");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
+
+        let hsl_rect = world.insert(Val::new(Rectangle::default()));
+        let hsl_visible = world.insert(Val::new(false));
+        world.insert(LayerHslPalette {
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: hsl_visible,
+            },
+            rect: hsl_rect,
             hsl: Vec4::new(0.3, 0.5, 0.5, 1.0),
         });
 
-        let tab_palette_oklab = world.insert(LayerOklabPalette {
-            common: self.common,
-            rect: Rectangle::default(),
+        let oklab_rect = world.insert(Val::new(Rectangle::default()));
+        let oklab_visible = world.insert(Val::new(false));
+        world.insert(LayerOklabPalette {
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: oklab_visible,
+            },
+            rect: oklab_rect,
             oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
         });
 
-        let tab_layer_selection = world.insert(LayerSelectionPanel {
-            common: self.common,
+        let layer_rect = world.insert(Val::new(Rectangle::default()));
+        let layer_visible = world.insert(Val::new(false));
+        world.insert(LayerSelectionPanel {
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: layer_visible,
+            },
+            rect: layer_rect,
         });
 
-        let tab_debug = world.insert(DebugPanel {
-            common: self.common,
+        let debug_rect = world.insert(Val::new(Rectangle::default()));
+        let debug_visible = world.insert(Val::new(false));
+        world.insert(DebugPanel {
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: debug_visible,
+            },
+            rect: debug_rect,
         });
 
-        let tabs = world.insert(Tabs {
-            active: 0,
-            rect: Rectangle::default(),
-            visible: self.common.visible,
+        world.insert(Tabs {
+            common: self.common,
+            rect: self.rect,
             // TODO TabItem like SliderLabel
             tabs: vec![
-                (
-                    svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
-                    tab_palette_hsl.untyped(),
-                ),
-                (
-                    svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
-                    tab_palette_oklab.untyped(),
-                ),
-                (
-                    svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
-                    tab_layer_selection.untyped(),
-                ),
-                (
-                    svg_render(include_bytes!("../../../res/interface/bug.svg"), 12),
-                    tab_debug.untyped(),
-                ),
+                TabEntry {
+                    icon: svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
+                    rect: hsl_rect,
+                    visible: hsl_visible,
+                },
+                TabEntry {
+                    icon: svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
+                    rect: oklab_rect,
+                    visible: oklab_visible,
+                },
+                TabEntry {
+                    icon: svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
+                    rect: layer_rect,
+                    visible: layer_visible,
+                },
+                TabEntry {
+                    icon: svg_render(include_bytes!("../../../res/interface/bug.svg"), 12),
+                    rect: debug_rect,
+                    visible: debug_visible,
+                },
             ],
-            camera: self.common.camera,
+            active: 0,
         });
-
-        world.observer(self.button, move |&SetWidgetRectangle(rect), world| {
-            let transform = TransformValue::anchor(
-                (1.0, 1.0),
-                Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
-            );
-            let rect = transform.compute(rect);
-            world.queue_trigger(tabs, SetWidgetRectangle(rect));
-        });
-
-        world.observer(self.button, move |&SetButtonSelected(selected), world| {
-            world.queue_trigger(tabs, SetWidgetVisible(selected));
-        });
-
-        world.dependency(tab_palette_hsl, this);
-        world.dependency(tab_palette_oklab, this);
-        world.dependency(tab_layer_selection, this);
-        world.dependency(tab_debug, this);
-        world.dependency(tabs, this);
     }
 }
 
 pub struct ColorPickerButton {
     pub common: WidgetCommon,
-    pub rect: Rectangle,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for ColorPickerButton {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let theme = world.single_fetch::<Theme>();
-        let page = world.single::<LayerPage>();
+        world.scope("color_picker_button");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
 
+        let theme = world.single_fetch::<Theme>();
+        let page = world.single_fetch::<LayerPage>();
         let button = world.insert(ToggleButton {
             common: self.common,
             rect: self.rect,
@@ -133,96 +148,109 @@ impl Element for ColorPickerButton {
             hovering: false,
         });
 
+        let icon_transform = TransformValue::anchor(
+            (0.5, 0.5),
+            Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+        );
+        let icon_rect = world.build(Transform::new(icon_transform, self.rect));
+        let color = world.insert(Val::new(mul_alpha(srgb_gamma_decode(page.color()))));
+
         let button_color_icon = world.insert(RRect {
-            rect: Rectangle::default(),
+            rect: icon_rect,
             order: 21,
-            color: Vec4::new(0.9, 0.7, 0.7, 1.0),
+            color: mul_alpha(srgb_gamma_decode(page.color())),
             radius: 10.0,
             width: 0.0,
-            enabled: self.common.visible,
+            visible: self.common.visible,
             camera: self.common.camera,
         });
-
-        let color_picker_panel = world.insert(ColorPickerPanel {
-            common: WidgetCommon {
-                visible: false,
-                ..self.common
-            },
-            button,
-        });
-
-        Transfer::new(world, this, button)
-            .set_widget_rectangle()
-            .set_widget_visible()
-            .set_button_selected();
-
-        Transfer::new(world, button, this).button_selected();
-
-        world.observer(page, move |&BrushConfigurationChanged, world| {
-            let layer = world.fetch(page);
-            let color = mul_alpha(srgb_gamma_decode(layer.color()));
+        world.observer(color, move |ValChanged, world| {
+            let color = world.fetch(color).val;
             world.queue_trigger(button_color_icon, SetRRectColor(color));
         });
 
-        world.observer(button, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this);
-            this.rect = rect;
-            let target = TransformValue::anchor(
-                (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
-            )
-            .compute(rect);
-            world.queue_trigger(button_color_icon, SetWidgetRectangle(target));
+        let panel_rect = world.build(Transform::anchor(
+            (1.0, 1.0),
+            Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
+            self.rect,
+        ));
+        let visible = world.insert(Val::new(false));
+
+        world.insert(ColorPickerPanel {
+            common: WidgetCommon {
+                visible,
+                ..self.common
+            },
+            rect: panel_rect,
         });
 
-        world.observer(button, move |&SetButtonSelected(selected), world| {
-            world.queue_trigger(color_picker_panel, SetWidgetVisible(selected));
+        world.observer(button, move |event: &ButtonSelected, world| {
+            world.queue_trigger(this, ButtonSelected(event.0));
+        });
+
+        world.observer(this, move |&SetButtonSelected(selected), world| {
+            world.queue_trigger(button, SetButtonSelected(selected));
+            let mut visible = world.fetch_mut(visible);
+            visible.val = selected;
+        });
+
+        world.observer(page.handle(), move |&BrushConfigurationChanged, world| {
+            let layer = world.single_fetch::<LayerPage>();
+            let next = mul_alpha(srgb_gamma_decode(layer.color()));
+            let mut current = world.fetch_mut(color);
+            current.val = next;
+            world.queue_trigger(color, ValChanged);
         });
 
         let mut dragging = None;
         world.observer(button, move |drag: &ButtonDrag, world| {
+            let this = world.fetch(this);
             let page_camera = world.single_fetch::<PageCamera>().0;
             let page_camera = world.fetch(page_camera);
             let page = world.single_fetch::<LayerPage>();
-            let snip = dragging.get_or_insert_with(|| {
+            let snip_rect = *dragging.get_or_insert_with(|| {
+                let position = page_camera
+                    .screen_to_world(drag.here.pointer.screen)
+                    .q32_round();
+                let rect = world.insert(Val::new(Rectangle::new_half(position, UVec2::splat(24))));
+
                 world.insert(ColorSnip {
                     common: WidgetCommon {
                         camera: page_camera.handle(),
-                        visible: true,
+                        visible: this.common.visible,
                     },
+                    rect,
                     attr: ColorSnipAttr {
-                        position: page_camera
-                            .screen_to_world(drag.here.pointer.screen)
-                            .q32_round(),
+                        position,
                         color: page.color(),
                     },
-                })
+                });
+
+                rect
             });
 
-            world.queue_trigger(
-                *snip,
-                SetWidgetRectangle(Rectangle::new_half(
-                    page_camera
-                        .screen_to_world(drag.here.pointer.screen)
-                        .q32_round(),
-                    UVec2::splat(24),
-                )),
+            let next = Rectangle::new_half(
+                page_camera
+                    .screen_to_world(drag.here.pointer.screen)
+                    .q32_round(),
+                UVec2::splat(24),
             );
+            world.queue(move |world| {
+                let mut rect = world.fetch_mut(snip_rect);
+                rect.val = next;
+                world.queue_trigger(rect.handle(), ValChanged);
+            });
 
             if drag.status == ButtonDragStatus::End {
                 dragging = None;
             }
         });
-
-        world.dependency(button, this);
-        world.dependency(button_color_icon, this);
-        world.dependency(color_picker_panel, this);
     }
 }
 
 pub struct LayerHslPalette {
     pub common: WidgetCommon,
-    pub rect: Rectangle,
+    pub rect: Handle<Val<Rectangle>>,
     pub hsl: Vec4,
 }
 
@@ -233,65 +261,49 @@ impl Element for LayerHslPalette {
 
         world.scope("palette_hsl");
         world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
 
-        let (container, camera) = world.build(ContainerWithCamera {
+        let attr = ContainerAttr::default();
+        let (container, common) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
-            attr: ContainerAttr::default(),
+            attr,
         });
-        let deco = world.insert(ContainerDeco {
-            container,
-            restriction: Rectangle::default(),
-        });
-        world.insert(ContainerDecoDropdown {
+        let restriction = world.build(ContainerDecoDropdown {
             height: None,
+            outer: self.rect,
+        });
+        world.insert(ContainerDeco {
             container,
-            deco,
+            restriction,
         });
 
+        let ring_rect = world.build(Transform::new(
+            TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(RING_HALF)),
+            ),
+            restriction,
+        ));
         let ring = world.insert(HslRing {
-            common: WidgetCommon {
-                camera,
-                visible: self.common.visible,
-            },
-            rect: Rectangle::default(),
+            common,
+            rect: ring_rect,
             hsl: self.hsl,
             inner_radius: INNER_RADIUS,
         });
 
-        let square = world.insert(HslSquare {
-            common: WidgetCommon {
-                camera,
-                visible: self.common.visible,
-            },
-            rect: Rectangle::default(),
-            hsl: self.hsl,
-        });
-
-        Echo::new(world, this).widget_rectangle().widget_visible();
-
-        world.insert(Transform {
-            value: TransformValue::copy(),
-            source: this.untyped(),
-            target: container.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue::anchor(
-                (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(RING_HALF)),
-            ),
-            source: container.untyped(),
-            target: ring.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue::anchor(
+        let square_rect = world.build(Transform::new(
+            TransformValue::anchor(
                 (0.5, 0.5),
                 Rectangle::new_half(IVec2::ZERO, UVec2::splat(SQUARE_HALF)),
             ),
-            source: container.untyped(),
-            target: square.untyped(),
+            restriction,
+        ));
+        let square = world.insert(HslSquare {
+            common,
+            rect: square_rect,
+            hsl: self.hsl,
         });
 
         let layer = world.single::<LayerPage>();
@@ -316,7 +328,7 @@ impl Element for LayerHslPalette {
 
 pub struct LayerOklabPalette {
     pub common: WidgetCommon,
-    pub rect: Rectangle,
+    pub rect: Handle<Val<Rectangle>>,
     pub oklab: Vec4,
 }
 
@@ -324,64 +336,49 @@ impl Element for LayerOklabPalette {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.scope("palette_oklab");
         world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
 
-        let (container, camera) = world.build(ContainerWithCamera {
+        let attr = ContainerAttr::default();
+        let (container, common) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
-            attr: ContainerAttr::default(),
+            attr,
         });
-        let deco = world.insert(ContainerDeco {
-            container,
-            restriction: Rectangle::default(),
-        });
-        world.insert(ContainerDecoDropdown {
+        let restriction = world.build(ContainerDecoDropdown {
             height: None,
+            outer: self.rect,
+        });
+        world.insert(ContainerDeco {
             container,
-            deco,
+            restriction,
         });
+        let local = world.build(ContainerEcho { container });
 
-        let polar = world.insert(OklabPolar {
-            common: WidgetCommon {
-                camera,
-                visible: self.common.visible,
-            },
-            rect: Rectangle::default(),
-            oklab: self.oklab,
-        });
-
-        let bar = world.insert(OklabBar {
-            common: WidgetCommon {
-                camera,
-                visible: self.common.visible,
-            },
-            rect: Rectangle::default(),
-            oklab: self.oklab,
-        });
-
-        Echo::new(world, this).widget_rectangle().widget_visible();
-
-        world.insert(Transform {
-            value: TransformValue::copy(),
-            source: this.untyped(),
-            target: container.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue::anchor(
+        let polar_rect = world.build(Transform::new(
+            TransformValue::anchor(
                 (0.5, 0.5),
                 Rectangle::new_half(IVec2::new(-30, 0), UVec2::splat(100)),
             ),
-            source: container.untyped(),
-            target: polar.untyped(),
+            local,
+        ));
+        let polar = world.insert(OklabPolar {
+            common,
+            rect: polar_rect,
+            oklab: self.oklab,
         });
 
-        world.insert(Transform {
-            value: TransformValue::anchor(
+        let bar_rect = world.build(Transform::new(
+            TransformValue::anchor(
                 (0.5, 0.5),
                 Rectangle::new_half(IVec2::new(110, 0), UVec2::new(20, 100)),
             ),
-            source: container.untyped(),
-            target: bar.untyped(),
+            local,
+        ));
+        let bar = world.insert(OklabBar {
+            common,
+            rect: bar_rect,
+            oklab: self.oklab,
         });
 
         let layer = world.single::<LayerPage>();

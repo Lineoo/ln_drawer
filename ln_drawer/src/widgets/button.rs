@@ -2,8 +2,11 @@ use glam::Vec4;
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
-    animation::{AnimationDescriptor, SetAnimationDst, SimpleAnimationDescriptor},
-    layout::transform::TransformValue,
+    layout::{
+        anim::Animator,
+        transform::{Transform, TransformValue},
+        val::{Val, ValChanged},
+    },
     measures::{FI64Ext, Rectangle},
     theme::Theme,
     tools::{
@@ -11,7 +14,7 @@ use crate::{
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible, WidgetHover,
+        WidgetHover,
         common::WidgetCommon,
         renderer::{
             canvas::{Canvas, SetCanvasColor},
@@ -22,7 +25,7 @@ use crate::{
 
 pub struct ToggleButton {
     pub common: WidgetCommon,
-    pub rect: Rectangle,
+    pub rect: Handle<Val<Rectangle>>,
     pub theme: ToggleButtonTheme,
     pub image: Option<ButtonImage>,
     pub selected: bool,
@@ -71,6 +74,11 @@ pub enum ButtonDragStatus {
 
 impl ToggleButton {
     pub fn init(&self, world: &World, handle: Handle<Self>) {
+        world.scope("toggle_button");
+        world.set_autodeps(Some(handle));
+        world.dependency(handle, self.rect);
+        world.dependency(handle, self.common.visible);
+
         let theme = world.single_fetch::<Theme>();
 
         let frame = world.insert(RRect {
@@ -82,20 +90,21 @@ impl ToggleButton {
             },
             radius: theme.roundness,
             width: 0.0,
-            enabled: self.common.visible,
+            visible: self.common.visible,
             camera: self.common.camera,
         });
-        world.dependency(frame, handle);
 
-        let frame_anim_color = world.build(SimpleAnimationDescriptor {
-            animation: AnimationDescriptor::new(theme.gray1, theme.anim_factor),
-            widget: frame,
-            action: move |_, world, color| {
-                world.queue_trigger(frame, SetRRectColor(color));
-            },
+        let frame_color = world.insert(Val::new(match self.selected {
+            false => self.theme.idle_color,
+            true => self.theme.selected_color,
+        }));
+        let frame_anim_color = world.build(Animator::new(frame_color, theme.anim_factor));
+        world.observer(frame_anim_color, move |ValChanged, world| {
+            let color = world.fetch(frame_anim_color).val;
+            world.queue_trigger(frame, SetRRectColor(color));
         });
 
-        let collider = world.insert(ToolRectCollider {
+        world.insert(ToolRectCollider {
             common: self.common,
             target: handle.untyped(),
             rect: self.rect,
@@ -103,8 +112,9 @@ impl ToggleButton {
         });
 
         let canvas = if let Some(image) = &self.image {
+            let icon_rect = world.build(Transform::new(image.transform, self.rect));
             let canvas = world.insert(Canvas {
-                rect: image.transform.compute(self.rect),
+                rect: icon_rect,
                 order: 11,
                 visible: self.common.visible,
                 camera: self.common.camera,
@@ -113,7 +123,6 @@ impl ToggleButton {
                 data_width: image.bytes_width,
                 data_height: image.bytes_height,
             });
-            world.dependency(canvas, handle);
             Some(canvas)
         } else {
             None
@@ -122,40 +131,16 @@ impl ToggleButton {
         world.observer(handle, move |&SetButtonSelected(selected), world| {
             let mut this = world.fetch_mut(handle);
             this.selected = selected;
-            if selected {
-                world.trigger(
-                    frame_anim_color,
-                    &SetAnimationDst(this.theme.selected_color),
-                );
+            let color = if selected {
+                this.theme.selected_color
             } else if this.hovering {
-                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.hover_color));
+                this.theme.hover_color
             } else {
-                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.idle_color));
-            }
-        });
-
-        world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(handle);
-            this.rect = rect;
-            world.queue_trigger(frame, SetWidgetRectangle(rect));
-            world.queue_trigger(collider, SetWidgetRectangle(rect));
-
-            if let Some(canvas) = canvas
-                && let Some(image) = &this.image
-            {
-                world.queue_trigger(canvas, SetWidgetRectangle(image.transform.compute(rect)));
-            }
-        });
-
-        world.observer(handle, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(handle);
-            this.common.visible = visible;
-            world.queue_trigger(frame, SetWidgetVisible(visible));
-            world.queue_trigger(collider, SetWidgetVisible(visible));
-
-            if let Some(canvas) = canvas {
-                world.queue_trigger(canvas, SetWidgetVisible(visible));
-            }
+                this.theme.idle_color
+            };
+            let mut frame_color = world.fetch_mut(frame_color);
+            frame_color.val = color;
+            world.queue_trigger(frame_color.handle(), ValChanged);
         });
 
         world.observer(handle, move |&SetButtonIconColor(color), world| {
@@ -245,11 +230,14 @@ impl ToggleButton {
                 return;
             }
 
-            if let WidgetHover::Enter = event {
-                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.hover_color));
+            let color = if let WidgetHover::Enter = event {
+                this.theme.hover_color
             } else {
-                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.idle_color));
-            }
+                this.theme.idle_color
+            };
+            let mut frame_color = world.fetch_mut(frame_color);
+            frame_color.val = color;
+            world.queue_trigger(frame_color.handle(), ValChanged);
         });
 
         world.observer(handle, move |event: &ButtonAction, world| {
@@ -258,13 +246,16 @@ impl ToggleButton {
                 return;
             }
 
-            if let ButtonAction::Press = event {
-                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.press_color));
+            let color = if let ButtonAction::Press = event {
+                this.theme.press_color
             } else if this.hovering {
-                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.hover_color));
+                this.theme.hover_color
             } else {
-                world.trigger(frame_anim_color, &SetAnimationDst(this.theme.idle_color));
-            }
+                this.theme.idle_color
+            };
+            let mut frame_color = world.fetch_mut(frame_color);
+            frame_color.val = color;
+            world.queue_trigger(frame_color.handle(), ValChanged);
         });
     }
 }

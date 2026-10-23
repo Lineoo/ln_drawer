@@ -1,5 +1,5 @@
 use glam::{IVec2, UVec2, Vec4};
-use ln_world::{Element, Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 
 use crate::{
     color::srgb::{mul_alpha, srgb_gamma_decode},
@@ -8,15 +8,16 @@ use crate::{
         wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::{
-        echo::Echo,
-        transfer::Transfer,
         transform::{Transform, TransformValue},
+        val::{Val, ValChanged},
     },
     measures::{FI64Ext, Rectangle},
     theme::Theme,
-    tools::mouse::MouseMenu,
+    tools::{
+        mouse::MouseMenu,
+        pointer::{PointerHover, PointerScroll},
+    },
     widgets::{
-        SetWidgetRectangle,
         button::{ButtonClick, ButtonDrag, ButtonDragStatus, ToggleButton},
         common::WidgetCommon,
         renderer::rrect::RRect,
@@ -25,6 +26,7 @@ use crate::{
 
 pub struct ColorSnip {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
     pub attr: ColorSnipAttr,
 }
 
@@ -36,65 +38,49 @@ pub struct ColorSnipAttr {
 
 impl Element for ColorSnip {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("color_snip");
+        world.set_autodeps(Some(this));
+
         let theme = world.single_fetch::<Theme>();
         let input = world.single::<LayerInput>();
 
         let button = world.insert(ToggleButton {
             common: self.common,
-            rect: Rectangle::new_half(self.attr.position, UVec2::splat(24)),
+            rect: self.rect,
             theme: theme.button(),
             image: None,
             selected: false,
             hovering: false,
         });
 
-        let color = world.insert(RRect {
-            rect: Rectangle::new_half(self.attr.position, UVec2::splat(16)),
+        let color_rect = world.build(Transform::new(TransformValue::shrink(8, 8), self.rect));
+        world.insert(RRect {
+            rect: color_rect,
             order: 100,
             color: mul_alpha(srgb_gamma_decode(self.attr.color)),
             radius: 16.0,
             width: 0.0,
-            enabled: self.common.visible,
+            visible: self.common.visible,
             camera: self.common.camera,
         });
 
-        world.insert(Transform {
-            value: TransformValue::anchor(
-                (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(24)),
-            ),
-            source: this.untyped(),
-            target: button.untyped(),
+        world.observer(button, move |event: &PointerScroll, world| {
+            world.queue_trigger(input, *event);
         });
-
-        world.insert(Transform {
-            value: TransformValue::shrink(8, 8),
-            source: button.untyped(),
-            target: color.untyped(),
-        });
-
-        Echo::new(world, this).widget_rectangle().widget_visible();
-        Echo::new(world, button).widget_rectangle().widget_visible();
-        Transfer::new(world, button, input)
-            .pointer_scroll()
-            .pointer_hover();
-
-        world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this);
-            this.attr.position = rect.center();
+        world.observer(button, move |event: &PointerHover, world| {
+            world.queue_trigger(input, *event);
         });
 
         let mut from = None;
         world.observer(button, move |drag: &ButtonDrag, world| {
             let this = world.fetch(this);
+            let mut rect = world.fetch_mut(this.rect);
             let source = from.get_or_insert(this.attr.position);
             let delta = drag.here.position - drag.from.position;
             let destination = *source + delta.q32_round();
 
-            world.queue_trigger(
-                this.handle(),
-                SetWidgetRectangle(Rectangle::new_half(destination, UVec2::splat(24))),
-            );
+            rect.val = Rectangle::new_half(destination, UVec2::splat(24));
+            world.queue_trigger(rect.handle(), ValChanged);
 
             if drag.status == ButtonDragStatus::End {
                 from = None;
@@ -113,8 +99,5 @@ impl Element for ColorSnip {
                 world.remove(this);
             });
         });
-
-        world.dependency(button, this);
-        world.dependency(color, this);
     }
 }

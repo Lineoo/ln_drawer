@@ -1,4 +1,3 @@
-mod animation;
 mod color;
 mod i18n;
 mod layer;

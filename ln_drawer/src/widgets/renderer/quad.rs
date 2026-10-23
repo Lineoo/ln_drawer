@@ -8,15 +8,14 @@ use wgpu::{
 };
 
 use crate::{
+    layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
     measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderDrawControl,
         camera::{Camera, CameraBind},
     },
-    widgets::{
-        SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, shaders::shader_compile,
-    },
+    widgets::{common::WidgetCommon, shaders::shader_compile},
 };
 
 pub trait QuadMaterial: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable + Send {
@@ -43,8 +42,8 @@ pub struct QuadMeshPipeline<M: QuadMaterial> {
 }
 
 pub struct QuadMesh<M: QuadMaterial> {
-    pub rect: Rectangle,
-    pub visible: bool,
+    pub rect: Handle<Val<Rectangle>>,
+    pub visible: Handle<Val<bool>>,
     pub order: isize,
     pub camera: Handle<Camera>,
     pub material: M,
@@ -62,6 +61,10 @@ pub struct QuadUniform {
 
 impl<M: QuadMaterial> QuadMesh<M> {
     pub fn init(&self, world: &World, this: Handle<Self>) {
+        world.scope("quad_mesh");
+        world.set_autodeps(Some(this));
+
+        let rect = world.fetch(self.rect).val;
         let render = world.single_fetch::<Render>();
         let pipeline = world.single_fetch::<QuadMeshPipeline<M>>();
         let device = &render.device;
@@ -69,8 +72,8 @@ impl<M: QuadMaterial> QuadMesh<M> {
         let rectangle_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("rectangle"),
             contents: bytemuck::bytes_of(&QuadUniform {
-                origin: self.rect.origin.into(),
-                extend: self.rect.extend.into(),
+                origin: rect.origin.into(),
+                extend: rect.extend.into(),
                 edge: self.material.edge(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
@@ -97,10 +100,9 @@ impl<M: QuadMaterial> QuadMesh<M> {
             ],
         });
 
-        let camera = self.camera;
-        let control = world.insert(RenderDrawControl {
+        world.insert(RenderDrawControl {
             common: WidgetCommon {
-                camera,
+                camera: self.camera,
                 visible: self.visible,
             },
             order: self.order,
@@ -121,10 +123,10 @@ impl<M: QuadMaterial> QuadMesh<M> {
             }),
         });
 
-        world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this);
+        world.observer(self.rect, move |ValChanged, world| {
+            let this = world.fetch(this);
+            let rect = world.fetch(this.rect).val;
             let render = world.single_fetch::<Render>();
-            this.rect = rect;
             let uniform = QuadUniform {
                 origin: rect.origin.into(),
                 extend: rect.extend.into(),
@@ -135,12 +137,6 @@ impl<M: QuadMaterial> QuadMesh<M> {
             render.queue.write_buffer(&rectangle_buffer, 0, bytes);
             let lnwindow = world.single_fetch::<Lnwindow>();
             lnwindow.window.request_redraw();
-        });
-
-        world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this);
-            this.visible = visible;
-            world.queue_trigger(control, SetWidgetVisible(visible));
         });
 
         world.observer(this, move |&SetQuadMaterial(mat), world| {
@@ -154,8 +150,6 @@ impl<M: QuadMaterial> QuadMesh<M> {
             let lnwindow = world.single_fetch::<Lnwindow>();
             lnwindow.window.request_redraw();
         });
-
-        world.dependency(control, this);
     }
 }
 

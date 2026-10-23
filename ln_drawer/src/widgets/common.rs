@@ -1,9 +1,9 @@
 use ln_world::Handle;
 
-use crate::render::camera::Camera;
+use crate::{layout::val::Val, render::camera::Camera};
 
 #[derive(Debug, Clone, Copy)]
 pub struct WidgetCommon {
     pub camera: Handle<Camera>,
-    pub visible: bool,
+    pub visible: Handle<Val<bool>>,
 }

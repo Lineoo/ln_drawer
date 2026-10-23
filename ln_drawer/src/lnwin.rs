@@ -14,6 +14,7 @@ use winit::{
 };
 
 use crate::{
+    layout::val::{Val, ValChanged},
     measures::{FI64Ext, Rectangle},
     render::{
         Render,
@@ -23,7 +24,6 @@ use crate::{
     theme::Theme,
     tools::{focus::FocusTool, mouse::MouseTool, pointer::PointerTool, touch::MultiTouchTool},
     widgets::{
-        WidgetRectangle,
         common::WidgetCommon,
         palette::{
             hsl::{HslRingMaterial, HslSquareMaterial},
@@ -100,12 +100,22 @@ pub struct Lnwindow {
     pub window: Arc<dyn Window>,
 }
 
+pub struct LnwindowRect(pub Handle<Val<Rectangle>>);
+
 impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.scope("lnwindow");
+        world.set_autodeps(Some(this));
+
+        let rect = world.insert(Val::new(self.window_rect()));
+        world.insert(LnwindowRect(rect));
+
         let here = world.here();
         world.enter(this, || world.insert(ViewRef(here)));
         world.enter_queue(this, move |world| {
+            world.scope("lnwindow");
+            world.set_autodeps(Some(this));
+
             // TODO async save initialization
             Save::init(world);
             world.insert(AutosaveScheduler {
@@ -171,46 +181,40 @@ impl Element for Lnwindow {
             });
 
             world.observer(this, move |event: &WindowEvent, world| {
-                if let WindowEvent::SurfaceResized(size) = event {
+                if let WindowEvent::SurfaceResized(_) = event {
                     let lnwindow = world.fetch(this);
+                    let mut rect = world.fetch_mut(rect);
                     let mut camera = world.fetch_mut(ui_camera);
 
                     let scale = lnwindow.window.scale_factor();
-                    world.queue_trigger(
-                        lnwindow.handle(),
-                        WidgetRectangle(Rectangle::new_half(
-                            IVec2::ZERO,
-                            (UVec2::new(size.width / 2, size.height / 2).as_dvec2() / scale)
-                                .round()
-                                .as_uvec2(),
-                        )),
-                    );
+                    let next = lnwindow.window_rect();
 
-                    world.queue_trigger(camera.handle(), SetCameraOutdated);
+                    rect.val = next;
+                    world.queue_trigger(rect.handle(), ValChanged);
+
                     camera.zoom = i64::q32_from_f64(scale.log2());
+                    world.queue_trigger(camera.handle(), SetCameraOutdated);
                 }
             });
 
             world.flush();
+
             let save = world.single_fetch::<Save>();
             let use_desktop = std::env::var_os("LNDRAWER_DESKTOP_UI").is_some()
                 || save.sn().desktop_mode.is_some_and(|x| x);
             drop(save);
+
+            let visible = world.insert(Val::new(true));
+            let common = WidgetCommon {
+                camera: ui_camera,
+                visible,
+            };
+
             if use_desktop {
                 log::warn!("using experimental desktop ui");
-                world.insert(DesktopUi {
-                    common: WidgetCommon {
-                        camera: ui_camera,
-                        visible: true,
-                    },
-                });
+                world.insert(DesktopUi { common });
             } else {
-                world.insert(MobileUi {
-                    common: WidgetCommon {
-                        camera: ui_camera,
-                        visible: true,
-                    },
-                });
+                world.insert(MobileUi { common });
             }
         });
     }
@@ -241,7 +245,18 @@ impl Lnwindow {
         let y = (1.0 - ndc.y) * size.height as f64 / 2.0;
         PhysicalPosition::new(x, y)
     }
+
+    fn window_rect(&self) -> Rectangle {
+        let size = self.window.surface_size();
+        let scale = self.window.scale_factor();
+        let half = (UVec2::new(size.width / 2, size.height / 2).as_dvec2() / scale)
+            .round()
+            .as_uvec2();
+        Rectangle::new_half(IVec2::ZERO, half)
+    }
 }
+
+impl Element for LnwindowRect {}
 
 #[cfg(target_os = "android")]
 pub struct LnAndroid(pub AndroidApp);

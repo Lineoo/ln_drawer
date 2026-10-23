@@ -1,57 +1,55 @@
-use ln_world::{HandleAny, HandleGeneric, World};
+use ln_world::{Handle, World};
 
-use crate::{
-    tools::pointer::{PointerHit, PointerHover, PointerScroll},
-    widgets::{
-        SetWidgetRectangle, SetWidgetVisible,
-        button::{ButtonSelected, SetButtonSelected},
-    },
-};
+use crate::layout::val::{Val, ValChanged};
 
-/// Very useful when you're trying to mimic a specific widget!
-pub struct Transfer<'w>(&'w World, HandleAny, HandleAny);
+pub struct Transfer<'w, T: Send + 'static, U: Send + 'static> {
+    world: &'w World,
+    this: Handle<Val<T>>,
+    that: Handle<Val<U>>,
+}
 
-impl Transfer<'_> {
-    pub fn new(world: &World, this: impl HandleGeneric, that: impl HandleGeneric) -> Transfer<'_> {
-        Transfer(world, this.untyped(), that.untyped())
+impl<T: Send + 'static, U: Send + 'static> Transfer<'_, T, U> {
+    pub fn new(world: &World, this: Handle<Val<T>>, that: Handle<Val<U>>) -> Transfer<'_, T, U> {
+        Transfer { world, this, that }
     }
 
-    pub fn build<I: Send + 'static, O: Send + 'static>(
+    pub fn build(&self, f: impl Fn(&T) -> U + Send + Sync + 'static) -> Handle<Val<U>> {
+        self.build_with(move |i, _| f(i))
+    }
+
+    pub fn build_with(
         &self,
-        f: impl Fn(&I) -> O + Send + 'static,
-    ) -> &Self {
-        let &Transfer(world, this, that) = self;
-        world.observer(this, move |i: &I, world| {
-            world.queue_trigger(that, f(i));
+        f: impl Fn(&T, &World) -> U + Send + Sync + 'static,
+    ) -> Handle<Val<U>> {
+        let &Transfer { world, this, that } = self;
+        world.queue(move |world| {
+            {
+                // init
+                let this = world.fetch(this);
+                let mut that = world.fetch_mut(that);
+                that.val = f(&this.val, world);
+            }
+
+            world.observer(this, move |ValChanged, world| {
+                let this = world.fetch(this);
+                let mut that = world.fetch_mut(that);
+                that.val = f(&this.val, world);
+                world.queue_trigger(that.handle(), ValChanged);
+            });
         });
-        self
+        that
     }
+}
 
-    pub fn set_widget_rectangle(&self) -> &Self {
-        self.build(|&SetWidgetRectangle(val)| SetWidgetRectangle(val))
+impl<T: Send + 'static, U: Send + Default + 'static> Transfer<'_, T, U> {
+    pub fn derive(world: &World, this: Handle<Val<T>>) -> Transfer<'_, T, U> {
+        let that = world.insert(Val::new(U::default()));
+        Transfer { world, this, that }
     }
+}
 
-    pub fn set_widget_visible(&self) -> &Self {
-        self.build(|&SetWidgetVisible(val)| SetWidgetVisible(val))
-    }
-
-    pub fn button_selected(&self) -> &Self {
-        self.build(|&ButtonSelected(val)| ButtonSelected(val))
-    }
-
-    pub fn set_button_selected(&self) -> &Self {
-        self.build(|&SetButtonSelected(val)| SetButtonSelected(val))
-    }
-
-    pub fn pointer_hit(&self) -> &Self {
-        self.build(|&v: &PointerHit| v)
-    }
-
-    pub fn pointer_hover(&self) -> &Self {
-        self.build(|&v: &PointerHover| v)
-    }
-
-    pub fn pointer_scroll(&self) -> &Self {
-        self.build(|&v: &PointerScroll| v)
+impl<T: Send + Clone + Copy + 'static> Transfer<'_, T, T> {
+    pub fn copy(&self) -> Handle<Val<T>> {
+        self.build(|&x| x)
     }
 }

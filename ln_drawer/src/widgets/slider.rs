@@ -3,34 +3,33 @@ use glam::{IVec2, UVec2};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
-    animation::{
-        Animation, AnimationDescriptor, AnimationType, SetAnimationDst, SimpleAnimationDescriptor,
+    layout::{
+        anim::Animator,
+        val::{Val, ValChanged},
     },
     measures::{Axis, FI64Ext, Rectangle},
-    render::camera::Camera,
     theme::Theme,
     tools::{
         collider::ToolRectCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
     },
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible, WidgetHover,
+        WidgetHover,
         common::WidgetCommon,
         renderer::{
             rrect::{RRect, SetRRectColor},
-            text::{SetText, Text},
+            text::{SetText, Text, TextAttr},
         },
     },
 };
 
 pub struct SliderValue(pub f32);
-pub struct SetSliderValue(pub f32);
 
 pub struct Slider {
     pub common: WidgetCommon,
-    pub value: f32,
+    pub value: Handle<Val<f32>>,
     pub axis: Axis,
-    pub rect: Rectangle,
+    pub rect: Handle<Val<Rectangle>>,
     pub pressed: bool,
 }
 
@@ -39,117 +38,87 @@ pub struct SliderLabel {
     pub clockwise: bool,
     pub source: Handle<Slider>,
     pub hover: bool,
-    pub visible: bool,
-    pub camera: Handle<Camera>,
+    pub common: WidgetCommon,
 }
 
 impl Slider {
     pub fn init(&self, world: &World, handle: Handle<Self>) {
-        let theme = world.single_fetch::<Theme>();
+        world.scope("slider");
+        world.set_autodeps(Some(handle));
+        world.dependency(handle, self.rect);
+        world.dependency(handle, self.common.visible);
 
-        let back = world.insert(RRect {
-            rect: back_rect(self.rect, self.axis),
+        let theme = world.single_fetch::<Theme>();
+        let rect = world.fetch(self.rect).val;
+        let value = world.fetch(self.value).val;
+
+        let position = into_position(rect, self.axis, value);
+        let back_rect_anim = world.insert(Val::new(back_rect(rect, self.axis)));
+        let back_rect_val = world.build(Animator::new(back_rect_anim, theme.anim_factor));
+        let front_rect_val = world.insert(Val::new(front_rect(rect, self.axis, position)));
+        let knob_rect_val = world.insert(Val::new(knob_rect(rect, self.axis, position)));
+        let knob_split_rect_val =
+            world.insert(Val::new(knob_split_rect(rect, self.axis, position)));
+
+        let knob_color_anim = world.insert(Val::new(theme.gray0));
+        let knob_color_val = world.build(Animator::new(knob_color_anim, theme.anim_factor));
+        world.observer(knob_color_val, move |ValChanged, world| {
+            let color = world.fetch(knob_color_val).val;
+            world.queue_trigger(knob_rect_val, SetRRectColor(color));
+        });
+
+        let knob_split_color_anim = world.insert(Val::new(theme.gray1));
+        let knob_split_color_val = world.build(Animator::new(knob_split_color_anim, theme.anim_factor));
+        world.observer(knob_split_color_val, move |ValChanged, world| {
+            let color = world.fetch(knob_split_color_val).val;
+            world.queue_trigger(knob_split_rect_val, SetRRectColor(color));
+        });
+
+        world.insert(RRect {
+            rect: back_rect_val,
             order: 20,
             color: theme.gray2,
             radius: theme.roundness,
             width: 0.0,
-            enabled: self.common.visible,
+            visible: self.common.visible,
             camera: self.common.camera,
         });
 
-        let position = into_position(self.rect, self.axis, self.value);
-
-        let front = world.insert(RRect {
-            rect: front_rect(self.rect, self.axis, position),
+        world.insert(RRect {
+            rect: front_rect_val,
             order: 21,
             color: theme.theme,
             radius: theme.roundness,
             width: 0.0,
-            enabled: self.common.visible,
+            visible: self.common.visible,
             camera: self.common.camera,
         });
 
-        let knob = world.insert(RRect {
-            rect: knob_rect(self.rect, self.axis, position),
+        world.insert(RRect {
+            rect: knob_rect_val,
             order: 22,
             color: theme.gray0,
             radius: theme.roundness,
             width: 0.0,
-            enabled: self.common.visible,
+            visible: self.common.visible,
             camera: self.common.camera,
         });
 
-        let knob_split = world.insert(RRect {
-            rect: knob_split_rect(self.rect, self.axis, position),
+        world.insert(RRect {
+            rect: knob_split_rect_val,
             order: 23,
             color: theme.gray1,
             radius: 2.0,
             width: 0.0,
-            enabled: self.common.visible,
+            visible: self.common.visible,
             camera: self.common.camera,
         });
 
-        world.dependency(back, handle);
-        world.dependency(front, handle);
-        world.dependency(knob, handle);
-        world.dependency(knob_split, handle);
-
-        let back_rect_anim = world.build(SimpleAnimationDescriptor {
-            animation: AnimationDescriptor::new(back_rect(self.rect, self.axis), theme.anim_factor),
-            widget: back,
-            action: move |_, world, rect| {
-                world.queue_trigger(back, SetWidgetRectangle(rect));
-            },
-        });
-
-        let knob_color_anim = world.build(SimpleAnimationDescriptor {
-            animation: AnimationDescriptor::new(theme.gray1, theme.anim_factor),
-            widget: knob,
-            action: move |_, world, color| {
-                world.queue_trigger(knob, SetRRectColor(color));
-            },
-        });
-
-        let knob_split_color_anim = world.build(SimpleAnimationDescriptor {
-            animation: AnimationDescriptor::new(theme.gray1, theme.anim_factor),
-            widget: knob_split,
-            action: move |_, world, color| {
-                world.queue_trigger(knob_split, SetRRectColor(color));
-            },
-        });
-
-        let collider = world.insert(ToolRectCollider {
+        world.insert(ToolRectCollider {
             common: self.common,
             target: handle.untyped(),
             rect: self.rect,
             order: 10,
-        });
-
-        world.observer(handle, move |&SetSliderValue(value), world| {
-            let mut this = world.fetch_mut(handle);
-            this.set_value(world, value, front, knob, knob_split);
-        });
-
-        world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(handle);
-            let mut back_rect_anim = world.fetch_mut(back_rect_anim);
-            this.set_rect(
-                world,
-                rect,
-                &mut back_rect_anim,
-                front,
-                knob,
-                knob_split,
-                collider,
-            );
-        });
-
-        world.observer(handle, move |&SetWidgetVisible(visible), world| {
-            world.queue_trigger(back, SetWidgetVisible(visible));
-            world.queue_trigger(front, SetWidgetVisible(visible));
-            world.queue_trigger(knob, SetWidgetVisible(visible));
-            world.queue_trigger(knob_split, SetWidgetVisible(visible));
-            world.queue_trigger(collider, SetWidgetVisible(visible));
         });
 
         world.observer(handle, move |event: &PointerHover, world| {
@@ -163,179 +132,190 @@ impl Slider {
         world.observer(handle, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(handle);
             let theme = world.single_fetch::<Theme>();
+            let rect = world.fetch(this.rect).val;
 
             let position = match this.axis.is_vertical() {
                 true => event.position.q32_round().y,
                 false => event.position.q32_round().x,
             };
 
-            let value = from_position_pressed(this.rect, this.axis, position);
+            let value = from_position_pressed(rect, this.axis, position);
             world.queue_trigger(handle, SliderValue(value));
 
             if let PointerHitStatus::Press = event.status {
                 this.pressed = true;
-                let back_rect_expanded = back_rect_pressed(this.rect, this.axis);
-                world.trigger(back_rect_anim, &SetAnimationDst(back_rect_expanded));
-                world.trigger(knob_color_anim, &SetAnimationDst(theme.gray1));
-                world.trigger(knob_split_color_anim, &SetAnimationDst(theme.theme));
+                let mut back = world.fetch_mut(back_rect_anim);
+                let mut knob_color = world.fetch_mut(knob_color_anim);
+                let mut knob_split_color = world.fetch_mut(knob_split_color_anim);
+                back.val = back_rect_pressed(rect, this.axis);
+                knob_color.val = theme.gray1;
+                knob_split_color.val = theme.theme;
+                world.queue_trigger(back.handle(), ValChanged);
+                world.queue_trigger(knob_color.handle(), ValChanged);
+                world.queue_trigger(knob_split_color.handle(), ValChanged);
             } else if let PointerHitStatus::Release = event.status {
                 this.pressed = false;
-                let back_rect = back_rect(this.rect, this.axis);
-                world.trigger(back_rect_anim, &SetAnimationDst(back_rect));
-                world.trigger(knob_color_anim, &SetAnimationDst(theme.gray0));
-                world.trigger(knob_split_color_anim, &SetAnimationDst(theme.gray1));
+                let mut back = world.fetch_mut(back_rect_anim);
+                let mut knob_color = world.fetch_mut(knob_color_anim);
+                let mut knob_split_color = world.fetch_mut(knob_split_color_anim);
+                back.val = back_rect(rect, this.axis);
+                knob_color.val = theme.gray0;
+                knob_split_color.val = theme.gray1;
+                world.queue_trigger(back.handle(), ValChanged);
+                world.queue_trigger(knob_color.handle(), ValChanged);
+                world.queue_trigger(knob_split_color.handle(), ValChanged);
             }
         });
-    }
 
-    fn set_value(
-        &mut self,
-        world: &World,
-        value: f32,
-        front: Handle<RRect>,
-        knob: Handle<RRect>,
-        knob_split: Handle<RRect>,
-    ) {
-        self.value = value;
+        world.observer(self.value, move |&ValChanged, world| {
+            let this = world.fetch(handle);
+            let value = world.fetch(this.value).val;
+            let rect = world.fetch(this.rect).val;
+            let mut front = world.fetch_mut(front_rect_val);
+            let mut knob = world.fetch_mut(knob_rect_val);
+            let mut knob_split = world.fetch_mut(knob_split_rect_val);
 
-        let position = match self.pressed {
-            true => into_position_pressed(self.rect, self.axis, self.value),
-            false => into_position(self.rect, self.axis, self.value),
-        };
+            let position = match this.pressed {
+                true => into_position_pressed(rect, this.axis, value),
+                false => into_position(rect, this.axis, value),
+            };
 
-        world.queue_trigger(
-            front,
-            SetWidgetRectangle(front_rect(self.rect, self.axis, position)),
-        );
-        world.queue_trigger(
-            knob_split,
-            SetWidgetRectangle(knob_split_rect(self.rect, self.axis, position)),
-        );
+            front.val = front_rect(rect, this.axis, position);
+            knob_split.val = knob_split_rect(rect, this.axis, position);
+            knob.val = match this.pressed {
+                true => knob_rect_pressed(rect, this.axis, position),
+                false => knob_rect(rect, this.axis, position),
+            };
 
-        match self.pressed {
-            true => world.queue_trigger(
-                knob,
-                SetWidgetRectangle(knob_rect_pressed(self.rect, self.axis, position)),
-            ),
-            false => world.queue_trigger(
-                knob,
-                SetWidgetRectangle(knob_rect(self.rect, self.axis, position)),
-            ),
-        }
-    }
+            world.queue_trigger(front.handle(), ValChanged);
+            world.queue_trigger(knob_split.handle(), ValChanged);
+            world.queue_trigger(knob.handle(), ValChanged);
+        });
 
-    fn set_rect(
-        &mut self,
-        world: &World,
-        rect: Rectangle,
-        back_rect_anim: &mut Animation<Rectangle>,
-        front: Handle<RRect>,
-        knob: Handle<RRect>,
-        knob_split: Handle<RRect>,
-        collider: Handle<ToolRectCollider>,
-    ) {
-        self.rect = rect;
+        world.observer(self.rect, move |ValChanged, world| {
+            let this = world.fetch(handle);
+            let value = world.fetch(this.value).val;
+            let rect = world.fetch(this.rect).val;
+            let mut front = world.fetch_mut(front_rect_val);
+            let mut knob = world.fetch_mut(knob_rect_val);
+            let mut knob_split = world.fetch_mut(knob_split_rect_val);
+            let mut back = world.fetch_mut(back_rect_anim);
+            let mut back_anim = world.fetch_mut(back_rect_val);
 
-        let back_rect = back_rect(rect, self.axis);
-        back_rect_anim.dst = back_rect.into_storage();
-        back_rect_anim.src = back_rect.into_storage();
+            let back_rect = back_rect(rect, this.axis);
+            back.val = back_rect;
+            back_anim.val = back_rect;
 
-        let position = into_position(self.rect, self.axis, self.value);
-        world.queue_trigger(
-            front,
-            SetWidgetRectangle(front_rect(self.rect, self.axis, position)),
-        );
-        world.queue_trigger(
-            knob_split,
-            SetWidgetRectangle(knob_split_rect(self.rect, self.axis, position)),
-        );
-        world.queue_trigger(collider, SetWidgetRectangle(rect));
+            let position = into_position(rect, this.axis, value);
+            front.val = front_rect(rect, this.axis, position);
+            knob_split.val = knob_split_rect(rect, this.axis, position);
+            knob.val = match this.pressed {
+                true => knob_rect_pressed(rect, this.axis, position),
+                false => knob_rect(rect, this.axis, position),
+            };
 
-        match self.pressed {
-            true => world.queue_trigger(
-                knob,
-                SetWidgetRectangle(knob_rect_pressed(self.rect, self.axis, position)),
-            ),
-            false => world.queue_trigger(
-                knob,
-                SetWidgetRectangle(knob_rect(self.rect, self.axis, position)),
-            ),
-        }
+            world.queue_trigger(back.handle(), ValChanged);
+            world.queue_trigger(back_anim.handle(), ValChanged);
+            world.queue_trigger(front.handle(), ValChanged);
+            world.queue_trigger(knob_split.handle(), ValChanged);
+            world.queue_trigger(knob.handle(), ValChanged);
+        });
     }
 }
 
 impl SliderLabel {
     fn init(&self, world: &World, this: Handle<Self>) {
-        let slider = world.fetch(self.source);
+        world.scope("slider_label");
+        world.set_autodeps(Some(this));
+
+        let source = world.fetch(self.source);
         let theme = world.single_fetch::<Theme>();
+        let rect = world.fetch(source.rect).val;
+        let value = world.fetch(source.value).val;
 
-        let position = into_position(slider.rect, slider.axis, slider.value);
+        let position = into_position(rect, source.axis, value);
+        let label_rect = world.insert(Val::new(label_back_rect(
+            rect,
+            source.axis,
+            self.clockwise,
+            position,
+        )));
+        let label_visible = world.insert(Val::new(self.hover));
+        let common = WidgetCommon {
+            camera: self.common.camera,
+            visible: label_visible,
+        };
 
-        let back = world.insert(RRect {
-            rect: label_back_rect(slider.rect, slider.axis, self.clockwise, position),
+        world.insert(RRect {
+            rect: label_rect,
             order: 100,
             color: theme.gray0,
             radius: LABEL_HALF.y as f32,
             width: 0.0,
-            enabled: self.visible && self.hover,
-            camera: self.camera,
+            visible: common.visible,
+            camera: common.camera,
         });
 
         let label = world.insert(Text {
             text: self.text.clone(),
+            rect: label_rect,
+            attr: TextAttr {
+                metrics: Metrics::new(12., 2. * LABEL_HALF.y as f32),
+                align: Align::Center,
+                color: theme.distinct,
+                ..Default::default()
+            },
             order: 150,
-            metrics: Metrics::new(12., 2. * LABEL_HALF.y as f32),
-            align: Align::Center,
-            visible: self.visible && self.hover,
-            color: theme.distinct,
-            camera: Some(self.camera),
-            ..Default::default()
+            common,
+            outdated: false,
+            canvas_outdated: false,
         });
 
         world.observer(self.source, move |event: &WidgetHover, world| {
             let mut this = world.fetch_mut(this);
+            let visible = world.fetch(this.common.visible).val;
+            let mut label_visible = world.fetch_mut(label_visible);
             this.hover = match event {
                 WidgetHover::Enter => true,
                 WidgetHover::Leave => false,
             };
-            world.queue_trigger(back, SetWidgetVisible(this.hover && this.visible));
-            world.queue_trigger(label, SetWidgetVisible(this.hover && this.visible));
+            label_visible.val = this.hover && visible;
+            world.queue_trigger(label_visible.handle(), ValChanged);
         });
 
-        world.observer(self.source, move |&SetWidgetRectangle(rect), world| {
+        world.observer(source.rect, move |ValChanged, world| {
             let this = world.fetch(this);
-            let slider = world.fetch(this.source);
-            let position = into_position_pressed(rect, slider.axis, slider.value);
-            let rect = label_back_rect(rect, slider.axis, this.clockwise, position);
-            world.queue_trigger(back, SetWidgetRectangle(rect));
-            world.queue_trigger(label, SetWidgetRectangle(rect));
+            let source = world.fetch(this.source);
+            let rect = world.fetch(source.rect).val;
+            let value = world.fetch(source.value).val;
+            let mut label_rect = world.fetch_mut(label_rect);
+            let position = into_position_pressed(rect, source.axis, value);
+            label_rect.val = label_back_rect(rect, source.axis, this.clockwise, position);
+            world.queue_trigger(label_rect.handle(), ValChanged);
         });
 
-        world.observer(self.source, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this);
-            this.visible = visible;
-            world.queue_trigger(back, SetWidgetVisible(this.hover && this.visible));
-            world.queue_trigger(label, SetWidgetVisible(this.hover && this.visible));
-        });
-
-        world.observer(self.source, move |&SetSliderValue(val), world| {
+        world.observer(self.common.visible, move |ValChanged, world| {
             let this = world.fetch(this);
-            let slider = world.fetch(this.source);
-            let position = into_position_pressed(slider.rect, slider.axis, val);
-            let rect = label_back_rect(slider.rect, slider.axis, this.clockwise, position);
-            world.queue_trigger(back, SetWidgetRectangle(rect));
-            world.queue_trigger(label, SetWidgetRectangle(rect));
+            let visible = world.fetch(this.common.visible).val;
+            let mut label_visible = world.fetch_mut(label_visible);
+            label_visible.val = this.hover && visible;
+            world.queue_trigger(label_visible.handle(), ValChanged);
+        });
+
+        world.observer(source.value, move |ValChanged, world| {
+            let this = world.fetch(this);
+            let source = world.fetch(this.source);
+            let rect = world.fetch(source.rect).val;
+            let value = world.fetch(source.value).val;
+            let mut label_rect = world.fetch_mut(label_rect);
+            let position = into_position_pressed(rect, source.axis, value);
+            label_rect.val = label_back_rect(rect, source.axis, this.clockwise, position);
+            world.queue_trigger(label_rect.handle(), ValChanged);
         });
 
         world.observer(this, move |val: &SetText, world| {
             world.trigger(label, val);
         });
-
-        world.dependency(this, self.source);
-        world.dependency(label, this);
-        world.dependency(back, this);
-
-        world.queue_trigger(this, SetSliderValue(slider.value));
     }
 }
 

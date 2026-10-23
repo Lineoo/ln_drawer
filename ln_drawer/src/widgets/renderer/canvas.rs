@@ -15,21 +15,20 @@ use wgpu::{
 };
 
 use crate::{
+    layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
     measures::Rectangle,
     render::{
         MSAA_STATE, Render, RenderDrawControl,
         camera::{Camera, CameraBind},
     },
-    widgets::{
-        SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, shaders::shader_compile,
-    },
+    widgets::{common::WidgetCommon, shaders::shader_compile},
 };
 
 pub struct Canvas {
-    pub rect: Rectangle,
+    pub rect: Handle<Val<Rectangle>>,
     pub order: isize,
-    pub visible: bool,
+    pub visible: Handle<Val<bool>>,
     pub camera: Handle<Camera>,
     pub color: Vec4,
 
@@ -63,21 +62,26 @@ pub struct RectangleUniform {
 
 impl Canvas {
     pub fn init(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("canvas");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.visible);
+
         assert_eq!(
             self.data.len(),
             (self.data_width * self.data_height) as usize * 4,
             "data is not matched with its size"
         );
 
+        let rect = world.fetch(self.rect).val;
         let render = world.single_fetch::<Render>();
         let pipeline = world.single_fetch::<CanvasPipeline>();
-        let instance = world.insert(self.instantiate(&render, &pipeline));
+        let instance = world.insert(self.instantiate(&render, &pipeline, rect));
         drop(render);
 
-        let camera = self.camera;
-        let control = world.insert(RenderDrawControl {
+        world.insert(RenderDrawControl {
             common: WidgetCommon {
-                camera,
+                camera: self.camera,
                 visible: self.visible,
             },
             order: self.order,
@@ -98,11 +102,10 @@ impl Canvas {
             }),
         });
 
-        world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this);
+        world.observer(self.rect, move |ValChanged, world| {
+            let this = world.fetch(this);
+            let rect = world.fetch(this.rect).val;
             let instance = world.fetch(instance);
-            this.rect = rect;
-
             let uniform = RectangleUniform {
                 origin: rect.origin.into(),
                 extend: rect.extend.into(),
@@ -115,12 +118,6 @@ impl Canvas {
                 .write_buffer(&instance.rectangle_uniform, 0, bytes);
             let lnwindow = world.single_fetch::<Lnwindow>();
             lnwindow.window.request_redraw();
-        });
-
-        world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this);
-            this.visible = visible;
-            world.queue_trigger(control, SetWidgetVisible(visible));
         });
 
         world.observer(this, move |&SetCanvasColor(color), world| {
@@ -145,17 +142,15 @@ impl Canvas {
             let mut instance = world.fetch_mut(instance);
             let pipeline = world.single_fetch::<CanvasPipeline>();
             let render = world.single_fetch::<Render>();
-            *instance = this.instantiate(&render, &pipeline);
+            let rect = world.fetch(this.rect).val;
+            *instance = this.instantiate(&render, &pipeline, rect);
         });
-
-        world.dependency(instance, this);
-        world.dependency(control, this);
     }
 
     pub fn transparent(
-        rect: Rectangle,
+        rect: Handle<Val<Rectangle>>,
         order: isize,
-        visible: bool,
+        visible: Handle<Val<bool>>,
         camera: Handle<Camera>,
         size: UVec2,
     ) -> Self {
@@ -250,12 +245,17 @@ impl Canvas {
         ((x + y * self.data_width as i32) * 4) as usize
     }
 
-    fn instantiate(&self, render: &Render, pipeline: &CanvasPipeline) -> CanvasInstance {
+    fn instantiate(
+        &self,
+        render: &Render,
+        pipeline: &CanvasPipeline,
+        rect: Rectangle,
+    ) -> CanvasInstance {
         let rectangle_uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("canvas_uniform"),
             contents: bytemuck::bytes_of(&RectangleUniform {
-                origin: self.rect.origin.into(),
-                extend: self.rect.extend.into(),
+                origin: rect.origin.into(),
+                extend: rect.extend.into(),
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });

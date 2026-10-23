@@ -1,5 +1,4 @@
-use glam::{IVec2, UVec2};
-use ln_world::{Element, Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 
 use crate::{
     layer::{
@@ -10,22 +9,22 @@ use crate::{
     layout::{
         luni::{LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniFlex, LuniParent, LuniRect},
         transform::{Transform, TransformEdge, TransformValue},
+        val::{Val, ValChanged},
     },
-    lnwin::Lnwindow,
     measures::{Axis, Rectangle},
     theme::Theme,
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         panel::{Panel, PanelAttr, brush_panel::BrushPanel, color_picker::ColorPickerButton},
         renderer::{svg::svg_render, text::SetText},
-        slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
+        slider::{Slider, SliderLabel, SliderValue},
     },
 };
 
 pub struct SideDocker {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for SideDocker {
@@ -33,23 +32,66 @@ impl Element for SideDocker {
         world.scope("side_docker");
         world.set_autodeps(Some(this));
 
-        let lnwindow = world.single_fetch::<Lnwindow>();
         let theme = world.single_fetch::<Theme>();
         let layer = world.single::<LayerPage>();
 
-        let side_panel = world.insert(Panel {
+        let panel_rect = world.build(Transform::new(
+            TransformValue {
+                left: TransformEdge {
+                    anchor: 0.0,
+                    offset: 24,
+                },
+                down: TransformEdge {
+                    anchor: 0.5,
+                    offset: -280,
+                },
+                right: TransformEdge {
+                    anchor: 0.0,
+                    offset: 24 + 44,
+                },
+                up: TransformEdge {
+                    anchor: 0.5,
+                    offset: 280,
+                },
+            },
+            self.rect,
+        ));
+
+        world.insert(Panel {
             common: self.common,
-            rect: Rectangle::default(),
+            rect: panel_rect,
             attr: PanelAttr {
                 shadow: true,
                 round: true,
             },
         });
 
-        let docker_button = |image_bytes| {
+        let mut luni = LuniFlex::new(
+            panel_rect,
+            LuniParent {
+                axis: LuniAxis::Column,
+                template: LuniChildTemplate {
+                    basis: 36,
+                    cross: 36,
+                    align: LuniAlign::Center,
+                    ..Default::default()
+                },
+                padding: LuniRect {
+                    left: 0,
+                    bottom: 4,
+                    right: 0,
+                    top: 4,
+                },
+                gap: 4,
+                ..Default::default()
+            },
+        );
+
+        let docker_button = |luni: &mut LuniFlex, image_bytes: &[u8]| {
+            let rect = world.build(luni.child(LuniChild::default()));
             world.insert(ToggleButton {
                 common: self.common,
-                rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+                rect,
                 theme: theme.button(),
                 image: Some(svg_render(image_bytes, 8)),
                 selected: false,
@@ -57,31 +99,90 @@ impl Element for SideDocker {
             })
         };
 
-        let brush_menu = docker_button(include_bytes!("../../../res/interface/pen.svg"));
-        let eraser = docker_button(include_bytes!("../../../res/interface/eraser.svg"));
-        let undo = docker_button(include_bytes!("../../../res/interface/undo-2.svg"));
-        let redo = docker_button(include_bytes!("../../../res/interface/redo-2.svg"));
-        let touch = docker_button(include_bytes!("../../../res/interface/pointer.svg"));
-        let pipette = docker_button(include_bytes!("../../../res/interface/pipette.svg"));
-        let elastic_blank = world.insert(());
+        let brush_menu_rect = world.build(luni.child(LuniChild::default()));
+        let brush_menu = world.insert(ToggleButton {
+            common: self.common,
+            rect: brush_menu_rect,
+            theme: theme.button(),
+            image: Some(svg_render(
+                include_bytes!("../../../res/interface/pen.svg"),
+                8,
+            )),
+            selected: false,
+            hovering: false,
+        });
 
+        let eraser = docker_button(
+            &mut luni,
+            include_bytes!("../../../res/interface/eraser.svg"),
+        );
+
+        let color_picker_rect = world.build(luni.child(LuniChild::default()));
         let color_picker = world.insert(ColorPickerButton {
             common: self.common,
-            rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+            rect: color_picker_rect,
         });
 
-        let brush_panel = world.insert(BrushPanel {
+        let undo = docker_button(
+            &mut luni,
+            include_bytes!("../../../res/interface/undo-2.svg"),
+        );
+
+        let redo = docker_button(
+            &mut luni,
+            include_bytes!("../../../res/interface/redo-2.svg"),
+        );
+
+        world.build(luni.child(LuniChild {
+            basis: Some(0),
+            grow: Some(1.0),
+            ..Default::default()
+        }));
+
+        let slider_rect = world.build(luni.child(LuniChild {
+            basis: Some(160),
+            shrink: Some(1.0),
+            margin: Some(LuniRect {
+                left: 0,
+                bottom: 5,
+                right: 0,
+                top: 5,
+            }),
+            ..Default::default()
+        }));
+
+        let touch = docker_button(
+            &mut luni,
+            include_bytes!("../../../res/interface/pointer.svg"),
+        );
+
+        let pipette = docker_button(
+            &mut luni,
+            include_bytes!("../../../res/interface/pipette.svg"),
+        );
+
+        let brush_panel_rect = world.build(Transform::anchor(
+            (1.0, 1.0),
+            Rectangle::new_extend(20, -480, 364, 480),
+            brush_menu_rect,
+        ));
+
+        let brush_visible = world.insert(Val::new(false));
+
+        world.insert(BrushPanel {
             common: WidgetCommon {
                 camera: self.common.camera,
-                visible: false,
+                visible: brush_visible,
             },
+            rect: brush_panel_rect,
         });
 
+        let value = world.insert(Val::new(0.67));
         let slider = world.insert(Slider {
             common: self.common,
-            rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
+            rect: slider_rect,
             axis: Axis::Up,
-            value: 0.67,
+            value,
             pressed: false,
         });
 
@@ -90,8 +191,7 @@ impl Element for SideDocker {
             clockwise: true,
             source: slider,
             hover: false,
-            visible: self.common.visible,
-            camera: self.common.camera,
+            common: self.common,
         });
 
         world.observer(brush_menu, move |&ButtonSelected(selected), world| {
@@ -100,18 +200,8 @@ impl Element for SideDocker {
         });
 
         world.observer(brush_menu, move |&SetButtonSelected(selected), world| {
-            world.queue_trigger(brush_panel, SetWidgetVisible(selected));
-        });
-
-        world.observer(brush_menu, move |&SetWidgetRectangle(rect), world| {
-            const PANEL_WIDTH: i32 = 364;
-            const PANEL_HEIGHT: i32 = 480;
-            let transform = TransformValue::anchor(
-                (1.0, 1.0),
-                Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
-            );
-            let rect = transform.compute(rect);
-            world.queue_trigger(brush_panel, SetWidgetRectangle(rect));
+            let mut visible = world.fetch_mut(brush_visible);
+            visible.val = selected;
         });
 
         world.observer(color_picker, move |&ButtonSelected(selected), world| {
@@ -174,85 +264,22 @@ impl Element for SideDocker {
                     .map(|param| param.scale)
                     .unwrap_or(0.0)
             };
-            world.trigger(slider, &SetSliderValue(((value - 0.5) / 127.5 + 1.).log2()));
+            set_slider_value(world, slider, ((value - 0.5) / 127.5 + 1.).log2());
             world.queue_trigger(slider_label, SetText(format!("{value:.2} px")));
         });
 
-        world.insert(Transform {
-            value: TransformValue {
-                left: TransformEdge {
-                    anchor: 0.0,
-                    offset: 24,
-                },
-                down: TransformEdge {
-                    anchor: 0.5,
-                    offset: -280,
-                },
-                right: TransformEdge {
-                    anchor: 0.0,
-                    offset: 24 + 44,
-                },
-                up: TransformEdge {
-                    anchor: 0.5,
-                    offset: 280,
-                },
-            },
-            source: lnwindow.handle().untyped(),
-            target: side_panel.untyped(),
-        });
+        world.insert(luni);
 
-        world.insert(LuniFlex {
-            parent: (
-                side_panel.untyped(),
-                LuniParent {
-                    axis: LuniAxis::Column,
-                    template: LuniChildTemplate {
-                        basis: 36,
-                        cross: 36,
-                        align: LuniAlign::Center,
-                        ..Default::default()
-                    },
-                    padding: LuniRect {
-                        left: 0,
-                        bottom: 4,
-                        right: 0,
-                        top: 4,
-                    },
-                    gap: 4,
-                    ..Default::default()
-                },
-            ),
-            children: vec![
-                (brush_menu.untyped(), LuniChild::default()),
-                (eraser.untyped(), LuniChild::default()),
-                (color_picker.untyped(), LuniChild::default()),
-                (undo.untyped(), LuniChild::default()),
-                (redo.untyped(), LuniChild::default()),
-                (
-                    elastic_blank.untyped(),
-                    LuniChild {
-                        basis: Some(0),
-                        grow: Some(1.0),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    slider.untyped(),
-                    LuniChild {
-                        basis: Some(160),
-                        shrink: Some(1.0),
-                        margin: Some(LuniRect {
-                            left: 0,
-                            bottom: 5,
-                            right: 0,
-                            top: 5,
-                        }),
-                        ..Default::default()
-                    },
-                ),
-                (touch.untyped(), LuniChild::default()),
-                (pipette.untyped(), LuniChild::default()),
-            ],
-        });
+        world.dependency(this, self.rect);
+    }
+}
+
+fn set_slider_value(world: &World, slider: Handle<Slider>, next: f32) {
+    let handle = world.fetch(slider).value;
+    let mut value = world.fetch_mut(handle);
+    if value.val != next {
+        value.val = next;
+        drop(value);
+        world.queue_trigger(handle, ValChanged);
     }
 }

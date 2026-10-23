@@ -1,78 +1,77 @@
 use cosmic_text::{Attrs, Family, Metrics};
-use glam::{I64Vec2, IVec2, UVec2};
-use ln_world::{Element, Handle, HandleGeneric, World};
+use glam::I64Vec2;
+use ln_world::{Element, Handle, World};
 
 use crate::{
     layer::wrapper::{LayerDebugMessage, LayerPage},
     layout::{
-        echo::Echo,
         transform::{Transform, TransformValue},
+        val::Val,
     },
     measures::Rectangle,
     render::{
         Render,
-        camera::{Camera, PageCamera, PageCameraUtils},
+        camera::{PageCamera, PageCameraUtils},
     },
     save::{Save, SceneDocument},
     theme::Theme,
     widgets::{
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
-        container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
-        renderer::{svg::svg_render, text::Text},
+        container::{
+            ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerEcho, ContainerWithCamera,
+        },
+        renderer::{
+            svg::svg_render,
+            text::{Text, TextAttr},
+        },
     },
 };
 
 pub struct DebugPanel {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for DebugPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.scope("debug_panel");
         world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
 
         let theme = world.single_fetch::<Theme>();
 
-        let (container, camera) = world.build(ContainerWithCamera {
+        let attr = ContainerAttr::default();
+        let (container, common) = world.build(ContainerWithCamera {
             common: self.common,
-            rect: Rectangle::default(),
-            attr: ContainerAttr::default(),
+            rect: self.rect,
+            attr,
         });
-        let deco = world.insert(ContainerDeco {
-            container,
-            restriction: Rectangle::default(),
-        });
-        world.insert(ContainerDecoDropdown {
+        let restriction = world.build(ContainerDecoDropdown {
             height: None,
-            container,
-            deco,
+            outer: self.rect,
         });
+        world.insert(ContainerDeco {
+            container,
+            restriction,
+        });
+        let local = world.build(ContainerEcho { container });
 
+        let text_rect = world.build(Transform::new(TransformValue::shrink(24, 24), local));
         let debug_text = world.insert(Text {
             text: "Hi there".into(),
-            rect: Rectangle::new_half(IVec2::ZERO, UVec2::ONE),
-            metrics: Metrics::new(12.0, 18.0),
-            attrs: Attrs::new().family(Family::Monospace),
+            rect: text_rect,
+            attr: TextAttr {
+                metrics: Metrics::new(12.0, 18.0),
+                attrs: Attrs::new().family(Family::Monospace),
+                color: theme.distinct,
+                ..Default::default()
+            },
             order: 50,
-            color: theme.distinct,
-            visible: false,
-            camera: Some(camera),
-            ..Default::default()
-        });
-
-        Echo::new(world, this).widget_rectangle().widget_visible();
-
-        world.insert(Transform {
-            value: TransformValue::copy(),
-            source: this.untyped(),
-            target: container.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue::shrink(24, 24),
-            source: container.untyped(),
-            target: debug_text.untyped(),
+            common,
+            outdated: false,
+            canvas_outdated: false,
         });
 
         world.observer(world.single::<Render>(), move |msg: &String, world| {
@@ -99,10 +98,28 @@ impl Element for DebugPanel {
             },
         );
 
-        let theme = world.single_fetch::<Theme>();
-        let docker_button = smol_butt(world, &theme, camera);
+        let docker_button = |rect: Handle<Val<Rectangle>>, image_bytes: &[u8]| {
+            world.insert(ToggleButton {
+                common: WidgetCommon {
+                    camera: common.camera,
+                    visible: self.common.visible,
+                },
+                rect,
+                theme: theme.button(),
+                image: Some(svg_render(image_bytes, 8)),
+                selected: false,
+                hovering: false,
+            })
+        };
 
-        let compass = docker_button(include_bytes!("../../../res/interface/compass.svg"));
+        let compass_rect = world.build(Transform::new(
+            TransformValue::anchor((0.0, 0.0), Rectangle::new(20, 20, 40, 40)),
+            local,
+        ));
+        let compass = docker_button(
+            compass_rect,
+            include_bytes!("../../../res/interface/compass.svg"),
+        );
         world.observer(compass, move |&ButtonClick, world| {
             let page_camera = world.single_fetch::<PageCamera>().0;
             let utils = world.single_fetch::<PageCameraUtils>().0;
@@ -113,21 +130,42 @@ impl Element for DebugPanel {
             camera.write_camera(world, page_camera);
         });
 
-        let page_debug = docker_button(include_bytes!("../../../res/interface/bug.svg"));
+        let page_debug_rect = world.build(Transform::new(
+            TransformValue::anchor((0.33, 0.0), Rectangle::new(-10, 20, 10, 40)),
+            local,
+        ));
+        let page_debug = docker_button(
+            page_debug_rect,
+            include_bytes!("../../../res/interface/bug.svg"),
+        );
         world.observer(page_debug, move |&ButtonSelected(val), world| {
             let mut layer = world.single_fetch_mut::<LayerPage>();
             layer.debug = val;
             world.queue_trigger(page_debug, SetButtonSelected(val));
         });
 
-        let render_profile = docker_button(include_bytes!("../../../res/interface/timer.svg"));
+        let render_profile_rect = world.build(Transform::new(
+            TransformValue::anchor((0.67, 0.0), Rectangle::new(-10, 20, 10, 40)),
+            local,
+        ));
+        let render_profile = docker_button(
+            render_profile_rect,
+            include_bytes!("../../../res/interface/timer.svg"),
+        );
         world.observer(render_profile, move |&ButtonSelected(val), world| {
             let mut render = world.single_fetch_mut::<Render>();
             render.timestamp_poll = val;
             world.queue_trigger(render_profile, SetButtonSelected(val));
         });
 
-        let compact = docker_button(include_bytes!("../../../res/interface/database-zap.svg"));
+        let compact_rect = world.build(Transform::new(
+            TransformValue::anchor((1.0, 0.0), Rectangle::new(-40, 20, -20, 40)),
+            local,
+        ));
+        let compact = docker_button(
+            compact_rect,
+            include_bytes!("../../../res/interface/database-zap.svg"),
+        );
         world.observer(compact, move |&ButtonClick, world| {
             log::debug!("on next startup database will be compacted");
             let sn_file = Save::sn_file(world);
@@ -136,49 +174,5 @@ impl Element for DebugPanel {
             sn_doc.set_compact_on_startup(true);
             sn_doc.write(&sn_file, &sn_tmp_file);
         });
-
-        world.insert(Transform {
-            value: TransformValue::anchor((0.0, 0.0), Rectangle::new(20, 20, 40, 40)),
-            source: container.untyped(),
-            target: compass.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue::anchor((0.33, 0.0), Rectangle::new(-10, 20, 10, 40)),
-            source: container.untyped(),
-            target: page_debug.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue::anchor((0.67, 0.0), Rectangle::new(-10, 20, 10, 40)),
-            source: container.untyped(),
-            target: render_profile.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue::anchor((1.0, 0.0), Rectangle::new(-40, 20, -20, 40)),
-            source: container.untyped(),
-            target: compact.untyped(),
-        });
-    }
-}
-
-pub fn smol_butt(
-    world: &World,
-    theme: &Theme,
-    camera: Handle<Camera>,
-) -> impl Fn(&[u8]) -> Handle<ToggleButton> {
-    move |image_bytes| {
-        world.insert(ToggleButton {
-            common: WidgetCommon {
-                camera,
-                visible: false,
-            },
-            rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(16)),
-            theme: theme.button(),
-            image: Some(svg_render(image_bytes, 8)),
-            selected: false,
-            hovering: false,
-        })
     }
 }

@@ -25,7 +25,7 @@ use crate::{
         traveler::Traveler,
         zoom_to_mipmap,
     },
-    layout::transfer::Transfer,
+    layout::val::Val,
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::{
@@ -81,6 +81,7 @@ pub struct LayerPage {
     pub lp: Arc<LayerPipeline>,
 
     common: WidgetCommon,
+    rect: Handle<Val<Rectangle>>,
 
     cache: CacheLayers,
     raw: RawLayer,
@@ -104,8 +105,9 @@ pub struct LayerPage {
 
     pub debug: bool,
 
-    pub cursor: Handle<RRect>,
-    pub cursor_shadow: Handle<RRect>,
+    pub cursor_rect: Handle<Val<Rectangle>>,
+    pub cursor_shadow_rect: Handle<Val<Rectangle>>,
+    pub cursor_visible: Handle<Val<bool>>,
     pub zoom_offset: f64,
 
     thread_tx: Sender<ThreadInput>,
@@ -114,7 +116,7 @@ pub struct LayerPage {
 }
 
 impl LayerPage {
-    pub fn new(world: &World, common: WidgetCommon) -> Self {
+    pub fn new(world: &World, common: WidgetCommon, rect: Handle<Val<Rectangle>>) -> Self {
         let render = world.single_fetch::<Render>();
         let camera_bind = world.single_fetch::<CameraBind>();
 
@@ -152,22 +154,31 @@ impl LayerPage {
 
         let ui_camera = world.single_fetch::<UICamera>().0;
 
-        let cursor = world.insert(RRect {
-            rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
+        let cursor_visible = world.insert(Val::new(false));
+        let cursor_rect = world.insert(Val::new(Rectangle::new_half(
+            IVec2::new(0, 0),
+            UVec2::new(1, 1),
+        )));
+        let cursor_shadow_rect = world.insert(Val::new(Rectangle::new_half(
+            IVec2::new(0, 0),
+            UVec2::new(1, 1),
+        )));
+        world.insert(RRect {
+            rect: cursor_rect,
             order: 110,
             color: Vec4::new(0.5, 0.5, 0.5, 1.0) * 0.4,
             radius: 0.5,
             width: 0.0,
-            enabled: false,
+            visible: cursor_visible,
             camera: ui_camera,
         });
-        let cursor_shadow = world.insert(RRect {
-            rect: Rectangle::new_half(IVec2::new(0, 0), UVec2::new(1, 1)),
+        world.insert(RRect {
+            rect: cursor_shadow_rect,
             order: 109,
             color: Vec4::new(0.0, 0.0, 0.0, 1.0) * 0.3,
             radius: 0.5,
             width: BRUSH_PREVIEW_SHADOW_BLUR as f32,
-            enabled: false,
+            visible: cursor_visible,
             camera: ui_camera,
         });
 
@@ -251,6 +262,7 @@ impl LayerPage {
         LayerPage {
             lp,
             common,
+            rect,
             cache: CacheLayers {
                 chunks: HashMap::new(),
                 chunk_size: DEFAULT_CHUNK_SIZE,
@@ -292,8 +304,9 @@ impl LayerPage {
             },
             color,
             debug: false,
-            cursor,
-            cursor_shadow,
+            cursor_rect,
+            cursor_shadow_rect,
+            cursor_visible,
             zoom_offset: DEFAULT_ZOOM_OFFSET,
             thread_tx: input_tx,
             thread_rx: output_rx,
@@ -595,6 +608,10 @@ impl Drop for LayerPage {
 
 impl Element for LayerPage {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("layer_page");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.common.visible);
+
         let save = world.single_fetch::<Save>();
 
         // Camera //
@@ -619,7 +636,7 @@ impl Element for LayerPage {
         world.insert(PageCamera(page_camera));
         world.insert(PageCameraUtils(page_camera_utils));
 
-        let camera_autosave = world.insert(Autosave(Box::new(move |world, task| {
+        world.insert(Autosave(Box::new(move |world, task| {
             let camera = world.fetch(page_camera);
             task.sn_doc.set_page_camera(PageCameraArchive {
                 center: camera.center,
@@ -629,11 +646,11 @@ impl Element for LayerPage {
 
         // Container //
 
-        let container = world.insert(Container {
+        world.insert(Container {
             common: self.common,
             order: -100,
             child: page_camera,
-            rect: Rectangle::default(),
+            rect: self.rect,
             attr: ContainerAttr {
                 anchor: DVec2::new(0.5, 0.5),
                 top: true,
@@ -641,13 +658,14 @@ impl Element for LayerPage {
             },
         });
 
-        Transfer::new(world, this, container)
-            .set_widget_rectangle()
-            .set_widget_visible();
+        let common = WidgetCommon {
+            camera: page_camera,
+            visible: self.common.visible,
+        };
 
         // Thread //
 
-        let thread_autosave = world.insert(Autosave(Box::new(move |world, _write| {
+        world.insert(Autosave(Box::new(move |world, _write| {
             let this = world.single_fetch::<LayerPage>();
             this.thread_tx.send(ThreadInput::Autosave).unwrap();
         })));
@@ -668,16 +686,11 @@ impl Element for LayerPage {
         // Interaction //
 
         world.insert(LayerInput::default());
-        world.insert(Objects {
-            common: WidgetCommon {
-                camera: page_camera,
-                visible: true,
-            },
-        });
+        world.insert(Objects { common });
 
         // Render //
 
-        let prepare_control = world.insert(RenderPrepareControl {
+        world.insert(RenderPrepareControl {
             prepare: Box::new(move |world| {
                 let this = &mut *world.fetch_mut(this);
                 this.process_stream(world);
@@ -685,22 +698,13 @@ impl Element for LayerPage {
             }),
         });
 
-        let control_page = world.insert(RenderDrawControl {
-            common: WidgetCommon {
-                camera: page_camera,
-                visible: true,
-            },
+        world.insert(RenderDrawControl {
+            common,
             order: 0,
             draw: Box::new(move |world, rpass, extra| {
                 let mut this = world.single_fetch_mut::<LayerPage>();
                 this.render(rpass, extra);
             }),
         });
-
-        world.dependency(camera_autosave, this);
-        world.dependency(thread_autosave, this);
-        world.dependency(prepare_control, this);
-        world.dependency(control_page, this);
-        world.dependency(container, this);
     }
 }

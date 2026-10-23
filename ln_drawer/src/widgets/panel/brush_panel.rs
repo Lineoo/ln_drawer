@@ -1,23 +1,21 @@
 use cosmic_text::{Attrs, Metrics};
-use ln_world::{Element, Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 
 use crate::{
     i18n::tr,
     layer::wrapper::{BrushConfigurationChanged, LayerPage},
     layout::{
-        echo::Echo,
         luni::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
             LuniParent, LuniRect,
         },
-        transfer::Transfer,
         transform::{Transform, TransformEdge, TransformValue},
+        val::Val,
     },
     measures::Rectangle,
     theme::Theme,
-    tools::pointer::PointerHit,
+    tools::pointer::{PointerHit, PointerHover, PointerScroll},
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible,
         brush_preview::BrushPreview,
         button::{
             ButtonClick, ButtonDrag, ButtonDragStatus, SetButtonSelected, ToggleButton,
@@ -29,9 +27,9 @@ use crate::{
         renderer::{
             rrect::{RRect, SetRRectColor},
             svg::svg_render,
-            text::Text,
+            text::{Text, TextAttr},
         },
-        tabs::{SetTabsActive, Tabs},
+        tabs::{TabEntry, Tabs},
     },
 };
 
@@ -41,58 +39,66 @@ const LIST_PADDING: i32 = 8;
 
 pub struct BrushPanel {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for BrushPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.scope("brush_panel");
         world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
 
-        let list_container = world.insert(BrushListPanel {
-            common: self.common,
+        let list_rect = world.insert(Val::new(Rectangle::default()));
+        let list_visible = world.insert(Val::new(false));
+        world.insert(BrushListPanel {
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: list_visible,
+            },
+            rect: list_rect,
         });
 
-        let list_settings = world.insert(SettingPanel {
-            common: self.common,
+        let settings_rect = world.insert(Val::new(Rectangle::default()));
+        let settings_visible = world.insert(Val::new(false));
+        world.insert(SettingPanel {
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: settings_visible,
+            },
+            rect: settings_rect,
         });
 
-        let tabs = world.insert(Tabs {
-            active: 0,
-            rect: Rectangle::default(),
-            visible: self.common.visible,
+        world.insert(Tabs {
+            common: self.common,
+            rect: self.rect,
             tabs: vec![
-                (
-                    svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
-                    list_container.untyped(),
-                ),
-                (
-                    svg_render(include_bytes!("../../../res/interface/settings.svg"), 12),
-                    list_settings.untyped(),
-                ),
+                TabEntry {
+                    icon: svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
+                    rect: list_rect,
+                    visible: list_visible,
+                },
+                TabEntry {
+                    icon: svg_render(include_bytes!("../../../res/interface/settings.svg"), 12),
+                    rect: settings_rect,
+                    visible: settings_visible,
+                },
             ],
-            camera: self.common.camera,
-        });
-
-        Transfer::new(world, this, tabs)
-            .set_widget_rectangle()
-            .set_widget_visible();
-
-        // initialize layout
-        world.queue(move |world| {
-            let this = world.fetch(tabs);
-            world.queue_trigger(tabs, SetWidgetRectangle(this.rect));
-            world.queue_trigger(tabs, SetWidgetVisible(this.visible));
-            world.queue_trigger(tabs, SetTabsActive(this.active));
+            active: 0,
         });
     }
 }
 
 pub struct BrushListPanel {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for BrushListPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("brush_list_panel");
+        world.set_autodeps(Some(this));
+
         let theme = world.single_fetch::<Theme>();
         let page = world.single_fetch::<LayerPage>();
 
@@ -102,37 +108,50 @@ impl Element for BrushListPanel {
         let content_height =
             count as i32 * ITEM_HEIGHT + (count as i32 - 1).max(0) * ITEM_GAP + LIST_PADDING * 2;
 
-        let (container, camera) = world.build(ContainerWithCamera {
+        let attr = ContainerAttr::default();
+        let (container, common) = world.build(ContainerWithCamera {
             common: self.common,
-            rect: Rectangle::default(),
-            attr: ContainerAttr::default(),
+            rect: self.rect,
+            attr,
         });
-        let list_container_deco = world.insert(ContainerDeco {
-            container,
-            restriction: Rectangle::default(),
-        });
-        world.insert(ContainerDecoDropdown {
+        let restriction = world.build(ContainerDecoDropdown {
             height: Some(content_height),
-            container,
-            deco: list_container_deco,
+            outer: self.rect,
         });
-
-        Transfer::new(world, this, container)
-            .set_widget_rectangle()
-            .set_widget_visible();
+        world.insert(ContainerDeco {
+            container,
+            restriction,
+        });
 
         let accent = theme.theme;
         let background = theme.gray2;
         let symbolic = theme.distinct;
 
-        let mut children = Vec::new();
-        for i in 0..count {
-            let button = world.insert(ToggleButton {
-                common: WidgetCommon {
-                    camera,
-                    visible: true,
+        let mut luni = LuniFlex::new(
+            restriction,
+            LuniParent {
+                axis: LuniAxis::Column,
+                distribution: LuniDistribution::FlexStart,
+                padding: LuniRect {
+                    left: 8,
+                    bottom: LIST_PADDING,
+                    right: 8,
+                    top: LIST_PADDING,
                 },
-                rect: Rectangle::default(),
+                gap: ITEM_GAP,
+                template: LuniChildTemplate {
+                    align: LuniAlign::Stretch,
+                    basis: ITEM_HEIGHT,
+                    ..Default::default()
+                },
+            },
+        );
+
+        for i in 0..count {
+            let button_rect = world.build(luni.child(LuniChild::default()));
+            let button = world.insert(ToggleButton {
+                common,
+                rect: button_rect,
                 theme: ToggleButtonTheme {
                     idle_color: background,
                     hover_color: theme.gray3,
@@ -144,38 +163,20 @@ impl Element for BrushListPanel {
                 hovering: false,
             });
 
-            Echo::new(world, button).widget_rectangle().widget_visible();
-
+            let outline_rect =
+                world.build(Transform::new(TransformValue::shrink(-2, -2), button_rect));
             let outline = world.insert(RRect {
-                rect: Rectangle::default(),
+                rect: outline_rect,
                 order: 9,
                 color: if i == active { accent } else { background },
                 radius: theme.roundness,
                 width: 0.0,
-                enabled: true,
-                camera,
+                visible: self.common.visible,
+                camera: common.camera,
             });
 
-            world.insert(Transform {
-                value: TransformValue::shrink(-2, -2),
-                source: button.untyped(),
-                target: outline.untyped(),
-            });
-
-            let label = world.insert(Text {
-                text: tr(page.brushes[i].label).into(),
-                metrics: Metrics {
-                    font_size: 12.0,
-                    line_height: 14.0,
-                },
-                attrs: Attrs::new(),
-                color: symbolic,
-                camera: Some(camera),
-                ..Default::default()
-            });
-
-            world.insert(Transform {
-                value: TransformValue {
+            let label_rect = world.build(Transform::new(
+                TransformValue {
                     left: TransformEdge {
                         anchor: 0.0,
                         offset: 14,
@@ -193,20 +194,28 @@ impl Element for BrushListPanel {
                         offset: -4,
                     },
                 },
-                source: button.untyped(),
-                target: label.untyped(),
+                button_rect,
+            ));
+            world.insert(Text {
+                attr: TextAttr {
+                    metrics: Metrics {
+                        font_size: 12.0,
+                        line_height: 14.0,
+                    },
+                    attrs: Attrs::new(),
+                    color: symbolic,
+                    ..Default::default()
+                },
+                text: tr(page.brushes[i].label).into(),
+                rect: label_rect,
+                order: 150,
+                common,
+                outdated: false,
+                canvas_outdated: false,
             });
 
-            let preview = world.insert(BrushPreview {
-                rect: Rectangle::default(),
-                outdated: true,
-                brush: page.brushes.get(i).map(|x| x.brush.dup()),
-                visible: false,
-                camera,
-            });
-
-            world.insert(Transform {
-                value: TransformValue {
+            let preview_rect = world.build(Transform::new(
+                TransformValue {
                     left: TransformEdge {
                         anchor: 0.0,
                         offset: 0,
@@ -224,15 +233,14 @@ impl Element for BrushListPanel {
                         offset: -20,
                     },
                 },
-                source: button.untyped(),
-                target: preview.untyped(),
+                button_rect,
+            ));
+            let preview = world.insert(BrushPreview {
+                common,
+                rect: preview_rect,
+                outdated: true,
+                brush: page.brushes.get(i).map(|x| x.brush.dup()),
             });
-
-            world.dependency(container, this);
-            world.dependency(button, this);
-            world.dependency(outline, this);
-            world.dependency(label, this);
-            world.dependency(preview, this);
 
             world.observer(button, move |&ButtonClick, world| {
                 let mut page = world.single_fetch_mut::<LayerPage>();
@@ -284,37 +292,20 @@ impl Element for BrushListPanel {
 
             // TODO temporary: `Container` couples render order with collider order, so the preview
             // captures pointer events. Forward them to the button until that is decoupled.
-            Transfer::new(world, preview, button)
-                .pointer_hit()
-                .pointer_hover()
-                .pointer_scroll();
-
-            Transfer::new(world, button, container).pointer_scroll();
-
-            children.push((button.untyped(), LuniChild::default()));
+            world.observer(preview, move |event: &PointerHit, world| {
+                world.queue_trigger(button, *event);
+            });
+            world.observer(preview, move |event: &PointerHover, world| {
+                world.queue_trigger(button, *event);
+            });
+            world.observer(preview, move |event: &PointerScroll, world| {
+                world.queue_trigger(button, *event);
+            });
+            world.observer(button, move |event: &PointerScroll, world| {
+                world.queue_trigger(container, *event);
+            });
         }
 
-        world.insert(LuniFlex {
-            parent: (
-                container.untyped(),
-                LuniParent {
-                    axis: LuniAxis::Column,
-                    distribution: LuniDistribution::FlexStart,
-                    padding: LuniRect {
-                        left: 8,
-                        bottom: LIST_PADDING,
-                        right: 8,
-                        top: LIST_PADDING,
-                    },
-                    gap: ITEM_GAP,
-                    template: LuniChildTemplate {
-                        align: LuniAlign::Stretch,
-                        basis: ITEM_HEIGHT,
-                        ..Default::default()
-                    },
-                },
-            ),
-            children,
-        });
+        world.insert(luni);
     }
 }

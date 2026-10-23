@@ -1,14 +1,13 @@
-use ln_world::{Element, Handle, HandleAny, World};
+use ln_world::{Descriptor, Element, Handle, World};
 
 use crate::{
-    layout::visibility::VisibilityInherit,
+    layout::val::{Val, ValChanged},
     measures::Rectangle,
-    widgets::{SetWidgetRectangle, WidgetRectangle},
 };
 
 pub struct LuniFlex {
-    pub parent: (HandleAny, LuniParent),
-    pub children: Vec<(HandleAny, LuniChild)>,
+    pub parent: (Handle<Val<Rectangle>>, LuniParent),
+    pub children: Vec<(Handle<Val<Rectangle>>, LuniChild)>,
 }
 
 #[derive(Default)]
@@ -89,78 +88,80 @@ pub enum LuniAlign {
 pub struct LuniHug;
 
 impl LuniFlex {
-    fn compute(&self, rect: Rectangle) -> Vec<(HandleAny, Rectangle)> {
-        let mut result = Vec::with_capacity(self.children.len());
-        let mut lengths = Vec::with_capacity(self.children.len());
-
-        let (_, parent) = &self.parent;
-
-        // First loop - sum up all grow, shrink and required length
-
-        let mut grow_sum = 0.0;
-        let mut shrink_sum = 0.0;
-        let mut available = parent.gap + rect_main_lenth(rect, parent.axis)
-            - rect_main_padding(parent.padding, parent.axis);
-        for (_, child) in &self.children {
-            let child = child.apply(&parent.template);
-            grow_sum += child.grow;
-            shrink_sum += child.shrink * child.basis as f32;
-            available -= child.basis + parent.gap + rect_main_margin(child.margin, parent.axis);
-            lengths.push(child.basis);
+    pub fn new(rect: Handle<Val<Rectangle>>, parent: LuniParent) -> Self {
+        LuniFlex {
+            parent: (rect, parent),
+            children: Vec::new(),
         }
-
-        // Second loop - calculate and distribute real length
-
-        let mut distributed = 0;
-        let mut i = 0;
-        while i < self.children.len() {
-            let (_, child) = &self.children[i];
-            let child = child.apply(&parent.template);
-
-            let delta = if available > 0 && child.grow > 0.0 {
-                (available as f32 * (child.grow / grow_sum)).round() as i32
-            } else if available < 0 && child.shrink > 0.0 {
-                (available as f32 * (child.shrink * child.basis as f32 / shrink_sum)).round() as i32
-            } else {
-                0
-            };
-
-            lengths[i] += delta;
-            distributed += delta;
-            i += 1;
-        }
-
-        // Third loop - assign final position
-
-        let (offset, extra) = distribute(
-            available - distributed,
-            self.children.len(),
-            parent.distribution,
-        );
-
-        let mut cursor = rect_main_start(parent.padding, parent.axis) + offset;
-        for (i, (handle, child)) in self.children.iter().enumerate() {
-            let child = child.apply(&parent.template);
-            let length = lengths[i];
-            result.push((
-                *handle,
-                cursor_assign(
-                    cursor,
-                    rect,
-                    parent.padding,
-                    child.margin,
-                    child.cross,
-                    length,
-                    child.align,
-                    parent.axis,
-                ),
-            ));
-
-            cursor += length + parent.gap + extra + rect_main_margin(child.margin, parent.axis);
-        }
-
-        result
     }
+
+    pub fn child(&mut self, child: LuniChild) -> impl Descriptor<Target = Handle<Val<Rectangle>>> {
+        LuniFlexChildBuilder { luni: self, child }
+    }
+}
+
+fn compute(rect: Rectangle, parent: &LuniParent, children: &[&LuniChild]) -> Vec<Rectangle> {
+    let mut result = Vec::with_capacity(children.len());
+    let mut lengths = Vec::with_capacity(children.len());
+
+    // First loop - sum up all grow, shrink and required length
+
+    let mut grow_sum = 0.0;
+    let mut shrink_sum = 0.0;
+    let mut available = parent.gap + rect_main_lenth(rect, parent.axis)
+        - rect_main_padding(parent.padding, parent.axis);
+    for child in children {
+        let child = child.apply(&parent.template);
+        grow_sum += child.grow;
+        shrink_sum += child.shrink * child.basis as f32;
+        available -= child.basis + parent.gap + rect_main_margin(child.margin, parent.axis);
+        lengths.push(child.basis);
+    }
+
+    // Second loop - calculate and distribute real length
+
+    let mut distributed = 0;
+    let mut i = 0;
+    while i < children.len() {
+        let child = &children[i];
+        let child = child.apply(&parent.template);
+
+        let delta = if available > 0 && child.grow > 0.0 {
+            (available as f32 * (child.grow / grow_sum)).round() as i32
+        } else if available < 0 && child.shrink > 0.0 {
+            (available as f32 * (child.shrink * child.basis as f32 / shrink_sum)).round() as i32
+        } else {
+            0
+        };
+
+        lengths[i] += delta;
+        distributed += delta;
+        i += 1;
+    }
+
+    // Third loop - assign final position
+
+    let (offset, extra) = distribute(available - distributed, children.len(), parent.distribution);
+
+    let mut cursor = rect_main_start(parent.padding, parent.axis) + offset;
+    for (i, child) in children.iter().enumerate() {
+        let child = child.apply(&parent.template);
+        let length = lengths[i];
+        result.push(cursor_assign(
+            cursor,
+            rect,
+            parent.padding,
+            child.margin,
+            child.cross,
+            length,
+            child.align,
+            parent.axis,
+        ));
+
+        cursor += length + parent.gap + extra + rect_main_margin(child.margin, parent.axis);
+    }
+
+    result
 }
 
 /// Remaining space at the start, plus extra gap between adjacent children.
@@ -348,29 +349,37 @@ impl LuniChild {
     }
 }
 
+struct LuniFlexChildBuilder<'a> {
+    luni: &'a mut LuniFlex,
+    child: LuniChild,
+}
+
+impl Descriptor for LuniFlexChildBuilder<'_> {
+    type Target = Handle<Val<Rectangle>>;
+
+    fn when_build(self, world: &World) -> Self::Target {
+        let rect = world.insert(Val::new(Rectangle::default()));
+        self.luni.children.push((rect, self.child));
+        rect
+    }
+}
+
 impl Element for LuniFlex {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let ob = world.observer(self.parent.0, move |&WidgetRectangle(rect), world| {
-            let this = world.fetch(this);
-            let targets = this.compute(rect);
+        world.scope("luni_flex");
+        world.set_autodeps(Some(this));
 
-            for (child, target) in targets {
-                world.queue_trigger(child, SetWidgetRectangle(target));
+        world.observer(self.parent.0, move |ValChanged, world| {
+            let this = world.fetch(this);
+            let parent_rect = world.fetch(this.parent.0).val;
+            let children = this.children.iter().map(|x| &x.1).collect::<Vec<_>>();
+            let results = compute(parent_rect, &this.parent.1, &children[..]);
+
+            for (&result, child_rect) in (results.iter()).zip(this.children.iter().map(|x| x.0)) {
+                let mut child_rect = world.fetch_mut(child_rect);
+                child_rect.val = result;
+                world.queue_trigger(child_rect.handle(), ValChanged);
             }
         });
-
-        for &(child, _) in &self.children {
-            let visibility = world.insert(VisibilityInherit {
-                source: self.parent.0,
-                target: child,
-            });
-            world.dependency(visibility, this);
-        }
-
-        world.dependency(ob, this);
-        world.dependency(this, self.parent.0);
-        for (child, _) in &self.children {
-            world.dependency(this, *child);
-        }
     }
 }

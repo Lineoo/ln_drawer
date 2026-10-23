@@ -1,5 +1,5 @@
 use cosmic_text::{Attrs, Metrics, Weight};
-use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 
 use crate::{
     i18n::tr,
@@ -8,13 +8,12 @@ use crate::{
         wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::{
-        echo::EchoWidget,
         luni::{
             LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex, LuniParent,
             LuniRect,
         },
-        transfer::Transfer,
         transform::{Transform, TransformEdge, TransformValue},
+        val::{Val, ValChanged},
     },
     measures::{Axis, Rectangle},
     render::camera::Camera,
@@ -22,159 +21,182 @@ use crate::{
     widgets::{
         brush_preview::BrushPreview,
         common::WidgetCommon,
-        container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
-        renderer::text::{SetText, Text},
-        slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
+        container::{
+            ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerEcho, ContainerWithCamera,
+        },
+        renderer::text::{SetText, Text, TextAttr},
+        slider::{Slider, SliderLabel, SliderValue},
     },
 };
 
 pub struct SettingPanel {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for SettingPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("setting_panel");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
+
         let page = world.single_fetch::<LayerPage>();
 
-        let (container, camera) = world.build(ContainerWithCamera {
+        let attr = ContainerAttr::default();
+        let (_container, common) = world.build(ContainerWithCamera {
             common: self.common,
-            rect: Rectangle::default(),
-            attr: ContainerAttr::default(),
+            rect: self.rect,
+            attr,
         });
-        let deco = world.insert(ContainerDeco {
-            container,
-            restriction: Rectangle::default(),
-        });
-        world.insert(ContainerDecoDropdown {
-            height: None,
-            container,
-            deco,
+        let local = world.build(ContainerEcho {
+            container: _container,
         });
 
-        Transfer::new(world, this, container)
-            .set_widget_rectangle()
-            .set_widget_visible();
+        let mut luni = LuniFlex::new(
+            local,
+            LuniParent {
+                axis: LuniAxis::Column,
+                distribution: LuniDistribution::FlexStart,
+                padding: LuniRect::default(),
+                gap: 4,
+                template: LuniChildTemplate::default(),
+            },
+        );
 
-        // Live brush preview //
+        let preview_rect = world.build(luni.child(LuniChild {
+            basis: Some(110),
+            ..Default::default()
+        }));
+
         let preview = world.insert(BrushPreview {
-            rect: Rectangle::default(),
+            common: WidgetCommon {
+                camera: common.camera,
+                visible: self.common.visible,
+            },
+            rect: preview_rect,
             outdated: false,
             brush: Some(page.active().dup()),
-            visible: false,
-            camera,
         });
 
-        let ob = world.observer(page.handle(), move |&BrushConfigurationChanged, world| {
+        world.observer(page.handle(), move |&BrushConfigurationChanged, world| {
             let mut preview = world.fetch_mut(preview);
             let layer_instance = world.single_fetch::<LayerPage>();
             preview.outdated = true;
             preview.brush = Some(layer_instance.active().dup());
         });
 
-        let settings = world.insert(TextSettingPanel {
+        let settings_rect = world.build(luni.child(LuniChild {
+            basis: Some(200),
+            shrink: Some(1.0),
+            grow: Some(1.0),
+            ..Default::default()
+        }));
+        world.insert(TextSettingPanel {
             common: WidgetCommon {
-                camera,
-                ..self.common
+                camera: common.camera,
+                visible: self.common.visible,
             },
+            rect: settings_rect,
         });
 
-        world.dependency(container, this);
-        world.dependency(preview, this);
-        world.dependency(ob, this);
-        world.dependency(settings, this);
-
-        world.insert(LuniFlex {
-            parent: (
-                container.untyped(),
-                LuniParent {
-                    axis: LuniAxis::Column,
-                    distribution: LuniDistribution::FlexStart,
-                    padding: LuniRect::default(),
-                    gap: 4,
-                    template: LuniChildTemplate::default(),
-                },
-            ),
-            children: vec![
-                (
-                    preview.untyped(),
-                    LuniChild {
-                        basis: Some(110),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    settings.untyped(),
-                    LuniChild {
-                        basis: Some(200),
-                        shrink: Some(1.0),
-                        grow: Some(1.0),
-                        ..Default::default()
-                    },
-                ),
-            ],
-        });
+        world.insert(luni);
     }
 }
 
 pub struct TextSettingPanel {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for TextSettingPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("text_setting_panel");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
+
         let theme = world.single_fetch::<Theme>();
         let layer = world.single::<LayerPage>();
 
-        let (container, camera) = world.build(ContainerWithCamera {
+        let attr = ContainerAttr::default();
+        let (container, common) = world.build(ContainerWithCamera {
             common: self.common,
-            rect: Rectangle::default(),
-            attr: ContainerAttr::default(),
+            rect: self.rect,
+            attr,
         });
-        let deco = world.insert(ContainerDeco {
-            container,
-            restriction: Rectangle::default(),
-        });
-        world.insert(ContainerDecoDropdown {
+        let restriction = world.build(ContainerDecoDropdown {
             height: Some((108 + 4) * 8 + 48 + 8),
+            outer: self.rect,
+        });
+        world.insert(ContainerDeco {
             container,
-            deco,
+            restriction,
         });
+        let local = world.build(ContainerEcho { container });
 
-        Transfer::new(world, this, container)
-            .set_widget_rectangle()
-            .set_widget_visible();
-
-        let option_label = |_: &World, text: String, frame: HandleAny| {
-            self::option_label(world, text, frame, camera)
-        };
-        let option_desc = |_: &World, text: String, frame: HandleAny| {
-            self::option_desc(world, text, frame, camera)
-        };
-        let option_slider = |_: &World, frame: HandleAny| self::option_slider(world, frame, camera);
-
-        let label1_frame = world.insert(EchoWidget);
-        let label1 = world.insert(Text {
-            text: tr("settings.brush.title").into(),
-            metrics: Metrics {
-                font_size: 14.0,
-                line_height: 18.0,
+        let mut luni = LuniFlex::new(
+            local,
+            LuniParent {
+                axis: LuniAxis::Column,
+                distribution: LuniDistribution::FlexStart,
+                padding: LuniRect {
+                    left: 12,
+                    bottom: 4,
+                    right: 12,
+                    top: 4,
+                },
+                gap: 4,
+                template: LuniChildTemplate::default(),
             },
-            attrs: Attrs::new().weight(Weight::BOLD),
-            color: theme.gray4,
-            camera: Some(camera),
+        );
+
+        let label1_frame = world.build(luni.child(LuniChild {
+            basis: Some(48),
             ..Default::default()
-        });
-        world.insert(Transform {
-            value: TransformValue::anchor((0.0, 0.0), Rectangle::new_extend(16, 0, 56, 18)),
-            source: label1_frame.untyped(),
-            target: label1.untyped(),
+        }));
+        let label1_rect = world.build(Transform::new(
+            TransformValue::anchor((0.0, 0.0), Rectangle::new_extend(16, 0, 56, 18)),
+            label1_frame,
+        ));
+        world.insert(Text {
+            text: tr("settings.brush.title").into(),
+            rect: label1_rect,
+            attr: TextAttr {
+                metrics: Metrics {
+                    font_size: 14.0,
+                    line_height: 18.0,
+                },
+                attrs: Attrs::new().weight(Weight::BOLD),
+                color: theme.gray4,
+                ..Default::default()
+            },
+            order: 100,
+            common,
+            outdated: false,
+            canvas_outdated: false,
         });
 
-        // Flow //
-        let flow_frame = world.insert(EchoWidget);
-        let flow_label = option_label(world, String::new(), flow_frame.untyped());
-        let flow_desc = option_desc(world, String::new(), flow_frame.untyped());
-        let (flow_slider, flow_slider_label) = option_slider(world, flow_frame.untyped());
+        let flow_frame = world.build(luni.child(LuniChild {
+            basis: Some(108),
+            ..Default::default()
+        }));
+        let flow_label = option_label(
+            world,
+            String::new(),
+            flow_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let flow_desc = option_desc(
+            world,
+            String::new(),
+            flow_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let (flow_slider, flow_slider_label) =
+            option_slider(world, flow_frame, common.camera, self.common.visible);
         world.observer(flow_slider, move |&SliderValue(value), world| {
             let mut layer = world.fetch_mut(layer);
             match layer.active_mut().param_mut(BrushParamKey::Flow) {
@@ -185,11 +207,26 @@ impl Element for TextSettingPanel {
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
         });
 
-        // Blur Kernel Sigma //
-        let sigma_frame = world.insert(EchoWidget);
-        let sigma_label = option_label(world, String::new(), sigma_frame.untyped());
-        let sigma_desc = option_desc(world, String::new(), sigma_frame.untyped());
-        let (sigma_slider, sigma_slider_label) = option_slider(world, sigma_frame.untyped());
+        let sigma_frame = world.build(luni.child(LuniChild {
+            basis: Some(108),
+            ..Default::default()
+        }));
+        let sigma_label = option_label(
+            world,
+            String::new(),
+            sigma_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let sigma_desc = option_desc(
+            world,
+            String::new(),
+            sigma_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let (sigma_slider, sigma_slider_label) =
+            option_slider(world, sigma_frame, common.camera, self.common.visible);
         world.observer(sigma_slider, move |&SliderValue(value), world| {
             let mut layer = world.fetch_mut(layer);
             if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Sigma) {
@@ -198,12 +235,26 @@ impl Element for TextSettingPanel {
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
         });
 
-        // Softness //
-        let softness_frame = world.insert(EchoWidget);
-        let softness_label = option_label(world, String::new(), softness_frame.untyped());
-        let softness_desc = option_desc(world, String::new(), softness_frame.untyped());
+        let softness_frame = world.build(luni.child(LuniChild {
+            basis: Some(108),
+            ..Default::default()
+        }));
+        let softness_label = option_label(
+            world,
+            String::new(),
+            softness_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let softness_desc = option_desc(
+            world,
+            String::new(),
+            softness_frame,
+            common.camera,
+            self.common.visible,
+        );
         let (softness_slider, softness_slider_label) =
-            option_slider(world, softness_frame.untyped());
+            option_slider(world, softness_frame, common.camera, self.common.visible);
         world.observer(softness_slider, move |&SliderValue(value), world| {
             let mut layer = world.fetch_mut(layer);
             if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Softness) {
@@ -212,11 +263,26 @@ impl Element for TextSettingPanel {
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
         });
 
-        // Spacing //
-        let spacing_frame = world.insert(EchoWidget);
-        let spacing_label = option_label(world, String::new(), spacing_frame.untyped());
-        let spacing_desc = option_desc(world, String::new(), spacing_frame.untyped());
-        let (spacing_slider, spacing_slider_label) = option_slider(world, spacing_frame.untyped());
+        let spacing_frame = world.build(luni.child(LuniChild {
+            basis: Some(108),
+            ..Default::default()
+        }));
+        let spacing_label = option_label(
+            world,
+            String::new(),
+            spacing_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let spacing_desc = option_desc(
+            world,
+            String::new(),
+            spacing_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let (spacing_slider, spacing_slider_label) =
+            option_slider(world, spacing_frame, common.camera, self.common.visible);
         world.observer(spacing_slider, move |&SliderValue(value), world| {
             let mut layer = world.fetch_mut(layer);
             if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::Spacing) {
@@ -225,12 +291,26 @@ impl Element for TextSettingPanel {
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
         });
 
-        // Color Ratio //
-        let color_ratio_frame = world.insert(EchoWidget);
-        let color_ratio_label = option_label(world, String::new(), color_ratio_frame.untyped());
-        let color_ratio_desc = option_desc(world, String::new(), color_ratio_frame.untyped());
+        let color_ratio_frame = world.build(luni.child(LuniChild {
+            basis: Some(108),
+            ..Default::default()
+        }));
+        let color_ratio_label = option_label(
+            world,
+            String::new(),
+            color_ratio_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let color_ratio_desc = option_desc(
+            world,
+            String::new(),
+            color_ratio_frame,
+            common.camera,
+            self.common.visible,
+        );
         let (color_ratio_slider, color_ratio_slider_label) =
-            option_slider(world, color_ratio_frame.untyped());
+            option_slider(world, color_ratio_frame, common.camera, self.common.visible);
         world.observer(color_ratio_slider, move |&SliderValue(value), world| {
             let mut layer = world.fetch_mut(layer);
             if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::ColorRatio) {
@@ -239,12 +319,30 @@ impl Element for TextSettingPanel {
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
         });
 
-        // Sample Radius //
-        let sample_radius_frame = world.insert(EchoWidget);
-        let sample_radius_label = option_label(world, String::new(), sample_radius_frame.untyped());
-        let sample_radius_desc = option_desc(world, String::new(), sample_radius_frame.untyped());
-        let (sample_radius_slider, sample_radius_slider_label) =
-            option_slider(world, sample_radius_frame.untyped());
+        let sample_radius_frame = world.build(luni.child(LuniChild {
+            basis: Some(108),
+            ..Default::default()
+        }));
+        let sample_radius_label = option_label(
+            world,
+            String::new(),
+            sample_radius_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let sample_radius_desc = option_desc(
+            world,
+            String::new(),
+            sample_radius_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let (sample_radius_slider, sample_radius_slider_label) = option_slider(
+            world,
+            sample_radius_frame,
+            common.camera,
+            self.common.visible,
+        );
         world.observer(sample_radius_slider, move |&SliderValue(value), world| {
             let mut layer = world.fetch_mut(layer);
             if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::SampleRadius) {
@@ -253,12 +351,26 @@ impl Element for TextSettingPanel {
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
         });
 
-        // Sample Rate //
-        let sample_rate_frame = world.insert(EchoWidget);
-        let sample_rate_label = option_label(world, String::new(), sample_rate_frame.untyped());
-        let sample_rate_desc = option_desc(world, String::new(), sample_rate_frame.untyped());
+        let sample_rate_frame = world.build(luni.child(LuniChild {
+            basis: Some(108),
+            ..Default::default()
+        }));
+        let sample_rate_label = option_label(
+            world,
+            String::new(),
+            sample_rate_frame,
+            common.camera,
+            self.common.visible,
+        );
+        let sample_rate_desc = option_desc(
+            world,
+            String::new(),
+            sample_rate_frame,
+            common.camera,
+            self.common.visible,
+        );
         let (sample_rate_slider, sample_rate_slider_label) =
-            option_slider(world, sample_rate_frame.untyped());
+            option_slider(world, sample_rate_frame, common.camera, self.common.visible);
         world.observer(sample_rate_slider, move |&SliderValue(value), world| {
             let mut layer = world.fetch_mut(layer);
             if let Some(param) = layer.active_mut().scalar_mut(BrushParamKey::SampleRate) {
@@ -267,41 +379,37 @@ impl Element for TextSettingPanel {
             world.queue_trigger(layer.handle(), BrushConfigurationChanged);
         });
 
-        let zoom_frame = world.insert(EchoWidget);
+        let zoom_frame = world.build(luni.child(LuniChild {
+            basis: Some(108),
+            ..Default::default()
+        }));
         option_label(
             world,
             tr("settings.page.zoom.label").into(),
-            zoom_frame.untyped(),
+            zoom_frame,
+            common.camera,
+            self.common.visible,
         );
         option_desc(
             world,
             tr("settings.page.zoom.desc").into(),
-            zoom_frame.untyped(),
+            zoom_frame,
+            common.camera,
+            self.common.visible,
         );
-        let (zoom_slider, zoom_slider_label) = option_slider(world, zoom_frame.untyped());
+        let (zoom_slider, zoom_slider_label) =
+            option_slider(world, zoom_frame, common.camera, self.common.visible);
         world.observer(zoom_slider, move |&SliderValue(value), world| {
             let mut layer = world.fetch_mut(layer);
             layer.zoom_offset = (value as f64 - 0.8) * 3.;
-            world.queue_trigger(zoom_slider, SetSliderValue(value));
+            set_slider_value(world, zoom_slider, value);
             world.queue_trigger(
                 zoom_slider_label,
                 SetText(format!("{:+.2}", layer.zoom_offset)),
             );
         });
 
-        world.dependency(container, this);
-        world.dependency(label1_frame, this);
-        world.dependency(label1, this);
-        world.dependency(flow_frame, this);
-        world.dependency(sigma_frame, this);
-        world.dependency(softness_frame, this);
-        world.dependency(spacing_frame, this);
-        world.dependency(color_ratio_frame, this);
-        world.dependency(sample_radius_frame, this);
-        world.dependency(sample_rate_frame, this);
-        world.dependency(zoom_frame, this);
-
-        let ob = world.observer(layer, move |&BrushConfigurationChanged, world| {
+        let _ob = world.observer(layer, move |&BrushConfigurationChanged, world| {
             let layer = world.fetch(layer);
 
             let mut flow_label = world.fetch_mut(flow_label);
@@ -327,7 +435,7 @@ impl Element for TextSettingPanel {
                 Some(BrushValue::Vec4(flow)) => flow.w,
                 _ => 0.0,
             };
-            world.queue_trigger(flow_slider, SetSliderValue(flow));
+            set_slider_value(world, flow_slider, flow);
             world.queue_trigger(flow_slider_label, SetText(format!("{flow:.2}")));
 
             // Sigma //
@@ -338,7 +446,7 @@ impl Element for TextSettingPanel {
                 .scalar(BrushParamKey::Sigma)
                 .map(|param| param.scale)
                 .unwrap_or(0.0);
-            world.queue_trigger(sigma_slider, SetSliderValue(sigma / 3.0));
+            set_slider_value(world, sigma_slider, sigma / 3.0);
             world.queue_trigger(sigma_slider_label, SetText(format!("{sigma:.2}")));
 
             // Softness
@@ -349,7 +457,7 @@ impl Element for TextSettingPanel {
                 .scalar(BrushParamKey::Softness)
                 .map(|param| 1. - param.scale)
                 .unwrap_or(1.0);
-            world.queue_trigger(softness_slider, SetSliderValue(softness));
+            set_slider_value(world, softness_slider, softness);
             world.queue_trigger(softness_slider_label, SetText(format!("{softness:.2}")));
 
             // Spacing //
@@ -360,7 +468,7 @@ impl Element for TextSettingPanel {
                 .scalar(BrushParamKey::Spacing)
                 .map(|param| param.scale)
                 .unwrap_or(0.1);
-            world.queue_trigger(spacing_slider, SetSliderValue(spacing));
+            set_slider_value(world, spacing_slider, spacing);
             world.queue_trigger(spacing_slider_label, SetText(format!("{spacing:.2}")));
 
             // Color Ratio //
@@ -371,7 +479,7 @@ impl Element for TextSettingPanel {
                 .scalar(BrushParamKey::ColorRatio)
                 .map(|param| param.scale)
                 .unwrap_or(0.0);
-            world.queue_trigger(color_ratio_slider, SetSliderValue(color_ratio));
+            set_slider_value(world, color_ratio_slider, color_ratio);
             world.queue_trigger(
                 color_ratio_slider_label,
                 SetText(format!("{color_ratio:.2}")),
@@ -385,7 +493,7 @@ impl Element for TextSettingPanel {
                 .scalar(BrushParamKey::SampleRadius)
                 .map(|param| param.scale)
                 .unwrap_or(0.0);
-            world.queue_trigger(sample_radius_slider, SetSliderValue(sample_radius));
+            set_slider_value(world, sample_radius_slider, sample_radius);
             world.queue_trigger(
                 sample_radius_slider_label,
                 SetText(format!("{sample_radius:.2}")),
@@ -399,122 +507,28 @@ impl Element for TextSettingPanel {
                 .scalar(BrushParamKey::SampleRate)
                 .map(|param| param.scale)
                 .unwrap_or(0.0);
-            world.queue_trigger(sample_rate_slider, SetSliderValue(sample_rate));
+            set_slider_value(world, sample_rate_slider, sample_rate);
             world.queue_trigger(
                 sample_rate_slider_label,
                 SetText(format!("{sample_rate:.2}")),
             );
         });
-        world.dependency(ob, this);
 
-        world.insert(LuniFlex {
-            parent: (
-                container.untyped(),
-                LuniParent {
-                    axis: LuniAxis::Column,
-                    distribution: LuniDistribution::FlexStart,
-                    padding: LuniRect {
-                        left: 12,
-                        bottom: 4,
-                        right: 12,
-                        top: 4,
-                    },
-                    gap: 4,
-                    template: LuniChildTemplate::default(),
-                },
-            ),
-            children: vec![
-                (
-                    label1_frame.untyped(),
-                    LuniChild {
-                        basis: Some(48),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    flow_frame.untyped(),
-                    LuniChild {
-                        basis: Some(108),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    sigma_frame.untyped(),
-                    LuniChild {
-                        basis: Some(108),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    softness_frame.untyped(),
-                    LuniChild {
-                        basis: Some(108),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    spacing_frame.untyped(),
-                    LuniChild {
-                        basis: Some(108),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    color_ratio_frame.untyped(),
-                    LuniChild {
-                        basis: Some(108),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    sample_radius_frame.untyped(),
-                    LuniChild {
-                        basis: Some(108),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    sample_rate_frame.untyped(),
-                    LuniChild {
-                        basis: Some(108),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    zoom_frame.untyped(),
-                    LuniChild {
-                        basis: Some(108),
-                        ..Default::default()
-                    },
-                ),
-            ],
-        });
+        world.insert(luni);
     }
 }
 
 fn option_label(
     world: &World,
     text: String,
-    frame: HandleAny,
+    frame: Handle<Val<Rectangle>>,
     camera: Handle<Camera>,
+    visible: Handle<Val<bool>>,
 ) -> Handle<Text> {
     let theme = world.single_fetch::<Theme>();
 
-    let label = world.insert(Text {
-        text,
-        metrics: Metrics {
-            font_size: 16.0,
-            line_height: 20.0,
-        },
-        color: theme.distinct,
-        camera: Some(camera),
-        ..Default::default()
-    });
-
-    world.dependency(label, frame);
-
-    world.insert(Transform {
-        value: TransformValue {
+    let rect = world.build(Transform::new(
+        TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
                 offset: 56,
@@ -532,36 +546,38 @@ fn option_label(
                 offset: -16,
             },
         },
-        source: frame,
-        target: label.untyped(),
-    });
+        frame,
+    ));
 
-    label
+    world.insert(Text {
+        text,
+        rect,
+        attr: TextAttr {
+            metrics: Metrics {
+                font_size: 16.0,
+                line_height: 20.0,
+            },
+            color: theme.distinct,
+            ..Default::default()
+        },
+        order: 100,
+        common: WidgetCommon { camera, visible },
+        outdated: false,
+        canvas_outdated: false,
+    })
 }
 
 fn option_desc(
     world: &World,
     text: String,
-    frame: HandleAny,
+    frame: Handle<Val<Rectangle>>,
     camera: Handle<Camera>,
+    visible: Handle<Val<bool>>,
 ) -> Handle<Text> {
     let theme = world.single_fetch::<Theme>();
 
-    let label = world.insert(Text {
-        text,
-        metrics: Metrics {
-            font_size: 12.0,
-            line_height: 14.0,
-        },
-        color: theme.gray4,
-        camera: Some(camera),
-        ..Default::default()
-    });
-
-    world.dependency(label, frame);
-
-    world.insert(Transform {
-        value: TransformValue {
+    let rect = world.build(Transform::new(
+        TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
                 offset: 56,
@@ -579,31 +595,35 @@ fn option_desc(
                 offset: -36,
             },
         },
-        source: frame,
-        target: label.untyped(),
-    });
+        frame,
+    ));
 
-    label
+    world.insert(Text {
+        text,
+        rect,
+        attr: TextAttr {
+            metrics: Metrics {
+                font_size: 12.0,
+                line_height: 14.0,
+            },
+            color: theme.gray4,
+            ..Default::default()
+        },
+        order: 100,
+        common: WidgetCommon { camera, visible },
+        outdated: false,
+        canvas_outdated: false,
+    })
 }
 
 fn option_slider(
     world: &World,
-    frame: HandleAny,
+    frame: Handle<Val<Rectangle>>,
     camera: Handle<Camera>,
+    visible: Handle<Val<bool>>,
 ) -> (Handle<Slider>, Handle<SliderLabel>) {
-    let slider = world.insert(Slider {
-        common: WidgetCommon {
-            camera,
-            visible: true,
-        },
-        value: 0.5,
-        axis: Axis::Right,
-        rect: Rectangle::default(),
-        pressed: false,
-    });
-
-    world.insert(Transform {
-        value: TransformValue {
+    let rect = world.build(Transform::new(
+        TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
                 offset: 56,
@@ -621,8 +641,16 @@ fn option_slider(
                 offset: -72,
             },
         },
-        source: frame,
-        target: slider.untyped(),
+        frame,
+    ));
+
+    let value = world.insert(Val::new(0.5));
+    let slider = world.insert(Slider {
+        common: WidgetCommon { camera, visible },
+        value,
+        axis: Axis::Right,
+        rect,
+        pressed: false,
     });
 
     let slider_label = world.insert(SliderLabel {
@@ -630,12 +658,18 @@ fn option_slider(
         clockwise: false,
         source: slider,
         hover: false,
-        visible: true,
-        camera,
+        common: WidgetCommon { camera, visible },
     });
 
-    world.dependency(slider, frame);
-    world.dependency(slider_label, frame);
-
     (slider, slider_label)
+}
+
+fn set_slider_value(world: &World, slider: Handle<Slider>, next: f32) {
+    let handle = world.fetch(slider).value;
+    let mut value = world.fetch_mut(handle);
+    if value.val != next {
+        value.val = next;
+        drop(value);
+        world.queue_trigger(handle, ValChanged);
+    }
 }

@@ -1,11 +1,12 @@
-use glam::DVec2;
+use glam::{DVec2, Vec2};
 use ln_world::{Element, Handle, HandleAny, World};
 
 use crate::{
+    layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::camera::{Camera, UICamera},
-    widgets::{SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon},
+    widgets::common::WidgetCommon,
 };
 
 pub struct ToolControl {
@@ -14,19 +15,13 @@ pub struct ToolControl {
     pub hit: Box<dyn Fn(&World, DVec2) -> Option<ToolHitResult> + Send + Sync>,
 }
 
-pub struct ToolRectCollider {
-    pub common: WidgetCommon,
-    pub target: HandleAny,
-    pub rect: Rectangle,
-    pub order: isize,
-}
-
 #[derive(Clone, Copy)]
 pub struct ToolHitResult {
     pub camera: Handle<Camera>,
     pub handle: HandleAny,
 }
 
+/// trigger on lnwindow
 pub struct ToolControlUpdate;
 
 impl ToolControl {
@@ -48,7 +43,7 @@ impl ToolControl {
         let camera = world.fetch(camera);
         for &control in camera.colliders.iter().rev() {
             let control = world.fetch(control);
-            if control.common.visible
+            if world.fetch(control.common.visible).val
                 && let Some(hit) = (control.hit)(world, screen)
             {
                 return Some(hit);
@@ -61,6 +56,10 @@ impl ToolControl {
 
 impl Element for ToolControl {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("tool_control");
+        world.set_autodeps(Some(this));
+
+        world.dependency(this, self.common.visible);
         world.dependency(this, self.common.camera);
         let mut camera = world.fetch_mut(self.common.camera);
         camera.colliders.push(this);
@@ -71,9 +70,7 @@ impl Element for ToolControl {
                 false => world.fetch(collider).order,
             });
         world.queue_trigger(world.single::<Lnwindow>(), ToolControlUpdate);
-        world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this);
-            this.common.visible = visible;
+        world.observer(self.common.visible, move |ValChanged, world| {
             world.queue_trigger(world.single::<Lnwindow>(), ToolControlUpdate);
         });
     }
@@ -85,16 +82,32 @@ impl Element for ToolControl {
     }
 }
 
+pub struct ToolRectCollider {
+    pub common: WidgetCommon,
+    pub target: HandleAny,
+    pub rect: Handle<Val<Rectangle>>,
+    pub order: isize,
+}
+
 impl Element for ToolRectCollider {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let control = world.insert(ToolControl {
+        world.scope("tool_rect_collider");
+        world.set_autodeps(Some(this));
+
+        world.dependency(this, self.common.camera);
+        world.dependency(this, self.common.visible);
+        world.dependency(this, self.target);
+        world.dependency(this, self.rect);
+
+        world.insert(ToolControl {
             common: self.common,
             order: self.order,
             hit: Box::new(move |world, screen| {
                 let this = world.fetch(this);
                 let camera = world.fetch(this.common.camera);
                 let position = camera.screen_to_world(screen);
-                if this.rect.contains(position.q32_floor()) {
+                let rect = world.fetch(this.rect).val;
+                if rect.contains(position.q32_floor()) {
                     Some(ToolHitResult {
                         camera: this.common.camera,
                         handle: this.target,
@@ -105,17 +118,57 @@ impl Element for ToolRectCollider {
             }),
         });
 
-        world.dependency(control, this);
-        world.dependency(this, self.common.camera);
-        world.dependency(this, self.target);
-        world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this);
-            this.common.visible = visible;
-            world.queue_trigger(control, SetWidgetVisible(visible));
+        world.observer(self.common.visible, move |ValChanged, world| {
+            world.queue_trigger(world.single::<Lnwindow>(), ToolControlUpdate);
         });
-        world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this);
-            this.rect = rect;
+        world.observer(self.rect, move |ValChanged, world| {
+            world.queue_trigger(world.single::<Lnwindow>(), ToolControlUpdate);
+        });
+    }
+}
+
+/// where `0.5` touches the rect
+pub struct ToolRingCollider {
+    pub common: WidgetCommon,
+    pub target: HandleAny,
+    pub rect: Handle<Val<Rectangle>>,
+    pub inner_radius: f32,
+    pub outer_radius: f32,
+    pub order: isize,
+}
+
+impl Element for ToolRingCollider {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("tool_ring_collider");
+        world.set_autodeps(Some(this));
+
+        world.insert(ToolControl {
+            common: self.common,
+            order: self.order,
+            hit: Box::new(move |world, screen| {
+                let this = world.fetch(this);
+                let camera = world.fetch(this.common.camera);
+                let position = camera.screen_to_world(screen);
+                let rect = world.fetch(this.rect).val;
+                let delta = (position.q32_floor() - rect.origin).as_vec2() / rect.extend.as_vec2()
+                    - Vec2::splat(0.5);
+                let radius = delta.length();
+
+                if radius >= this.inner_radius && radius <= this.outer_radius {
+                    Some(ToolHitResult {
+                        camera: this.common.camera,
+                        handle: this.target,
+                    })
+                } else {
+                    None
+                }
+            }),
+        });
+
+        world.observer(self.common.visible, move |ValChanged, world| {
+            world.queue_trigger(world.single::<Lnwindow>(), ToolControlUpdate);
+        });
+        world.observer(self.rect, move |ValChanged, world| {
             world.queue_trigger(world.single::<Lnwindow>(), ToolControlUpdate);
         });
     }

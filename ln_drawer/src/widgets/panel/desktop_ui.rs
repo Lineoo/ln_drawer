@@ -1,6 +1,6 @@
 use cosmic_text::{Align, Attrs, Metrics};
 use glam::{IVec2, UVec2, Vec4};
-use ln_world::{Element, Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 
 use crate::{
     i18n::trp,
@@ -14,14 +14,13 @@ use crate::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
             LuniParent, LuniRect,
         },
-        transfer::Transfer,
         transform::{Transform, TransformEdge, TransformValue},
+        val::{Val, ValChanged},
     },
-    lnwin::Lnwindow,
+    lnwin::LnwindowRect,
     measures::{Axis, Rectangle},
     theme::Theme,
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible,
         button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         container::{ContainerAttr, ContainerEcho, ContainerWithCamera},
@@ -31,10 +30,10 @@ use crate::{
         },
         renderer::{
             svg::svg_render,
-            text::{SetText, Text},
+            text::{SetText, Text, TextAttr},
         },
-        slider::{SetSliderValue, Slider, SliderLabel, SliderValue},
-        tabs::{SetTabsActive, Tabs},
+        slider::{Slider, SliderLabel, SliderValue},
+        tabs::{TabEntry, Tabs},
     },
 };
 
@@ -44,61 +43,56 @@ pub struct DesktopUi {
 
 impl Element for DesktopUi {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>();
+        world.scope("desktop_ui");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.common.visible);
 
-        let workspace = world.insert(MainWorkspace {
-            common: self.common,
-        });
+        let root = world.single_fetch::<LnwindowRect>().0;
 
-        let tool = world.insert(ToolBar {
-            common: self.common,
-        });
-
-        let status = world.insert(StatusBar {
-            common: self.common,
-        });
-
-        world.insert(LuniFlex {
-            parent: (
-                lnwindow.untyped(),
-                LuniParent {
-                    axis: LuniAxis::Column,
-                    distribution: LuniDistribution::FlexStart,
-                    padding: LuniRect::default(),
-                    gap: 0,
-                    template: LuniChildTemplate {
-                        align: LuniAlign::Stretch,
-                        ..Default::default()
-                    },
+        let mut luni = LuniFlex::new(
+            root,
+            LuniParent {
+                axis: LuniAxis::Column,
+                distribution: LuniDistribution::FlexStart,
+                padding: LuniRect::default(),
+                gap: 0,
+                template: LuniChildTemplate {
+                    align: LuniAlign::Stretch,
+                    ..Default::default()
                 },
-            ),
-            children: vec![
-                (
-                    tool.untyped(),
-                    LuniChild {
-                        basis: Some(40),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    workspace.untyped(),
-                    LuniChild {
-                        grow: Some(1.0),
-                        shrink: Some(1.0),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    status.untyped(),
-                    LuniChild {
-                        basis: Some(20),
-                        ..Default::default()
-                    },
-                ),
-            ],
+            },
+        );
+
+        let tool_rect = world.build(luni.child(LuniChild {
+            basis: Some(40),
+            ..Default::default()
+        }));
+        let workspace_rect = world.build(luni.child(LuniChild {
+            grow: Some(1.0),
+            shrink: Some(1.0),
+            ..Default::default()
+        }));
+        let status_rect = world.build(luni.child(LuniChild {
+            basis: Some(20),
+            ..Default::default()
+        }));
+
+        // reordered since page system is relied by singleton
+
+        world.insert(MainWorkspace {
+            common: self.common,
+            rect: workspace_rect,
+        });
+        world.insert(ToolBar {
+            common: self.common,
+            rect: tool_rect,
+        });
+        world.insert(StatusBar {
+            common: self.common,
+            rect: status_rect,
         });
 
-        world.dependency(workspace, this);
+        world.insert(luni);
 
         world.scope("layer_init");
         world.queue(|world| {
@@ -109,119 +103,101 @@ impl Element for DesktopUi {
 
 pub struct MainWorkspace {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for MainWorkspace {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let (container, camera) = world.build(ContainerWithCamera {
+        world.scope("main_workspace");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
+
+        let attr = ContainerAttr::default();
+        let (container, common) = world.build(ContainerWithCamera {
             common: self.common,
-            rect: Rectangle::default(),
-            attr: ContainerAttr::default(),
+            rect: self.rect,
+            attr,
         });
-        world.insert(ContainerEcho { container });
-        Transfer::new(world, this, container)
-            .set_widget_rectangle()
-            .set_widget_visible();
+        let local = world.build(ContainerEcho { container });
 
-        let page = world.insert(LayerPage::new(
-            world,
-            WidgetCommon {
-                camera,
-                ..self.common
-            },
-        ));
-
-        let command_center = world.insert(CommandCenter {
-            common: WidgetCommon {
-                camera,
-                ..self.common
-            },
-        });
-
-        world.insert(LuniFlex {
-            parent: (
-                container.untyped(),
-                LuniParent {
-                    axis: LuniAxis::Row,
-                    distribution: LuniDistribution::FlexStart,
-                    padding: LuniRect::default(),
-                    gap: 0,
-                    template: LuniChildTemplate {
-                        align: LuniAlign::Stretch,
-                        ..Default::default()
-                    },
+        let mut luni = LuniFlex::new(
+            local,
+            LuniParent {
+                axis: LuniAxis::Row,
+                distribution: LuniDistribution::FlexStart,
+                padding: LuniRect::default(),
+                gap: 0,
+                template: LuniChildTemplate {
+                    align: LuniAlign::Stretch,
+                    ..Default::default()
                 },
-            ),
-            children: vec![
-                (
-                    page.untyped(),
-                    LuniChild {
-                        basis: Some(400),
-                        grow: Some(1.0),
-                        shrink: Some(1.0),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    command_center.untyped(),
-                    LuniChild {
-                        basis: Some(400),
-                        shrink: Some(1.0),
-                        ..Default::default()
-                    },
-                ),
-            ],
+            },
+        );
+
+        let page_rect = world.build(luni.child(LuniChild {
+            basis: Some(400),
+            grow: Some(1.0),
+            shrink: Some(1.0),
+            ..Default::default()
+        }));
+        world.insert(LayerPage::new(world, common, page_rect));
+
+        let command_center_rect = world.build(luni.child(LuniChild {
+            basis: Some(400),
+            shrink: Some(1.0),
+            ..Default::default()
+        }));
+        world.insert(CommandCenter {
+            common,
+            rect: command_center_rect,
         });
 
-        world.dependency(container, this);
-        world.dependency(page, this);
-        world.dependency(command_center, this);
+        world.insert(luni);
     }
 }
 
 /// the top one
 pub struct ToolBar {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for ToolBar {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("tool_bar");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
+
         let page = world.single::<LayerPage>();
         let theme = world.single_fetch::<Theme>();
 
-        let (container, camera) = world.build(ContainerWithCamera {
+        let attr = ContainerAttr {
+            // cause we need the slider label to display
+            clip: false,
+            ..Default::default()
+        };
+        let (container, common) = world.build(ContainerWithCamera {
             common: self.common,
-            rect: Rectangle::default(),
-            attr: ContainerAttr {
-                // cause we need the slider label to display
-                clip: false,
-                ..Default::default()
-            },
+            rect: self.rect,
+            attr,
         });
-        world.insert(ContainerEcho { container });
-        Transfer::new(world, this, container)
-            .set_widget_rectangle()
-            .set_widget_visible();
+        let local = world.build(ContainerEcho { container });
 
-        let panel = world.insert(Panel {
-            common: WidgetCommon {
-                camera,
-                visible: self.common.visible,
-            },
-            rect: Rectangle::default(),
+        world.insert(Panel {
+            common,
+            rect: local,
             attr: PanelAttr {
                 shadow: false,
                 round: false,
             },
         });
 
-        let docker_button = |image_bytes| {
+        let docker_button = |rect: Handle<Val<Rectangle>>, image_bytes: &[u8]| {
             world.insert(ToggleButton {
-                common: WidgetCommon {
-                    camera,
-                    visible: self.common.visible,
-                },
-                rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
+                common,
+                rect,
                 theme: theme.button(),
                 image: Some(svg_render(image_bytes, 8)),
                 selected: false,
@@ -229,20 +205,53 @@ impl Element for ToolBar {
             })
         };
 
-        let eraser = docker_button(include_bytes!("../../../res/interface/eraser.svg"));
-        let undo = docker_button(include_bytes!("../../../res/interface/undo-2.svg"));
-        let redo = docker_button(include_bytes!("../../../res/interface/redo-2.svg"));
-        let touch = docker_button(include_bytes!("../../../res/interface/pointer.svg"));
-        let pipette = docker_button(include_bytes!("../../../res/interface/pipette.svg"));
+        let mut luni = LuniFlex::new(
+            local,
+            LuniParent {
+                axis: LuniAxis::Row,
+                distribution: LuniDistribution::Center,
+                padding: LuniRect::default(),
+                gap: 4,
+                template: LuniChildTemplate {
+                    basis: 36,
+                    cross: 36,
+                    shrink: 1.0,
+                    align: LuniAlign::Center,
+                    ..Default::default()
+                },
+            },
+        );
 
+        let undo_rect = world.build(luni.child(LuniChild::default()));
+        let undo = docker_button(
+            undo_rect,
+            include_bytes!("../../../res/interface/undo-2.svg"),
+        );
+        let redo_rect = world.build(luni.child(LuniChild::default()));
+        let redo = docker_button(
+            redo_rect,
+            include_bytes!("../../../res/interface/redo-2.svg"),
+        );
+        let eraser_rect = world.build(luni.child(LuniChild::default()));
+        let eraser = docker_button(
+            eraser_rect,
+            include_bytes!("../../../res/interface/eraser.svg"),
+        );
+
+        let slider_rect = world.build(luni.child(LuniChild {
+            basis: Some(200),
+            shrink: Some(1.0),
+            ..Default::default()
+        }));
+        let value = world.insert(Val::new(0.67));
         let slider = world.insert(Slider {
             common: WidgetCommon {
-                camera,
+                camera: common.camera,
                 visible: self.common.visible,
             },
-            rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(100)),
+            rect: slider_rect,
             axis: Axis::Right,
-            value: 0.67,
+            value,
             pressed: false,
         });
 
@@ -251,49 +260,21 @@ impl Element for ToolBar {
             clockwise: true,
             source: slider,
             hover: false,
-            visible: self.common.visible,
-            camera,
+            common,
         });
 
-        world.insert(Transform {
-            value: TransformValue::copy(),
-            source: container.untyped(),
-            target: panel.untyped(),
-        });
+        let touch_rect = world.build(luni.child(LuniChild::default()));
+        let touch = docker_button(
+            touch_rect,
+            include_bytes!("../../../res/interface/pointer.svg"),
+        );
+        let pipette_rect = world.build(luni.child(LuniChild::default()));
+        let pipette = docker_button(
+            pipette_rect,
+            include_bytes!("../../../res/interface/pipette.svg"),
+        );
 
-        world.insert(LuniFlex {
-            parent: (
-                container.untyped(),
-                LuniParent {
-                    axis: LuniAxis::Row,
-                    distribution: LuniDistribution::Center,
-                    padding: LuniRect::default(),
-                    gap: 4,
-                    template: LuniChildTemplate {
-                        basis: 36,
-                        cross: 36,
-                        shrink: 1.0,
-                        align: LuniAlign::Center,
-                        ..Default::default()
-                    },
-                },
-            ),
-            children: vec![
-                (undo.untyped(), LuniChild::default()),
-                (redo.untyped(), LuniChild::default()),
-                (eraser.untyped(), LuniChild::default()),
-                (
-                    slider.untyped(),
-                    LuniChild {
-                        basis: Some(200),
-                        shrink: Some(1.0),
-                        ..Default::default()
-                    },
-                ),
-                (touch.untyped(), LuniChild::default()),
-                (pipette.untyped(), LuniChild::default()),
-            ],
-        });
+        world.insert(luni);
 
         world.observer(eraser, move |&ButtonSelected(val), world| {
             let mut page = world.fetch_mut(page);
@@ -343,160 +324,138 @@ impl Element for ToolBar {
 
         world.observer(page, move |&BrushConfigurationChanged, world| {
             let page = world.single_fetch::<LayerPage>();
+            let slider = world.fetch(slider);
+            let mut slider_value = world.fetch_mut(slider.value);
             let value = page
                 .active()
                 .scalar(BrushParamKey::Size)
                 .map(|param| param.scale)
                 .unwrap_or(0.0);
-            world.trigger(slider, &SetSliderValue(((value - 0.5) / 127.5 + 1.).log2()));
+            slider_value.val = ((value - 0.5) / 127.5 + 1.).log2();
+            world.queue_trigger(slider_value.handle(), ValChanged);
             world.queue_trigger(slider_label, SetText(format!("{value:.2} px")));
         });
-
-        world.dependency(container, this);
     }
 }
 
 /// the bottom one
 pub struct StatusBar {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for StatusBar {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("status_bar");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
+
         let theme = world.single_fetch::<Theme>();
 
-        let (container, camera) = world.build(ContainerWithCamera {
+        let attr = ContainerAttr::default();
+        let (container, common) = world.build(ContainerWithCamera {
             common: self.common,
-            rect: Rectangle::default(),
-            attr: ContainerAttr::default(),
+            rect: self.rect,
+            attr,
         });
-        world.insert(ContainerEcho { container });
-        Transfer::new(world, this, container)
-            .set_widget_rectangle()
-            .set_widget_visible();
+        let local = world.build(ContainerEcho { container });
 
-        let panel = world.insert(Panel {
-            common: WidgetCommon {
-                camera,
-                visible: self.common.visible,
-            },
-            rect: Rectangle::default(),
+        world.insert(Panel {
+            common,
+            rect: local,
             attr: PanelAttr {
                 shadow: false,
                 round: false,
             },
         });
 
-        let text = world.insert(Text {
-            text: trp("title", &[("version", env!("CARGO_PKG_VERSION"))]).into(),
-            metrics: Metrics {
-                font_size: 12.0,
-                line_height: 18.0,
-            },
-            align: Align::Center,
-            attrs: Attrs::new(),
-            color: theme.gray3,
-            camera: Some(camera),
-            visible: self.common.visible,
-            order: 120,
-            ..Default::default()
-        });
-
-        world.insert(Transform {
-            value: TransformValue::copy(),
-            source: container.untyped(),
-            target: panel.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue::anchor(
+        let text_rect = world.build(Transform::new(
+            TransformValue::anchor(
                 (0.5, 0.5),
                 Rectangle::new_half(IVec2::ZERO, UVec2::new(100, 10)),
             ),
-            source: container.untyped(),
-            target: text.untyped(),
+            local,
+        ));
+        world.insert(Text {
+            text: trp("title", &[("version", env!("CARGO_PKG_VERSION"))]).into(),
+            rect: text_rect,
+            attr: TextAttr {
+                metrics: Metrics {
+                    font_size: 12.0,
+                    line_height: 18.0,
+                },
+                align: Align::Center,
+                attrs: Attrs::new(),
+                color: theme.gray3,
+                ..Default::default()
+            },
+            order: 120,
+            common,
+            outdated: false,
+            canvas_outdated: false,
         });
-
-        world.dependency(container, this);
-        world.dependency(text, this);
     }
 }
 
 pub struct CommandCenter {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for CommandCenter {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let (container, camera) = world.build(ContainerWithCamera {
-            common: self.common,
-            rect: Rectangle::default(),
-            attr: ContainerAttr::default(),
-        });
-        world.insert(ContainerEcho { container });
-        Transfer::new(world, this, container)
-            .set_widget_rectangle()
-            .set_widget_visible();
+        world.scope("command_center");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
 
-        let panel = world.insert(Panel {
-            common: WidgetCommon {
-                camera,
-                ..self.common
-            },
-            rect: Rectangle::default(),
+        let attr = ContainerAttr::default();
+        let (container, common) = world.build(ContainerWithCamera {
+            common: self.common,
+            rect: self.rect,
+            attr,
+        });
+        let local = world.build(ContainerEcho { container });
+
+        world.insert(Panel {
+            common,
+            rect: local,
             attr: PanelAttr {
                 shadow: false,
                 round: false,
             },
         });
 
-        let oklab = world.insert(LayerOklabPalette {
-            common: WidgetCommon {
-                camera,
-                ..self.common
+        let oklab_rect = world.build(Transform::new(
+            TransformValue {
+                left: TransformEdge {
+                    anchor: 0.0,
+                    offset: 0,
+                },
+                down: TransformEdge {
+                    anchor: 1.0,
+                    offset: -300,
+                },
+                right: TransformEdge {
+                    anchor: 1.0,
+                    offset: 0,
+                },
+                up: TransformEdge {
+                    anchor: 1.0,
+                    offset: 0,
+                },
             },
-            rect: Rectangle::default(),
+            local,
+        ));
+        world.insert(LayerOklabPalette {
+            common,
+            rect: oklab_rect,
             oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
         });
 
-        let verbose = world.insert(VerbosePanel {
-            common: WidgetCommon {
-                camera,
-                ..self.common
-            },
-        });
-
-        world.insert(Transform {
-            value: TransformValue::copy(),
-            source: container.untyped(),
-            target: panel.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue {
-                left: TransformEdge {
-                    anchor: 0.0,
-                    offset: 0,
-                },
-                down: TransformEdge {
-                    anchor: 1.0,
-                    offset: -300,
-                },
-                right: TransformEdge {
-                    anchor: 1.0,
-                    offset: 0,
-                },
-                up: TransformEdge {
-                    anchor: 1.0,
-                    offset: 0,
-                },
-            },
-            source: container.untyped(),
-            target: oklab.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue {
+        let verbose_rect = world.build(Transform::new(
+            TransformValue {
                 left: TransformEdge {
                     anchor: 0.0,
                     offset: 0,
@@ -514,78 +473,95 @@ impl Element for CommandCenter {
                     offset: -300,
                 },
             },
-            source: container.untyped(),
-            target: verbose.untyped(),
+            local,
+        ));
+        world.insert(VerbosePanel {
+            common,
+            rect: verbose_rect,
         });
-
-        world.dependency(panel, this);
-        world.dependency(oklab, this);
     }
 }
 
 pub struct VerbosePanel {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for VerbosePanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("verbose_panel");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
+
+        let brush_rect = world.insert(Val::new(Rectangle::default()));
+        let brush_visible = world.insert(Val::new(false));
         let tab_brush_list = world.insert(BrushListPanel {
-            common: self.common,
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: brush_visible,
+            },
+            rect: brush_rect,
         });
 
+        let settings_rect = world.insert(Val::new(Rectangle::default()));
+        let settings_visible = world.insert(Val::new(false));
         let tab_settings = world.insert(SettingPanel {
-            common: self.common,
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: settings_visible,
+            },
+            rect: settings_rect,
         });
 
+        let layer_rect = world.insert(Val::new(Rectangle::default()));
+        let layer_visible = world.insert(Val::new(false));
         let tab_layer_selection = world.insert(LayerSelectionPanel {
-            common: self.common,
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: layer_visible,
+            },
+            rect: layer_rect,
         });
 
+        let debug_rect = world.insert(Val::new(Rectangle::default()));
+        let debug_visible = world.insert(Val::new(false));
         let tab_debug = world.insert(DebugPanel {
+            common: WidgetCommon {
+                camera: self.common.camera,
+                visible: debug_visible,
+            },
+            rect: debug_rect,
+        });
+
+        world.insert(Tabs {
             common: self.common,
-        });
-
-        let tabs = world.insert(Tabs {
-            active: 0,
-            rect: Rectangle::default(),
-            visible: self.common.visible,
+            rect: self.rect,
             tabs: vec![
-                (
-                    svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
-                    tab_brush_list.untyped(),
-                ),
-                (
-                    svg_render(include_bytes!("../../../res/interface/settings.svg"), 12),
-                    tab_settings.untyped(),
-                ),
-                (
-                    svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
-                    tab_layer_selection.untyped(),
-                ),
-                (
-                    svg_render(include_bytes!("../../../res/interface/bug.svg"), 12),
-                    tab_debug.untyped(),
-                ),
+                TabEntry {
+                    icon: svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
+                    rect: brush_rect,
+                    visible: brush_visible,
+                },
+                TabEntry {
+                    icon: svg_render(include_bytes!("../../../res/interface/settings.svg"), 12),
+                    rect: settings_rect,
+                    visible: settings_visible,
+                },
+                TabEntry {
+                    icon: svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
+                    rect: layer_rect,
+                    visible: layer_visible,
+                },
+                TabEntry {
+                    icon: svg_render(include_bytes!("../../../res/interface/bug.svg"), 12),
+                    rect: debug_rect,
+                    visible: debug_visible,
+                },
             ],
-            camera: self.common.camera,
+            active: 0,
         });
 
-        Transfer::new(world, this, tabs)
-            .set_widget_rectangle()
-            .set_widget_visible();
-
-        world.dependency(tab_brush_list, this);
-        world.dependency(tab_settings, this);
-        world.dependency(tab_layer_selection, this);
-        world.dependency(tab_debug, this);
-        world.dependency(tabs, this);
-
-        // initialize layout
-        world.queue(move |world| {
-            let this = world.fetch(tabs);
-            world.queue_trigger(tabs, SetWidgetRectangle(this.rect));
-            world.queue_trigger(tabs, SetWidgetVisible(this.visible));
-            world.queue_trigger(tabs, SetTabsActive(this.active));
-        });
+        let _ = (tab_brush_list, tab_settings, tab_layer_selection, tab_debug);
     }
 }

@@ -13,10 +13,11 @@ use wgpu::*;
 use winit::{dpi::PhysicalSize, event::WindowEvent};
 
 use crate::{
+    layout::val::ValChanged,
     lnwin::Lnwindow,
     measures::ScissorRect,
     render::camera::{Camera, UICamera},
-    widgets::{SetWidgetVisible, common::WidgetCommon},
+    widgets::common::WidgetCommon,
 };
 
 pub const MSAA_SAMPLE_COUNT: u32 = 1;
@@ -296,7 +297,8 @@ impl Render {
                 scissor: extra.scissor,
             };
             let mut control = world.fetch_mut(control);
-            if control.common.visible {
+            let visible = world.fetch(control.common.visible);
+            if visible.val {
                 (control.draw)(world, rpass, extra);
             }
         }
@@ -692,7 +694,9 @@ impl Element for Render {
 
 impl Element for RenderDrawControl {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.dependency(this, self.common.camera);
+        world.scope("render_control");
+        world.set_autodeps(Some(this));
+
         let mut camera = world.fetch_mut(self.common.camera);
         camera.renderers.push(this);
         camera
@@ -703,12 +707,13 @@ impl Element for RenderDrawControl {
             });
         let lnwindow = world.single_fetch::<Lnwindow>();
         lnwindow.window.request_redraw();
-        world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this);
-            this.common.visible = visible;
+        world.observer(self.common.visible, move |&ValChanged, world| {
             let lnwindow = world.single_fetch::<Lnwindow>();
             lnwindow.window.request_redraw();
         });
+
+        world.dependency(this, self.common.visible);
+        world.dependency(this, self.common.camera);
     }
 
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {

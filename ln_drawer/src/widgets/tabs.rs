@@ -1,239 +1,217 @@
 use glam::{IVec2, UVec2};
-use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
+use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
     layout::{
-        echo::Echo,
         luni::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
             LuniParent, LuniRect,
         },
-        transform::{Transform, TransformValue},
+        transfer::Transfer,
+        transform::{Transform, TransformEdge, TransformValue},
+        val::{Val, ValChanged},
     },
     measures::Rectangle,
-    render::camera::Camera,
     theme::Theme,
     tools::collider::ToolRectCollider,
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible, WidgetRectangle, WidgetVisible,
-        button::{ButtonAction, ButtonImage, SetButtonIconColor, SetButtonSelected, ToggleButton},
+        button::{ButtonAction, ButtonImage, ToggleButton},
         common::WidgetCommon,
         renderer::rrect::RRect,
     },
 };
 
-#[expect(unused)]
 pub struct TabsActive(pub usize);
-pub struct SetTabsActive(pub usize);
 
 pub struct Tabs {
-    pub rect: Rectangle,
-    pub visible: bool,
-    pub tabs: Vec<(ButtonImage, HandleAny)>,
+    pub rect: Handle<Val<Rectangle>>,
+    pub common: WidgetCommon,
+    pub tabs: Vec<TabEntry>,
     pub active: usize,
-    pub camera: Handle<Camera>,
 }
 
-#[derive(Clone)]
-struct TabButton {
-    button: Handle<ToggleButton>,
-    edge: Handle<RRect>,
+pub struct TabEntry {
+    pub icon: ButtonImage,
+    pub rect: Handle<Val<Rectangle>>,
+    pub visible: Handle<Val<bool>>,
 }
 
 impl Tabs {
     pub fn init(&self, world: &World, handle: Handle<Self>) {
+        world.scope("tabs");
+        world.set_autodeps(Some(handle));
+        world.dependency(handle, self.rect);
+        world.dependency(handle, self.common.visible);
+
         let theme = world.single_fetch::<Theme>();
 
         let roundness = theme.roundness;
         let shadow_offset = theme.shadow_offset.as_ivec2();
         let shadow_blur = theme.shadow_blur;
 
-        let back = world.insert(RRect {
+        world.insert(RRect {
             rect: self.rect,
             order: -10,
             color: theme.gray2,
             radius: roundness,
             width: 0.0,
-            enabled: self.visible,
-            camera: self.camera,
+            visible: self.common.visible,
+            camera: self.common.camera,
         });
 
-        let back_shadow = world.insert(RRect {
-            rect: self.rect + shadow_offset,
+        let shadow_rect = world.build(Transform::new(
+            TransformValue::shift(shadow_offset.x, shadow_offset.y),
+            self.rect,
+        ));
+        world.insert(RRect {
+            rect: shadow_rect,
             order: -11,
             color: theme.shadow_color,
             radius: roundness,
             width: shadow_blur,
-            enabled: self.visible,
-            camera: self.camera,
+            visible: self.common.visible,
+            camera: self.common.camera,
         });
 
-        world.dependency(back, handle);
-        world.dependency(back_shadow, handle);
-
-        let mut children = Vec::new();
-        let mut luni_children = Vec::new();
-        for (i, (entry, _)) in self.tabs.iter().enumerate() {
-            let button = world.insert(ToggleButton {
-                common: WidgetCommon {
-                    camera: self.camera,
-                    visible: self.visible,
-                },
-                rect: self.rect,
-                theme: theme.tab_button(),
-                image: Some(entry.clone()),
-                selected: i == self.active,
-                hovering: false,
-            });
-
-            Echo::new(world, button).widget_rectangle();
-
-            let edge = world.insert(RRect {
-                rect: Rectangle::default(),
-                order: 100,
-                color: theme.theme,
-                radius: 0.0,
-                width: 0.0,
-                enabled: self.visible,
-                camera: self.camera,
-            });
-            world.dependency(edge, handle);
-            world.dependency(button, handle);
-
-            world.insert(Transform {
-                value: TransformValue::anchor(
-                    (0.0, 0.5),
-                    Rectangle::new_half(IVec2::ZERO, UVec2::new(1, 16)),
-                ),
-                source: button.untyped(),
-                target: edge.untyped(),
-            });
-
-            children.push(TabButton { button, edge });
-
-            luni_children.push((button.untyped(), LuniChild::default()));
-        }
-
-        let collider = world.insert(ToolRectCollider {
-            common: WidgetCommon {
-                visible: self.visible,
-                camera: self.camera,
-            },
+        world.insert(ToolRectCollider {
+            common: self.common,
             target: handle.untyped(),
             rect: self.rect,
             order: -10,
         });
 
-        let side = world.insert(());
-        world.dependency(side, handle);
+        let side_rect = world.build(Transform::new(side_transform(), self.rect));
+        let main_rect = world.build(Transform::new(main_transform(), self.rect));
 
-        world.insert(LuniFlex {
-            parent: (
-                side.untyped(),
-                LuniParent {
-                    axis: LuniAxis::Column,
-                    distribution: LuniDistribution::FlexStart,
-                    padding: LuniRect {
-                        left: 0,
+        let mut luni = LuniFlex::new(
+            side_rect,
+            LuniParent {
+                axis: LuniAxis::Column,
+                distribution: LuniDistribution::FlexStart,
+                padding: LuniRect {
+                    left: 0,
+                    bottom: 4,
+                    right: 0,
+                    top: 4,
+                },
+                gap: 0,
+                template: LuniChildTemplate {
+                    align: LuniAlign::FlexStart,
+                    margin: LuniRect {
+                        left: 4,
                         bottom: 4,
-                        right: 0,
+                        right: 4,
                         top: 4,
                     },
-                    gap: 0,
-                    template: LuniChildTemplate {
-                        align: LuniAlign::FlexStart,
-                        margin: LuniRect {
-                            left: 4,
-                            bottom: 4,
-                            right: 4,
-                            top: 4,
-                        },
-                        basis: 40,
-                        max: None,
-                        min: None,
-                        grow: 0.0,
-                        shrink: 0.0,
-                        cross: 40,
-                    },
+                    basis: 40,
+                    max: None,
+                    min: None,
+                    grow: 0.0,
+                    shrink: 0.0,
+                    cross: 40,
                 },
-            ),
-            children: luni_children,
-        });
+            },
+        );
 
-        for (i, tab) in children.iter().enumerate() {
-            world.observer(tab.button, move |action: &ButtonAction, world| {
+        for (i, entry) in self.tabs.iter().enumerate() {
+            let button_rect = world.build(luni.child(LuniChild::default()));
+            let button = world.insert(ToggleButton {
+                common: self.common,
+                rect: button_rect,
+                theme: theme.tab_button(),
+                image: Some(entry.icon.clone()),
+                selected: i == self.active,
+                hovering: false,
+            });
+
+            let indicator_rect = world.build(Transform::new(
+                TransformValue::anchor(
+                    (0.0, 0.5),
+                    Rectangle::new_half(IVec2::ZERO, UVec2::new(1, 16)),
+                ),
+                button_rect,
+            ));
+            let indicator_visible = world.insert(Val::new(i == self.active));
+            world.insert(RRect {
+                rect: indicator_rect,
+                order: 100,
+                color: theme.theme,
+                radius: 0.0,
+                width: 0.0,
+                visible: indicator_visible,
+                camera: self.common.camera,
+            });
+
+            let entry_visible = entry.visible;
+            let entry_rect = entry.rect;
+
+            Transfer::new(world, main_rect, entry_rect).copy();
+
+            world.observer(button, move |action: &ButtonAction, world| {
                 if let ButtonAction::Press = action {
-                    world.queue_trigger(handle, SetTabsActive(i));
+                    world.queue_trigger(handle, TabsActive(i));
                 }
+            });
+            world.observer(handle, move |&TabsActive(active), world| {
+                let mut entry_visible = world.fetch_mut(entry_visible);
+                let mut indicator_visible = world.fetch_mut(indicator_visible);
+
+                entry_visible.val = i == active;
+                indicator_visible.val = i == active;
+
+                // TODO Set Button & Icon Color
+
+                world.queue_trigger(entry_visible.handle(), ValChanged);
+                world.queue_trigger(indicator_visible.handle(), ValChanged);
             });
         }
 
-        world.observer(handle, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(handle);
-            this.rect = rect;
+        world.insert(luni);
 
-            world.queue_trigger(back, SetWidgetRectangle(rect));
-            world.queue_trigger(back_shadow, SetWidgetRectangle(rect + shadow_offset));
-            world.queue_trigger(collider, SetWidgetRectangle(rect));
-
-            world.queue_trigger(handle, WidgetRectangle(main_rect(rect)));
-            world.queue_trigger(side, WidgetRectangle(side_rect(rect)));
-
-            for &(_, entry) in &this.tabs {
-                world.queue_trigger(entry, SetWidgetRectangle(main_rect(rect)));
-            }
-        });
-
-        let children2 = children.clone();
-        world.observer(handle, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(handle);
-            this.visible = visible;
-            world.queue_trigger(back, SetWidgetVisible(visible));
-            world.queue_trigger(back_shadow, SetWidgetVisible(visible));
-            world.queue_trigger(collider, SetWidgetVisible(visible));
-
-            for (i, tab) in children2.iter().enumerate() {
-                world.queue_trigger(tab.edge, SetWidgetVisible(visible && i == this.active));
-            }
-
-            world.queue_trigger(handle, WidgetVisible(visible));
-            world.queue_trigger(side, WidgetVisible(visible));
-
-            for (i, &(_, entry)) in this.tabs.iter().enumerate() {
-                world.queue_trigger(entry, SetWidgetVisible(visible && i == this.active));
-            }
-        });
-
-        world.observer(handle, move |&SetTabsActive(active), world| {
-            let mut this = world.fetch_mut(handle);
-            let theme = world.single_fetch::<Theme>();
-            this.active = active;
-
-            for (i, tab) in children.iter().enumerate() {
-                world.queue_trigger(tab.button, SetButtonSelected(i == active));
-                world.queue_trigger(tab.edge, SetWidgetVisible(this.visible && i == active));
-                world.queue_trigger(
-                    tab.button,
-                    SetButtonIconColor(match i == active {
-                        true => theme.distinct,
-                        false => theme.gray4,
-                    }),
-                );
-            }
-
-            for (i, &(_, entry)) in this.tabs.iter().enumerate() {
-                world.queue_trigger(entry, SetWidgetVisible(this.visible && i == active));
-            }
-        });
+        world.queue_trigger(handle, TabsActive(self.active));
     }
 }
 
-fn side_rect(rect: Rectangle) -> Rectangle {
-    rect.with_right(rect.left() + 48)
+fn side_transform() -> TransformValue {
+    TransformValue {
+        left: TransformEdge {
+            anchor: 0.0,
+            offset: 0,
+        },
+        down: TransformEdge {
+            anchor: 0.0,
+            offset: 0,
+        },
+        right: TransformEdge {
+            anchor: 0.0,
+            offset: 48,
+        },
+        up: TransformEdge {
+            anchor: 1.0,
+            offset: 0,
+        },
+    }
 }
 
-fn main_rect(rect: Rectangle) -> Rectangle {
-    rect.with_left(rect.left() + 48)
+fn main_transform() -> TransformValue {
+    TransformValue {
+        left: TransformEdge {
+            anchor: 0.0,
+            offset: 48,
+        },
+        down: TransformEdge {
+            anchor: 0.0,
+            offset: 0,
+        },
+        right: TransformEdge {
+            anchor: 1.0,
+            offset: 0,
+        },
+        up: TransformEdge {
+            anchor: 1.0,
+            offset: 0,
+        },
+    }
 }
 
 impl Element for Tabs {

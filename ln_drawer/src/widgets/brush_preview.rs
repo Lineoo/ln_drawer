@@ -9,16 +9,13 @@ use crate::{
         brush::{BrushParams, Draw, DrawsBatch, Stroke, param::BrushParam, round::RoundBrush},
         wrapper::LayerPage,
     },
+    layout::val::{Val, ValChanged},
     measures::{FI64Ext, Rectangle},
-    render::{
-        RenderDrawControl, RenderPrepareControl,
-        camera::{Camera, SetCameraOutdated},
-    },
+    render::{RenderDrawControl, RenderPrepareControl, camera::SetCameraOutdated},
     tools::collider::ToolRectCollider,
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible,
         common::WidgetCommon,
-        container::{Container, ContainerAttr, ContainerWithCamera},
+        container::{ContainerAttr, ContainerEcho, ContainerWithCamera},
     },
 };
 
@@ -27,65 +24,57 @@ use crate::{
 /// Set [`BrushPreview::outdated`] and the preview regenerates with [`BrushPreview::brush`] on the
 /// next frame.
 pub struct BrushPreview {
-    pub rect: Rectangle,
+    pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
     pub brush: Option<Box<dyn BrushParams>>,
     pub outdated: bool,
-    pub visible: bool,
-    pub camera: Handle<Camera>,
 }
 
 struct BrushPreviewInstance {
     canvas: Standalone,
-    container: Handle<Container>,
-    collider: Handle<ToolRectCollider>,
 }
 
 impl BrushPreview {
     fn init(&self, world: &World, this: Handle<Self>) {
-        let page = world.single_fetch::<LayerPage>();
-        let canvas = page.lp.create_standalone(Rectangle::new_extend(
-            0,
-            0,
-            self.rect.width().max(1),
-            self.rect.height().max(1),
-        ));
+        world.scope("brush_preview");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
 
-        let (container, camera) = world.build(ContainerWithCamera {
-            common: WidgetCommon {
-                camera: self.camera,
-                visible: self.visible,
-            },
+        let page = world.single_fetch::<LayerPage>();
+        let rect = world.fetch(self.rect).val;
+
+        let canvas_rect = Rectangle::new_extend(0, 0, rect.width().max(1), rect.height().max(1));
+        let canvas = page.lp.create_standalone(canvas_rect);
+
+        let (container, common) = world.build(ContainerWithCamera {
+            common: self.common,
             rect: self.rect,
             attr: ContainerAttr {
                 anchor: DVec2::new(0.0, 0.0),
                 ..Default::default()
             },
         });
-        world.queue_trigger(camera, SetCameraOutdated);
+        let inner = world.build(ContainerEcho { container });
+        world.queue_trigger(common.camera, SetCameraOutdated);
 
-        let collider = world.insert(ToolRectCollider {
-            common: WidgetCommon {
-                camera,
-                visible: self.visible,
-            },
+        world.insert(ToolRectCollider {
+            common,
             target: this.untyped(),
-            rect: canvas.rect,
+            rect: inner,
             order: 0,
         });
 
-        let instance = world.insert(BrushPreviewInstance {
-            canvas,
-            container,
-            collider,
-        });
+        let instance = world.insert(BrushPreviewInstance { canvas });
 
-        let prepare = world.insert(RenderPrepareControl {
+        world.insert(RenderPrepareControl {
             prepare: Box::new(move |world| {
                 let mut this = world.fetch_mut(this);
                 let instance = world.fetch(instance);
+                let visible = world.fetch(this.common.visible).val;
                 if let Some(brush) = &this.brush
                     && this.outdated
-                    && this.visible
+                    && visible
                 {
                     let page = world.single_fetch::<LayerPage>();
                     Self::generate_preview(&page.lp, &instance.canvas, brush.as_ref());
@@ -96,10 +85,7 @@ impl BrushPreview {
         });
 
         world.insert(RenderDrawControl {
-            common: WidgetCommon {
-                camera,
-                visible: true,
-            },
+            common,
             order: 0,
             draw: Box::new(move |world, rpass, extra| {
                 let instance = world.fetch(instance);
@@ -109,8 +95,9 @@ impl BrushPreview {
             }),
         });
 
-        world.observer(this, move |&SetWidgetRectangle(rect), world| {
+        world.observer(self.rect, move |ValChanged, world| {
             let mut this = world.fetch_mut(this);
+            let rect = world.fetch(this.rect).val;
             let mut instance = world.fetch_mut(instance);
 
             let size = UVec2::new(rect.width().max(1), rect.height().max(1));
@@ -122,23 +109,8 @@ impl BrushPreview {
                 this.outdated = true;
             }
 
-            this.rect = rect;
-            world.queue_trigger(instance.container, SetWidgetRectangle(rect));
-            world.queue_trigger(instance.collider, SetWidgetRectangle(instance.canvas.rect));
-            world.queue_trigger(camera, SetCameraOutdated);
+            world.queue_trigger(common.camera, SetCameraOutdated);
         });
-
-        world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this);
-            this.visible = visible;
-            let instance = world.fetch(instance);
-            world.queue_trigger(instance.container, SetWidgetVisible(visible));
-            world.queue_trigger(instance.collider, SetWidgetVisible(visible));
-        });
-
-        world.dependency(prepare, this);
-        world.dependency(container, this);
-        world.dependency(instance, this);
     }
 
     /// Redraw `brush` over a fixed seed into `canvas`.

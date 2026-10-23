@@ -13,6 +13,7 @@ use crate::{
         brush::{Draw, param::BrushParamKey},
         wrapper::{BrushConfigurationChanged, LayerPage},
     },
+    layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
     measures::{FI64Ext, Rectangle},
     render::camera::{PageCamera, PageCameraUtils, UICamera},
@@ -22,7 +23,7 @@ use crate::{
         pointer::{PointerHover, PointerHoverStatus, PointerScroll},
         touch::{MultiTouchGroup, MultiTouchStatus},
     },
-    widgets::{SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon},
+    widgets::common::WidgetCommon,
 };
 
 const DRAG_DISTANCE: f64 = 0.005;
@@ -77,14 +78,19 @@ pub struct OffsetCorrection {
 
 impl LayerInput {
     fn init(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("layer_input");
+        world.set_autodeps(Some(this));
+
         let page_camera = world.single_fetch::<PageCamera>().0;
+        let visible = world.insert(Val::new(true));
+        let rect = world.insert(Val::new(Rectangle::FULLSCREEN));
         world.insert(ToolRectCollider {
             common: WidgetCommon {
                 camera: page_camera,
-                visible: true,
+                visible,
             },
             target: this.untyped(),
-            rect: Rectangle::FULLSCREEN,
+            rect,
             order: -100,
         });
 
@@ -132,21 +138,26 @@ impl LayerInput {
             screen += offset;
             this.input_offset_main = page_camera.screen_to_world_relative(offset);
 
-            let brush_rect =
+            let mut cursor_rect = world.fetch_mut(wrapper.cursor_rect);
+            cursor_rect.val =
                 Rectangle::new_half(camera.screen_to_world(screen).q32_round(), UVec2::new(1, 1));
-            let shadow_rect = brush_rect + (tilt * 48.0).as_ivec2();
-            world.queue_trigger(wrapper.cursor, SetWidgetRectangle(brush_rect));
-            world.queue_trigger(wrapper.cursor_shadow, SetWidgetRectangle(shadow_rect));
+            world.queue_trigger(cursor_rect.handle(), ValChanged);
+
+            let mut cursor_shadow_rect = world.fetch_mut(wrapper.cursor_shadow_rect);
+            cursor_shadow_rect.val = cursor_rect.val + (tilt * 48.0).as_ivec2();
+            world.queue_trigger(cursor_shadow_rect.handle(), ValChanged);
 
             match event.status {
                 PointerHoverStatus::Enter => {
-                    world.queue_trigger(wrapper.cursor, SetWidgetVisible(true));
-                    world.queue_trigger(wrapper.cursor_shadow, SetWidgetVisible(true));
+                    let mut visible = world.fetch_mut(wrapper.cursor_visible);
+                    visible.val = true;
+                    world.queue_trigger(visible.handle(), ValChanged);
                 }
                 PointerHoverStatus::Moving => {}
                 PointerHoverStatus::Leave => {
-                    world.queue_trigger(wrapper.cursor, SetWidgetVisible(false));
-                    world.queue_trigger(wrapper.cursor_shadow, SetWidgetVisible(false));
+                    let mut visible = world.fetch_mut(wrapper.cursor_visible);
+                    visible.val = false;
+                    world.queue_trigger(visible.handle(), ValChanged);
                 }
             }
         });

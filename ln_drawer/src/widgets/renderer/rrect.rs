@@ -2,22 +2,22 @@ use glam::{UVec2, Vec4};
 use ln_world::{Element, Handle, World};
 
 use crate::{
+    layout::val::Val,
     measures::Rectangle,
     render::camera::Camera,
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible,
         renderer::quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
         shaders::shader_compile,
     },
 };
 
 pub struct RRect {
-    pub rect: Rectangle,
+    pub rect: Handle<Val<Rectangle>>,
     pub order: isize,
     pub color: Vec4,
     pub radius: f32,
     pub width: f32,
-    pub enabled: bool,
+    pub visible: Handle<Val<bool>>,
     pub camera: Handle<Camera>,
 }
 
@@ -33,10 +33,13 @@ pub struct RRectMaterial {
 pub struct SetRRectColor(pub Vec4);
 
 impl RRect {
-    fn init(&mut self, world: &World, this: Handle<Self>) {
+    fn init(&self, world: &World, this: Handle<Self>) {
+        world.scope("rrect");
+        world.set_autodeps(Some(this));
+
         let quad = world.insert(QuadMesh {
             rect: self.rect,
-            visible: self.enabled,
+            visible: self.visible,
             order: self.order,
             camera: self.camera,
             material: RRectMaterial {
@@ -45,18 +48,6 @@ impl RRect {
                 width: self.width,
                 _pad: [0; 2],
             },
-        });
-
-        world.observer(this, move |&SetWidgetVisible(enabled), world| {
-            let mut this = world.fetch_mut(this);
-            this.enabled = enabled;
-            world.queue_trigger(quad, SetWidgetVisible(enabled));
-        });
-
-        world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this);
-            this.rect = rect;
-            world.queue_trigger(quad, SetWidgetRectangle(rect));
         });
 
         world.observer(this, move |&SetRRectColor(color), world| {
@@ -72,8 +63,6 @@ impl RRect {
                 }),
             );
         });
-
-        world.dependency(quad, this);
     }
 }
 

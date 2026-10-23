@@ -1,8 +1,11 @@
+use glam::UVec2;
 use ln_world::{Element, Handle, HandleAny, HandleGeneric, World};
 use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 use uuid::Uuid;
 
 use crate::{
+    layout::val::Val,
+    measures::Rectangle,
     save::{Autosave, Save},
     widgets::{
         common::WidgetCommon,
@@ -19,6 +22,10 @@ pub struct Objects {
 
 impl Element for Objects {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("objects");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.common.visible);
+
         let save = world.single_fetch::<Save>();
         let read = save.db.begin_read().unwrap();
         let table = read.open_table(TABLE_LAYER_OBJECT).unwrap();
@@ -26,17 +33,22 @@ impl Element for Objects {
             let (k, v) = entry.unwrap();
             let ((_page, uuid), bytes) = (k.value(), v.value());
             let handle = match serde_json::from_slice::<ObjectData>(bytes).unwrap() {
-                ObjectData::ColorSnip(attr) => ObjectHandle::ColorSnip(world.insert(ColorSnip {
-                    common: self.common,
-                    attr,
-                })),
+                ObjectData::ColorSnip(attr) => {
+                    let rect = world.insert(Val::new(Rectangle::new_half(
+                        attr.position,
+                        UVec2::splat(24),
+                    )));
+                    ObjectHandle::ColorSnip(world.insert(ColorSnip {
+                        common: self.common,
+                        rect,
+                        attr,
+                    }))
+                }
             };
-            let obj = world.insert(Object {
+            world.insert(Object {
                 uuid: Uuid::from_u128(uuid),
                 handle,
             });
-            world.dependency(handle, this);
-            world.dependency(obj, this);
         }
 
         world.insert(Autosave(Box::new(|world, task| {

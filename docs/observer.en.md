@@ -8,13 +8,15 @@ All inter-element communication follows a three-part data-flow model (the whole 
 2. **收者 Receiver** — the element that *accepts* data. e.g. `Slider` listens for `SetSliderValue(f32)` to apply an external value. Acceptance is internal to the receiver's implementation.
 3. **数据流 Data flow** — the *transfer* between them, wired externally (by whoever composes the two). e.g. `color_picker.rs` observes a `SliderValue` event and `world.queue_trigger`s a `SetSliderValue` at the target slider.
 
-Naming: a paired event type is a *command* with a `Set` prefix (observed by the receiver, e.g. `SetSliderValue`) and a *notification* with the bare name (emitted by the sender, e.g. `SliderValue`). `Echo` (`widgets/echo.rs`) exists to re-emit a `Set*` command as its matching notification on the same node.
+Naming: a paired event type is a *command* with a `Set` prefix (observed by the receiver, e.g. `SetSliderValue`) and a *notification* with the bare name (emitted by the sender, e.g. `SliderValue`).
+
+Layout and visibility data should prefer the direct-binding `Val` pattern (see `docs/val-pattern.md`) instead of forwarding `SetWidgetRectangle` / `SetWidgetVisible` events between components. Events remain the right choice for interaction data and for command-like state such as `SetSliderValue` / `ButtonSelected`.
 
 Rules:
 
-- A node can be both sender and receiver: e.g. `Tabs` accepts `SetWidgetRectangle` and re-emits the sub-panel `WidgetRectangle`.
+- A node can be both sender and receiver: e.g. `Tabs` accepts `SetButtonSelected` and writes the active tab's `Val<bool>` / `Val<Rectangle>`.
 - The sender does not need to own state for the data it releases. e.g. `Button` emits `WidgetHover` as a sender; the hover state it keeps is only for its own internal rendering, which also consumes `WidgetHover` as a receiver — that self-loop is an implementation detail and is ignored when wiring.
-- A flow need not have exactly two nodes. e.g. `Transform` names an explicit `source`/`target` pair and is itself part of the data flow (it transforms `WidgetRectangle` from the source into `SetWidgetRectangle` at the target) — three logical nodes. Internally observers are also nodes, so real flows always have more than two.
+- A flow need not have exactly two nodes. e.g. `Transform` derives a `Val<Rectangle>` from a source `Val<Rectangle>` and is itself part of the data flow — three logical nodes. Internally observers are also nodes, so real flows always have more than two.
 - A receiver is not necessarily command-event driven. Legacy code uses `when_modify` (e.g. `ToolCollider`, `RoundedRect`) and some paths require manual calls; conceptually they are still receivers, just without a decoupling event, and their internal behavior can leak into the data-flow control. Prefer command events for new code.
 - Accepting data is not mandatory: `Slider`/`Button` support receiving `Theme` data, but usually display is driven only by init-time values, which is fine.
 

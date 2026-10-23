@@ -16,7 +16,6 @@ use toml_edit::{DocumentMut, Item, Value};
 use crate::lnwin::LnAndroid;
 use crate::{
     layer::input::{OffsetCorrection, TiltCorrection},
-    lnwin::Lnwindow,
     render::camera::PageCameraArchive,
     save::{
         chunk::{TABLE_LAYER_CHUNK, TABLE_LAYER_CHUNK_RAW},
@@ -394,7 +393,8 @@ impl Element for Autosave {}
 
 impl Element for AutosaveScheduler {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        world.dependency(this, world.single::<Lnwindow>());
+        world.scope("autosave_scheduler");
+        world.set_autodeps(Some(this));
 
         let timer = world.insert(Timer::new(self.autosave_duration));
         world.observer(timer, move |TimerHit, world| {

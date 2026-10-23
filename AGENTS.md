@@ -1,15 +1,18 @@
+# AGENTS.md
+
 GPU-accelerated drawing app featured infinite canvas in Rust (winit + wgpu). Cargo workspace with two crates:
 
-- `ln_drawer/` — the main app. Desktop (binary) entry: `src/bin/ln_drawer.rs` -> `lib.rs::desktop_main`; Android (C ABI library) entry: `lib.rs::android_main`.
-- `ln_world/` — an in-house, single-file ECS (`src/lib.rs`), NOT a crates.io framework. The entire app is built on it (`World`, `Element`, `Handle`, `Observer`, `Descriptor`).
+- `ln_drawer/` - The main app. Desktop (binary) entry: `src/bin/ln_drawer.rs` -> `lib.rs::desktop_main`; Android (C ABI library) entry: `lib.rs::android_main`.
+- `ln_world/` - An in-house, single-file ECS (`src/lib.rs`). The entire app is built on it (`World`, `Element`, `Handle`, `Observer`, `Descriptor`).
+- `docs/` - Documents. Most are in Chinese, read some first.
 
 ## Tasks
 
 - If assigned to review in read-only mode, assume that users has run `cargo check` and `cargo fmt`. Skip cargo tool calls that'll need write-permission, except when significant type errors are spotted.
+- Don't run actual rendering tests, headless rendering is not supported, and just tell user when you need it.
+- Don't run `cargo check --target aarch64-linux-android`. Tell user to perform Android check or build.
+- Don't use clippy. No need to check that (it returns warnings, but we just don't care about that). 
 - Tests: `cargo test` — tests are all are pure-compute and run headless.
-- If Vulkan backend not found (usually in sandbox env), use Chromium's SwiftShader. However, headless tests are preferred than running actually rendering.
-- Do **NOT** run `cargo check --target aarch64-linux-android`, instead use `cargo ndk check --target aarch64-linux-android` with no platform target specificated. Otherwise it will become a full recompiling (`zstd-sys` detecting `CC` changes). We are not happy with that.
-- We don't use clippy. No need to check that (it returns warnings, but we just don't care about that). 
 
 ## Critical gotchas
 
@@ -18,11 +21,8 @@ GPU-accelerated drawing app featured infinite canvas in Rust (winit + wgpu). Car
 
 ## Conventions
 
-- No `foo/mod.rs`, please use new module style - `foo.rs` and `foo/*.rs`.
-- Don't leave comments unless users asked. Don't leave any outdated, unrelated or redundant information.
-- Panic is fine. As long as panic condition is clear, use `unwrap()` instead of silent return or messing up code structures. 
-- Observer system design follows a three-part data-flow model. See `docs/observer.en.md` and `docs/observer.md` (Chinese).
-- If you are adding new `Element`s, see `docs/world.md` (Chinese) first to see what happens.
-- Render system architecture overview: `docs/widget.md` (Chinese).
-- Drawing system architecture overview: `docs/draw.md` (Chinese).
+- Never leave comments. Keep minimalistic. Don't leave any outdated, unrelated or redundant information.
+- Never use `try_*` family functions in `ln_world`, and `unwrap_or_*()` / `if let Ok(x) =  ...` / `match result { Ok(x) => ... }` is strictly forbidden unless users explicit allow it. **Panicking is better than skipping potential errors.**
+- Never handle errors. Use `unwrap()` if `Result`s are returned. If you REALLY understand the error and REALLY need to handle it, ask user first and make sure they ARE fully aware of the error and intended to handle it. **Panicking is better than skipping unknown errors.**
+- Keep it in mind. Let it be part of you. And please repeat it. **Panicking is better than skipping errors.**
 - WGSL shaders are embedded via `include_str!` and macro-expanded with `shader_compile()` in `ln_drawer/src/widgets/shaders.rs`. Shared libs in `widgets/shaders/*.wgsl` are included via `#lib_*` during compiling.

@@ -11,12 +11,11 @@ use wgpu::{
 };
 
 use crate::{
+    layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
     measures::Rectangle,
     render::{MSAA_STATE, Render, RenderDrawControl, RenderPrepareControl, camera::CameraBind},
-    widgets::{
-        SetWidgetRectangle, SetWidgetVisible, common::WidgetCommon, shaders::shader_compile,
-    },
+    widgets::{common::WidgetCommon, shaders::shader_compile},
 };
 
 pub struct VtorPipeline {
@@ -26,7 +25,7 @@ pub struct VtorPipeline {
 
 pub struct Vtor {
     pub common: WidgetCommon,
-    pub rect: Rectangle,
+    pub rect: Handle<Val<Rectangle>>,
     pub color: Vec4,
     pub order: isize,
     pub path: Path,
@@ -52,22 +51,27 @@ pub struct SetVtorColor(pub Vec4);
 
 impl Vtor {
     pub fn init(&mut self, world: &World, this: Handle<Self>) {
+        world.scope("vtor");
+        world.set_autodeps(Some(this));
+
+        let rect = world.fetch(self.rect).val;
         let render = world.single_fetch::<Render>();
         let pipeline = world.single_fetch::<VtorPipeline>();
 
         self.outdated = false;
         let instance = world.insert(Vtor::gen_path_buffer(
             self.path.clone(),
-            self.rect,
+            rect,
             self.color,
             &pipeline,
             &render.device,
         ));
 
-        let prepare = world.insert(RenderPrepareControl {
+        world.insert(RenderPrepareControl {
             prepare: Box::new(move |world| {
                 let mut this = world.fetch_mut(this);
                 let mut instance = world.fetch_mut(instance);
+                let rect = world.fetch(this.rect).val;
                 let render = world.single_fetch::<Render>();
                 let pipeline = world.single_fetch::<VtorPipeline>();
 
@@ -75,7 +79,7 @@ impl Vtor {
                     this.outdated = false;
                     *instance = Vtor::gen_path_buffer(
                         this.path.clone(),
-                        this.rect,
+                        rect,
                         this.color,
                         &pipeline,
                         &render.device,
@@ -86,7 +90,7 @@ impl Vtor {
             }),
         });
 
-        let control = world.insert(RenderDrawControl {
+        world.insert(RenderDrawControl {
             common: self.common,
             order: self.order,
             draw: Box::new(move |world, rpass, extra| {
@@ -113,21 +117,15 @@ impl Vtor {
             }),
         });
 
-        world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this);
+        world.observer(self.rect, move |ValChanged, world| {
+            let this = world.fetch(this);
+            let rect = world.fetch(this.rect).val;
             let instance = world.fetch(instance);
             let render = world.single_fetch::<Render>();
-            this.rect = rect;
             let bytes = bytemuck::bytes_of(&rect);
             render.queue.write_buffer(&instance.rect_uniform, 0, bytes);
             let lnwindow = world.single_fetch::<Lnwindow>();
             lnwindow.window.request_redraw();
-        });
-
-        world.observer(this, move |&SetWidgetVisible(visible), world| {
-            let mut this = world.fetch_mut(this);
-            this.common.visible = visible;
-            world.queue_trigger(control, SetWidgetVisible(visible));
         });
 
         world.observer(this, move |&SetVtorColor(color), world| {
@@ -140,9 +138,6 @@ impl Vtor {
                 .queue
                 .write_buffer(&instance.color_uniform, 0, bytemuck::bytes_of(&color));
         });
-
-        world.dependency(control, this);
-        world.dependency(prepare, this);
     }
 
     fn gen_path_buffer(

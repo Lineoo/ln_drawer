@@ -1,9 +1,8 @@
-use ln_world::{Element, Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 
 use crate::{
     layer::wrapper::{BrushConfigurationChanged, LayerPage},
-    layout::transform::{Transform, TransformValue},
-    lnwin::Lnwindow,
+    lnwin::LnwindowRect,
     widgets::{common::WidgetCommon, panel::side_docker::SideDocker},
 };
 
@@ -13,25 +12,17 @@ pub struct MobileUi {
 
 impl Element for MobileUi {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let lnwindow = world.single::<Lnwindow>();
+        world.scope("mobile_ui");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.common.visible);
 
-        let page = world.insert(LayerPage::new(world, self.common));
+        let rect = world.single_fetch::<LnwindowRect>().0;
 
-        world.insert(Transform {
-            value: TransformValue::copy(),
-            source: lnwindow.untyped(),
-            target: page.untyped(),
-        });
-
-        let camera = self.common.camera;
+        let page = world.insert(LayerPage::new(world, self.common, rect));
         world.insert(SideDocker {
-            common: WidgetCommon {
-                camera,
-                visible: true,
-            },
+            common: self.common,
+            rect,
         });
-
-        world.dependency(page, this);
 
         world.scope("layer_init");
         world.queue_trigger(page, BrushConfigurationChanged);

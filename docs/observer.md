@@ -8,11 +8,12 @@
 
 重要规则：
 
-- 数据节点可以同时是发者和收者，比如 `Tabs` 同时接受 `SetWidgetRectangle` 并发送子面板的 `WidgetRectangle`
+- 数据节点可以同时是发者和收者，比如 `Tabs` 接受 `SetButtonSelected`，并写入当前 tab 的 `Val<bool>` / `Val<Rectangle>`
+- 布局和可见性数据优先使用 `Val` 直接绑定（见 `docs/val-pattern.md`），不要再在组件之间转发 `SetWidgetRectangle` / `SetWidgetVisible`
 - 有一些比较难混杂的事件，比如指针悬浮在按钮上发出的 `ButtonHover` 事件
     - 在这里按钮属于发者，不过按钮自己不存储 `hover` 状态，但仍然在释放数据
     - `ButtonHover` 事件还用于 `Button` 自己内部的显示，收者是对应的渲染组件，但是既然是内部实现我们可以当做不存在
-- 并不意味着一定就必须是两个节点，比如 `Transform` 直接指定发者和收者，这里就有三个节点，`Transform` 可以归为数据流的一部分。
+- 并不意味着一定就必须是两个节点，比如 `Transform` 从源 `Val<Rectangle>` 派生出新的 `Val<Rectangle>`，这里就有三个节点，`Transform` 可以归为数据流的一部分。
     - 深究的话 observer 内部也是用节点实现的， 所以实际上肯定不止两个节点
 - 收者没有必要一定是 Command Event 驱动的。现有代码仍然有许多遗留的使用 `when_modify` 甚至一些还有需要手动调用的代码，它们大类上也属于收者，只不过没有一个对应的事件将其解耦，内部行为可能会入侵到数据流控制里面。
 - 支持收数据 ≠ 必须收数据，`Slider` 和 `Button` 这类结构一般支持接受 `Theme` 数据。但是往往我们只依赖初始化给的数据进行显示也完全够用了。

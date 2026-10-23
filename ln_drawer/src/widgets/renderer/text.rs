@@ -4,30 +4,33 @@ use ln_world::{Element, Handle, World};
 use swash::scale::image::Content;
 
 use crate::{
+    layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
     measures::Rectangle,
-    render::{RenderPrepareControl, camera::Camera},
+    render::RenderPrepareControl,
     widgets::{
-        SetWidgetRectangle, SetWidgetVisible,
+        common::WidgetCommon,
         renderer::canvas::{Canvas, RemakeCanvasTexture, UploadCanvasData},
     },
 };
 
 pub struct Text {
     pub text: String,
-    pub rect: Rectangle,
+    pub rect: Handle<Val<Rectangle>>,
+    pub attr: TextAttr,
+    pub order: isize,
+    pub common: WidgetCommon,
+    /// will delay text draw to next render prepare phase
+    pub outdated: bool,
+    pub canvas_outdated: bool,
+}
+
+pub struct TextAttr {
     pub metrics: Metrics,
     pub attrs: Attrs<'static>,
     pub align: Align,
     pub color: Vec4,
     pub extra_upscale: f32,
-    pub order: isize,
-    pub visible: bool,
-    // TODO: we need TextAttr for default attr
-    pub camera: Option<Handle<Camera>>,
-    /// will delay text draw to next render prepare phase
-    pub outdated: bool,
-    pub canvas_outdated: bool,
 }
 
 pub struct TextPipeline {
@@ -37,31 +40,29 @@ pub struct TextPipeline {
 
 pub struct SetText(pub String);
 
-impl Default for Text {
+impl Default for TextAttr {
     fn default() -> Self {
         Self {
-            text: Default::default(),
-            rect: Rectangle::new(0, 0, 200, 24),
             metrics: Metrics::new(24.0, 20.0),
             attrs: Attrs::new(),
             align: Align::Justified,
             color: Vec4::new(0.0, 0.0, 0.0, 1.0),
             extra_upscale: 1.0,
-            order: 100,
-            visible: true,
-            camera: None,
-            outdated: true,
-            canvas_outdated: false,
         }
     }
 }
-
 impl Text {
     pub fn init(&mut self, world: &World, this: Handle<Text>) {
-        let lnwindow = world.single_fetch::<Lnwindow>();
-        let canvas = world.insert(self.fresh_canvas(self.upscaled_rect(&lnwindow)));
+        world.scope("text");
+        world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
 
-        let upscale_metrics = self.metrics.scale(self.upscale(&lnwindow));
+        let lnwindow = world.single_fetch::<Lnwindow>();
+        let rect = world.fetch(self.rect).val;
+        let canvas = world.insert(self.fresh_canvas(self.upscaled_rect(&lnwindow, rect)));
+
+        let upscale_metrics = self.attr.metrics.scale(self.upscale(&lnwindow));
         let pipeline = &mut *world.single_fetch_mut::<TextPipeline>();
         let mut buffer = Buffer::new(&mut pipeline.font_system, upscale_metrics);
 
@@ -73,27 +74,15 @@ impl Text {
             }),
         });
 
-        world.observer(this, move |&SetWidgetVisible(visible), world| {
+        world.observer(self.rect, move |ValChanged, world| {
             let mut this = world.fetch_mut(this);
-            this.visible = visible;
-            world.queue_trigger(canvas, SetWidgetVisible(visible));
-        });
-
-        world.observer(this, move |&SetWidgetRectangle(rect), world| {
-            let mut this = world.fetch_mut(this);
-            if this.rect.extend != rect.extend {
-                this.canvas_outdated = true;
-            }
-            this.rect = rect;
-            world.queue_trigger(canvas, SetWidgetRectangle(rect));
+            this.canvas_outdated = true;
         });
 
         world.observer(this, move |SetText(text), world| {
             let mut this = world.fetch_mut(this);
             this.set_text(&text[..]);
         });
-
-        world.dependency(canvas, this);
 
         self.outdated = true;
     }
@@ -102,13 +91,15 @@ impl Text {
         let mut canvas = world.fetch_mut(canvas);
         let mut pipeline = world.single_fetch_mut::<TextPipeline>();
         let lnwindow = world.single_fetch::<Lnwindow>();
+        let rect = world.fetch(self.rect).val;
+        let visible = world.fetch(self.common.visible).val;
 
-        if self.visible {
+        if visible {
             if self.canvas_outdated {
                 self.canvas_outdated = false;
                 self.outdated = false;
 
-                *canvas = self.fresh_canvas(self.upscaled_rect(&lnwindow));
+                *canvas = self.fresh_canvas(self.upscaled_rect(&lnwindow, rect));
 
                 self.draw(
                     canvas.data_width,
@@ -155,12 +146,17 @@ impl Text {
     ) {
         canvas.clear_transparent();
 
-        let upscale_metrics = self.metrics.scale(self.upscale(lnwindow));
+        let upscale_metrics = self.attr.metrics.scale(self.upscale(lnwindow));
         let mut buffer_font = buffer.borrow_with(&mut pipeline.font_system);
 
         buffer_font.set_metrics(upscale_metrics);
         buffer_font.set_size(Some(width as f32), Some(height as f32));
-        buffer_font.set_text(&self.text, &self.attrs, Shaping::Advanced, Some(self.align));
+        buffer_font.set_text(
+            &self.text,
+            &self.attr.attrs,
+            Shaping::Advanced,
+            Some(self.attr.align),
+        );
         buffer_font.shape_until_scroll(true);
 
         self.draw_buffer(&buffer, canvas, pipeline);
@@ -190,7 +186,7 @@ impl Text {
                                 canvas.draw_over(
                                     physical_glyph.x + x + off_x,
                                     run.line_y as i32 + physical_glyph.y + y + off_y,
-                                    self.color.with_w(image.data[i] as f32 / 255.),
+                                    self.attr.color.with_w(image.data[i] as f32 / 255.),
                                 );
                                 i += 1;
                             }
@@ -223,11 +219,11 @@ impl Text {
     }
 
     fn upscale(&self, lnwindow: &Lnwindow) -> f32 {
-        self.extra_upscale * lnwindow.window.scale_factor() as f32
+        self.attr.extra_upscale * lnwindow.window.scale_factor() as f32
     }
 
-    fn upscaled_rect(&self, lnwindow: &Lnwindow) -> UVec2 {
-        (self.rect.extend.as_vec2() * self.upscale(lnwindow))
+    fn upscaled_rect(&self, lnwindow: &Lnwindow, rect: Rectangle) -> UVec2 {
+        (rect.extend.as_vec2() * self.upscale(lnwindow))
             .ceil()
             .as_uvec2()
     }
@@ -236,8 +232,8 @@ impl Text {
         Canvas::transparent(
             self.rect,
             self.order,
-            self.visible,
-            self.camera.unwrap(),
+            self.common.visible,
+            self.common.camera,
             size,
         )
     }

@@ -1,15 +1,23 @@
-use ln_world::{Element, Handle, HandleAny, World};
+use ln_world::{Descriptor, Handle, World};
 
 use crate::{
-    layout::visibility::VisibilityInherit,
+    layout::{transfer::Transfer, val::Val},
     measures::Rectangle,
-    widgets::{SetWidgetRectangle, WidgetRectangle},
 };
 
 pub struct Transform {
     pub value: TransformValue,
-    pub source: HandleAny,
-    pub target: HandleAny,
+    pub source: Handle<Val<Rectangle>>,
+}
+
+impl Transform {
+    pub fn new(value: TransformValue, source: Handle<Val<Rectangle>>) -> Self {
+        Transform { value, source }
+    }
+
+    pub fn anchor(anchor: (f32, f32), rect: Rectangle, source: Handle<Val<Rectangle>>) -> Self {
+        Transform::new(TransformValue::anchor(anchor, rect), source)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -27,23 +35,23 @@ pub struct TransformEdge {
 }
 
 impl TransformValue {
-    pub const fn copy() -> TransformValue {
+    pub const fn shift(x: i32, y: i32) -> TransformValue {
         TransformValue {
             left: TransformEdge {
                 anchor: 0.0,
-                offset: 0,
+                offset: x,
             },
             down: TransformEdge {
                 anchor: 0.0,
-                offset: 0,
+                offset: y,
             },
             right: TransformEdge {
                 anchor: 1.0,
-                offset: 0,
+                offset: x,
             },
             up: TransformEdge {
                 anchor: 1.0,
-                offset: 0,
+                offset: y,
             },
         }
     }
@@ -129,23 +137,10 @@ impl TransformValue {
     }
 }
 
-impl Element for Transform {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        let ob = world.observer(self.source, move |&WidgetRectangle(rect), world| {
-            let this = world.fetch(this);
-            let target = this.value.compute(rect);
+impl Descriptor for Transform {
+    type Target = Handle<Val<Rectangle>>;
 
-            world.queue_trigger(this.target, SetWidgetRectangle(target));
-        });
-
-        let visibility = world.insert(VisibilityInherit {
-            source: self.source,
-            target: self.target,
-        });
-
-        world.dependency(ob, this);
-        world.dependency(this, self.source);
-        world.dependency(this, self.target);
-        world.dependency(visibility, this);
+    fn when_build(self, world: &World) -> Self::Target {
+        Transfer::derive(world, self.source).build(move |&source| self.value.compute(source))
     }
 }

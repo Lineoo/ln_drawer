@@ -1,21 +1,25 @@
 use cosmic_text::{Attrs, Metrics};
-use ln_world::{Element, Handle, HandleGeneric, World};
+use ln_world::{Element, Handle, World};
 
 use crate::{
     i18n::{tr, trp},
     layer::wrapper::LayerPage,
     layout::{
-        echo::Echo,
-        transfer::Transfer,
         transform::{Transform, TransformEdge, TransformValue},
+        val::Val,
     },
     measures::Rectangle,
     theme::Theme,
     widgets::{
         button::{ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
-        container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
-        renderer::{rrect::RRect, text::Text},
+        container::{
+            ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerEcho, ContainerWithCamera,
+        },
+        renderer::{
+            rrect::RRect,
+            text::{Text, TextAttr},
+        },
     },
 };
 
@@ -23,78 +27,58 @@ struct LayerChosen(u64);
 
 pub struct LayerSelectionPanel {
     pub common: WidgetCommon,
+    pub rect: Handle<Val<Rectangle>>,
 }
 
 impl Element for LayerSelectionPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.scope("layer_selection");
         world.set_autodeps(Some(this));
+        world.dependency(this, self.rect);
+        world.dependency(this, self.common.visible);
 
         let theme = world.single_fetch::<Theme>();
 
-        let (panel, camera) = world.build(ContainerWithCamera {
-            rect: Rectangle::default(),
+        let attr = ContainerAttr::default();
+        let (panel, common) = world.build(ContainerWithCamera {
+            rect: self.rect,
             common: self.common,
-            attr: ContainerAttr::default(),
+            attr,
         });
-        let tab_layer_selection_deco = world.insert(ContainerDeco {
-            container: panel,
-            restriction: Rectangle::default(),
-        });
-        world.insert(ContainerDecoDropdown {
+        let restriction = world.build(ContainerDecoDropdown {
             height: None,
+            outer: self.rect,
+        });
+        world.insert(ContainerDeco {
             container: panel,
-            deco: tab_layer_selection_deco,
+            restriction,
         });
+        let local = world.build(ContainerEcho { container: panel });
 
-        let doc_label = world.insert(Text {
+        let doc_label_rect = world.build(Transform::new(
+            TransformValue::anchor((0.0, 1.0), Rectangle::new(28, -22 - 18, 28 + 32, -22)),
+            local,
+        ));
+        world.insert(Text {
             text: tr("settings.layer_selection.doc_label").into(),
-            metrics: Metrics {
-                font_size: 16.0,
-                line_height: 18.0,
+            rect: doc_label_rect,
+            attr: TextAttr {
+                metrics: Metrics {
+                    font_size: 16.0,
+                    line_height: 18.0,
+                },
+                attrs: Attrs::new(),
+                color: theme.distinct,
+                ..Default::default()
             },
-            attrs: Attrs::new(),
-            color: theme.distinct,
-            camera: Some(camera),
-            visible: false,
-            ..Default::default()
+            order: 100,
+            common,
+            outdated: false,
+            canvas_outdated: false,
         });
 
-        let doc_label_div = world.insert(RRect {
-            rect: Rectangle::default(),
-            order: 0,
-            color: theme.gray2,
-            radius: 0.0,
-            width: 0.0,
-            enabled: false,
-            camera,
-        });
-
-        let layer_label = world.insert(Text {
-            text: tr("settings.layer_selection.layer_label").into(),
-            metrics: Metrics {
-                font_size: 14.0,
-                line_height: 16.0,
-            },
-            attrs: Attrs::new(),
-            color: theme.distinct,
-            camera: Some(camera),
-            visible: false,
-            ..Default::default()
-        });
-
-        Transfer::new(world, this, panel)
-            .set_widget_rectangle()
-            .set_widget_visible();
-
-        world.insert(Transform {
-            value: TransformValue::anchor((0.0, 1.0), Rectangle::new(28, -22 - 18, 28 + 32, -22)),
-            source: panel.untyped(),
-            target: doc_label.untyped(),
-        });
-
-        world.insert(Transform {
-            value: TransformValue {
+        let div_rect = world.build(Transform::new(
+            TransformValue {
                 left: TransformEdge {
                     anchor: 0.0,
                     offset: 0,
@@ -112,60 +96,44 @@ impl Element for LayerSelectionPanel {
                     offset: -59,
                 },
             },
-            source: panel.untyped(),
-            target: doc_label_div.untyped(),
+            local,
+        ));
+        world.insert(RRect {
+            rect: div_rect,
+            order: 0,
+            color: theme.gray2,
+            radius: 0.0,
+            width: 0.0,
+            visible: self.common.visible,
+            camera: common.camera,
         });
 
-        world.insert(Transform {
-            value: TransformValue::anchor((0.0, 1.0), Rectangle::new(28, -90, 28 + 32, -90 + 16)),
-            source: panel.untyped(),
-            target: layer_label.untyped(),
-        });
-
-        let layers_node = world.insert(());
-        for i in 0..3i32 {
-            let layer0_button = world.insert(ToggleButton {
-                common: WidgetCommon {
-                    camera,
-                    visible: self.common.visible,
-                },
-                rect: Rectangle::default(),
-                theme: theme.button(),
-                image: None,
-                selected: i == 0,
-                hovering: false,
-            });
-
-            let layer0_name = world.insert(Text {
-                text: trp(
-                    "settings.layer_selection.layer_name",
-                    &[("index", &i.to_string()[..])],
-                ),
+        let layer_label_rect = world.build(Transform::new(
+            TransformValue::anchor((0.0, 1.0), Rectangle::new(28, -90, 28 + 32, -90 + 16)),
+            local,
+        ));
+        world.insert(Text {
+            text: tr("settings.layer_selection.layer_label").into(),
+            rect: layer_label_rect,
+            attr: TextAttr {
                 metrics: Metrics {
                     font_size: 14.0,
                     line_height: 16.0,
                 },
                 attrs: Attrs::new(),
                 color: theme.distinct,
-                camera: Some(camera),
-                visible: false,
                 ..Default::default()
-            });
+            },
+            order: 100,
+            common,
+            outdated: false,
+            canvas_outdated: false,
+        });
 
-            world.observer(layer0_button, move |&ButtonSelected(val), world| {
-                if val {
-                    let mut wrapper = world.single_fetch_mut::<LayerPage>();
-                    wrapper.set_page(i as u64);
-                    world.queue_trigger(layers_node, LayerChosen(i as u64));
-                }
-            });
-
-            world.observer(layers_node, move |&LayerChosen(j), world| {
-                world.queue_trigger(layer0_button, SetButtonSelected(i as u64 == j));
-            });
-
-            world.insert(Transform {
-                value: TransformValue {
+        let layers_node = world.insert(());
+        for i in 0..3i32 {
+            let button_rect = world.build(Transform::new(
+                TransformValue {
                     left: TransformEdge {
                         anchor: 0.0,
                         offset: 10,
@@ -183,16 +151,22 @@ impl Element for LayerSelectionPanel {
                         offset: -100 - 48 * i,
                     },
                 },
-                source: panel.untyped(),
-                target: layer0_button.untyped(),
+                local,
+            ));
+            let layer0_button = world.insert(ToggleButton {
+                common: WidgetCommon {
+                    camera: common.camera,
+                    visible: self.common.visible,
+                },
+                rect: button_rect,
+                theme: theme.button(),
+                image: None,
+                selected: i == 0,
+                hovering: false,
             });
 
-            Echo::new(world, layer0_button)
-                .widget_rectangle()
-                .widget_visible();
-
-            world.insert(Transform {
-                value: TransformValue {
+            let name_rect = world.build(Transform::new(
+                TransformValue {
                     left: TransformEdge {
                         anchor: 0.0,
                         offset: 18,
@@ -210,12 +184,41 @@ impl Element for LayerSelectionPanel {
                         offset: -16,
                     },
                 },
-                source: layer0_button.untyped(),
-                target: layer0_name.untyped(),
+                button_rect,
+            ));
+            world.insert(Text {
+                text: trp(
+                    "settings.layer_selection.layer_name",
+                    &[("index", &i.to_string()[..])],
+                )
+                .into(),
+                rect: name_rect,
+                attr: TextAttr {
+                    metrics: Metrics {
+                        font_size: 14.0,
+                        line_height: 16.0,
+                    },
+                    attrs: Attrs::new(),
+                    color: theme.distinct,
+                    ..Default::default()
+                },
+                order: 100,
+                common,
+                outdated: false,
+                canvas_outdated: false,
             });
 
-            world.dependency(layer0_button, panel);
-            world.dependency(layer0_name, panel);
+            world.observer(layer0_button, move |&ButtonSelected(val), world| {
+                if val {
+                    let mut wrapper = world.single_fetch_mut::<LayerPage>();
+                    wrapper.set_page(i as u64);
+                    world.queue_trigger(layers_node, LayerChosen(i as u64));
+                }
+            });
+
+            world.observer(layers_node, move |&LayerChosen(j), world| {
+                world.queue_trigger(layer0_button, SetButtonSelected(i as u64 == j));
+            });
         }
     }
 }
