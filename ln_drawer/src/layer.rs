@@ -808,7 +808,10 @@ fn dispatch_workgroups_divide(cpass: &mut ComputePass, rects: &[IRect], div: u32
         }
     }
 
-    dispatch_workgroups_extend(cpass, fnl.extend / div);
+    let div = IVec2::splat(div as i32);
+    let start = fnl.origin.div_euclid(div) * div;
+    let end = (fnl.right_up() + div - IVec2::ONE).div_euclid(div) * div;
+    dispatch_workgroups_extend(cpass, (end - start).as_uvec2() / div.as_uvec2());
 }
 
 fn dispatch_workgroups(cpass: &mut ComputePass, rects: &[IRect]) {

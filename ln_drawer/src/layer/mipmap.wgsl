@@ -12,10 +12,13 @@
 fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     // Assumption: source texture is always aligned sub-mipmap texture
     let scale = source.size / textureDimensions(source_texture) * 2;
-    let start = max(max(dispatch.coords, destination.coords), source.coords);
+    let dispatch_start = align(dispatch.coords, vec2i(scale));
+    let dispatch_end = align(dispatch.coords + vec2i(dispatch.size) + vec2i(scale - 1u), vec2i(scale));
+
+    let start = max(max(dispatch_start, destination.coords), source.coords);
     let position = start + vec2i(id.xy * scale);
 
-    let validated = rectangle_contains(dispatch, position)
+    let validated = all(position >= dispatch_start) & all(position < dispatch_end)
         && rectangle_contains(destination, position)
         && rectangle_contains(source, position);
     if !validated { return; }
@@ -29,4 +32,8 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     let c3 = srgb_gamma_decode(textureLoad(source_texture, src_coords + vec2i(1, 0)));
 
     textureStore(destination_texture, dst_coords, srgb_gamma_encode((c0 + c1 + c2 + c3) / 4));
+}
+
+fn align(v: vec2i, s: vec2i) -> vec2i {
+    return v - ((v % s) + s) % s;
 }
