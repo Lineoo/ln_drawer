@@ -30,10 +30,10 @@ pub struct ToggleButton {
 }
 
 pub struct ToggleButtonTheme {
-    pub idle_color: Vec4,
-    pub hover_color: Vec4,
-    pub press_color: Vec4,
-    pub selected_color: Vec4,
+    pub idle_color: Handle<Val<Vec4>>,
+    pub hover_color: Handle<Val<Vec4>>,
+    pub press_color: Handle<Val<Vec4>>,
+    pub selected_color: Handle<Val<Vec4>>,
 }
 
 #[derive(Clone)]
@@ -88,17 +88,17 @@ impl ToggleButton {
 
         let theme = world.single_fetch::<Theme>();
 
-        let frame_color = world.insert(Val::new(match self.selected {
-            false => self.theme.idle_color,
-            true => self.theme.selected_color,
+        let frame_color_anim = world.insert(Val::new(match self.selected {
+            false => world.fetch(self.theme.idle_color).val,
+            true => world.fetch(self.theme.selected_color).val,
         }));
-        let frame_anim_color = world.build(Animator::new(frame_color, theme.anim_factor));
+        let frame_color = world.build(Animator::new(frame_color_anim, theme.anim_factor));
 
         world.insert(RRect {
             common: self.common,
             rect: self.rect,
             order: 10,
-            color: frame_anim_color,
+            color: frame_color,
             radius: theme.roundness,
             width: 0.0,
         });
@@ -127,13 +127,13 @@ impl ToggleButton {
             let mut this = world.fetch_mut(handle);
             this.selected = selected;
             let color = if selected {
-                this.theme.selected_color
+                world.fetch(this.theme.selected_color).val
             } else if this.hovering {
-                this.theme.hover_color
+                world.fetch(this.theme.hover_color).val
             } else {
-                this.theme.idle_color
+                world.fetch(this.theme.idle_color).val
             };
-            let mut frame_color = world.fetch_mut(frame_color);
+            let mut frame_color = world.fetch_mut(frame_color_anim);
             frame_color.val = color;
             world.queue_trigger(frame_color.handle(), ValChanged);
         });
@@ -220,11 +220,11 @@ impl ToggleButton {
             }
 
             let color = if let WidgetHover::Enter = event {
-                this.theme.hover_color
+                world.fetch(this.theme.hover_color).val
             } else {
-                this.theme.idle_color
+                world.fetch(this.theme.idle_color).val
             };
-            let mut frame_color = world.fetch_mut(frame_color);
+            let mut frame_color = world.fetch_mut(frame_color_anim);
             frame_color.val = color;
             world.queue_trigger(frame_color.handle(), ValChanged);
         });
@@ -236,13 +236,13 @@ impl ToggleButton {
             }
 
             let color = if let ButtonAction::Press = event {
-                this.theme.press_color
+                world.fetch(this.theme.press_color).val
             } else if this.hovering {
-                this.theme.hover_color
+                world.fetch(this.theme.hover_color).val
             } else {
-                this.theme.idle_color
+                world.fetch(this.theme.idle_color).val
             };
-            let mut frame_color = world.fetch_mut(frame_color);
+            let mut frame_color = world.fetch_mut(frame_color_anim);
             frame_color.val = color;
             world.queue_trigger(frame_color.handle(), ValChanged);
         });

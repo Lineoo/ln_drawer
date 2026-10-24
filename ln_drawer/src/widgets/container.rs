@@ -12,7 +12,7 @@ use crate::{
         Render, RenderDrawControl, RenderExtra,
         camera::{Camera, CameraDescriptor, CameraOutdated, SetCameraOutdated},
     },
-    theme::Theme,
+    theme::{Theme, ThemeVal},
     tools::{
         collider::{ToolControl, ToolHitResult},
         pointer::{PointerHit, PointerHitStatus, PointerScroll},
@@ -299,6 +299,7 @@ impl Element for ContainerDeco {
         world.set_autodeps(Some(this));
 
         let theme = world.single_fetch::<Theme>();
+        let theme_val = world.single_fetch::<ThemeVal>();
         let handle = self.container;
         let container = world.fetch(handle);
 
@@ -306,7 +307,7 @@ impl Element for ContainerDeco {
             common: container.common,
             rect: container.rect,
             order: 10,
-            color: world.insert(Val::new(theme.gray1)),
+            color: theme_val.gray1,
             radius: theme.roundness,
             width: 0.0,
         });

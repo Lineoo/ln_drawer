@@ -9,7 +9,7 @@ use crate::{
         val::Val,
     },
     measures::Rectangle,
-    theme::Theme,
+    theme::ThemeVal,
     widgets::{
         button::{ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
@@ -37,7 +37,7 @@ impl Element for LayerSelectionPanel {
         world.dependency(this, self.rect);
         world.dependency(this, self.common.visible);
 
-        let theme = world.single_fetch::<Theme>();
+        let theme = world.single_fetch::<ThemeVal>();
 
         let attr = ContainerAttr::default();
         let (panel, common) = world.build(ContainerWithCamera {
@@ -72,7 +72,7 @@ impl Element for LayerSelectionPanel {
             },
             order: 100,
             common,
-            modulate: world.insert(Val::new(theme.distinct)),
+            modulate: theme.distinct,
             outdated: false,
             canvas_outdated: false,
         });
@@ -102,7 +102,7 @@ impl Element for LayerSelectionPanel {
             common,
             rect: div_rect,
             order: 0,
-            color: world.insert(Val::new(theme.gray2)),
+            color: theme.gray2,
             radius: 0.0,
             width: 0.0,
         });
@@ -124,7 +124,7 @@ impl Element for LayerSelectionPanel {
             },
             order: 100,
             common,
-            modulate: world.insert(Val::new(theme.distinct)),
+            modulate: theme.distinct,
             outdated: false,
             canvas_outdated: false,
         });
@@ -202,7 +202,7 @@ impl Element for LayerSelectionPanel {
                 },
                 order: 100,
                 common,
-                modulate: world.insert(Val::new(theme.distinct)),
+                modulate: theme.distinct,
                 outdated: false,
                 canvas_outdated: false,
             });

@@ -12,7 +12,7 @@ use crate::{
         val::{Val, ValChanged},
     },
     measures::{FI64Ext, Rectangle},
-    theme::Theme,
+    theme::ThemeVal,
     tools::{
         mouse::MouseMenu,
         pointer::{PointerHover, PointerScroll},
@@ -41,7 +41,7 @@ impl Element for ColorSnip {
         world.scope("color_snip");
         world.set_autodeps(Some(this));
 
-        let theme = world.single_fetch::<Theme>();
+        let theme = world.single_fetch::<ThemeVal>();
         let input = world.single::<LayerInput>();
 
         let button = world.insert(ToggleButton {

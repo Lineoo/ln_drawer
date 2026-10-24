@@ -18,6 +18,7 @@ use crate::{
     measures::{FI64Ext, Rectangle},
     render::camera::{PageCamera, PageCameraUtils, UICamera},
     save::Save,
+    theme::Theme,
     tools::{
         collider::ToolRectCollider,
         pointer::{PointerHover, PointerHoverStatus, PointerScroll},
@@ -208,6 +209,15 @@ impl LayerInput {
                 }
                 KeyCode::F8 if press => {
                     log::debug!("{}", world.stat_deps());
+                }
+                KeyCode::F5 if press => {
+                    let mut theme = world.single_fetch_mut::<Theme>();
+                    if theme.distinct.x == 1.0 {
+                        *theme = Theme::light_mode();
+                    } else {
+                        *theme = Theme::dark_mode();
+                    }
+                    theme.sync(world);
                 }
                 _ => (),
             }

@@ -108,6 +108,7 @@ impl Element for BrushListPanel {
         world.set_autodeps(Some(this));
 
         let theme = world.single_fetch::<Theme>();
+        let theme_val = world.single_fetch::<ThemeVal>();
         let page = world.single_fetch::<LayerPage>();
 
         let count = page.brushes.len();
@@ -130,10 +131,6 @@ impl Element for BrushListPanel {
             container,
             restriction,
         });
-
-        let accent = theme.theme;
-        let background = theme.gray2;
-        let symbolic = theme.distinct;
 
         let mut luni = LuniFlex::new(
             restriction,
@@ -161,10 +158,10 @@ impl Element for BrushListPanel {
                 common,
                 rect: button_rect,
                 theme: ToggleButtonTheme {
-                    idle_color: background,
-                    hover_color: theme.gray3,
-                    press_color: theme.gray3,
-                    selected_color: background,
+                    idle_color: theme_val.gray2,
+                    hover_color: theme_val.gray3,
+                    press_color: theme_val.gray3,
+                    selected_color: theme_val.gray2,
                 },
                 image: None,
                 selected: i == active,
@@ -173,8 +170,11 @@ impl Element for BrushListPanel {
 
             let outline_rect =
                 world.build(Transform::new(TransformValue::shrink(-2, -2), button_rect));
-            let outline_color =
-                world.insert(Val::new(if i == active { accent } else { background }));
+            let outline_color = world.insert(Val::new(if i == active {
+                world.fetch(theme_val.theme).val
+            } else {
+                world.fetch(theme_val.gray2).val
+            }));
             world.insert(RRect {
                 common,
                 rect: outline_rect,
@@ -218,7 +218,7 @@ impl Element for BrushListPanel {
                 rect: label_rect,
                 order: 150,
                 common,
-                modulate: world.insert(Val::new(symbolic)),
+                modulate: theme_val.distinct,
                 outdated: false,
                 canvas_outdated: false,
             });
@@ -262,13 +262,14 @@ impl Element for BrushListPanel {
 
             world.observer(page.handle(), move |&BrushConfigurationChanged, world| {
                 let page = world.single_fetch::<LayerPage>();
+                let theme = world.single_fetch::<ThemeVal>();
                 let active = page.active_brush;
                 let selected = i == active;
                 world.queue_trigger(button, SetButtonSelected(selected));
                 let mut outline_color = world.fetch_mut(outline_color);
                 outline_color.val = match selected {
-                    true => accent,
-                    false => background,
+                    true => world.fetch(theme.theme).val,
+                    false => world.fetch(theme.gray2).val,
                 };
                 world.queue_trigger(outline_color.handle(), ValChanged);
             });

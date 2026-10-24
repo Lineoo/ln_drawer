@@ -123,7 +123,7 @@ impl Tabs {
             let button = world.insert(ToggleButton {
                 common: self.common,
                 rect: button_rect,
-                theme: theme.tab_button(),
+                theme: theme_val.tab_button(),
                 image: Some(icon),
                 selected: i == self.active,
                 hovering: false,

@@ -16,7 +16,7 @@ use crate::{
     },
     measures::{FI64Ext, Rectangle},
     render::camera::PageCamera,
-    theme::{Theme, ThemeVal},
+    theme::ThemeVal,
     widgets::{
         button::{
             ButtonDrag, ButtonDragStatus, ButtonImage, ButtonSelected, SetButtonSelected,
@@ -155,7 +155,7 @@ impl Element for ColorPickerButton {
         world.dependency(this, self.rect);
         world.dependency(this, self.common.visible);
 
-        let theme = world.single_fetch::<Theme>();
+        let theme = world.single_fetch::<ThemeVal>();
         let page = world.single_fetch::<LayerPage>();
         let button = world.insert(ToggleButton {
             common: self.common,

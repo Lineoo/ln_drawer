@@ -13,11 +13,7 @@ use crate::{
     layout::{
         transform::{Transform, TransformValue},
         val::Val,
-    },
-    measures::Rectangle,
-    theme::Theme,
-    tools::collider::ToolRectCollider,
-    widgets::{common::WidgetCommon, renderer::rrect::RRect},
+    }, measures::Rectangle, theme::{Theme, ThemeVal}, tools::collider::ToolRectCollider, widgets::{common::WidgetCommon, renderer::rrect::RRect},
 };
 
 pub struct PanelAttr {
@@ -39,6 +35,7 @@ impl Panel {
         world.dependency(handle, self.common.visible);
 
         let theme = world.single_fetch::<Theme>();
+        let theme_val = world.single_fetch::<ThemeVal>();
         let shadow_offset = theme.shadow_offset.as_ivec2();
         let shadow_blur = theme.shadow_blur;
         let roundness = match self.attr.round {
@@ -50,7 +47,7 @@ impl Panel {
             common: self.common,
             rect: self.rect,
             order: 0,
-            color: world.insert(Val::new(theme.gray1)),
+            color: theme_val.gray1,
             radius: roundness,
             width: 0.0,
         });
@@ -62,7 +59,7 @@ impl Panel {
                 common: self.common,
                 rect: shadow_rect,
                 order: -1,
-                color: world.insert(Val::new(theme.shadow_color)),
+                color: theme_val.shadow_color,
                 radius: roundness,
                 width: shadow_blur,
             });

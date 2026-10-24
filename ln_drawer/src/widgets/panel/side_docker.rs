@@ -12,7 +12,7 @@ use crate::{
         val::{Val, ValChanged},
     },
     measures::{Axis, Rectangle},
-    theme::{Theme, ThemeVal},
+    theme::ThemeVal,
     widgets::{
         button::{ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
@@ -32,8 +32,7 @@ impl Element for SideDocker {
         world.scope("side_docker");
         world.set_autodeps(Some(this));
 
-        let theme = world.single_fetch::<Theme>();
-        let theme_val = world.single_fetch::<ThemeVal>();
+        let theme = world.single_fetch::<ThemeVal>();
         let layer = world.single::<LayerPage>();
 
         let panel_rect = world.build(Transform::new(
@@ -96,7 +95,7 @@ impl Element for SideDocker {
                 theme: theme.button(),
                 image: Some(ButtonImage::new(
                     svg_render(image_bytes),
-                    theme_val.distinct,
+                    theme.distinct,
                     8,
                 )),
                 selected: false,
@@ -111,7 +110,7 @@ impl Element for SideDocker {
             theme: theme.button(),
             image: Some(ButtonImage::new(
                 svg_render(include_bytes!("../../../res/interface/pen.svg")),
-                theme_val.distinct,
+                theme.distinct,
                 8,
             )),
             selected: false,

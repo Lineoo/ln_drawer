@@ -250,7 +250,7 @@ impl HslRing {
             let mut thumb_rect = world.fetch_mut(thumb_rect);
             let mut thumb_color_val = world.fetch_mut(thumb_color_val);
             this.hsl = hsl;
-            thumb_rect.val = square_thumb(rect, this.hsl);
+            thumb_rect.val = ring_thumb(rect, this.hsl, this.inner_radius);
             thumb_color_val.val = thumb_color(hsl);
             world.queue_trigger(thumb_rect.handle(), ValChanged);
             world.queue_trigger(thumb_color_val.handle(), ValChanged);

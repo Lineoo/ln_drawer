@@ -171,8 +171,7 @@ impl Element for ToolBar {
         world.dependency(this, self.common.visible);
 
         let page = world.single::<LayerPage>();
-        let theme = world.single_fetch::<Theme>();
-        let theme_val = world.single_fetch::<ThemeVal>();
+        let theme = world.single_fetch::<ThemeVal>();
 
         let attr = ContainerAttr {
             // cause we need the slider label to display
@@ -200,11 +199,7 @@ impl Element for ToolBar {
                 common,
                 rect,
                 theme: theme.button(),
-                image: Some(ButtonImage::new(
-                    svg_render(image_bytes),
-                    theme_val.distinct,
-                    8,
-                )),
+                image: Some(ButtonImage::new(svg_render(image_bytes), theme.distinct, 8)),
                 selected: false,
                 hovering: false,
             })

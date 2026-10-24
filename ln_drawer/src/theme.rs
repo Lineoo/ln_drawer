@@ -3,7 +3,7 @@ use ln_world::{Element, Handle, World};
 
 use crate::{
     color::srgb::{hex_to_srgb, srgb_gamma_decode},
-    layout::val::Val,
+    layout::val::{Val, ValChanged},
     measures::Axis,
     widgets::button::ToggleButtonTheme,
 };
@@ -25,7 +25,6 @@ pub struct Theme {
     pub anim_factor: f32,
 }
 
-#[expect(unused)]
 pub struct ThemeVal {
     pub gray0: Handle<Val<Vec4>>,
     pub gray1: Handle<Val<Vec4>>,
@@ -34,6 +33,7 @@ pub struct ThemeVal {
     pub gray4: Handle<Val<Vec4>>,
     pub theme: Handle<Val<Vec4>>,
     pub distinct: Handle<Val<Vec4>>,
+    pub shadow_color: Handle<Val<Vec4>>,
 }
 
 impl Theme {
@@ -73,6 +73,43 @@ impl Theme {
         }
     }
 
+    pub fn bind(&self, world: &World) -> ThemeVal {
+        ThemeVal {
+            gray0: world.insert(Val::new(self.gray0)),
+            gray1: world.insert(Val::new(self.gray1)),
+            gray2: world.insert(Val::new(self.gray2)),
+            gray3: world.insert(Val::new(self.gray3)),
+            gray4: world.insert(Val::new(self.gray4)),
+            theme: world.insert(Val::new(self.theme)),
+            distinct: world.insert(Val::new(self.distinct)),
+            shadow_color: world.insert(Val::new(self.shadow_color)),
+        }
+    }
+
+    pub fn sync(&self, world: &World) {
+        let bind = world.single_fetch::<ThemeVal>();
+
+        world.fetch_mut(bind.gray0).val = self.gray0;
+        world.fetch_mut(bind.gray1).val = self.gray1;
+        world.fetch_mut(bind.gray2).val = self.gray2;
+        world.fetch_mut(bind.gray3).val = self.gray3;
+        world.fetch_mut(bind.gray4).val = self.gray4;
+        world.fetch_mut(bind.theme).val = self.theme;
+        world.fetch_mut(bind.distinct).val = self.distinct;
+        world.fetch_mut(bind.shadow_color).val = self.shadow_color;
+
+        world.queue_trigger(bind.gray0, ValChanged);
+        world.queue_trigger(bind.gray1, ValChanged);
+        world.queue_trigger(bind.gray2, ValChanged);
+        world.queue_trigger(bind.gray3, ValChanged);
+        world.queue_trigger(bind.gray4, ValChanged);
+        world.queue_trigger(bind.theme, ValChanged);
+        world.queue_trigger(bind.distinct, ValChanged);
+        world.queue_trigger(bind.shadow_color, ValChanged);
+    }
+}
+
+impl ThemeVal {
     pub fn button(&self) -> ToggleButtonTheme {
         ToggleButtonTheme {
             idle_color: self.gray1,
@@ -88,18 +125,6 @@ impl Theme {
             hover_color: self.gray3,
             press_color: self.gray0,
             selected_color: self.gray0,
-        }
-    }
-
-    pub fn bind(&self, world: &World) -> ThemeVal {
-        ThemeVal {
-            gray0: world.insert(Val::new(self.gray0)),
-            gray1: world.insert(Val::new(self.gray1)),
-            gray2: world.insert(Val::new(self.gray2)),
-            gray3: world.insert(Val::new(self.gray3)),
-            gray4: world.insert(Val::new(self.gray4)),
-            theme: world.insert(Val::new(self.theme)),
-            distinct: world.insert(Val::new(self.distinct)),
         }
     }
 }

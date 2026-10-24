@@ -6,14 +6,10 @@ use crate::{
     layout::{
         anim::Animator,
         val::{Val, ValChanged},
-    },
-    measures::{Axis, FI64Ext, Rectangle},
-    theme::Theme,
-    tools::{
+    }, measures::{Axis, FI64Ext, Rectangle}, theme::{Theme, ThemeVal}, tools::{
         collider::ToolRectCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
-    },
-    widgets::{
+    }, widgets::{
         WidgetHover,
         common::WidgetCommon,
         renderer::{
@@ -49,6 +45,7 @@ impl Slider {
         world.dependency(handle, self.common.visible);
 
         let theme = world.single_fetch::<Theme>();
+        let theme_val = world.single_fetch::<ThemeVal>();
         let rect = world.fetch(self.rect).val;
         let value = world.fetch(self.value).val;
 
@@ -59,9 +56,6 @@ impl Slider {
         let knob_rect_val = world.insert(Val::new(knob_rect(rect, self.axis, position)));
         let knob_split_rect_val =
             world.insert(Val::new(knob_split_rect(rect, self.axis, position)));
-
-        let back_color = world.insert(Val::new(theme.gray2));
-        let front_color = world.insert(Val::new(theme.theme));
         let knob_color_anim = world.insert(Val::new(theme.gray0));
         let knob_color_val = world.build(Animator::new(knob_color_anim, theme.anim_factor));
         let knob_split_color_anim = world.insert(Val::new(theme.gray1));
@@ -72,7 +66,7 @@ impl Slider {
             common: self.common,
             rect: back_rect_val,
             order: 20,
-            color: back_color,
+            color: theme_val.gray2,
             radius: theme.roundness,
             width: 0.0,
         });
@@ -81,7 +75,7 @@ impl Slider {
             common: self.common,
             rect: front_rect_val,
             order: 21,
-            color: front_color,
+            color: theme_val.theme,
             radius: theme.roundness,
             width: 0.0,
         });

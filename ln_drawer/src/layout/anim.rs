@@ -91,6 +91,7 @@ impl<T: AnimationType> Element for AnimationCore<T> {
             let mut this = world.fetch_mut(this);
             let dst = world.fetch(this.dst);
             this.dst_st = T::into_storage(dst.val);
+            this.last_update = Instant::now();
             world.single_fetch::<Lnwindow>().window.request_redraw();
         });
 
