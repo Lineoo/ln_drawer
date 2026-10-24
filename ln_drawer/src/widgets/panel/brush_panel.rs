@@ -5,12 +5,14 @@ use crate::{
     i18n::tr,
     layer::wrapper::{BrushConfigurationChanged, LayerPage},
     layout::{
+        anim::Animator,
         luni::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
             LuniParent, LuniRect,
         },
+        packer::Packer,
         transform::{Transform, TransformEdge, TransformValue},
-        val::{Val, ValChanged},
+        val::Val,
     },
     measures::Rectangle,
     theme::{Theme, ThemeVal},
@@ -154,6 +156,7 @@ impl Element for BrushListPanel {
 
         for i in 0..count {
             let button_rect = world.build(luni.child(LuniChild::default()));
+            let selected = world.insert(Val::new(i == active));
             let button = world.insert(ToggleButton {
                 common,
                 rect: button_rect,
@@ -164,17 +167,25 @@ impl Element for BrushListPanel {
                     selected_color: theme_val.gray2,
                 },
                 image: None,
-                selected: world.insert(Val::new(i == active)),
+                selected,
                 hovering: world.insert(Val::new(false)),
             });
 
             let outline_rect =
                 world.build(Transform::new(TransformValue::shrink(-2, -2), button_rect));
-            let outline_color = world.insert(Val::new(if i == active {
-                world.fetch(theme_val.theme).val
-            } else {
-                world.fetch(theme_val.gray2).val
-            }));
+            let outline_color_anim = Packer::derive(world, move |world| {
+                let theme = world.single_fetch::<ThemeVal>();
+                let selected_val = world.fetch(selected).val;
+                match selected_val {
+                    true => world.fetch(theme.theme).val,
+                    false => world.fetch(theme.gray2).val,
+                }
+            })
+            .listen(selected)
+            .listen(theme_val.theme)
+            .listen(theme_val.gray2)
+            .finish();
+            let outline_color = world.build(Animator::new(outline_color_anim, theme.anim_factor));
             world.insert(RRect {
                 common,
                 rect: outline_rect,
@@ -262,16 +273,9 @@ impl Element for BrushListPanel {
 
             world.observer(page.handle(), move |&BrushConfigurationChanged, world| {
                 let page = world.single_fetch::<LayerPage>();
-                let theme = world.single_fetch::<ThemeVal>();
                 let active = page.active_brush;
                 let selected = i == active;
                 world.queue_trigger(button, SetButtonSelected(selected));
-                let mut outline_color = world.fetch_mut(outline_color);
-                outline_color.val = match selected {
-                    true => world.fetch(theme.theme).val,
-                    false => world.fetch(theme.gray2).val,
-                };
-                world.queue_trigger(outline_color.handle(), ValChanged);
             });
 
             world.observer(button, move |drag: &ButtonDrag, world| match drag.status {

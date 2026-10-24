@@ -5,11 +5,16 @@ use ln_world::{Element, Handle, HandleGeneric, World};
 use crate::{
     layout::{
         anim::Animator,
+        packer::Packer,
         val::{Val, ValChanged},
-    }, measures::{Axis, FI64Ext, Rectangle}, theme::{Theme, ThemeVal}, tools::{
+    },
+    measures::{Axis, FI64Ext, Rectangle},
+    theme::{Theme, ThemeVal},
+    tools::{
         collider::ToolRectCollider,
         pointer::{PointerHit, PointerHitStatus, PointerHover, PointerHoverStatus},
-    }, widgets::{
+    },
+    widgets::{
         WidgetHover,
         common::WidgetCommon,
         renderer::{
@@ -56,9 +61,34 @@ impl Slider {
         let knob_rect_val = world.insert(Val::new(knob_rect(rect, self.axis, position)));
         let knob_split_rect_val =
             world.insert(Val::new(knob_split_rect(rect, self.axis, position)));
-        let knob_color_anim = world.insert(Val::new(theme.gray0));
+        let pressed = world.insert(Val::new(false));
+
+        let knob_color_anim = Packer::derive(world, move |world| {
+            let theme = world.single_fetch::<ThemeVal>();
+            let pressed_val = world.fetch(pressed).val;
+            match pressed_val {
+                true => world.fetch(theme.gray1).val,
+                false => world.fetch(theme.gray0).val,
+            }
+        })
+        .listen(pressed)
+        .listen(theme_val.gray0)
+        .listen(theme_val.gray1)
+        .finish();
         let knob_color_val = world.build(Animator::new(knob_color_anim, theme.anim_factor));
-        let knob_split_color_anim = world.insert(Val::new(theme.gray1));
+
+        let knob_split_color_anim = Packer::derive(world, move |world| {
+            let theme = world.single_fetch::<ThemeVal>();
+            let pressed_val = world.fetch(pressed).val;
+            match pressed_val {
+                true => world.fetch(theme.theme).val,
+                false => world.fetch(theme.gray1).val,
+            }
+        })
+        .listen(pressed)
+        .listen(theme_val.gray1)
+        .listen(theme_val.theme)
+        .finish();
         let knob_split_color_val =
             world.build(Animator::new(knob_split_color_anim, theme.anim_factor));
 
@@ -115,7 +145,6 @@ impl Slider {
 
         world.observer(handle, move |event: &PointerHit, world| {
             let mut this = world.fetch_mut(handle);
-            let theme = world.single_fetch::<Theme>();
             let rect = world.fetch(this.rect).val;
 
             let position = match this.axis.is_vertical() {
@@ -129,25 +158,19 @@ impl Slider {
             if let PointerHitStatus::Press = event.status {
                 this.pressed = true;
                 let mut back = world.fetch_mut(back_rect_anim);
-                let mut knob_color = world.fetch_mut(knob_color_anim);
-                let mut knob_split_color = world.fetch_mut(knob_split_color_anim);
+                let mut pressed = world.fetch_mut(pressed);
                 back.val = back_rect_pressed(rect, this.axis);
-                knob_color.val = theme.gray1;
-                knob_split_color.val = theme.theme;
+                pressed.val = true;
                 world.queue_trigger(back.handle(), ValChanged);
-                world.queue_trigger(knob_color.handle(), ValChanged);
-                world.queue_trigger(knob_split_color.handle(), ValChanged);
+                world.queue_trigger(pressed.handle(), ValChanged);
             } else if let PointerHitStatus::Release = event.status {
                 this.pressed = false;
                 let mut back = world.fetch_mut(back_rect_anim);
-                let mut knob_color = world.fetch_mut(knob_color_anim);
-                let mut knob_split_color = world.fetch_mut(knob_split_color_anim);
+                let mut pressed = world.fetch_mut(pressed);
                 back.val = back_rect(rect, this.axis);
-                knob_color.val = theme.gray0;
-                knob_split_color.val = theme.gray1;
+                pressed.val = false;
                 world.queue_trigger(back.handle(), ValChanged);
-                world.queue_trigger(knob_color.handle(), ValChanged);
-                world.queue_trigger(knob_split_color.handle(), ValChanged);
+                world.queue_trigger(pressed.handle(), ValChanged);
             }
         });
 
@@ -213,7 +236,7 @@ impl SliderLabel {
         world.set_autodeps(Some(this));
 
         let source = world.fetch(self.source);
-        let theme = world.single_fetch::<Theme>();
+        let theme = world.single_fetch::<ThemeVal>();
         let rect = world.fetch(source.rect).val;
         let value = world.fetch(source.value).val;
 
@@ -234,7 +257,7 @@ impl SliderLabel {
             common,
             rect: label_rect,
             order: 100,
-            color: world.insert(Val::new(theme.gray0)),
+            color: theme.gray0,
             radius: LABEL_HALF.y as f32,
             width: 0.0,
         });
@@ -249,7 +272,7 @@ impl SliderLabel {
             },
             order: 150,
             common,
-            modulate: world.insert(Val::new(theme.distinct)),
+            modulate: theme.distinct,
             outdated: false,
             canvas_outdated: false,
         });

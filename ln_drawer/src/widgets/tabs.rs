@@ -66,7 +66,7 @@ impl Tabs {
             common: self.common,
             rect: shadow_rect,
             order: -11,
-            color: world.insert(Val::new(theme.shadow_color)),
+            color: theme_val.shadow_color,
             radius: roundness,
             width: shadow_blur,
         });

@@ -17,7 +17,7 @@ use crate::{
     },
     measures::{Axis, Rectangle},
     render::camera::Camera,
-    theme::Theme,
+    theme::ThemeVal,
     widgets::{
         brush_preview::BrushPreview,
         common::WidgetCommon,
@@ -116,7 +116,7 @@ impl Element for TextSettingPanel {
         world.dependency(this, self.rect);
         world.dependency(this, self.common.visible);
 
-        let theme = world.single_fetch::<Theme>();
+        let theme = world.single_fetch::<ThemeVal>();
         let layer = world.single::<LayerPage>();
 
         let attr = ContainerAttr::default();
@@ -172,7 +172,7 @@ impl Element for TextSettingPanel {
             },
             order: 100,
             common,
-            modulate: world.insert(Val::new(theme.gray4)),
+            modulate: theme.gray4,
             outdated: false,
             canvas_outdated: false,
         });
@@ -525,7 +525,7 @@ fn option_label(
     camera: Handle<Camera>,
     visible: Handle<Val<bool>>,
 ) -> Handle<Text> {
-    let theme = world.single_fetch::<Theme>();
+    let theme = world.single_fetch::<ThemeVal>();
 
     let rect = world.build(Transform::new(
         TransformValue {
@@ -561,7 +561,7 @@ fn option_label(
         },
         order: 100,
         common: WidgetCommon { camera, visible },
-        modulate: world.insert(Val::new(theme.distinct)),
+        modulate: theme.distinct,
         outdated: false,
         canvas_outdated: false,
     })
@@ -574,7 +574,7 @@ fn option_desc(
     camera: Handle<Camera>,
     visible: Handle<Val<bool>>,
 ) -> Handle<Text> {
-    let theme = world.single_fetch::<Theme>();
+    let theme = world.single_fetch::<ThemeVal>();
 
     let rect = world.build(Transform::new(
         TransformValue {
@@ -610,7 +610,7 @@ fn option_desc(
         },
         order: 100,
         common: WidgetCommon { camera, visible },
-        modulate: world.insert(Val::new(theme.gray4)),
+        modulate: theme.gray4,
         outdated: false,
         canvas_outdated: false,
     })

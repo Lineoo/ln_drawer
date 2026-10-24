@@ -21,6 +21,31 @@ world.queue_trigger(slider.value1, ValChanged);
 world.queue_trigger(slider.value2, ValChanged);
 ```
 
+### observer - re-fetch handle
+
+DO NOT:
+
+```rs
+let theme = world.single_fetch::<Theme>();
+let visible = self.common.visible;
+let grey0 = theme.grey0;
+world.observer(this, move || {
+    let visible = world.fetch(visible).val;
+    let grey0 = world.fetch(grey0).val;
+})
+```
+
+DO:
+
+```rs
+world.observer(this, move || {
+    let this = world.fetch(this);
+    let theme = world.single_fetch::<Theme>();
+    let visible = world.fetch(this.common.visible).val;
+    let grey0 = world.fetch(theme.grey0).val;
+})
+```
+
 ### ln_world - no try_fetch
 
 DO NOT:

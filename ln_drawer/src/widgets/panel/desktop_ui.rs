@@ -19,7 +19,7 @@ use crate::{
     },
     lnwin::LnwindowRect,
     measures::{Axis, Rectangle},
-    theme::{Theme, ThemeVal},
+    theme::ThemeVal,
     widgets::{
         button::{ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
@@ -351,7 +351,7 @@ impl Element for StatusBar {
         world.dependency(this, self.rect);
         world.dependency(this, self.common.visible);
 
-        let theme = world.single_fetch::<Theme>();
+        let theme = world.single_fetch::<ThemeVal>();
 
         let attr = ContainerAttr::default();
         let (container, common) = world.build(ContainerWithCamera {
@@ -391,7 +391,7 @@ impl Element for StatusBar {
             },
             order: 120,
             common,
-            modulate: world.insert(Val::new(theme.gray3)),
+            modulate: theme.gray3,
             outdated: false,
             canvas_outdated: false,
         });
