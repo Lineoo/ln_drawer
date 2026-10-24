@@ -92,7 +92,7 @@ impl Element for BrushPanel {
                     visible: settings_visible,
                 },
             ],
-            active: 0,
+            active: world.insert(Val::new(0)),
         });
     }
 }
@@ -164,8 +164,8 @@ impl Element for BrushListPanel {
                     selected_color: theme_val.gray2,
                 },
                 image: None,
-                selected: i == active,
-                hovering: false,
+                selected: world.insert(Val::new(i == active)),
+                hovering: world.insert(Val::new(false)),
             });
 
             let outline_rect =

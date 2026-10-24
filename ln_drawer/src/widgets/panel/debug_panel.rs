@@ -107,8 +107,8 @@ impl Element for DebugPanel {
                 rect,
                 theme: theme.button(),
                 image: Some(ButtonImage::new(svg_render(image_bytes), theme.distinct, 8)),
-                selected: false,
-                hovering: false,
+                selected: world.insert(Val::new(false)),
+                hovering: world.insert(Val::new(false)),
             })
         };
 

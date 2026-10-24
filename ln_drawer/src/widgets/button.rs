@@ -4,6 +4,7 @@ use ln_world::{Element, Handle, HandleGeneric, World};
 use crate::{
     layout::{
         anim::Animator,
+        packer::Packer,
         transform::{Transform, TransformValue},
         val::{Val, ValChanged},
     },
@@ -25,8 +26,8 @@ pub struct ToggleButton {
     pub rect: Handle<Val<Rectangle>>,
     pub theme: ToggleButtonTheme,
     pub image: Option<ButtonImage>,
-    pub selected: bool,
-    pub hovering: bool,
+    pub selected: Handle<Val<bool>>,
+    pub hovering: Handle<Val<bool>>,
 }
 
 pub struct ToggleButtonTheme {
@@ -88,10 +89,36 @@ impl ToggleButton {
 
         let theme = world.single_fetch::<Theme>();
 
-        let frame_color_anim = world.insert(Val::new(match self.selected {
-            false => world.fetch(self.theme.idle_color).val,
-            true => world.fetch(self.theme.selected_color).val,
-        }));
+        let selected = self.selected;
+        let hovering = self.hovering;
+        let idle_color = self.theme.idle_color;
+        let hover_color = self.theme.hover_color;
+        let press_color = self.theme.press_color;
+        let selected_color = self.theme.selected_color;
+
+        let pressed = world.insert(Val::new(false));
+        let frame_color_anim = Packer::derive(world, move |world| {
+            let selected_val = world.fetch(selected).val;
+            let hovering_val = world.fetch(hovering).val;
+            let pressed_val = world.fetch(pressed).val;
+            if selected_val {
+                world.fetch(selected_color).val
+            } else if pressed_val {
+                world.fetch(press_color).val
+            } else if hovering_val {
+                world.fetch(hover_color).val
+            } else {
+                world.fetch(idle_color).val
+            }
+        })
+        .listen(selected)
+        .listen(hovering)
+        .listen(pressed)
+        .listen(idle_color)
+        .listen(hover_color)
+        .listen(press_color)
+        .listen(selected_color)
+        .finish();
         let frame_color = world.build(Animator::new(frame_color_anim, theme.anim_factor));
 
         world.insert(RRect {
@@ -123,19 +150,9 @@ impl ToggleButton {
             });
         }
 
-        world.observer(handle, move |&SetButtonSelected(selected), world| {
-            let mut this = world.fetch_mut(handle);
-            this.selected = selected;
-            let color = if selected {
-                world.fetch(this.theme.selected_color).val
-            } else if this.hovering {
-                world.fetch(this.theme.hover_color).val
-            } else {
-                world.fetch(this.theme.idle_color).val
-            };
-            let mut frame_color = world.fetch_mut(frame_color_anim);
-            frame_color.val = color;
-            world.queue_trigger(frame_color.handle(), ValChanged);
+        world.observer(handle, move |&SetButtonSelected(value), world| {
+            world.fetch_mut(selected).val = value;
+            world.queue_trigger(selected, ValChanged);
         });
 
         let mut drag_start = None;
@@ -177,9 +194,9 @@ impl ToggleButton {
                 }
                 PointerHitStatus::Release => {
                     if !dragging {
-                        let this = world.fetch(handle);
+                        let selected_val = world.fetch(selected).val;
                         world.queue_trigger(handle, ButtonClick);
-                        world.queue_trigger(handle, ButtonSelected(!this.selected));
+                        world.queue_trigger(handle, ButtonSelected(!selected_val));
                     } else if let Some(start) = drag_start {
                         world.trigger(
                             handle,
@@ -199,52 +216,26 @@ impl ToggleButton {
         });
 
         world.observer(handle, move |event: &PointerHover, world| {
-            let mut this = world.fetch_mut(handle);
-            match event.status {
-                PointerHoverStatus::Enter => {
-                    this.hovering = true;
-                    world.queue_trigger(handle, WidgetHover::Enter);
-                }
-                PointerHoverStatus::Leave => {
-                    this.hovering = false;
-                    world.queue_trigger(handle, WidgetHover::Leave);
-                }
-                _ => {}
-            }
-        });
-
-        world.observer(handle, move |event: &WidgetHover, world| {
-            let this = world.fetch(handle);
-            if this.selected {
-                return;
-            }
-
-            let color = if let WidgetHover::Enter = event {
-                world.fetch(this.theme.hover_color).val
-            } else {
-                world.fetch(this.theme.idle_color).val
+            let hover = match event.status {
+                PointerHoverStatus::Enter => true,
+                PointerHoverStatus::Leave => false,
+                _ => return,
             };
-            let mut frame_color = world.fetch_mut(frame_color_anim);
-            frame_color.val = color;
-            world.queue_trigger(frame_color.handle(), ValChanged);
+            world.fetch_mut(hovering).val = hover;
+            world.queue_trigger(hovering, ValChanged);
+            world.queue_trigger(
+                handle,
+                match hover {
+                    true => WidgetHover::Enter,
+                    false => WidgetHover::Leave,
+                },
+            );
         });
 
         world.observer(handle, move |event: &ButtonAction, world| {
-            let this = world.fetch(handle);
-            if this.selected {
-                return;
-            }
-
-            let color = if let ButtonAction::Press = event {
-                world.fetch(this.theme.press_color).val
-            } else if this.hovering {
-                world.fetch(this.theme.hover_color).val
-            } else {
-                world.fetch(this.theme.idle_color).val
-            };
-            let mut frame_color = world.fetch_mut(frame_color_anim);
-            frame_color.val = color;
-            world.queue_trigger(frame_color.handle(), ValChanged);
+            let press = matches!(event, ButtonAction::Press);
+            world.fetch_mut(pressed).val = press;
+            world.queue_trigger(pressed, ValChanged);
         });
     }
 }

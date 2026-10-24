@@ -138,7 +138,7 @@ impl Element for ColorPickerPanel {
                     visible: debug_visible,
                 },
             ],
-            active: 0,
+            active: world.insert(Val::new(0)),
         });
     }
 }
@@ -162,8 +162,8 @@ impl Element for ColorPickerButton {
             rect: self.rect,
             theme: theme.button(),
             image: None,
-            selected: false,
-            hovering: false,
+            selected: world.insert(Val::new(false)),
+            hovering: world.insert(Val::new(false)),
         });
 
         let icon_transform = TransformValue::anchor(

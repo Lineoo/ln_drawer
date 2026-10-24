@@ -200,8 +200,8 @@ impl Element for ToolBar {
                 rect,
                 theme: theme.button(),
                 image: Some(ButtonImage::new(svg_render(image_bytes), theme.distinct, 8)),
-                selected: false,
-                hovering: false,
+                selected: world.insert(Val::new(false)),
+                hovering: world.insert(Val::new(false)),
             })
         };
 
@@ -577,7 +577,7 @@ impl Element for VerbosePanel {
                     visible: debug_visible,
                 },
             ],
-            active: 0,
+            active: world.insert(Val::new(0)),
         });
 
         let _ = (tab_brush_list, tab_settings, tab_layer_selection, tab_debug);

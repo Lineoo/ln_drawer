@@ -7,6 +7,7 @@ use crate::{
             LuniAlign, LuniAxis, LuniChild, LuniChildTemplate, LuniDistribution, LuniFlex,
             LuniParent, LuniRect,
         },
+        packer::Packer,
         transfer::Transfer,
         transform::{Transform, TransformEdge, TransformValue},
         val::{Val, ValChanged},
@@ -15,19 +16,17 @@ use crate::{
     theme::{Theme, ThemeVal},
     tools::collider::ToolRectCollider,
     widgets::{
-        button::{ButtonAction, ButtonImage, SetButtonSelected, ToggleButton},
+        button::{ButtonAction, ButtonImage, ToggleButton},
         common::WidgetCommon,
         renderer::rrect::RRect,
     },
 };
 
-pub struct TabsActive(pub usize);
-
 pub struct Tabs {
     pub rect: Handle<Val<Rectangle>>,
     pub common: WidgetCommon,
     pub tabs: Vec<TabEntry>,
-    pub active: usize,
+    pub active: Handle<Val<usize>>,
 }
 
 pub struct TabEntry {
@@ -120,13 +119,14 @@ impl Tabs {
             let entry_icon_modulate = icon.modulate;
 
             let button_rect = world.build(luni.child(LuniChild::default()));
+            let button_selected = Transfer::derive(world, self.active).build(move |&x| x == i);
             let button = world.insert(ToggleButton {
                 common: self.common,
                 rect: button_rect,
                 theme: theme_val.tab_button(),
                 image: Some(icon),
-                selected: i == self.active,
-                hovering: false,
+                selected: button_selected,
+                hovering: world.insert(Val::new(false)),
             });
 
             let indicator_rect = world.build(Transform::new(
@@ -136,15 +136,10 @@ impl Tabs {
                 ),
                 button_rect,
             ));
-            let indicator_visible =
-                Transfer::derive(world, self.common.visible).build_with(move |&visible, world| {
-                    let this = world.fetch(handle);
-                    visible && this.active == i
-                });
             world.insert(RRect {
                 common: WidgetCommon {
                     camera: self.common.camera,
-                    visible: indicator_visible,
+                    visible: entry.visible,
                 },
                 rect: indicator_rect,
                 order: 100,
@@ -153,55 +148,39 @@ impl Tabs {
                 width: 0.0,
             });
 
-            let entry_visible = entry.visible;
-            let entry_rect = entry.rect;
+            Transfer::new(world, main_rect, entry.rect).copy();
 
-            Transfer::new(world, main_rect, entry_rect).copy();
+            Packer::new(world, entry.visible, move |world| {
+                let this = world.fetch(handle);
+                world.fetch(button_selected).val && world.fetch(this.common.visible).val
+            })
+            .listen(button_selected)
+            .listen(self.common.visible)
+            .finish();
+
+            Packer::new(world, entry_icon_modulate, move |world| {
+                let theme = world.single_fetch::<ThemeVal>();
+                match world.fetch(button_selected).val {
+                    true => world.fetch(theme.distinct).val,
+                    false => world.fetch(theme.gray4).val,
+                }
+            })
+            .listen(button_selected)
+            .listen(theme_val.distinct)
+            .listen(theme_val.gray4)
+            .finish();
 
             world.observer(button, move |action: &ButtonAction, world| {
                 if let ButtonAction::Press = action {
-                    world.queue_trigger(handle, TabsActive(i));
+                    let this = world.fetch(handle);
+                    let mut active = world.fetch_mut(this.active);
+                    active.val = i;
+                    world.queue_trigger(active.handle(), ValChanged);
                 }
-            });
-
-            world.observer(self.common.visible, move |ValChanged, world| {
-                let this = world.fetch(handle);
-                let visible = world.fetch(this.common.visible).val;
-                let mut entry_visible = world.fetch_mut(entry_visible);
-                let mut indicator_visible = world.fetch_mut(indicator_visible);
-
-                entry_visible.val = visible && i == this.active;
-                indicator_visible.val = visible && i == this.active;
-
-                world.queue_trigger(entry_visible.handle(), ValChanged);
-                world.queue_trigger(indicator_visible.handle(), ValChanged);
-            });
-
-            world.observer(handle, move |&TabsActive(active), world| {
-                let this = world.fetch(handle);
-                let visible = world.fetch(this.common.visible).val;
-                let mut entry_visible = world.fetch_mut(entry_visible);
-                let mut indicator_visible = world.fetch_mut(indicator_visible);
-                let mut entry_icon_modulate = world.fetch_mut(entry_icon_modulate);
-                let theme = world.single_fetch::<ThemeVal>();
-
-                entry_visible.val = visible && i == active;
-                indicator_visible.val = visible && i == active;
-                entry_icon_modulate.val = match i == active {
-                    true => world.fetch(theme.distinct).val,
-                    false => world.fetch(theme.gray4).val,
-                };
-
-                world.queue_trigger(button, SetButtonSelected(i == active));
-                world.queue_trigger(entry_visible.handle(), ValChanged);
-                world.queue_trigger(indicator_visible.handle(), ValChanged);
-                world.queue_trigger(entry_icon_modulate.handle(), ValChanged);
             });
         }
 
         world.insert(luni);
-
-        world.queue_trigger(handle, TabsActive(self.active));
     }
 }
 

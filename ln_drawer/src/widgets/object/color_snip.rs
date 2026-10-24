@@ -49,8 +49,8 @@ impl Element for ColorSnip {
             rect: self.rect,
             theme: theme.button(),
             image: None,
-            selected: false,
-            hovering: false,
+            selected: world.insert(Val::new(false)),
+            hovering: world.insert(Val::new(false)),
         });
 
         let color_rect = world.build(Transform::new(TransformValue::shrink(8, 8), self.rect));

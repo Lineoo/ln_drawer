@@ -93,13 +93,9 @@ impl Element for SideDocker {
                 common: self.common,
                 rect,
                 theme: theme.button(),
-                image: Some(ButtonImage::new(
-                    svg_render(image_bytes),
-                    theme.distinct,
-                    8,
-                )),
-                selected: false,
-                hovering: false,
+                image: Some(ButtonImage::new(svg_render(image_bytes), theme.distinct, 8)),
+                selected: world.insert(Val::new(false)),
+                hovering: world.insert(Val::new(false)),
             })
         };
 
@@ -113,8 +109,8 @@ impl Element for SideDocker {
                 theme.distinct,
                 8,
             )),
-            selected: false,
-            hovering: false,
+            selected: world.insert(Val::new(false)),
+            hovering: world.insert(Val::new(false)),
         });
 
         let eraser = docker_button(

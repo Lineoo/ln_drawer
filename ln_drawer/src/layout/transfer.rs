@@ -13,14 +13,11 @@ impl<T: Send + 'static, U: Send + 'static> Transfer<'_, T, U> {
         Transfer { world, this, that }
     }
 
-    pub fn build(&self, f: impl Fn(&T) -> U + Send + Sync + 'static) -> Handle<Val<U>> {
+    pub fn build(&self, f: impl Fn(&T) -> U + Send + 'static) -> Handle<Val<U>> {
         self.build_with(move |i, _| f(i))
     }
 
-    pub fn build_with(
-        &self,
-        f: impl Fn(&T, &World) -> U + Send + Sync + 'static,
-    ) -> Handle<Val<U>> {
+    pub fn build_with(&self, f: impl Fn(&T, &World) -> U + Send + 'static) -> Handle<Val<U>> {
         let &Transfer { world, this, that } = self;
         world.queue(move |world| {
             {

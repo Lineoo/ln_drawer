@@ -160,8 +160,8 @@ impl Element for LayerSelectionPanel {
                 rect: button_rect,
                 theme: theme.button(),
                 image: None,
-                selected: i == 0,
-                hovering: false,
+                selected: world.insert(Val::new(i == 0)),
+                hovering: world.insert(Val::new(false)),
             });
 
             let name_rect = world.build(Transform::new(
