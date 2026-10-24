@@ -1,85 +1,47 @@
-> NOTE: This page is written in Chinese.
-
 # 世界模块 #
 
 世界模块提供**多元素响应**能力，这包括同时访问多个元素，用事件串联多个元素，以及多元素依赖处理。
 
-功能比较类似 ECS 系统，对于类型组件的缓存访问性能也不错，但总体上没有 ECS 的高并行能力。
+功能比较类似 ECS 系统，对于类型组件的缓存访问性能也不错。
+
+但不是 ECS，没有 Entity 以及其他能够联系 Component 成一组的能力，也没有 System 提供的高并行能力。
 
 ## 独立 Element 写法 ##
 
 独立 Element 是指那些可以脱离 World 存在的组件，一般给渲染组件管线等功能丰富的结构体使用。
 
-推荐简单、解耦的写法：
+特点是包含了一些 GPU 等外部的复杂资源，使用独立方法创建或者使用 `Descriptor` 功能。
 
-```rust
-impl Foo {
-    pub fn new(property: Property, interface: &mut Interface) -> Foo {
-        /* .. */
-    }
-}
-```
-
-直接获取整个世界的写法也可以，但是会限制 Element 依赖 World 进行构建：
-
-```rust
-impl Bar {
-    pub fn new(property: Property, world: &World) -> Bar {
-        /* .. 明明你只需要 Interface! .. */
-    }
-}
-```
-
-不应使用 `Option<T>` 的写法：
-
-```rust
-impl Baz {
-    pub fn new(property: Property) -> Bar {
-        /* .. */
-    }
-}
-impl Element for Baz {
-    fn when_inserted(&mut self, world: &World, handle: Handle<Self>) {
-        // 过度包揽了自己不该干的活儿
-        let interface = world.single_fetch_mut::<Interface>();
-        let inner = interface.create_painter(/* .. */);
-        // self.inner 为 None 的状态只在初始化时存在，很别扭
-        self.inner = Some(inner);
-    }
-}
-```
+实例：`camera.rs` 
 
 ## 简单 Element 写法 ##
 
 这个写法更常见一些，用于大部分业务代码、渲染组件等。
 
-实例来自 `quad.rs`：
-
-```rust
-impl<M: QuadMaterial> QuadMesh<M> {
-    pub fn init(&self, world: &World, this: Handle<Self>) {
-        let render = world.single_fetch::<Render>();
-        let pipeline = world.single_fetch::<QuadMeshPipeline<M>>();
-        // Initialize code
-    }
-}
-impl<M: QuadMaterial> Element for QuadMesh<M> {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        self.init(world, this);
-    }
-}
-```
-
-简单 Element 的**简单**二字指的是 Element 所有字段都是公开的，全部都是公共 API，外部调用者可以**直接构造**这些结构并直接插入世界。
+特点是 Element 所有字段都是公开的，全部都是公共 API，外部调用者可以**直接构造**这些结构并直接插入世界。
 
 - 内部实现发生在 `when_insert` 阶段，一般路由回结构体的 `init` 方法。
 - 内部实现的内容，如 GPU 资源、或者嵌套元素返回的句柄，不保存在 `Element` 上，而是直接利用 observer 闭包捕获。
 - 闭包捕获虽然已经足够满足绝大多数场景了，但是有些时候某些资源需要在不同过程之间共享；这个时候可以创建一个私有结构体，命名一般为 `*Instance`，并在 observer 捕获句柄，在需要的时候 `fetch` 得到需要的数据。
 
-比起独立 Element 写法，最大的特点就是高度依赖 world 的 observer 系统来保存运行变量，可以说是针对业务逻辑代码特化的。
+高度依赖 world 的 observer 系统来保存运行变量，可以说是针对业务逻辑代码特化的。
 
 - 优点是针对 observer 进行了特化，事件调用简单，响应代码写起来很规整。
 - 但缺点也是针对 observer 进行了特化，内部字段被封闭在 observer 系统内，业务逻辑基本只能依附于 observer 系统存在，单单一个结构体什么都做不了。
+
+实例：`quad.rs`, `oklab.rs`, `desktop_ui.rs`, `text.rs`
+
+## queue 借用展平 ##
+
+`fetch` / `fetch_mut` 会得到一个 RAII 风格的守卫 `Ref` / `RefMut` 用于运行时借用检查。
+
+为了防止冲突，优先使用 `queue` 或 `insert` 来展平执行，而不是使用 `drop` 或者代码块。
+
+`queue` 的闭包或者 `when_insert` 调用有以下保证：
+
+- 所有 Element 都已经插入，你刚刚调用的 `insert` 一定可以成功 `fetch`
+- 借用检查完全为空（`when_insert` 的话，只有 `self` 被可变借用）
+- 深度优先展开，也就是这个调用一结束，立马调用你刚刚入队的命令（无交错）
 
 ## insert & remove 生命周期 ##
 
@@ -110,50 +72,26 @@ impl<M: QuadMaterial> Element for QuadMesh<M> {
 actual ownership lifecycle      ===> where `drop` runs
 ```
 
-## Observer & Trigger  ##
-
-推荐 observer 的正统用法。这意味着绑定到监听节点是不推荐的：
-
-```rust
-struct ElementUpdate(ElementHandle);
-let that, listener;
-world.observer(listener, |ElementUpdate(rec), world| update(rec));
-world.trigger(listener, ElementUpdate(that));
-```
-
-而推荐绑定到被监听节点:
-
-```rust
-struct ElementUpdate;
-let that, listener;
-world.observe(that, move |ElementUpdate, world| update(that));
-that.trigger(that, ElementUpdate);
-```
-
-### trigger 即时性
+## trigger 生命周期 ##
 
 默认 `trigger` 调用是及时的
 
-- 这允许 zero-copy 和内部可变性等功能，也可减少命令队列负担
-- 大部分请求不需要关照 `insert` 和 `remove` 的延迟执行的
+- 允许 zero-copy 和内部可变性等功能，但这种功能很少
 - 缺点：生命周期管理不当可能会触发可变性检查导致 panic 或出现*循环访问*导致栈溢出
 
-有对应的 `queue_trigger` 延迟调用
+队列 `queue_trigger` 延迟调用
 
-- queue 下属 shortcut
-- 需要变量所有权而不是引用
-- 一般来说更好用，代码库里用这个的也更多
+- 不必操心声明周期，一般用这个，除非有特殊需求
+- 取点：需要事件 ownership 而不是 reference
 
-## 业务逻辑顺序 ##
+## 约定顺序 ##
 
-`observer` 或者 `when_*` 家族推荐以下顺序进行书写：
+`observer` 或者 `when_insert` 推荐以下顺序进行书写：
 
-1. **fetch** 必要组件
-2. **insert** 子节点
-3. **dependency** 刚刚插入的子节点
-4. **dependency** 父节点
-5. **observer** 声明事件流
-6. **queue_trigger** 进行初始化
+1. **scope** 顶头声明位置，设置依赖
+2. **fetch** 抓取必要组件
+3. **insert** 插入数据，节点
+4. **observer** 添加必要的事件控制
 
 不是强制的，有复杂控制流的时候怎么方便怎么来。
 
@@ -221,22 +159,3 @@ world 世界模型会严格限制视图之间的可见性，以提供良好的�
 4. 没有失去子节点的无效 dependency
 5. **(未实现)** 没有目标被移除的无效 ElemRef/ViewRef
 6. **(未实现)** 节点索引没有记录无效的 elemrefs/viewrefs 缓存
-
-## 任意位置命令 Commander ##
-
-允许获取世界的命令队列，然后**从任何地方直接发送命令**到世界。
-
-可以简化组合元素的更新与清理。
-
-## 高性能与异步并发（TODO） ##
-
-### 线程安全
-
-我们希望 world 可以实现 Sync。
-
-### 基于类型的占用表 
-
-因为绝大部分占用查询负荷来自类型遍历，我们希望互斥锁是**类型独立**的。
-
-也就是 `Handle<dyn Any>` 能够对应到 `TypeId`
-再由 `TypeId` 找到 `Box<dyn Any>` 并映射到 `HashMap<usize, T>`

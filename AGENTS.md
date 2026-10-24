@@ -21,8 +21,20 @@ GPU-accelerated drawing app featured infinite canvas in Rust (winit + wgpu). Car
 
 ## Conventions
 
-- Never leave comments. Keep minimalistic. Don't leave any outdated, unrelated or redundant information.
-- Never use `try_*` family functions in `ln_world`, and `unwrap_or_*()` / `if let Ok(x) =  ...` / `match result { Ok(x) => ... }` is strictly forbidden unless users explicit allow it. **Panicking is better than skipping potential errors.**
+- Comments should not exceed one line. Keep minimalistic. Don't leave any outdated, unrelated or redundant information.
+- Never use `try_*` family functions in `ln_world`. `unwrap_or_*()` / `if let Ok(x) =  ...` / `match result { Ok(x) => ... }` is strictly forbidden unless users explicit allow it. **Panicking is better than skipping potential errors.**
 - Never handle errors. Use `unwrap()` if `Result`s are returned. If you REALLY understand the error and REALLY need to handle it, ask user first and make sure they ARE fully aware of the error and intended to handle it. **Panicking is better than skipping unknown errors.**
-- Keep it in mind. Let it be part of you. And please repeat it. **Panicking is better than skipping errors.**
+- Do not overuse blocks or early drops. While `ln_world` uses runtime borrow validation, most system is welled designed to avoid most borrow collisions.
 - WGSL shaders are embedded via `include_str!` and macro-expanded with `shader_compile()` in `ln_drawer/src/widgets/shaders.rs`. Shared libs in `widgets/shaders/*.wgsl` are included via `#lib_*` during compiling.
+
+## Documents
+
+Documents are in Chinese if not specially marked with language suffix. Sort by recommendation level.
+
+- `docs/codebase.en.md` - The coding style instructions, list in format `### <tags,> - <title>`. Recommended.
+- `docs/world.md` - about how to use `ln_world`. Recommended.
+- `docs/composite.md` - Color-space notation for rendering and drawing. Important when treating color conventions.
+- `docs/draw.md` - Draw call pipeline: batch-draw, stroke-submit, stroke-discard, undo/redo, failure paths, stream-thread synchronization.
+- `docs/render.md` - Rendering architecture: render camera, controls, pipeline, instances, redraw rules.
+- `docs/save.md` - Save database tables and chunk binary formats.
+- `docs/ndk.md` - Android `cargo ndk` usage and `cargo-ndk-env` fingerprint pitfalls. Not very useful for agents environment.
