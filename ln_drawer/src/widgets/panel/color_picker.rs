@@ -16,7 +16,7 @@ use crate::{
     },
     measures::{FI64Ext, Rectangle},
     render::camera::PageCamera,
-    theme::Theme,
+    theme::{Theme, ThemeVal},
     widgets::{
         button::{
             ButtonDrag, ButtonDragStatus, ButtonImage, ButtonSelected, SetButtonSelected,
@@ -51,6 +51,8 @@ impl Element for ColorPickerPanel {
         world.set_autodeps(Some(this));
         world.dependency(this, self.rect);
         world.dependency(this, self.common.visible);
+
+        let theme = world.single_fetch::<ThemeVal>();
 
         let hsl_rect = world.insert(Val::new(Rectangle::default()));
         let hsl_visible = world.insert(Val::new(false));
@@ -102,6 +104,7 @@ impl Element for ColorPickerPanel {
                 TabEntry {
                     icon: ButtonImage::new(
                         svg_render(include_bytes!("../../../res/interface/palette.svg")),
+                        theme.distinct,
                         12,
                     ),
                     rect: hsl_rect,
@@ -110,6 +113,7 @@ impl Element for ColorPickerPanel {
                 TabEntry {
                     icon: ButtonImage::new(
                         svg_render(include_bytes!("../../../res/interface/palette.svg")),
+                        theme.distinct,
                         12,
                     ),
                     rect: oklab_rect,
@@ -118,6 +122,7 @@ impl Element for ColorPickerPanel {
                 TabEntry {
                     icon: ButtonImage::new(
                         svg_render(include_bytes!("../../../res/interface/layers.svg")),
+                        theme.distinct,
                         12,
                     ),
                     rect: layer_rect,
@@ -126,6 +131,7 @@ impl Element for ColorPickerPanel {
                 TabEntry {
                     icon: ButtonImage::new(
                         svg_render(include_bytes!("../../../res/interface/bug.svg")),
+                        theme.distinct,
                         12,
                     ),
                     rect: debug_rect,
@@ -181,11 +187,10 @@ impl Element for ColorPickerButton {
             Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
             self.rect,
         ));
-        let visible = world.insert(Val::new(false));
-
+        let panel_visible = world.insert(Val::new(false));
         world.insert(ColorPickerPanel {
             common: WidgetCommon {
-                visible,
+                visible: panel_visible,
                 ..self.common
             },
             rect: panel_rect,
@@ -197,8 +202,9 @@ impl Element for ColorPickerButton {
 
         world.observer(this, move |&SetButtonSelected(selected), world| {
             world.queue_trigger(button, SetButtonSelected(selected));
-            let mut visible = world.fetch_mut(visible);
+            let mut visible = world.fetch_mut(panel_visible);
             visible.val = selected;
+            world.queue_trigger(visible.handle(), ValChanged);
         });
 
         world.observer(page.handle(), move |&BrushConfigurationChanged, world| {

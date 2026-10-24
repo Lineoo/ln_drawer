@@ -1,8 +1,9 @@
 use glam::{Vec2, Vec4};
-use ln_world::Element;
+use ln_world::{Element, Handle, World};
 
 use crate::{
     color::srgb::{hex_to_srgb, srgb_gamma_decode},
+    layout::val::Val,
     measures::Axis,
     widgets::button::ToggleButtonTheme,
 };
@@ -22,6 +23,17 @@ pub struct Theme {
     #[expect(unused)]
     pub axis: Axis,
     pub anim_factor: f32,
+}
+
+#[expect(unused)]
+pub struct ThemeVal {
+    pub gray0: Handle<Val<Vec4>>,
+    pub gray1: Handle<Val<Vec4>>,
+    pub gray2: Handle<Val<Vec4>>,
+    pub gray3: Handle<Val<Vec4>>,
+    pub gray4: Handle<Val<Vec4>>,
+    pub theme: Handle<Val<Vec4>>,
+    pub distinct: Handle<Val<Vec4>>,
 }
 
 impl Theme {
@@ -78,6 +90,19 @@ impl Theme {
             selected_color: self.gray0,
         }
     }
+
+    pub fn bind(&self, world: &World) -> ThemeVal {
+        ThemeVal {
+            gray0: world.insert(Val::new(self.gray0)),
+            gray1: world.insert(Val::new(self.gray1)),
+            gray2: world.insert(Val::new(self.gray2)),
+            gray3: world.insert(Val::new(self.gray3)),
+            gray4: world.insert(Val::new(self.gray4)),
+            theme: world.insert(Val::new(self.theme)),
+            distinct: world.insert(Val::new(self.distinct)),
+        }
+    }
 }
 
 impl Element for Theme {}
+impl Element for ThemeVal {}

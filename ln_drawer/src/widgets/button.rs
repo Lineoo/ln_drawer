@@ -39,7 +39,7 @@ pub struct ToggleButtonTheme {
 #[derive(Clone)]
 pub struct ButtonImage {
     pub transform: TransformValue,
-    pub modulate: Vec4,
+    pub modulate: Handle<Val<Vec4>>,
     pub bmp: PixImage,
 }
 
@@ -67,13 +67,13 @@ pub enum ButtonDragStatus {
 }
 
 impl ButtonImage {
-    pub fn new(bmp: PixImage, size: u32) -> Self {
+    pub fn new(bmp: PixImage, modulate: Handle<Val<Vec4>>, size: u32) -> Self {
         ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
                 Rectangle::new_half(IVec2::ZERO, UVec2::splat(size)),
             ),
-            modulate: Vec4::ONE,
+            modulate,
             bmp,
         }
     }
@@ -112,12 +112,11 @@ impl ToggleButton {
 
         if let Some(image) = &self.image {
             let icon_rect = world.build(Transform::new(image.transform, self.rect));
-            let icon_modulate = world.insert(Val::new(theme.distinct));
             world.insert(Canvas {
                 common: self.common,
                 rect: icon_rect,
                 order: 11,
-                modulate: icon_modulate,
+                modulate: image.modulate,
                 data: image.bmp.bytes.clone(),
                 data_width: image.bmp.bytes_width,
                 data_height: image.bmp.bytes_height,

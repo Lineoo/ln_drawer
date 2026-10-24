@@ -14,7 +14,7 @@ use crate::{
         camera::{PageCamera, PageCameraUtils},
     },
     save::{Save, SceneDocument},
-    theme::Theme,
+    theme::{Theme, ThemeVal},
     widgets::{
         button::{ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
@@ -41,6 +41,7 @@ impl Element for DebugPanel {
         world.dependency(this, self.common.visible);
 
         let theme = world.single_fetch::<Theme>();
+        let theme_val = world.single_fetch::<ThemeVal>();
 
         let attr = ContainerAttr::default();
         let (container, common) = world.build(ContainerWithCamera {
@@ -69,7 +70,7 @@ impl Element for DebugPanel {
             },
             order: 50,
             common,
-            modulate: world.insert(Val::new(theme.distinct)),
+            modulate: theme_val.distinct,
             outdated: false,
             canvas_outdated: false,
         });
@@ -106,7 +107,11 @@ impl Element for DebugPanel {
                 },
                 rect,
                 theme: theme.button(),
-                image: Some(ButtonImage::new(svg_render(image_bytes), 8)),
+                image: Some(ButtonImage::new(
+                    svg_render(image_bytes),
+                    theme_val.distinct,
+                    8,
+                )),
                 selected: false,
                 hovering: false,
             })

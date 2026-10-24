@@ -12,7 +12,7 @@ use crate::{
         val::{Val, ValChanged},
     },
     measures::Rectangle,
-    theme::Theme,
+    theme::{Theme, ThemeVal},
     tools::collider::ToolRectCollider,
     widgets::{
         button::{ButtonAction, ButtonImage, SetButtonSelected, ToggleButton},
@@ -44,6 +44,7 @@ impl Tabs {
         world.dependency(handle, self.common.visible);
 
         let theme = world.single_fetch::<Theme>();
+        let theme_val = world.single_fetch::<ThemeVal>();
 
         let roundness = theme.roundness;
         let shadow_offset = theme.shadow_offset.as_ivec2();
@@ -53,7 +54,7 @@ impl Tabs {
             common: self.common,
             rect: self.rect,
             order: -10,
-            color: world.insert(Val::new(theme.gray2)),
+            color: theme_val.gray2,
             radius: roundness,
             width: 0.0,
         });
@@ -112,13 +113,18 @@ impl Tabs {
         );
 
         for (i, entry) in self.tabs.iter().enumerate() {
+            // FIXME deep duplication
+            let mut icon = entry.icon.clone();
+            let color = world.fetch(icon.modulate).val;
+            icon.modulate = world.insert(Val::new(color));
+            let entry_icon_modulate = icon.modulate;
+
             let button_rect = world.build(luni.child(LuniChild::default()));
             let button = world.insert(ToggleButton {
                 common: self.common,
                 rect: button_rect,
                 theme: theme.tab_button(),
-                // FIXME deep duplication
-                image: Some(entry.icon.clone()),
+                image: Some(icon),
                 selected: i == self.active,
                 hovering: false,
             });
@@ -130,7 +136,11 @@ impl Tabs {
                 ),
                 button_rect,
             ));
-            let indicator_visible = world.insert(Val::new(i == self.active));
+            let indicator_visible =
+                Transfer::derive(world, self.common.visible).build_with(move |&visible, world| {
+                    let this = world.fetch(handle);
+                    visible && this.active == i
+                });
             world.insert(RRect {
                 common: WidgetCommon {
                     camera: self.common.camera,
@@ -138,14 +148,13 @@ impl Tabs {
                 },
                 rect: indicator_rect,
                 order: 100,
-                color: world.insert(Val::new(theme.theme)),
+                color: theme_val.theme,
                 radius: 0.0,
                 width: 0.0,
             });
 
             let entry_visible = entry.visible;
             let entry_rect = entry.rect;
-            // let entry_icon_modulate = entry.icon.modulate;
 
             Transfer::new(world, main_rect, entry_rect).copy();
 
@@ -154,26 +163,39 @@ impl Tabs {
                     world.queue_trigger(handle, TabsActive(i));
                 }
             });
-            world.observer(handle, move |&TabsActive(active), world| {
+
+            world.observer(self.common.visible, move |ValChanged, world| {
+                let this = world.fetch(handle);
+                let visible = world.fetch(this.common.visible).val;
                 let mut entry_visible = world.fetch_mut(entry_visible);
                 let mut indicator_visible = world.fetch_mut(indicator_visible);
-                // let mut entry_icon_modulate = world.fetch_mut(entry_icon_modulate);
 
-                entry_visible.val = i == active;
-                indicator_visible.val = i == active;
-                // entry_icon_modulate.val =
+                entry_visible.val = visible && i == this.active;
+                indicator_visible.val = visible && i == this.active;
 
-                // world.queue_trigger(
-                //     tab.button,
-                //     SetButtonIconColor(match i == active {
-                //         true => theme.distinct,
-                //         false => theme.gray4,
-                //     }),
-                // );
+                world.queue_trigger(entry_visible.handle(), ValChanged);
+                world.queue_trigger(indicator_visible.handle(), ValChanged);
+            });
+
+            world.observer(handle, move |&TabsActive(active), world| {
+                let this = world.fetch(handle);
+                let visible = world.fetch(this.common.visible).val;
+                let mut entry_visible = world.fetch_mut(entry_visible);
+                let mut indicator_visible = world.fetch_mut(indicator_visible);
+                let mut entry_icon_modulate = world.fetch_mut(entry_icon_modulate);
+                let theme = world.single_fetch::<ThemeVal>();
+
+                entry_visible.val = visible && i == active;
+                indicator_visible.val = visible && i == active;
+                entry_icon_modulate.val = match i == active {
+                    true => world.fetch(theme.distinct).val,
+                    false => world.fetch(theme.gray4).val,
+                };
 
                 world.queue_trigger(button, SetButtonSelected(i == active));
                 world.queue_trigger(entry_visible.handle(), ValChanged);
                 world.queue_trigger(indicator_visible.handle(), ValChanged);
+                world.queue_trigger(entry_icon_modulate.handle(), ValChanged);
             });
         }
 

@@ -140,10 +140,12 @@ impl Element for Lnwindow {
             world.insert(VtorPipeline::from_world(world));
             world.insert(TextPipeline::new());
             let save = world.single_fetch::<Save>();
-            world.insert(match save.sn().dark_mode {
+            let theme = match save.sn().dark_mode {
                 None | Some(true) => Theme::dark_mode(),
                 Some(false) => Theme::light_mode(),
-            });
+            };
+            world.insert(theme.bind(world));
+            world.insert(theme);
             drop(save);
 
             world.flush();

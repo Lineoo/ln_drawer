@@ -13,7 +13,7 @@ use crate::{
         val::{Val, ValChanged},
     },
     measures::Rectangle,
-    theme::Theme,
+    theme::{Theme, ThemeVal},
     tools::pointer::{PointerHit, PointerHover, PointerScroll},
     widgets::{
         brush_preview::BrushPreview,
@@ -46,8 +46,8 @@ impl Element for BrushPanel {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.scope("brush_panel");
         world.set_autodeps(Some(this));
-        world.dependency(this, self.rect);
-        world.dependency(this, self.common.visible);
+
+        let theme = world.single_fetch::<ThemeVal>();
 
         let list_rect = world.insert(Val::new(Rectangle::default()));
         let list_visible = world.insert(Val::new(false));
@@ -76,6 +76,7 @@ impl Element for BrushPanel {
                 TabEntry {
                     icon: ButtonImage::new(
                         svg_render(include_bytes!("../../../res/interface/brush.svg")),
+                        theme.distinct,
                         12,
                     ),
                     rect: list_rect,
@@ -84,6 +85,7 @@ impl Element for BrushPanel {
                 TabEntry {
                     icon: ButtonImage::new(
                         svg_render(include_bytes!("../../../res/interface/settings.svg")),
+                        theme.distinct,
                         12,
                     ),
                     rect: settings_rect,

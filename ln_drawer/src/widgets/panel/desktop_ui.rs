@@ -19,7 +19,7 @@ use crate::{
     },
     lnwin::LnwindowRect,
     measures::{Axis, Rectangle},
-    theme::Theme,
+    theme::{Theme, ThemeVal},
     widgets::{
         button::{ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
@@ -172,6 +172,7 @@ impl Element for ToolBar {
 
         let page = world.single::<LayerPage>();
         let theme = world.single_fetch::<Theme>();
+        let theme_val = world.single_fetch::<ThemeVal>();
 
         let attr = ContainerAttr {
             // cause we need the slider label to display
@@ -199,7 +200,11 @@ impl Element for ToolBar {
                 common,
                 rect,
                 theme: theme.button(),
-                image: Some(ButtonImage::new(svg_render(image_bytes), 8)),
+                image: Some(ButtonImage::new(
+                    svg_render(image_bytes),
+                    theme_val.distinct,
+                    8,
+                )),
                 selected: false,
                 hovering: false,
             })
@@ -494,6 +499,8 @@ impl Element for VerbosePanel {
         world.dependency(this, self.rect);
         world.dependency(this, self.common.visible);
 
+        let theme = world.single_fetch::<ThemeVal>();
+
         let brush_rect = world.insert(Val::new(Rectangle::default()));
         let brush_visible = world.insert(Val::new(false));
         let tab_brush_list = world.insert(BrushListPanel {
@@ -541,6 +548,7 @@ impl Element for VerbosePanel {
                 TabEntry {
                     icon: ButtonImage::new(
                         svg_render(include_bytes!("../../../res/interface/brush.svg")),
+                        theme.distinct,
                         12,
                     ),
                     rect: brush_rect,
@@ -549,6 +557,7 @@ impl Element for VerbosePanel {
                 TabEntry {
                     icon: ButtonImage::new(
                         svg_render(include_bytes!("../../../res/interface/settings.svg")),
+                        theme.distinct,
                         12,
                     ),
                     rect: settings_rect,
@@ -557,6 +566,7 @@ impl Element for VerbosePanel {
                 TabEntry {
                     icon: ButtonImage::new(
                         svg_render(include_bytes!("../../../res/interface/layers.svg")),
+                        theme.distinct,
                         12,
                     ),
                     rect: layer_rect,
@@ -565,6 +575,7 @@ impl Element for VerbosePanel {
                 TabEntry {
                     icon: ButtonImage::new(
                         svg_render(include_bytes!("../../../res/interface/bug.svg")),
+                        theme.distinct,
                         12,
                     ),
                     rect: debug_rect,
