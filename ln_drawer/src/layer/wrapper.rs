@@ -444,7 +444,7 @@ impl LayerPage {
     }
 
     pub fn pick_color(&mut self, cursor: I64Vec2, world: &World) {
-        let cmd = world.commander("async_color_pick");
+        let cmd = world.commander();
         self.lp
             .pick_color(&self.raw, &self.cache, cursor.q32_floor(), move |color| {
                 cmd.queue(move |world| {

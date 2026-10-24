@@ -636,9 +636,8 @@ impl World {
 
     // commands //
 
-    pub fn commander(&self, label: impl Into<Cow<'static, str>>) -> Commander {
+    pub fn commander(&self) -> Commander {
         Commander {
-            label: label.into(),
             location: self.location.get(),
             inner: self.commander.clone(),
         }
@@ -659,7 +658,6 @@ impl World {
 
     pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
         let result = self.commander.send(WorldCommand {
-            label: self.label(),
             location: self.location.get(),
             action: Box::new(f),
         });
@@ -1346,7 +1344,6 @@ impl Element for () {}
 // Commander //
 
 struct WorldCommand {
-    label: Cow<'static, str>,
     location: HandleAny,
     action: Box<dyn FnOnce(&mut World) + Send>,
 }
@@ -1354,7 +1351,6 @@ struct WorldCommand {
 /// A flexible command access to world.
 #[derive(Debug, Clone)]
 pub struct Commander {
-    label: Cow<'static, str>,
     location: HandleAny,
     inner: Sender<WorldCommand>,
 }
@@ -1362,7 +1358,6 @@ pub struct Commander {
 impl Commander {
     pub fn queue(&self, f: impl FnOnce(&mut World) + Send + 'static) {
         let result = self.inner.send(WorldCommand {
-            label: self.label.clone(),
             location: self.location,
             action: Box::new(f),
         });
