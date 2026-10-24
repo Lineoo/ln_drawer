@@ -55,13 +55,12 @@ impl Element for ColorSnip {
 
         let color_rect = world.build(Transform::new(TransformValue::shrink(8, 8), self.rect));
         world.insert(RRect {
+            common: self.common,
             rect: color_rect,
             order: 100,
-            color: mul_alpha(srgb_gamma_decode(self.attr.color)),
+            color: world.insert(Val::new(mul_alpha(srgb_gamma_decode(self.attr.color)))),
             radius: 16.0,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.observer(button, move |event: &PointerScroll, world| {

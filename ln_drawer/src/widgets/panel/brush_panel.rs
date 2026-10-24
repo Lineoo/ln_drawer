@@ -10,7 +10,7 @@ use crate::{
             LuniParent, LuniRect,
         },
         transform::{Transform, TransformEdge, TransformValue},
-        val::Val,
+        val::{Val, ValChanged},
     },
     measures::Rectangle,
     theme::Theme,
@@ -18,14 +18,14 @@ use crate::{
     widgets::{
         brush_preview::BrushPreview,
         button::{
-            ButtonClick, ButtonDrag, ButtonDragStatus, SetButtonSelected, ToggleButton,
-            ToggleButtonTheme,
+            ButtonClick, ButtonDrag, ButtonDragStatus, ButtonImage, SetButtonSelected,
+            ToggleButton, ToggleButtonTheme,
         },
         common::WidgetCommon,
         container::{ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerWithCamera},
         panel::settings::SettingPanel,
         renderer::{
-            rrect::{RRect, SetRRectColor},
+            rrect::RRect,
             svg::svg_render,
             text::{Text, TextAttr},
         },
@@ -74,12 +74,18 @@ impl Element for BrushPanel {
             rect: self.rect,
             tabs: vec![
                 TabEntry {
-                    icon: svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
+                    icon: ButtonImage::new(
+                        svg_render(include_bytes!("../../../res/interface/brush.svg")),
+                        12,
+                    ),
                     rect: list_rect,
                     visible: list_visible,
                 },
                 TabEntry {
-                    icon: svg_render(include_bytes!("../../../res/interface/settings.svg"), 12),
+                    icon: ButtonImage::new(
+                        svg_render(include_bytes!("../../../res/interface/settings.svg")),
+                        12,
+                    ),
                     rect: settings_rect,
                     visible: settings_visible,
                 },
@@ -165,14 +171,15 @@ impl Element for BrushListPanel {
 
             let outline_rect =
                 world.build(Transform::new(TransformValue::shrink(-2, -2), button_rect));
-            let outline = world.insert(RRect {
+            let outline_color =
+                world.insert(Val::new(if i == active { accent } else { background }));
+            world.insert(RRect {
+                common,
                 rect: outline_rect,
                 order: 9,
-                color: if i == active { accent } else { background },
+                color: outline_color,
                 radius: theme.roundness,
                 width: 0.0,
-                visible: self.common.visible,
-                camera: common.camera,
             });
 
             let label_rect = world.build(Transform::new(
@@ -203,13 +210,13 @@ impl Element for BrushListPanel {
                         line_height: 14.0,
                     },
                     attrs: Attrs::new(),
-                    color: symbolic,
                     ..Default::default()
                 },
                 text: tr(page.brushes[i].label).into(),
                 rect: label_rect,
                 order: 150,
                 common,
+                modulate: world.insert(Val::new(symbolic)),
                 outdated: false,
                 canvas_outdated: false,
             });
@@ -256,13 +263,12 @@ impl Element for BrushListPanel {
                 let active = page.active_brush;
                 let selected = i == active;
                 world.queue_trigger(button, SetButtonSelected(selected));
-                world.queue_trigger(
-                    outline,
-                    SetRRectColor(match selected {
-                        true => accent,
-                        false => background,
-                    }),
-                );
+                let mut outline_color = world.fetch_mut(outline_color);
+                outline_color.val = match selected {
+                    true => accent,
+                    false => background,
+                };
+                world.queue_trigger(outline_color.handle(), ValChanged);
             });
 
             world.observer(button, move |drag: &ButtonDrag, world| match drag.status {

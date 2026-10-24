@@ -68,11 +68,11 @@ impl Element for LayerSelectionPanel {
                     line_height: 18.0,
                 },
                 attrs: Attrs::new(),
-                color: theme.distinct,
                 ..Default::default()
             },
             order: 100,
             common,
+            modulate: world.insert(Val::new(theme.distinct)),
             outdated: false,
             canvas_outdated: false,
         });
@@ -99,13 +99,12 @@ impl Element for LayerSelectionPanel {
             local,
         ));
         world.insert(RRect {
+            common,
             rect: div_rect,
             order: 0,
-            color: theme.gray2,
+            color: world.insert(Val::new(theme.gray2)),
             radius: 0.0,
             width: 0.0,
-            visible: self.common.visible,
-            camera: common.camera,
         });
 
         let layer_label_rect = world.build(Transform::new(
@@ -121,11 +120,11 @@ impl Element for LayerSelectionPanel {
                     line_height: 16.0,
                 },
                 attrs: Attrs::new(),
-                color: theme.distinct,
                 ..Default::default()
             },
             order: 100,
             common,
+            modulate: world.insert(Val::new(theme.distinct)),
             outdated: false,
             canvas_outdated: false,
         });
@@ -199,11 +198,11 @@ impl Element for LayerSelectionPanel {
                         line_height: 16.0,
                     },
                     attrs: Attrs::new(),
-                    color: theme.distinct,
                     ..Default::default()
                 },
                 order: 100,
                 common,
+                modulate: world.insert(Val::new(theme.distinct)),
                 outdated: false,
                 canvas_outdated: false,
             });

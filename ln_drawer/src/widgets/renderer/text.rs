@@ -20,6 +20,7 @@ pub struct Text {
     pub attr: TextAttr,
     pub order: isize,
     pub common: WidgetCommon,
+    pub modulate: Handle<Val<Vec4>>,
     /// will delay text draw to next render prepare phase
     pub outdated: bool,
     pub canvas_outdated: bool,
@@ -29,7 +30,6 @@ pub struct TextAttr {
     pub metrics: Metrics,
     pub attrs: Attrs<'static>,
     pub align: Align,
-    pub color: Vec4,
     pub extra_upscale: f32,
 }
 
@@ -46,7 +46,6 @@ impl Default for TextAttr {
             metrics: Metrics::new(24.0, 20.0),
             attrs: Attrs::new(),
             align: Align::Justified,
-            color: Vec4::new(0.0, 0.0, 0.0, 1.0),
             extra_upscale: 1.0,
         }
     }
@@ -57,6 +56,7 @@ impl Text {
         world.set_autodeps(Some(this));
         world.dependency(this, self.rect);
         world.dependency(this, self.common.visible);
+        world.dependency(this, self.modulate);
 
         let lnwindow = world.single_fetch::<Lnwindow>();
         let rect = world.fetch(self.rect).val;
@@ -79,6 +79,13 @@ impl Text {
             this.canvas_outdated = true;
         });
 
+        world.observer(self.modulate, move |ValChanged, world| {
+            let mut this = world.fetch_mut(this);
+            this.outdated = true;
+            let lnwindow = world.single_fetch::<Lnwindow>();
+            lnwindow.window.request_redraw();
+        });
+
         world.observer(this, move |SetText(text), world| {
             let mut this = world.fetch_mut(this);
             this.set_text(&text[..]);
@@ -93,6 +100,7 @@ impl Text {
         let lnwindow = world.single_fetch::<Lnwindow>();
         let rect = world.fetch(self.rect).val;
         let visible = world.fetch(self.common.visible).val;
+        let modulate = world.fetch(self.modulate).val;
 
         if visible {
             if self.canvas_outdated {
@@ -108,6 +116,7 @@ impl Text {
                     &mut canvas,
                     &mut pipeline,
                     &lnwindow,
+                    modulate,
                 );
 
                 world.queue_trigger(canvas.handle(), RemakeCanvasTexture);
@@ -121,6 +130,7 @@ impl Text {
                     &mut canvas,
                     &mut pipeline,
                     &lnwindow,
+                    modulate,
                 );
 
                 world.queue_trigger(canvas.handle(), UploadCanvasData);
@@ -143,6 +153,7 @@ impl Text {
         canvas: &mut Canvas,
         pipeline: &mut TextPipeline,
         lnwindow: &Lnwindow,
+        modulate: Vec4,
     ) {
         canvas.clear_transparent();
 
@@ -159,10 +170,16 @@ impl Text {
         );
         buffer_font.shape_until_scroll(true);
 
-        self.draw_buffer(&buffer, canvas, pipeline);
+        self.draw_buffer(&buffer, canvas, pipeline, modulate);
     }
 
-    fn draw_buffer(&self, buffer: &Buffer, canvas: &mut Canvas, manager: &mut TextPipeline) {
+    fn draw_buffer(
+        &self,
+        buffer: &Buffer,
+        canvas: &mut Canvas,
+        manager: &mut TextPipeline,
+        modulate: Vec4,
+    ) {
         for run in buffer.layout_runs() {
             for glyph in run.glyphs.iter() {
                 let physical_glyph = glyph.physical((0., 0.), 1.0);
@@ -186,7 +203,7 @@ impl Text {
                                 canvas.draw_over(
                                     physical_glyph.x + x + off_x,
                                     run.line_y as i32 + physical_glyph.y + y + off_y,
-                                    self.attr.color.with_w(image.data[i] as f32 / 255.),
+                                    modulate.with_w(image.data[i] as f32 / 255.),
                                 );
                                 i += 1;
                             }
@@ -229,13 +246,7 @@ impl Text {
     }
 
     fn fresh_canvas(&self, size: UVec2) -> Canvas {
-        Canvas::transparent(
-            self.rect,
-            self.order,
-            self.common.visible,
-            self.common.camera,
-            size,
-        )
+        Canvas::transparent(self.rect, self.order, self.common, self.modulate, size)
     }
 }
 

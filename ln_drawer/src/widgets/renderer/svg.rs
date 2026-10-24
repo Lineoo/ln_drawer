@@ -1,10 +1,13 @@
-use glam::{IVec2, UVec2};
-
-use crate::{layout::transform::TransformValue, measures::Rectangle, widgets::button::ButtonImage};
-
 const GLOBAL_UPSCALE: f32 = 4.0;
 
-pub fn svg_render(svg1: &[u8], size: u32) -> ButtonImage {
+#[derive(Clone)]
+pub struct PixImage {
+    pub bytes: Vec<u8>,
+    pub bytes_width: u32,
+    pub bytes_height: u32,
+}
+
+pub fn svg_render(svg1: &[u8]) -> PixImage {
     let tree = usvg::Tree::from_data(svg1, &usvg::Options::default()).unwrap();
     let svg_size = tree.size();
     let real_width = (svg_size.width() * GLOBAL_UPSCALE).ceil() as usize;
@@ -74,11 +77,7 @@ pub fn svg_render(svg1: &[u8], size: u32) -> ButtonImage {
         }
     }
 
-    ButtonImage {
-        transform: TransformValue::anchor(
-            (0.5, 0.5),
-            Rectangle::new_half(IVec2::ZERO, UVec2::splat(size)),
-        ),
+    PixImage {
         bytes: final_image,
         bytes_width: real_width as u32,
         bytes_height: real_height as u32,

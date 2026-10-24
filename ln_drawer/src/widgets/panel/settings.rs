@@ -168,11 +168,11 @@ impl Element for TextSettingPanel {
                     line_height: 18.0,
                 },
                 attrs: Attrs::new().weight(Weight::BOLD),
-                color: theme.gray4,
                 ..Default::default()
             },
             order: 100,
             common,
+            modulate: world.insert(Val::new(theme.gray4)),
             outdated: false,
             canvas_outdated: false,
         });
@@ -557,11 +557,11 @@ fn option_label(
                 font_size: 16.0,
                 line_height: 20.0,
             },
-            color: theme.distinct,
             ..Default::default()
         },
         order: 100,
         common: WidgetCommon { camera, visible },
+        modulate: world.insert(Val::new(theme.distinct)),
         outdated: false,
         canvas_outdated: false,
     })
@@ -606,11 +606,11 @@ fn option_desc(
                 font_size: 12.0,
                 line_height: 14.0,
             },
-            color: theme.gray4,
             ..Default::default()
         },
         order: 100,
         common: WidgetCommon { camera, visible },
+        modulate: world.insert(Val::new(theme.gray4)),
         outdated: false,
         canvas_outdated: false,
     })

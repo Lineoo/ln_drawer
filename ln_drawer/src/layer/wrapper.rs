@@ -45,7 +45,7 @@ use crate::{
 
 const BRIDGE_CHUNK_SIZE: UVec2 = UVec2::splat(1024);
 const SCRATCH_POOL_CAP: usize = 32;
-const DEFAULT_ZOOM_OFFSET: f64 = -2.0;
+const DEFAULT_ZOOM_OFFSET: f64 = 0.0;
 
 // TODO rename module to `page`
 
@@ -163,23 +163,25 @@ impl LayerPage {
             IVec2::new(0, 0),
             UVec2::new(1, 1),
         )));
+        let cursor_common = WidgetCommon {
+            camera: ui_camera,
+            visible: cursor_visible,
+        };
         world.insert(RRect {
+            common: cursor_common,
             rect: cursor_rect,
             order: 110,
-            color: Vec4::new(0.5, 0.5, 0.5, 1.0) * 0.4,
+            color: world.insert(Val::new(Vec4::new(0.5, 0.5, 0.5, 1.0) * 0.4)),
             radius: 0.5,
             width: 0.0,
-            visible: cursor_visible,
-            camera: ui_camera,
         });
         world.insert(RRect {
+            common: cursor_common,
             rect: cursor_shadow_rect,
             order: 109,
-            color: Vec4::new(0.0, 0.0, 0.0, 1.0) * 0.3,
+            color: world.insert(Val::new(Vec4::new(0.0, 0.0, 0.0, 1.0) * 0.3)),
             radius: 0.5,
             width: BRUSH_PREVIEW_SHADOW_BLUR as f32,
-            visible: cursor_visible,
-            camera: ui_camera,
         });
 
         let color = Vec4::new(0.0, 0.0, 0.0, 1.0);

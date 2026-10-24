@@ -15,7 +15,7 @@ use crate::{
     theme::Theme,
     tools::collider::ToolRectCollider,
     widgets::{
-        button::{ButtonAction, ButtonImage, ToggleButton},
+        button::{ButtonAction, ButtonImage, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         renderer::rrect::RRect,
     },
@@ -50,13 +50,12 @@ impl Tabs {
         let shadow_blur = theme.shadow_blur;
 
         world.insert(RRect {
+            common: self.common,
             rect: self.rect,
             order: -10,
-            color: theme.gray2,
+            color: world.insert(Val::new(theme.gray2)),
             radius: roundness,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         let shadow_rect = world.build(Transform::new(
@@ -64,13 +63,12 @@ impl Tabs {
             self.rect,
         ));
         world.insert(RRect {
+            common: self.common,
             rect: shadow_rect,
             order: -11,
-            color: theme.shadow_color,
+            color: world.insert(Val::new(theme.shadow_color)),
             radius: roundness,
             width: shadow_blur,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(ToolRectCollider {
@@ -119,6 +117,7 @@ impl Tabs {
                 common: self.common,
                 rect: button_rect,
                 theme: theme.tab_button(),
+                // FIXME deep duplication
                 image: Some(entry.icon.clone()),
                 selected: i == self.active,
                 hovering: false,
@@ -133,17 +132,20 @@ impl Tabs {
             ));
             let indicator_visible = world.insert(Val::new(i == self.active));
             world.insert(RRect {
+                common: WidgetCommon {
+                    camera: self.common.camera,
+                    visible: indicator_visible,
+                },
                 rect: indicator_rect,
                 order: 100,
-                color: theme.theme,
+                color: world.insert(Val::new(theme.theme)),
                 radius: 0.0,
                 width: 0.0,
-                visible: indicator_visible,
-                camera: self.common.camera,
             });
 
             let entry_visible = entry.visible;
             let entry_rect = entry.rect;
+            // let entry_icon_modulate = entry.icon.modulate;
 
             Transfer::new(world, main_rect, entry_rect).copy();
 
@@ -155,12 +157,21 @@ impl Tabs {
             world.observer(handle, move |&TabsActive(active), world| {
                 let mut entry_visible = world.fetch_mut(entry_visible);
                 let mut indicator_visible = world.fetch_mut(indicator_visible);
+                // let mut entry_icon_modulate = world.fetch_mut(entry_icon_modulate);
 
                 entry_visible.val = i == active;
                 indicator_visible.val = i == active;
+                // entry_icon_modulate.val =
 
-                // TODO Set Button & Icon Color
+                // world.queue_trigger(
+                //     tab.button,
+                //     SetButtonIconColor(match i == active {
+                //         true => theme.distinct,
+                //         false => theme.gray4,
+                //     }),
+                // );
 
+                world.queue_trigger(button, SetButtonSelected(i == active));
                 world.queue_trigger(entry_visible.handle(), ValChanged);
                 world.queue_trigger(indicator_visible.handle(), ValChanged);
             });

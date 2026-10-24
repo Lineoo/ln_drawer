@@ -47,26 +47,24 @@ impl Panel {
         };
 
         world.insert(RRect {
+            common: self.common,
             rect: self.rect,
             order: 0,
-            color: theme.gray1,
+            color: world.insert(Val::new(theme.gray1)),
             radius: roundness,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         if self.attr.shadow {
             let transform = TransformValue::shift(shadow_offset.x, shadow_offset.y);
             let shadow_rect = world.build(Transform::new(transform, self.rect));
             world.insert(RRect {
+                common: self.common,
                 rect: shadow_rect,
                 order: -1,
-                color: theme.shadow_color,
+                color: world.insert(Val::new(theme.shadow_color)),
                 radius: roundness,
                 width: shadow_blur,
-                visible: self.common.visible,
-                camera: self.common.camera,
             });
         }
 

@@ -1,4 +1,4 @@
-use glam::Vec4;
+use glam::{IVec2, UVec2, Vec4};
 use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
@@ -16,10 +16,7 @@ use crate::{
     widgets::{
         WidgetHover,
         common::WidgetCommon,
-        renderer::{
-            canvas::{Canvas, SetCanvasColor},
-            rrect::{RRect, SetRRectColor},
-        },
+        renderer::{canvas::Canvas, rrect::RRect, svg::PixImage},
     },
 };
 
@@ -42,9 +39,8 @@ pub struct ToggleButtonTheme {
 #[derive(Clone)]
 pub struct ButtonImage {
     pub transform: TransformValue,
-    pub bytes: Vec<u8>,
-    pub bytes_width: u32,
-    pub bytes_height: u32,
+    pub modulate: Vec4,
+    pub bmp: PixImage,
 }
 
 pub struct ButtonDrag {
@@ -63,13 +59,24 @@ pub enum ButtonAction {
 pub struct ButtonSelected(pub bool);
 pub struct SetButtonSelected(pub bool);
 
-pub struct SetButtonIconColor(pub Vec4);
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ButtonDragStatus {
     Start,
     Dragging,
     End,
+}
+
+impl ButtonImage {
+    pub fn new(bmp: PixImage, size: u32) -> Self {
+        ButtonImage {
+            transform: TransformValue::anchor(
+                (0.5, 0.5),
+                Rectangle::new_half(IVec2::ZERO, UVec2::splat(size)),
+            ),
+            modulate: Vec4::ONE,
+            bmp,
+        }
+    }
 }
 
 impl ToggleButton {
@@ -81,27 +88,19 @@ impl ToggleButton {
 
         let theme = world.single_fetch::<Theme>();
 
-        let frame = world.insert(RRect {
-            rect: self.rect,
-            order: 10,
-            color: match self.selected {
-                false => self.theme.idle_color,
-                true => self.theme.selected_color,
-            },
-            radius: theme.roundness,
-            width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
-        });
-
         let frame_color = world.insert(Val::new(match self.selected {
             false => self.theme.idle_color,
             true => self.theme.selected_color,
         }));
         let frame_anim_color = world.build(Animator::new(frame_color, theme.anim_factor));
-        world.observer(frame_anim_color, move |ValChanged, world| {
-            let color = world.fetch(frame_anim_color).val;
-            world.queue_trigger(frame, SetRRectColor(color));
+
+        world.insert(RRect {
+            common: self.common,
+            rect: self.rect,
+            order: 10,
+            color: frame_anim_color,
+            radius: theme.roundness,
+            width: 0.0,
         });
 
         world.insert(ToolRectCollider {
@@ -111,22 +110,19 @@ impl ToggleButton {
             order: 10,
         });
 
-        let canvas = if let Some(image) = &self.image {
+        if let Some(image) = &self.image {
             let icon_rect = world.build(Transform::new(image.transform, self.rect));
-            let canvas = world.insert(Canvas {
+            let icon_modulate = world.insert(Val::new(theme.distinct));
+            world.insert(Canvas {
+                common: self.common,
                 rect: icon_rect,
                 order: 11,
-                visible: self.common.visible,
-                camera: self.common.camera,
-                color: theme.distinct,
-                data: image.bytes.clone(),
-                data_width: image.bytes_width,
-                data_height: image.bytes_height,
+                modulate: icon_modulate,
+                data: image.bmp.bytes.clone(),
+                data_width: image.bmp.bytes_width,
+                data_height: image.bmp.bytes_height,
             });
-            Some(canvas)
-        } else {
-            None
-        };
+        }
 
         world.observer(handle, move |&SetButtonSelected(selected), world| {
             let mut this = world.fetch_mut(handle);
@@ -141,12 +137,6 @@ impl ToggleButton {
             let mut frame_color = world.fetch_mut(frame_color);
             frame_color.val = color;
             world.queue_trigger(frame_color.handle(), ValChanged);
-        });
-
-        world.observer(handle, move |&SetButtonIconColor(color), world| {
-            if let Some(canvas) = canvas {
-                world.queue_trigger(canvas, SetCanvasColor(color));
-            }
         });
 
         let mut drag_start = None;

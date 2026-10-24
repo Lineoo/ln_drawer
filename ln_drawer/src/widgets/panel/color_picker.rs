@@ -18,7 +18,10 @@ use crate::{
     render::camera::PageCamera,
     theme::Theme,
     widgets::{
-        button::{ButtonDrag, ButtonDragStatus, ButtonSelected, SetButtonSelected, ToggleButton},
+        button::{
+            ButtonDrag, ButtonDragStatus, ButtonImage, ButtonSelected, SetButtonSelected,
+            ToggleButton,
+        },
         common::WidgetCommon,
         container::{
             ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerEcho, ContainerWithCamera,
@@ -29,10 +32,7 @@ use crate::{
             oklab::{ColorOklab, OklabBar, OklabPolar, SetColorOklab},
         },
         panel::{debug_panel::DebugPanel, layer_selection::LayerSelectionPanel},
-        renderer::{
-            rrect::{RRect, SetRRectColor},
-            svg::svg_render,
-        },
+        renderer::{rrect::RRect, svg::svg_render},
         tabs::{TabEntry, Tabs},
     },
 };
@@ -100,22 +100,34 @@ impl Element for ColorPickerPanel {
             // TODO TabItem like SliderLabel
             tabs: vec![
                 TabEntry {
-                    icon: svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
+                    icon: ButtonImage::new(
+                        svg_render(include_bytes!("../../../res/interface/palette.svg")),
+                        12,
+                    ),
                     rect: hsl_rect,
                     visible: hsl_visible,
                 },
                 TabEntry {
-                    icon: svg_render(include_bytes!("../../../res/interface/palette.svg"), 12),
+                    icon: ButtonImage::new(
+                        svg_render(include_bytes!("../../../res/interface/palette.svg")),
+                        12,
+                    ),
                     rect: oklab_rect,
                     visible: oklab_visible,
                 },
                 TabEntry {
-                    icon: svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
+                    icon: ButtonImage::new(
+                        svg_render(include_bytes!("../../../res/interface/layers.svg")),
+                        12,
+                    ),
                     rect: layer_rect,
                     visible: layer_visible,
                 },
                 TabEntry {
-                    icon: svg_render(include_bytes!("../../../res/interface/bug.svg"), 12),
+                    icon: ButtonImage::new(
+                        svg_render(include_bytes!("../../../res/interface/bug.svg")),
+                        12,
+                    ),
                     rect: debug_rect,
                     visible: debug_visible,
                 },
@@ -155,18 +167,13 @@ impl Element for ColorPickerButton {
         let icon_rect = world.build(Transform::new(icon_transform, self.rect));
         let color = world.insert(Val::new(mul_alpha(srgb_gamma_decode(page.color()))));
 
-        let button_color_icon = world.insert(RRect {
+        world.insert(RRect {
+            common: self.common,
             rect: icon_rect,
             order: 21,
-            color: mul_alpha(srgb_gamma_decode(page.color())),
+            color,
             radius: 10.0,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
-        });
-        world.observer(color, move |ValChanged, world| {
-            let color = world.fetch(color).val;
-            world.queue_trigger(button_color_icon, SetRRectColor(color));
         });
 
         let panel_rect = world.build(Transform::anchor(

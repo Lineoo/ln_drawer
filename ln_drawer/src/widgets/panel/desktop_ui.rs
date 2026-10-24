@@ -21,7 +21,7 @@ use crate::{
     measures::{Axis, Rectangle},
     theme::Theme,
     widgets::{
-        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton},
+        button::{ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         container::{ContainerAttr, ContainerEcho, ContainerWithCamera},
         panel::{
@@ -199,7 +199,7 @@ impl Element for ToolBar {
                 common,
                 rect,
                 theme: theme.button(),
-                image: Some(svg_render(image_bytes, 8)),
+                image: Some(ButtonImage::new(svg_render(image_bytes), 8)),
                 selected: false,
                 hovering: false,
             })
@@ -387,11 +387,11 @@ impl Element for StatusBar {
                 },
                 align: Align::Center,
                 attrs: Attrs::new(),
-                color: theme.gray3,
                 ..Default::default()
             },
             order: 120,
             common,
+            modulate: world.insert(Val::new(theme.gray3)),
             outdated: false,
             canvas_outdated: false,
         });
@@ -539,22 +539,34 @@ impl Element for VerbosePanel {
             rect: self.rect,
             tabs: vec![
                 TabEntry {
-                    icon: svg_render(include_bytes!("../../../res/interface/brush.svg"), 12),
+                    icon: ButtonImage::new(
+                        svg_render(include_bytes!("../../../res/interface/brush.svg")),
+                        12,
+                    ),
                     rect: brush_rect,
                     visible: brush_visible,
                 },
                 TabEntry {
-                    icon: svg_render(include_bytes!("../../../res/interface/settings.svg"), 12),
+                    icon: ButtonImage::new(
+                        svg_render(include_bytes!("../../../res/interface/settings.svg")),
+                        12,
+                    ),
                     rect: settings_rect,
                     visible: settings_visible,
                 },
                 TabEntry {
-                    icon: svg_render(include_bytes!("../../../res/interface/layers.svg"), 12),
+                    icon: ButtonImage::new(
+                        svg_render(include_bytes!("../../../res/interface/layers.svg")),
+                        12,
+                    ),
                     rect: layer_rect,
                     visible: layer_visible,
                 },
                 TabEntry {
-                    icon: svg_render(include_bytes!("../../../res/interface/bug.svg"), 12),
+                    icon: ButtonImage::new(
+                        svg_render(include_bytes!("../../../res/interface/bug.svg")),
+                        12,
+                    ),
                     rect: debug_rect,
                     visible: debug_visible,
                 },

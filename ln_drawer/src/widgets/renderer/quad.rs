@@ -11,10 +11,7 @@ use crate::{
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
     measures::Rectangle,
-    render::{
-        MSAA_STATE, Render, RenderDrawControl,
-        camera::{Camera, CameraBind},
-    },
+    render::{MSAA_STATE, Render, RenderDrawControl, camera::CameraBind},
     widgets::{common::WidgetCommon, shaders::shader_compile},
 };
 
@@ -42,10 +39,9 @@ pub struct QuadMeshPipeline<M: QuadMaterial> {
 }
 
 pub struct QuadMesh<M: QuadMaterial> {
+    pub common: WidgetCommon,
     pub rect: Handle<Val<Rectangle>>,
-    pub visible: Handle<Val<bool>>,
     pub order: isize,
-    pub camera: Handle<Camera>,
     pub material: M,
 }
 
@@ -101,10 +97,7 @@ impl<M: QuadMaterial> QuadMesh<M> {
         });
 
         world.insert(RenderDrawControl {
-            common: WidgetCommon {
-                camera: self.camera,
-                visible: self.visible,
-            },
+            common: self.common,
             order: self.order,
             draw: Box::new(move |world, rpass, extra| {
                 let pipeline = world.single_fetch::<QuadMeshPipeline<M>>();

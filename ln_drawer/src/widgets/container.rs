@@ -303,13 +303,12 @@ impl Element for ContainerDeco {
         let container = world.fetch(handle);
 
         world.insert(RRect {
+            common: container.common,
             rect: container.rect,
             order: 10,
-            color: theme.gray1,
+            color: world.insert(Val::new(theme.gray1)),
             radius: theme.roundness,
             width: 0.0,
-            visible: container.common.visible,
-            camera: container.common.camera,
         });
 
         let mut status = None;

@@ -17,7 +17,7 @@ use crate::{
         WidgetHover,
         common::WidgetCommon,
         renderer::{
-            rrect::{RRect, SetRRectColor},
+            rrect::RRect,
             text::{SetText, Text, TextAttr},
         },
     },
@@ -60,58 +60,48 @@ impl Slider {
         let knob_split_rect_val =
             world.insert(Val::new(knob_split_rect(rect, self.axis, position)));
 
+        let back_color = world.insert(Val::new(theme.gray2));
+        let front_color = world.insert(Val::new(theme.theme));
         let knob_color_anim = world.insert(Val::new(theme.gray0));
         let knob_color_val = world.build(Animator::new(knob_color_anim, theme.anim_factor));
-        world.observer(knob_color_val, move |ValChanged, world| {
-            let color = world.fetch(knob_color_val).val;
-            world.queue_trigger(knob_rect_val, SetRRectColor(color));
-        });
-
         let knob_split_color_anim = world.insert(Val::new(theme.gray1));
-        let knob_split_color_val = world.build(Animator::new(knob_split_color_anim, theme.anim_factor));
-        world.observer(knob_split_color_val, move |ValChanged, world| {
-            let color = world.fetch(knob_split_color_val).val;
-            world.queue_trigger(knob_split_rect_val, SetRRectColor(color));
-        });
+        let knob_split_color_val =
+            world.build(Animator::new(knob_split_color_anim, theme.anim_factor));
 
         world.insert(RRect {
+            common: self.common,
             rect: back_rect_val,
             order: 20,
-            color: theme.gray2,
+            color: back_color,
             radius: theme.roundness,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(RRect {
+            common: self.common,
             rect: front_rect_val,
             order: 21,
-            color: theme.theme,
+            color: front_color,
             radius: theme.roundness,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(RRect {
+            common: self.common,
             rect: knob_rect_val,
             order: 22,
-            color: theme.gray0,
+            color: knob_color_val,
             radius: theme.roundness,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(RRect {
+            common: self.common,
             rect: knob_split_rect_val,
             order: 23,
-            color: theme.gray1,
+            color: knob_split_color_val,
             radius: 2.0,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(ToolRectCollider {
@@ -247,13 +237,12 @@ impl SliderLabel {
         };
 
         world.insert(RRect {
+            common,
             rect: label_rect,
             order: 100,
-            color: theme.gray0,
+            color: world.insert(Val::new(theme.gray0)),
             radius: LABEL_HALF.y as f32,
             width: 0.0,
-            visible: common.visible,
-            camera: common.camera,
         });
 
         let label = world.insert(Text {
@@ -262,11 +251,11 @@ impl SliderLabel {
             attr: TextAttr {
                 metrics: Metrics::new(12., 2. * LABEL_HALF.y as f32),
                 align: Align::Center,
-                color: theme.distinct,
                 ..Default::default()
             },
             order: 150,
             common,
+            modulate: world.insert(Val::new(theme.distinct)),
             outdated: false,
             canvas_outdated: false,
         });

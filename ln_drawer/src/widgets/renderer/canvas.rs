@@ -18,19 +18,15 @@ use crate::{
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
     measures::Rectangle,
-    render::{
-        MSAA_STATE, Render, RenderDrawControl,
-        camera::{Camera, CameraBind},
-    },
+    render::{MSAA_STATE, Render, RenderDrawControl, camera::CameraBind},
     widgets::{common::WidgetCommon, shaders::shader_compile},
 };
 
 pub struct Canvas {
+    pub common: WidgetCommon,
     pub rect: Handle<Val<Rectangle>>,
     pub order: isize,
-    pub visible: Handle<Val<bool>>,
-    pub camera: Handle<Camera>,
-    pub color: Vec4,
+    pub modulate: Handle<Val<Vec4>>,
 
     pub data: Vec<u8>,
     pub data_width: u32,
@@ -49,7 +45,6 @@ pub struct CanvasPipeline {
     instance: BindGroupLayout,
 }
 
-pub struct SetCanvasColor(pub Vec4);
 pub struct UploadCanvasData;
 pub struct RemakeCanvasTexture;
 
@@ -65,7 +60,8 @@ impl Canvas {
         world.scope("canvas");
         world.set_autodeps(Some(this));
         world.dependency(this, self.rect);
-        world.dependency(this, self.visible);
+        world.dependency(this, self.common.visible);
+        world.dependency(this, self.modulate);
 
         assert_eq!(
             self.data.len(),
@@ -74,16 +70,14 @@ impl Canvas {
         );
 
         let rect = world.fetch(self.rect).val;
+        let modulate = world.fetch(self.modulate).val;
         let render = world.single_fetch::<Render>();
         let pipeline = world.single_fetch::<CanvasPipeline>();
-        let instance = world.insert(self.instantiate(&render, &pipeline, rect));
+        let instance = world.insert(self.instantiate(&render, &pipeline, rect, modulate));
         drop(render);
 
         world.insert(RenderDrawControl {
-            common: WidgetCommon {
-                camera: self.camera,
-                visible: self.visible,
-            },
+            common: self.common,
             order: self.order,
             draw: Box::new(move |world, rpass, extra| {
                 let instance = world.fetch(instance);
@@ -120,14 +114,16 @@ impl Canvas {
             lnwindow.window.request_redraw();
         });
 
-        world.observer(this, move |&SetCanvasColor(color), world| {
-            let mut this = world.fetch_mut(this);
+        let modulate = self.modulate;
+        world.observer(modulate, move |ValChanged, world| {
+            let modulate = world.fetch(modulate).val;
             let instance = world.fetch(instance);
-            this.color = color;
-
-            let bytes = bytemuck::bytes_of(&color);
             let render = world.single_fetch::<Render>();
+
+            let bytes = bytemuck::bytes_of(&modulate);
             render.queue.write_buffer(&instance.color_uniform, 0, bytes);
+            let lnwindow = world.single_fetch::<Lnwindow>();
+            lnwindow.window.request_redraw();
         });
 
         world.observer(this, move |&UploadCanvasData, world| {
@@ -143,23 +139,23 @@ impl Canvas {
             let pipeline = world.single_fetch::<CanvasPipeline>();
             let render = world.single_fetch::<Render>();
             let rect = world.fetch(this.rect).val;
-            *instance = this.instantiate(&render, &pipeline, rect);
+            let modulate = world.fetch(this.modulate).val;
+            *instance = this.instantiate(&render, &pipeline, rect, modulate);
         });
     }
 
     pub fn transparent(
         rect: Handle<Val<Rectangle>>,
         order: isize,
-        visible: Handle<Val<bool>>,
-        camera: Handle<Camera>,
+        common: WidgetCommon,
+        modulate: Handle<Val<Vec4>>,
         size: UVec2,
     ) -> Self {
         Self {
+            common,
             rect,
             order,
-            visible,
-            camera,
-            color: Vec4::new(1.0, 1.0, 1.0, 1.0),
+            modulate,
             data: vec![0u8; (size.x * size.y * 4) as usize],
             data_width: size.x,
             data_height: size.y,
@@ -250,6 +246,7 @@ impl Canvas {
         render: &Render,
         pipeline: &CanvasPipeline,
         rect: Rectangle,
+        modulate: Vec4,
     ) -> CanvasInstance {
         let rectangle_uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("canvas_uniform"),
@@ -296,7 +293,7 @@ impl Canvas {
 
         let color_uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("canvas_uniform"),
-            contents: bytemuck::bytes_of(&<[f32; 4]>::from(self.color)),
+            contents: bytemuck::bytes_of(&<[f32; 4]>::from(modulate)),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 

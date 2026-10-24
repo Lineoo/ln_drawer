@@ -21,7 +21,7 @@ use crate::{
         common::WidgetCommon,
         renderer::{
             quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
-            rrect::{RRect, SetRRectColor},
+            rrect::RRect,
         },
         shaders::shader_compile,
     },
@@ -100,41 +100,38 @@ impl HslSquare {
         let thumb_shadow_rect = Transfer::derive(world, thumb_rect).build(|rect| rect.expand(2));
 
         let quad = world.insert(QuadMesh {
+            common: self.common,
             rect: self.rect,
-            visible: self.common.visible,
             order: 60,
-            camera: self.common.camera,
             material: HslSquareMaterial { hsl: self.hsl },
         });
 
-        let thumb = world.insert(RRect {
+        let thumb_color_val = world.insert(Val::new(thumb_color(self.hsl)));
+        world.insert(RRect {
+            common: self.common,
             rect: thumb_rect,
             order: 150,
-            color: thumb_color(self.hsl),
+            color: thumb_color_val,
             radius: THUMB_RADIUS,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(RRect {
+            common: self.common,
             rect: thumb_light_rect,
             order: 140,
-            color: Vec4::new(1.0, 1.0, 1.0, 1.0),
+            color: world.insert(Val::new(Vec4::new(1.0, 1.0, 1.0, 1.0))),
             radius: THUMB_RADIUS + 1.0,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(RRect {
+            common: self.common,
             rect: thumb_shadow_rect,
             order: 130,
-            color: Vec4::new(0.0, 0.0, 0.0, 1.0),
+            color: world.insert(Val::new(Vec4::new(0.0, 0.0, 0.0, 1.0))),
             radius: THUMB_RADIUS + 2.0,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(ToolRectCollider {
@@ -159,11 +156,13 @@ impl HslSquare {
             let mut this = world.fetch_mut(this);
             let rect = world.fetch(this.rect).val;
             let mut thumb_rect = world.fetch_mut(thumb_rect);
+            let mut thumb_color_val = world.fetch_mut(thumb_color_val);
             this.hsl = hsl;
             thumb_rect.val = square_thumb(rect, this.hsl);
+            thumb_color_val.val = thumb_color(hsl);
             world.queue_trigger(thumb_rect.handle(), ValChanged);
+            world.queue_trigger(thumb_color_val.handle(), ValChanged);
             world.queue_trigger(quad, SetQuadMaterial(this.mat()));
-            world.queue_trigger(thumb, SetRRectColor(thumb_color(hsl)));
         });
     }
 
@@ -187,10 +186,9 @@ impl HslRing {
         let thumb_shadow_rect = Transfer::derive(world, thumb_rect).build(|rect| rect.expand(2));
 
         let quad = world.insert(QuadMesh {
+            common: self.common,
             rect: self.rect,
-            visible: self.common.visible,
             order: 60,
-            camera: self.common.camera,
             material: HslRingMaterial {
                 hsl: self.hsl,
                 inner_radius: self.inner_radius,
@@ -198,34 +196,32 @@ impl HslRing {
             },
         });
 
-        let thumb = world.insert(RRect {
+        let thumb_color_val = world.insert(Val::new(thumb_color(self.hsl)));
+        world.insert(RRect {
+            common: self.common,
             rect: thumb_rect,
             order: 150,
-            color: thumb_color(self.hsl),
+            color: thumb_color_val,
             radius: THUMB_RADIUS,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(RRect {
+            common: self.common,
             rect: thumb_light_rect,
             order: 140,
-            color: Vec4::new(1.0, 1.0, 1.0, 1.0),
+            color: world.insert(Val::new(Vec4::new(1.0, 1.0, 1.0, 1.0))),
             radius: THUMB_RADIUS + 1.0,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(RRect {
+            common: self.common,
             rect: thumb_shadow_rect,
             order: 130,
-            color: Vec4::new(0.0, 0.0, 0.0, 1.0),
+            color: world.insert(Val::new(Vec4::new(0.0, 0.0, 0.0, 1.0))),
             radius: THUMB_RADIUS + 2.0,
             width: 0.0,
-            visible: self.common.visible,
-            camera: self.common.camera,
         });
 
         world.insert(ToolRingCollider {
@@ -252,11 +248,13 @@ impl HslRing {
             let mut this = world.fetch_mut(this);
             let rect = world.fetch(this.rect).val;
             let mut thumb_rect = world.fetch_mut(thumb_rect);
+            let mut thumb_color_val = world.fetch_mut(thumb_color_val);
             this.hsl = hsl;
             thumb_rect.val = square_thumb(rect, this.hsl);
+            thumb_color_val.val = thumb_color(hsl);
             world.queue_trigger(thumb_rect.handle(), ValChanged);
+            world.queue_trigger(thumb_color_val.handle(), ValChanged);
             world.queue_trigger(quad, SetQuadMaterial(this.mat()));
-            world.queue_trigger(thumb, SetRRectColor(thumb_color(hsl)));
         });
     }
 

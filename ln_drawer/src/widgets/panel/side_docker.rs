@@ -14,7 +14,7 @@ use crate::{
     measures::{Axis, Rectangle},
     theme::Theme,
     widgets::{
-        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton},
+        button::{ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         panel::{Panel, PanelAttr, brush_panel::BrushPanel, color_picker::ColorPickerButton},
         renderer::{svg::svg_render, text::SetText},
@@ -93,7 +93,7 @@ impl Element for SideDocker {
                 common: self.common,
                 rect,
                 theme: theme.button(),
-                image: Some(svg_render(image_bytes, 8)),
+                image: Some(ButtonImage::new(svg_render(image_bytes), 8)),
                 selected: false,
                 hovering: false,
             })
@@ -104,8 +104,8 @@ impl Element for SideDocker {
             common: self.common,
             rect: brush_menu_rect,
             theme: theme.button(),
-            image: Some(svg_render(
-                include_bytes!("../../../res/interface/pen.svg"),
+            image: Some(ButtonImage::new(
+                svg_render(include_bytes!("../../../res/interface/pen.svg")),
                 8,
             )),
             selected: false,

@@ -16,7 +16,7 @@ use crate::{
     save::{Save, SceneDocument},
     theme::Theme,
     widgets::{
-        button::{ButtonClick, ButtonSelected, SetButtonSelected, ToggleButton},
+        button::{ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
         common::WidgetCommon,
         container::{
             ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerEcho, ContainerWithCamera,
@@ -65,11 +65,11 @@ impl Element for DebugPanel {
             attr: TextAttr {
                 metrics: Metrics::new(12.0, 18.0),
                 attrs: Attrs::new().family(Family::Monospace),
-                color: theme.distinct,
                 ..Default::default()
             },
             order: 50,
             common,
+            modulate: world.insert(Val::new(theme.distinct)),
             outdated: false,
             canvas_outdated: false,
         });
@@ -106,7 +106,7 @@ impl Element for DebugPanel {
                 },
                 rect,
                 theme: theme.button(),
-                image: Some(svg_render(image_bytes, 8)),
+                image: Some(ButtonImage::new(svg_render(image_bytes), 8)),
                 selected: false,
                 hovering: false,
             })
