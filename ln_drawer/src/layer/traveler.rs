@@ -13,7 +13,7 @@ use crate::{
         CHUNK_TEXTURE_FORMAT, CacheLayers, ChunkPool, LayerPipeline, RawLayer, RawLayerChunk,
         brush::Stroke, chunks_key_to_rect, rect_chunks_iter,
     },
-    measures::Rectangle,
+    measures::IRect,
 };
 
 const UNDO_SNAPSHOTS_LIMIT: usize = 64;
@@ -31,7 +31,7 @@ pub struct Traveler {
 /// snapshot for each nodes of traveler
 struct Snapshot {
     sections: SmallVec<[SnapshotSection; 1]>,
-    dirty: Rectangle,
+    dirty: IRect,
     chunk_size: UVec2,
 }
 
@@ -74,7 +74,7 @@ impl Traveler {
         raw: &mut RawLayer,
         cache: &CacheLayers,
         pool: &mut ChunkPool,
-        dirty: Rectangle,
+        dirty: IRect,
     ) {
         let stroke = Stroke {
             prev: None,

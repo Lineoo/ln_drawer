@@ -8,7 +8,7 @@ use crate::{
         transform::{Transform, TransformValue},
         val::Val,
     },
-    measures::Rectangle,
+    measures::IRect,
     render::{
         Render,
         camera::{PageCamera, PageCameraUtils},
@@ -30,7 +30,7 @@ use crate::{
 
 pub struct DebugPanel {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for DebugPanel {
@@ -98,7 +98,7 @@ impl Element for DebugPanel {
             },
         );
 
-        let docker_button = |rect: Handle<Val<Rectangle>>, image_bytes: &[u8]| {
+        let docker_button = |rect: Handle<Val<IRect>>, image_bytes: &[u8]| {
             world.insert(ToggleButton {
                 common: WidgetCommon {
                     camera: common.camera,
@@ -113,7 +113,7 @@ impl Element for DebugPanel {
         };
 
         let compass_rect = world.build(Transform::new(
-            TransformValue::anchor((0.0, 0.0), Rectangle::new(20, 20, 40, 40)),
+            TransformValue::anchor((0.0, 0.0), IRect::new(20, 20, 40, 40)),
             local,
         ));
         let compass = docker_button(
@@ -131,7 +131,7 @@ impl Element for DebugPanel {
         });
 
         let page_debug_rect = world.build(Transform::new(
-            TransformValue::anchor((0.33, 0.0), Rectangle::new(-10, 20, 10, 40)),
+            TransformValue::anchor((0.33, 0.0), IRect::new(-10, 20, 10, 40)),
             local,
         ));
         let page_debug = docker_button(
@@ -145,7 +145,7 @@ impl Element for DebugPanel {
         });
 
         let render_profile_rect = world.build(Transform::new(
-            TransformValue::anchor((0.67, 0.0), Rectangle::new(-10, 20, 10, 40)),
+            TransformValue::anchor((0.67, 0.0), IRect::new(-10, 20, 10, 40)),
             local,
         ));
         let render_profile = docker_button(
@@ -159,7 +159,7 @@ impl Element for DebugPanel {
         });
 
         let compact_rect = world.build(Transform::new(
-            TransformValue::anchor((1.0, 0.0), Rectangle::new(-40, 20, -20, 40)),
+            TransformValue::anchor((1.0, 0.0), IRect::new(-40, 20, -20, 40)),
             local,
         ));
         let compact = docker_button(

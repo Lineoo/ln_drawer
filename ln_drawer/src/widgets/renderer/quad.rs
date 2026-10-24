@@ -10,7 +10,7 @@ use wgpu::{
 use crate::{
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
-    measures::Rectangle,
+    measures::IRect,
     render::{MSAA_STATE, Render, RenderDrawControl, camera::CameraBind},
     widgets::{common::WidgetCommon, shaders::shader_compile},
 };
@@ -40,7 +40,7 @@ pub struct QuadMeshPipeline<M: QuadMaterial> {
 
 pub struct QuadMesh<M: QuadMaterial> {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub order: isize,
     pub material: M,
 }

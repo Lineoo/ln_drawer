@@ -7,7 +7,7 @@ use crate::{
         val::{Val, ValChanged},
     },
     lnwin::Lnwindow,
-    measures::{FI64Ext, Rectangle, ScissorRect},
+    measures::{FI64Ext, IRect, URect},
     render::{
         Render, RenderDrawControl, RenderExtra,
         camera::{Camera, CameraDescriptor, CameraOutdated, SetCameraOutdated},
@@ -45,7 +45,7 @@ impl Default for ContainerAttr {
 pub struct ContainerWithCamera {
     pub common: WidgetCommon,
     /// outer rectangle
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub attr: ContainerAttr,
 }
 
@@ -82,7 +82,7 @@ pub struct Container {
     pub order: isize,
     pub child: Handle<Camera>,
     /// outer rectangle
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub attr: ContainerAttr,
 }
 
@@ -121,11 +121,9 @@ impl Element for Container {
                     let right = (right_down.x.max(0.0) as u32).min(window_size.width);
                     let down = (right_down.y.max(0.0) as u32).min(window_size.height);
 
-                    let clip = ScissorRect {
-                        x,
-                        y,
-                        width: right.saturating_sub(x),
-                        height: down.saturating_sub(y),
+                    let clip = URect {
+                        origin: UVec2::new(x, y),
+                        extend: UVec2::new(right.saturating_sub(x), down.saturating_sub(y)),
                     };
 
                     let clipped = match extra.scissor.intersect(clip) {
@@ -134,7 +132,12 @@ impl Element for Container {
                         None => return,
                     };
 
-                    rpass.set_scissor_rect(clipped.x, clipped.y, clipped.width, clipped.height);
+                    rpass.set_scissor_rect(
+                        clipped.origin.x,
+                        clipped.origin.y,
+                        clipped.extend.x,
+                        clipped.extend.y,
+                    );
                     Render::draw(
                         &child,
                         world,
@@ -147,10 +150,10 @@ impl Element for Container {
 
                     // revert
                     rpass.set_scissor_rect(
-                        extra.scissor.x,
-                        extra.scissor.y,
-                        extra.scissor.width,
-                        extra.scissor.height,
+                        extra.scissor.origin.x,
+                        extra.scissor.origin.y,
+                        extra.scissor.extend.x,
+                        extra.scissor.extend.y,
                     );
                 } else {
                     Render::draw(&child, world, rpass, extra);
@@ -210,7 +213,7 @@ impl Element for Container {
 }
 
 impl Container {
-    fn update_camera(&self, rect: Rectangle, parent_camera: &Camera, child_camera: &mut Camera) {
+    fn update_camera(&self, rect: IRect, parent_camera: &Camera, child_camera: &mut Camera) {
         child_camera.global_center = parent_camera.global_center + child_camera.center
             - rect.q32_anchor(self.attr.anchor)
             + self.attr.scroll;
@@ -221,7 +224,7 @@ impl Container {
         }
     }
 
-    fn clamp_scroll(&mut self, rect: Rectangle, restrict: Rectangle) {
+    fn clamp_scroll(&mut self, rect: IRect, restrict: IRect) {
         let min = I64Vec2::q32_from_i32(rect.left_down());
         let max = I64Vec2::q32_from_i32(rect.right_up());
         let center = rect.q32_anchor(self.attr.anchor);
@@ -254,11 +257,11 @@ pub struct ContainerEcho {
 }
 
 impl Descriptor for ContainerEcho {
-    type Target = Handle<Val<Rectangle>>;
+    type Target = Handle<Val<IRect>>;
 
     fn when_build(self, world: &World) -> Self::Target {
         let container = self.container;
-        let inner = world.insert(Val::new(Rectangle::default()));
+        let inner = world.insert(Val::new(IRect::default()));
 
         world.queue(move |world| {
             world.scope("container_echo");
@@ -276,7 +279,7 @@ impl Descriptor for ContainerEcho {
                 let center = rect.q32_anchor(anchor);
                 let min = (min - center).q32_round();
                 let max = (max - center).q32_round();
-                inner.val = Rectangle::new_minmax(min, max);
+                inner.val = IRect::new_minmax(min, max);
                 world.queue_trigger(inner.handle(), ValChanged);
             });
         });
@@ -290,7 +293,7 @@ impl Descriptor for ContainerEcho {
 /// - restrict is for scroll
 pub struct ContainerDeco {
     pub container: Handle<Container>,
-    pub restriction: Handle<Val<Rectangle>>,
+    pub restriction: Handle<Val<IRect>>,
 }
 
 impl Element for ContainerDeco {
@@ -388,15 +391,15 @@ impl Element for ContainerDeco {
 /// auto setup ContainerDeco's restriction area based on Container's view rect
 pub struct ContainerDecoDropdown {
     pub height: Option<i32>,
-    pub outer: Handle<Val<Rectangle>>,
+    pub outer: Handle<Val<IRect>>,
 }
 
 impl Descriptor for ContainerDecoDropdown {
-    type Target = Handle<Val<Rectangle>>;
+    type Target = Handle<Val<IRect>>;
 
     fn when_build(self, world: &World) -> Self::Target {
         Transfer::derive(world, self.outer).build(move |&rect| {
-            Rectangle::new(
+            IRect::new(
                 0,
                 -self.height.unwrap_or(rect.extend.y as i32),
                 rect.extend.x as i32,

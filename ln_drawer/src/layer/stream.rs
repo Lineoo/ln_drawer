@@ -25,7 +25,7 @@ use crate::{
         chunks_stack_key_to_rect, point_zoom_to_chunks_stack, rect_chunks_iter,
         rect_chunks_stack_layer_iter, rect_chunks_stack_layer_range,
     },
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     render::camera::Camera,
     save::chunk::{ChunkLoad, ChunkLoadResult, ChunkSave},
 };
@@ -116,7 +116,7 @@ enum ChunkKeyKind {
 /// Camera information from main thread, used to determine which chunks to load.
 struct CameraInfo {
     center: (i32, i32, u8),
-    rect: Rectangle,
+    rect: IRect,
     range: ((i32, i32), (i32, i32)),
 }
 
@@ -158,7 +158,7 @@ impl StreamThread {
             },
             camera: CameraInfo {
                 center: (0, 0, 0),
-                rect: Rectangle::new_half(IVec2::ZERO, UVec2::splat(50)),
+                rect: IRect::new_half(IVec2::ZERO, UVec2::splat(50)),
                 range: ((0, 0), (0, 0)),
             },
         }

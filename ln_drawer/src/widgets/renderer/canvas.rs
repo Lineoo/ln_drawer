@@ -17,14 +17,14 @@ use wgpu::{
 use crate::{
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
-    measures::Rectangle,
+    measures::IRect,
     render::{MSAA_STATE, Render, RenderDrawControl, camera::CameraBind},
     widgets::{common::WidgetCommon, shaders::shader_compile},
 };
 
 pub struct Canvas {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub order: isize,
     pub modulate: Handle<Val<Vec4>>,
 
@@ -47,13 +47,6 @@ pub struct CanvasPipeline {
 
 pub struct UploadCanvasData;
 pub struct RemakeCanvasTexture;
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct RectangleUniform {
-    pub origin: [i32; 2],
-    pub extend: [u32; 2],
-}
 
 impl Canvas {
     pub fn init(&mut self, world: &World, this: Handle<Self>) {
@@ -100,12 +93,8 @@ impl Canvas {
             let this = world.fetch(this);
             let rect = world.fetch(this.rect).val;
             let instance = world.fetch(instance);
-            let uniform = RectangleUniform {
-                origin: rect.origin.into(),
-                extend: rect.extend.into(),
-            };
 
-            let bytes = bytemuck::bytes_of(&uniform);
+            let bytes = bytemuck::bytes_of(&rect);
             let render = world.single_fetch::<Render>();
             render
                 .queue
@@ -145,7 +134,7 @@ impl Canvas {
     }
 
     pub fn transparent(
-        rect: Handle<Val<Rectangle>>,
+        rect: Handle<Val<IRect>>,
         order: isize,
         common: WidgetCommon,
         modulate: Handle<Val<Vec4>>,
@@ -245,15 +234,12 @@ impl Canvas {
         &self,
         render: &Render,
         pipeline: &CanvasPipeline,
-        rect: Rectangle,
+        rect: IRect,
         modulate: Vec4,
     ) -> CanvasInstance {
         let rectangle_uniform = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("canvas_uniform"),
-            contents: bytemuck::bytes_of(&RectangleUniform {
-                origin: rect.origin.into(),
-                extend: rect.extend.into(),
-            }),
+            contents: bytemuck::bytes_of(&rect),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 

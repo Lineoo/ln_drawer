@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     layout::val::Val,
-    measures::Rectangle,
+    measures::IRect,
     save::{Autosave, Save},
     widgets::{
         common::WidgetCommon,
@@ -34,10 +34,8 @@ impl Element for Objects {
             let ((_page, uuid), bytes) = (k.value(), v.value());
             let handle = match serde_json::from_slice::<ObjectData>(bytes).unwrap() {
                 ObjectData::ColorSnip(attr) => {
-                    let rect = world.insert(Val::new(Rectangle::new_half(
-                        attr.position,
-                        UVec2::splat(24),
-                    )));
+                    let rect =
+                        world.insert(Val::new(IRect::new_half(attr.position, UVec2::splat(24))));
                     ObjectHandle::ColorSnip(world.insert(ColorSnip {
                         common: self.common,
                         rect,

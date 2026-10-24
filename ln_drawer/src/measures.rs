@@ -4,10 +4,8 @@
 
 mod axis;
 mod fixed;
-mod rectangle;
-mod screen;
+mod rect;
 
 pub use axis::Axis;
 pub use fixed::FI64Ext;
-pub use rectangle::Rectangle;
-pub use screen::ScissorRect;
+pub use rect::{IRect, URect};

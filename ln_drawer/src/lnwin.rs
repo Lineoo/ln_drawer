@@ -15,7 +15,7 @@ use winit::{
 
 use crate::{
     layout::val::{Val, ValChanged},
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     render::{
         Render,
         camera::{Camera, CameraDescriptor, CameraOutdated, SetCameraOutdated, UICamera},
@@ -100,7 +100,7 @@ pub struct Lnwindow {
     pub window: Arc<dyn Window>,
 }
 
-pub struct LnwindowRect(pub Handle<Val<Rectangle>>);
+pub struct LnwindowRect(pub Handle<Val<IRect>>);
 
 impl Element for Lnwindow {
     fn when_insert(&mut self, world: &World, this: Handle<Self>) {
@@ -248,13 +248,13 @@ impl Lnwindow {
         PhysicalPosition::new(x, y)
     }
 
-    fn window_rect(&self) -> Rectangle {
+    fn window_rect(&self) -> IRect {
         let size = self.window.surface_size();
         let scale = self.window.scale_factor();
         let half = (UVec2::new(size.width / 2, size.height / 2).as_dvec2() / scale)
             .round()
             .as_uvec2();
-        Rectangle::new_half(IVec2::ZERO, half)
+        IRect::new_half(IVec2::ZERO, half)
     }
 }
 

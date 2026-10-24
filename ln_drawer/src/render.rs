@@ -8,6 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use glam::UVec2;
 use ln_world::{Element, Handle, World};
 use wgpu::*;
 use winit::{dpi::PhysicalSize, event::WindowEvent};
@@ -15,7 +16,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent};
 use crate::{
     layout::val::ValChanged,
     lnwin::Lnwindow,
-    measures::ScissorRect,
+    measures::URect,
     render::camera::{Camera, UICamera},
     widgets::common::WidgetCommon,
 };
@@ -92,7 +93,7 @@ pub struct RenderExtra<'a, 'b> {
     pub early_encoder: &'a mut CommandEncoder,
     pub surface_config: &'a SurfaceConfiguration,
     pub diagnosis: &'a mut RenderDiagnosis<'b>,
-    pub scissor: ScissorRect,
+    pub scissor: URect,
 }
 
 pub struct RenderDiagnosis<'a> {
@@ -395,11 +396,9 @@ impl Render {
                 early_encoder: &mut early_encoder,
                 surface_config: &render.config,
                 diagnosis: &mut diagnosis,
-                scissor: ScissorRect {
-                    x: 0,
-                    y: 0,
-                    width: camera.surface_size.x,
-                    height: camera.surface_size.y,
+                scissor: URect {
+                    origin: UVec2::ZERO,
+                    extend: camera.surface_size,
                 },
             },
         );

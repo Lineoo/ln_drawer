@@ -8,7 +8,7 @@ use crate::{
         transform::{Transform, TransformValue},
         val::{Val, ValChanged},
     },
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     theme::Theme,
     tools::{
         collider::ToolRectCollider,
@@ -23,7 +23,7 @@ use crate::{
 
 pub struct ToggleButton {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub theme: ToggleButtonTheme,
     pub image: Option<ButtonImage>,
     pub selected: Handle<Val<bool>>,
@@ -72,7 +72,7 @@ impl ButtonImage {
         ButtonImage {
             transform: TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(size)),
+                IRect::new_half(IVec2::ZERO, UVec2::splat(size)),
             ),
             modulate,
             bmp,

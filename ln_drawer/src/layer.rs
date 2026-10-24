@@ -33,7 +33,7 @@ use wgpu::{
 
 use crate::{
     layer::{brush::Brush, stream::ThreadInput},
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     render::camera::Camera,
     widgets::shaders::shader_compile,
 };
@@ -197,16 +197,16 @@ impl LayerPipeline {
         create_chunk_texture(&self.device, size)
     }
 
-    pub fn create_chunk(&self, texture: Texture, rect: Rectangle) -> Chunk {
+    pub fn create_chunk(&self, texture: Texture, rect: IRect) -> Chunk {
         create_chunk(&self.device, &self.chunk_layout, texture, rect)
     }
 
-    pub fn create_empty_chunk(&self, size: UVec2, rect: Rectangle) -> Chunk {
+    pub fn create_empty_chunk(&self, size: UVec2, rect: IRect) -> Chunk {
         let texture = self.create_chunk_texture(size);
         self.create_chunk(texture, rect)
     }
 
-    pub fn create_standalone(&self, rect: Rectangle) -> Standalone {
+    pub fn create_standalone(&self, rect: IRect) -> Standalone {
         let chunk = self.create_empty_chunk(rect.extend, rect);
         Standalone { chunk, rect }
     }
@@ -217,7 +217,7 @@ impl LayerPipeline {
         raw: &mut RawLayer,
         cache: &CacheLayers,
         pool: &mut ChunkPool,
-        dirty: Rectangle,
+        dirty: IRect,
     ) {
         for chunk_key in rect_chunks_iter(dirty, raw.chunk_size) {
             let chunk_rect = chunks_key_to_rect(chunk_key, raw.chunk_size);
@@ -264,7 +264,7 @@ impl LayerPipeline {
         raw: &mut RawLayer,
         cache: &CacheLayers,
         pool: &mut ChunkPool,
-        dirty: Rectangle,
+        dirty: IRect,
     ) {
         for chunk_key in rect_chunks_iter(dirty, raw.chunk_size) {
             let chunk_rect = chunks_key_to_rect(chunk_key, raw.chunk_size);
@@ -325,7 +325,7 @@ impl LayerPipeline {
         cpass: &mut ComputePass,
         cache: &mut CacheLayers,
         pool: &mut ChunkPool,
-        dirty: Rectangle,
+        dirty: IRect,
     ) {
         let mut unsaved = Vec::new();
         cpass.set_pipeline(&self.mipmap_pipeline);
@@ -471,9 +471,9 @@ impl LayerPipeline {
         &self,
         cpass: &mut ComputePass,
         src: &Chunk,
-        src_rect: Rectangle,
+        src_rect: IRect,
         dst: &Chunk,
-        dst_rect: Rectangle,
+        dst_rect: IRect,
     ) {
         cpass.set_pipeline(&self.copy_pipeline);
         cpass.set_bind_group(0, Some(&dst.dispatch), &[0]);
@@ -487,10 +487,10 @@ impl LayerPipeline {
         &self,
         cpass: &mut ComputePass<'_>,
         src_chunk: &Chunk,
-        src_rect: Rectangle,
+        src_rect: IRect,
         dst_chunk: &Chunk,
-        dst_rect: Rectangle,
-        dispatch: Rectangle,
+        dst_rect: IRect,
+        dispatch: IRect,
     ) {
         cpass.set_pipeline(&self.copy_pipeline);
         cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
@@ -503,11 +503,11 @@ impl LayerPipeline {
         &self,
         cpass: &mut ComputePass,
         src: &Chunk,
-        src_rect: Rectangle,
+        src_rect: IRect,
         dst: &Chunk,
-        dst_rect: Rectangle,
+        dst_rect: IRect,
         brush: &T,
-        dispatch: Rectangle,
+        dispatch: IRect,
     ) {
         brush.set_pipeline(cpass, self, WriteMode::OutOfPlace);
         cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
@@ -520,11 +520,11 @@ impl LayerPipeline {
         &self,
         cpass: &mut ComputePass,
         chunk: &Chunk,
-        chunk_rect: Rectangle,
+        chunk_rect: IRect,
         swap: &Chunk,
-        swap_rect: Rectangle,
+        swap_rect: IRect,
         brush: &T,
-        dispatch: Rectangle,
+        dispatch: IRect,
     ) {
         brush.set_pipeline(cpass, self, WriteMode::OutOfPlace);
         cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
@@ -543,9 +543,9 @@ impl LayerPipeline {
         &self,
         cpass: &mut ComputePass,
         chunk: &Chunk,
-        chunk_rect: Rectangle,
+        chunk_rect: IRect,
         brush: &T,
-        dispatch: Rectangle,
+        dispatch: IRect,
     ) {
         brush.set_pipeline(cpass, self, WriteMode::InPlace);
         cpass.set_bind_group(0, Some(&self.draws_dispatch_group), &[]);
@@ -558,11 +558,11 @@ impl LayerPipeline {
         &self,
         cpass: &mut ComputePass,
         chunk: &Chunk,
-        chunk_rect: Rectangle,
+        chunk_rect: IRect,
         swap: Option<&Chunk>,
-        swap_rect: Option<Rectangle>,
+        swap_rect: Option<IRect>,
         brush: &T,
-        dispatch: Rectangle,
+        dispatch: IRect,
     ) {
         if let Some((swap, swap_rect)) = swap.zip(swap_rect) {
             self.draw_chunk_swap(cpass, chunk, chunk_rect, swap, swap_rect, brush, dispatch)
@@ -576,12 +576,12 @@ impl LayerPipeline {
         &self,
         cpass: &mut ComputePass,
         src: &Chunk,
-        src_rect: Rectangle,
+        src_rect: IRect,
         dst: &Chunk,
-        dst_rect: Rectangle,
+        dst_rect: IRect,
         swp: &Chunk,
-        swp_rect: Rectangle,
-        dispatch: Rectangle,
+        swp_rect: IRect,
+        dispatch: IRect,
     ) {
         let pipeline = self
             .merge_pipelines
@@ -600,10 +600,10 @@ impl LayerPipeline {
         &self,
         cpass: &mut ComputePass,
         src: &Chunk,
-        src_rect: Rectangle,
+        src_rect: IRect,
         dst: &Chunk,
-        dst_rect: Rectangle,
-        dispatch: Rectangle,
+        dst_rect: IRect,
+        dispatch: IRect,
     ) {
         let pipeline = self
             .merge_pipelines
@@ -621,8 +621,8 @@ impl LayerPipeline {
         &self,
         cpass: &mut ComputePass,
         chunk: &Chunk,
-        chunk_rect: Rectangle,
-        dispatch: Rectangle,
+        chunk_rect: IRect,
+        dispatch: IRect,
     ) {
         cpass.set_pipeline(&self.clear_pipeline);
         cpass.set_bind_group(0, Some(&self.work_dispatch_group), &[0]);
@@ -630,12 +630,7 @@ impl LayerPipeline {
         dispatch_workgroups(cpass, &[dispatch, chunk_rect]);
     }
 
-    pub fn clear_chunk_direct(
-        &self,
-        cpass: &mut ComputePass,
-        chunk: &Chunk,
-        chunk_rect: Rectangle,
-    ) {
+    pub fn clear_chunk_direct(&self, cpass: &mut ComputePass, chunk: &Chunk, chunk_rect: IRect) {
         cpass.set_pipeline(&self.clear_pipeline);
         cpass.set_bind_group(0, Some(&chunk.dispatch), &[0]);
         cpass.set_bind_group(1, Some(&chunk.write), &[]);
@@ -709,7 +704,7 @@ impl RawLayer {
 
 pub struct Standalone {
     pub chunk: Chunk,
-    pub rect: Rectangle,
+    pub rect: IRect,
 }
 
 /// chunks available in full transparent pixels
@@ -723,12 +718,7 @@ pub struct ChunkPool {
 }
 
 impl ChunkPool {
-    fn create_empty_chunk(
-        &mut self,
-        lp: &LayerPipeline,
-        chunk_size: UVec2,
-        rect: Rectangle,
-    ) -> Chunk {
+    fn create_empty_chunk(&mut self, lp: &LayerPipeline, chunk_size: UVec2, rect: IRect) -> Chunk {
         if chunk_size != self.chunk_size {
             log::warn!(
                 "wrong chunk pool (size {}) are being called (expect size {})",
@@ -769,12 +759,7 @@ pub struct DirtyChunkPool {
 }
 
 impl DirtyChunkPool {
-    fn create_dirty_chunk(
-        &mut self,
-        lp: &LayerPipeline,
-        chunk_size: UVec2,
-        rect: Rectangle,
-    ) -> Chunk {
+    fn create_dirty_chunk(&mut self, lp: &LayerPipeline, chunk_size: UVec2, rect: IRect) -> Chunk {
         if chunk_size != self.chunk_size {
             log::warn!(
                 "wrong chunk pool (size {}) are being called (expect size {})",
@@ -811,7 +796,7 @@ fn dispatch_workgroups_extend(cpass: &mut ComputePass, size: UVec2) {
     );
 }
 
-fn dispatch_workgroups_divide(cpass: &mut ComputePass, rects: &[Rectangle], div: u32) {
+fn dispatch_workgroups_divide(cpass: &mut ComputePass, rects: &[IRect], div: u32) {
     let mut fnl = rects[0];
     for &rect in rects {
         if let Some(rect) = fnl.intersect(rect)
@@ -826,16 +811,12 @@ fn dispatch_workgroups_divide(cpass: &mut ComputePass, rects: &[Rectangle], div:
     dispatch_workgroups_extend(cpass, fnl.extend / div);
 }
 
-fn dispatch_workgroups(cpass: &mut ComputePass, rects: &[Rectangle]) {
+fn dispatch_workgroups(cpass: &mut ComputePass, rects: &[IRect]) {
     dispatch_workgroups_divide(cpass, rects, 1);
 }
 
-fn write_dispatch(queue: &Queue, buffer: &Buffer, index: u64, rect: Rectangle) {
-    queue.write_buffer(
-        buffer,
-        size_of::<Rectangle>() as u64 * index,
-        bytes_of(&rect),
-    );
+fn write_dispatch(queue: &Queue, buffer: &Buffer, index: u64, rect: IRect) {
+    queue.write_buffer(buffer, size_of::<IRect>() as u64 * index, bytes_of(&rect));
 }
 
 // ---- ChunkKey Utils ---- //
@@ -857,13 +838,13 @@ fn zoom_to_mipmap(zoom: i64) -> u8 {
     (-zoom).q32_floor().max(0) as u8
 }
 
-fn rect_chunks_iter(rect: Rectangle, chunk_size: UVec2) -> impl Iterator<Item = (i32, i32)> {
+fn rect_chunks_iter(rect: IRect, chunk_size: UVec2) -> impl Iterator<Item = (i32, i32)> {
     let (chunk_src, chunk_dst) = rect_chunks_stack_layer_range(rect, chunk_size, 0);
     (chunk_src.0..chunk_dst.0).flat_map(move |i| (chunk_src.1..chunk_dst.1).map(move |j| (i, j)))
 }
 
 fn rect_chunks_stack_iter(
-    rect: Rectangle,
+    rect: IRect,
     chunk_size: UVec2,
     mipmap_cap: u8,
 ) -> impl Iterator<Item = (i32, i32, u8)> {
@@ -871,7 +852,7 @@ fn rect_chunks_stack_iter(
 }
 
 fn rect_chunks_stack_layer_iter(
-    rect: Rectangle,
+    rect: IRect,
     chunk_size: UVec2,
     mipmap: u8,
 ) -> impl Iterator<Item = (i32, i32, u8)> {
@@ -881,7 +862,7 @@ fn rect_chunks_stack_layer_iter(
 }
 
 fn rect_chunks_stack_layer_range(
-    rect: Rectangle,
+    rect: IRect,
     chunk_size: UVec2,
     mipmap: u8,
 ) -> ((i32, i32), (i32, i32)) {
@@ -891,16 +872,16 @@ fn rect_chunks_stack_layer_range(
     (chunk_src.into(), chunk_dst.into())
 }
 
-fn chunks_key_to_rect(key: (i32, i32), chunk_size: UVec2) -> Rectangle {
-    Rectangle {
+fn chunks_key_to_rect(key: (i32, i32), chunk_size: UVec2) -> IRect {
+    IRect {
         origin: IVec2::new(key.0, key.1) * chunk_size.as_ivec2(),
         extend: chunk_size,
     }
 }
 
-fn chunks_stack_key_to_rect(key: (i32, i32, u8), chunk_size: UVec2) -> Rectangle {
+fn chunks_stack_key_to_rect(key: (i32, i32, u8), chunk_size: UVec2) -> IRect {
     let size = chunk_size << key.2;
-    Rectangle {
+    IRect {
         origin: IVec2::new(key.0, key.1) * size.as_ivec2(),
         extend: size,
     }
@@ -1131,7 +1112,7 @@ const LAYOUT_COLOR_READBACK: BindGroupLayoutDescriptor = BindGroupLayoutDescript
 fn work_dispatch_group(device: &Device, dispatch_layout: &BindGroupLayout) -> (Buffer, BindGroup) {
     let dispatch = device.create_buffer(&BufferDescriptor {
         label: Some("layer_dispatch"),
-        size: size_of::<Rectangle>() as u64,
+        size: size_of::<IRect>() as u64,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -1200,7 +1181,7 @@ fn draws_dispatch_group(
 ) -> (Buffer, Buffer, Buffer, Buffer, BindGroup) {
     let dispatch = device.create_buffer(&BufferDescriptor {
         label: Some("layer_brush_dispatch"),
-        size: size_of::<Rectangle>() as u64 * DISPATCH_CAPACITY,
+        size: size_of::<IRect>() as u64 * DISPATCH_CAPACITY,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -1345,7 +1326,7 @@ fn create_chunk(
     device: &Device,
     chunk_layout: &ChunkLayout,
     texture: Texture,
-    rect: Rectangle,
+    rect: IRect,
 ) -> Chunk {
     let rectangle = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("layer_chunk_buffer"),

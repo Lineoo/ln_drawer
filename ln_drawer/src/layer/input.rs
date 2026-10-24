@@ -15,7 +15,7 @@ use crate::{
     },
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     render::camera::{PageCamera, PageCameraUtils, UICamera},
     save::Save,
     theme::Theme,
@@ -84,7 +84,7 @@ impl LayerInput {
 
         let page_camera = world.single_fetch::<PageCamera>().0;
         let visible = world.insert(Val::new(true));
-        let rect = world.insert(Val::new(Rectangle::FULLSCREEN));
+        let rect = world.insert(Val::new(IRect::FULLSCREEN));
         world.insert(ToolRectCollider {
             common: WidgetCommon {
                 camera: page_camera,
@@ -141,7 +141,7 @@ impl LayerInput {
 
             let mut cursor_rect = world.fetch_mut(wrapper.cursor_rect);
             cursor_rect.val =
-                Rectangle::new_half(camera.screen_to_world(screen).q32_round(), UVec2::new(1, 1));
+                IRect::new_half(camera.screen_to_world(screen).q32_round(), UVec2::new(1, 1));
             world.queue_trigger(cursor_rect.handle(), ValChanged);
 
             let mut cursor_shadow_rect = world.fetch_mut(wrapper.cursor_shadow_rect);

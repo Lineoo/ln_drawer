@@ -20,7 +20,7 @@ use crate::{
         stream::ThreadInput,
         write_dispatch,
     },
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -31,7 +31,7 @@ pub struct Draw {
 
 pub struct Stroke {
     pub prev: Option<Draw>,
-    pub dirty: Rectangle,
+    pub dirty: IRect,
     pub replace: bool,
     pub bridge: bool,
 }
@@ -40,7 +40,7 @@ impl Stroke {
     pub fn new<T: Brush + ?Sized>(brush: &T) -> Self {
         Stroke {
             prev: None,
-            dirty: Rectangle::default(),
+            dirty: IRect::default(),
             replace: brush.replace_mode(),
             bridge: brush.bridge_mode(),
         }
@@ -340,7 +340,7 @@ pub struct DrawsBatch {
     pub next: Draw,
     pub draws_cnt: u32,
     pub draws: Vec<u8>,
-    pub dirty: Rectangle,
+    pub dirty: IRect,
     pub replace: bool,
     pub bridge: bool,
 }
@@ -419,7 +419,7 @@ impl DrawsBatch {
     }
 
     pub fn upload_bridge(&self, lp: &LayerPipeline, bridge: &mut Standalone) {
-        bridge.rect = Rectangle::new_extend(
+        bridge.rect = IRect::new_extend(
             self.dirty.horizontal_center() - bridge.rect.extend.x as i32 / 2,
             self.dirty.vertical_center() - bridge.rect.extend.y as i32 / 2,
             bridge.rect.extend.x,
@@ -726,7 +726,7 @@ impl DrawsBatch {
 }
 
 pub trait Brush {
-    fn processor(&self, from: Option<Draw>, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32);
+    fn processor(&self, from: Option<Draw>, to: Draw, out: &mut Vec<u8>) -> (Draw, IRect, u32);
 
     fn prepare_stroke(&self, cpass: &mut ComputePass, pipeline: &LayerPipeline) {
         let _ = (cpass, pipeline);
@@ -774,14 +774,14 @@ trait DrawsProcessor {
 
     fn process(&self, draw: Draw) -> Self::Draw;
     fn step(&self, draw: Draw) -> f32;
-    fn dirty(&self, draw: Self::Draw) -> Rectangle;
+    fn dirty(&self, draw: Self::Draw) -> IRect;
 
     fn processor_output(
         &self,
         from: Option<Draw>,
         to: Draw,
         out: &mut Vec<u8>,
-    ) -> (Draw, Rectangle, u32) {
+    ) -> (Draw, IRect, u32) {
         let Some(from) = from else {
             let processed = self.process(to);
             let dirty = self.dirty(processed);
@@ -797,7 +797,7 @@ trait DrawsProcessor {
         let mut cnt = 0;
         let mut curr = from;
         let mut curr_position = from_position;
-        let mut dirty = Rectangle::new_half(from.position.q32_as_i32(), UVec2::ZERO);
+        let mut dirty = IRect::new_half(from.position.q32_as_i32(), UVec2::ZERO);
         loop {
             let step = self.step(curr) as f64;
             if curr_position.distance(to_position) < step || out.len() > limit {

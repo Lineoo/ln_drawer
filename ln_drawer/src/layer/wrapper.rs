@@ -27,7 +27,7 @@ use crate::{
     },
     layout::val::Val,
     lnwin::Lnwindow,
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     render::{
         Render, RenderDrawControl, RenderExtra, RenderPrepareControl,
         camera::{
@@ -81,7 +81,7 @@ pub struct LayerPage {
     pub lp: Arc<LayerPipeline>,
 
     common: WidgetCommon,
-    rect: Handle<Val<Rectangle>>,
+    rect: Handle<Val<IRect>>,
 
     cache: CacheLayers,
     raw: RawLayer,
@@ -105,8 +105,8 @@ pub struct LayerPage {
 
     pub debug: bool,
 
-    pub cursor_rect: Handle<Val<Rectangle>>,
-    pub cursor_shadow_rect: Handle<Val<Rectangle>>,
+    pub cursor_rect: Handle<Val<IRect>>,
+    pub cursor_shadow_rect: Handle<Val<IRect>>,
     pub cursor_visible: Handle<Val<bool>>,
     pub zoom_offset: f64,
 
@@ -116,7 +116,7 @@ pub struct LayerPage {
 }
 
 impl LayerPage {
-    pub fn new(world: &World, common: WidgetCommon, rect: Handle<Val<Rectangle>>) -> Self {
+    pub fn new(world: &World, common: WidgetCommon, rect: Handle<Val<IRect>>) -> Self {
         let render = world.single_fetch::<Render>();
         let camera_bind = world.single_fetch::<CameraBind>();
 
@@ -155,11 +155,11 @@ impl LayerPage {
         let ui_camera = world.single_fetch::<UICamera>().0;
 
         let cursor_visible = world.insert(Val::new(false));
-        let cursor_rect = world.insert(Val::new(Rectangle::new_half(
+        let cursor_rect = world.insert(Val::new(IRect::new_half(
             IVec2::new(0, 0),
             UVec2::new(1, 1),
         )));
-        let cursor_shadow_rect = world.insert(Val::new(Rectangle::new_half(
+        let cursor_shadow_rect = world.insert(Val::new(IRect::new_half(
             IVec2::new(0, 0),
             UVec2::new(1, 1),
         )));
@@ -254,7 +254,7 @@ impl LayerPage {
         let mut active = brushes[0].brush.dup();
         active.set_color(color);
 
-        let bridge = lp.create_standalone(Rectangle {
+        let bridge = lp.create_standalone(IRect {
             origin: IVec2::ZERO,
             extend: BRIDGE_CHUNK_SIZE,
         });

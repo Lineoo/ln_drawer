@@ -11,7 +11,7 @@ use crate::{
         transfer::Transfer,
         val::{Val, ValChanged},
     },
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     tools::{collider::ToolRectCollider, pointer::PointerHit},
     widgets::{
         common::WidgetCommon,
@@ -29,13 +29,13 @@ const THUMB_RADIUS: f32 = 5.0;
 
 pub struct OklabPolar {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub oklab: Vec4,
 }
 
 pub struct OklabBar {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub oklab: Vec4,
 }
 
@@ -58,8 +58,8 @@ fn thumb_color(oklab: Vec4) -> Vec4 {
     mul_alpha(oklab_to_linear_srgb(oklab))
 }
 
-fn polar_thumb(rect: Rectangle, oklab: Vec4) -> Rectangle {
-    Rectangle::new_half(
+fn polar_thumb(rect: IRect, oklab: Vec4) -> IRect {
+    IRect::new_half(
         rect.origin
             + (Vec2::new(oklab.y / 0.8 + 0.5, oklab.z / 0.8 + 0.5) * rect.extend.as_vec2())
                 .as_ivec2(),
@@ -67,8 +67,8 @@ fn polar_thumb(rect: Rectangle, oklab: Vec4) -> Rectangle {
     )
 }
 
-fn bar_thumb(rect: Rectangle, oklab: Vec4) -> Rectangle {
-    Rectangle::new_half(
+fn bar_thumb(rect: IRect, oklab: Vec4) -> IRect {
+    IRect::new_half(
         IVec2::new(
             rect.horizontal_center(),
             rect.origin.y + (oklab.x * rect.extend.y as f32) as i32,

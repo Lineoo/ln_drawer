@@ -3,7 +3,7 @@ use ln_world::{Element, Handle, World};
 
 use crate::{
     layout::val::{Val, ValChanged},
-    measures::Rectangle,
+    measures::IRect,
     widgets::{
         common::WidgetCommon,
         renderer::quad::{QuadMaterial, QuadMesh, SetQuadMaterial},
@@ -13,7 +13,7 @@ use crate::{
 
 pub struct RRect {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub order: isize,
     pub color: Handle<Val<Vec4>>,
     pub radius: f32,

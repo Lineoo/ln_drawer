@@ -15,7 +15,7 @@ use crate::{
         transform::{Transform, TransformEdge, TransformValue},
         val::{Val, ValChanged},
     },
-    measures::{Axis, Rectangle},
+    measures::{Axis, IRect},
     render::camera::Camera,
     theme::ThemeVal,
     widgets::{
@@ -31,7 +31,7 @@ use crate::{
 
 pub struct SettingPanel {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for SettingPanel {
@@ -106,7 +106,7 @@ impl Element for SettingPanel {
 
 pub struct TextSettingPanel {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for TextSettingPanel {
@@ -156,7 +156,7 @@ impl Element for TextSettingPanel {
             ..Default::default()
         }));
         let label1_rect = world.build(Transform::new(
-            TransformValue::anchor((0.0, 0.0), Rectangle::new_extend(16, 0, 56, 18)),
+            TransformValue::anchor((0.0, 0.0), IRect::new_extend(16, 0, 56, 18)),
             label1_frame,
         ));
         world.insert(Text {
@@ -521,7 +521,7 @@ impl Element for TextSettingPanel {
 fn option_label(
     world: &World,
     text: String,
-    frame: Handle<Val<Rectangle>>,
+    frame: Handle<Val<IRect>>,
     camera: Handle<Camera>,
     visible: Handle<Val<bool>>,
 ) -> Handle<Text> {
@@ -570,7 +570,7 @@ fn option_label(
 fn option_desc(
     world: &World,
     text: String,
-    frame: Handle<Val<Rectangle>>,
+    frame: Handle<Val<IRect>>,
     camera: Handle<Camera>,
     visible: Handle<Val<bool>>,
 ) -> Handle<Text> {
@@ -618,7 +618,7 @@ fn option_desc(
 
 fn option_slider(
     world: &World,
-    frame: Handle<Val<Rectangle>>,
+    frame: Handle<Val<IRect>>,
     camera: Handle<Camera>,
     visible: Handle<Val<bool>>,
 ) -> (Handle<Slider>, Handle<SliderLabel>) {

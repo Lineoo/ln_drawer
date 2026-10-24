@@ -10,7 +10,7 @@ use crate::{
             param::{BrushParam, overlap, rate_coeff, step_of},
         },
     },
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
 };
 
 #[derive(Clone)]
@@ -36,7 +36,7 @@ pub struct RoundDraw {
 }
 
 impl Brush for RoundBrush {
-    fn processor(&self, from: Option<Draw>, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
+    fn processor(&self, from: Option<Draw>, to: Draw, out: &mut Vec<u8>) -> (Draw, IRect, u32) {
         self.processor_output(from, to, out)
     }
 
@@ -90,8 +90,8 @@ impl DrawsProcessor for RoundBrush {
         step_of(self.size.get(draw), self.spacing.get(draw))
     }
 
-    fn dirty(&self, draw: Self::Draw) -> Rectangle {
-        Rectangle::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
+    fn dirty(&self, draw: Self::Draw) -> IRect {
+        IRect::new_half(draw.position, UVec2::splat((draw.size * 2.0).ceil() as u32))
     }
 }
 

@@ -8,7 +8,7 @@ use crate::{
         packer::Packer,
         val::{Val, ValChanged},
     },
-    measures::{Axis, FI64Ext, Rectangle},
+    measures::{Axis, FI64Ext, IRect},
     theme::{Theme, ThemeVal},
     tools::{
         collider::ToolRectCollider,
@@ -30,7 +30,7 @@ pub struct Slider {
     pub common: WidgetCommon,
     pub value: Handle<Val<f32>>,
     pub axis: Axis,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub pressed: bool,
 }
 
@@ -333,16 +333,16 @@ const KNOB_SPLIT_SIZE: UVec2 = UVec2::new(5, 2);
 const LABEL_GAP: i32 = 2;
 const LABEL_HALF: UVec2 = UVec2::new(30, 12);
 
-fn back_rect(rect: Rectangle, axis: Axis) -> Rectangle {
+fn back_rect(rect: IRect, axis: Axis) -> IRect {
     front_rect(rect, axis, rect.axis_end(axis))
 }
 
-fn back_rect_pressed(rect: Rectangle, axis: Axis) -> Rectangle {
+fn back_rect_pressed(rect: IRect, axis: Axis) -> IRect {
     back_rect(rect, axis).expand(BAR_EX)
 }
 
-fn front_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
-    Rectangle::axis_new(
+fn front_rect(rect: IRect, axis: Axis, position: i32) -> IRect {
+    IRect::axis_new(
         rect.axis_start(axis),
         rect.axis_center(axis.rotate()) - BAR_HW * axis.sign(),
         position,
@@ -351,63 +351,63 @@ fn front_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
     )
 }
 
-fn knob_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
-    Rectangle::new_half(
+fn knob_rect(rect: IRect, axis: Axis, position: i32) -> IRect {
+    IRect::new_half(
         axis.vertical_ivec2(IVec2::new(rect.axis_center(axis.rotate()), position)),
         axis.vertical_uvec2(KNOB_SIZE),
     )
 }
 
-fn knob_rect_pressed(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
-    Rectangle::new_half(
+fn knob_rect_pressed(rect: IRect, axis: Axis, position: i32) -> IRect {
+    IRect::new_half(
         axis.vertical_ivec2(IVec2::new(rect.axis_center(axis.rotate()), position)),
         axis.vertical_uvec2(KNOB_SIZE_PRESSED),
     )
 }
 
-fn knob_split_rect(rect: Rectangle, axis: Axis, position: i32) -> Rectangle {
-    Rectangle::new_half(
+fn knob_split_rect(rect: IRect, axis: Axis, position: i32) -> IRect {
+    IRect::new_half(
         axis.vertical_ivec2(IVec2::new(rect.axis_center(axis.rotate()), position)),
         axis.vertical_uvec2(KNOB_SPLIT_SIZE),
     )
 }
 
-fn into_position(rect: Rectangle, axis: Axis, value: f32) -> i32 {
+fn into_position(rect: IRect, axis: Axis, value: f32) -> i32 {
     let (knob_max, knob_min) = knob_limit(rect, axis);
     (value * (knob_max - knob_min) as f32).round() as i32 + knob_min
 }
 
-fn into_position_pressed(rect: Rectangle, axis: Axis, value: f32) -> i32 {
+fn into_position_pressed(rect: IRect, axis: Axis, value: f32) -> i32 {
     let (knob_max, knob_min) = knob_limit_pressed(rect, axis);
     (value * (knob_max - knob_min) as f32).round() as i32 + knob_min
 }
 
-fn from_position_pressed(rect: Rectangle, axis: Axis, position: i32) -> f32 {
+fn from_position_pressed(rect: IRect, axis: Axis, position: i32) -> f32 {
     let (knob_max, knob_min) = knob_limit_pressed(rect, axis);
     ((position - knob_min) as f32 / (knob_max - knob_min) as f32).clamp(0.0, 1.0)
 }
 
-fn knob_limit(rect: Rectangle, axis: Axis) -> (i32, i32) {
+fn knob_limit(rect: IRect, axis: Axis) -> (i32, i32) {
     (
         rect.axis_end(axis) - KNOB_SIZE.y as i32 * axis.sign(),
         rect.axis_start(axis) + KNOB_SIZE.y as i32 * axis.sign(),
     )
 }
 
-fn knob_limit_pressed(rect: Rectangle, axis: Axis) -> (i32, i32) {
+fn knob_limit_pressed(rect: IRect, axis: Axis) -> (i32, i32) {
     (
         rect.axis_end(axis) - KNOB_SIZE_PRESSED.y as i32 * axis.sign(),
         rect.axis_start(axis) + KNOB_SIZE_PRESSED.y as i32 * axis.sign(),
     )
 }
 
-fn label_back_rect(rect: Rectangle, axis: Axis, clockwise: bool, position: i32) -> Rectangle {
+fn label_back_rect(rect: IRect, axis: Axis, clockwise: bool, position: i32) -> IRect {
     let raxis = match clockwise {
         true => axis.rotate(),
         false => axis.rotate_rev(),
     };
     let offset = BAR_HW + BAR_EX + LABEL_GAP + axis.horizontal_uvec2(LABEL_HALF).y as i32;
-    Rectangle::new_half(
+    IRect::new_half(
         axis.horizontal_ivec2(IVec2::new(position, rect.axis_center(axis.rotate())))
             + raxis.ivec2() * offset,
         LABEL_HALF,

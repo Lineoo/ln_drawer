@@ -13,7 +13,11 @@ use crate::{
     layout::{
         transform::{Transform, TransformValue},
         val::Val,
-    }, measures::Rectangle, theme::{Theme, ThemeVal}, tools::collider::ToolRectCollider, widgets::{common::WidgetCommon, renderer::rrect::RRect},
+    },
+    measures::IRect,
+    theme::{Theme, ThemeVal},
+    tools::collider::ToolRectCollider,
+    widgets::{common::WidgetCommon, renderer::rrect::RRect},
 };
 
 pub struct PanelAttr {
@@ -23,7 +27,7 @@ pub struct PanelAttr {
 
 pub struct Panel {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub attr: PanelAttr,
 }
 

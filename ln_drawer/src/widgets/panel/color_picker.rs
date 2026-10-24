@@ -14,7 +14,7 @@ use crate::{
         transform::{Transform, TransformValue},
         val::{Val, ValChanged},
     },
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     render::camera::PageCamera,
     theme::ThemeVal,
     widgets::{
@@ -42,7 +42,7 @@ const PANEL_HEIGHT: i32 = 320;
 
 pub struct ColorPickerPanel {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for ColorPickerPanel {
@@ -54,7 +54,7 @@ impl Element for ColorPickerPanel {
 
         let theme = world.single_fetch::<ThemeVal>();
 
-        let hsl_rect = world.insert(Val::new(Rectangle::default()));
+        let hsl_rect = world.insert(Val::new(IRect::default()));
         let hsl_visible = world.insert(Val::new(false));
         world.insert(LayerHslPalette {
             common: WidgetCommon {
@@ -65,7 +65,7 @@ impl Element for ColorPickerPanel {
             hsl: Vec4::new(0.3, 0.5, 0.5, 1.0),
         });
 
-        let oklab_rect = world.insert(Val::new(Rectangle::default()));
+        let oklab_rect = world.insert(Val::new(IRect::default()));
         let oklab_visible = world.insert(Val::new(false));
         world.insert(LayerOklabPalette {
             common: WidgetCommon {
@@ -76,7 +76,7 @@ impl Element for ColorPickerPanel {
             oklab: Vec4::new(0.0, 0.0, 0.0, 1.0),
         });
 
-        let layer_rect = world.insert(Val::new(Rectangle::default()));
+        let layer_rect = world.insert(Val::new(IRect::default()));
         let layer_visible = world.insert(Val::new(false));
         world.insert(LayerSelectionPanel {
             common: WidgetCommon {
@@ -86,7 +86,7 @@ impl Element for ColorPickerPanel {
             rect: layer_rect,
         });
 
-        let debug_rect = world.insert(Val::new(Rectangle::default()));
+        let debug_rect = world.insert(Val::new(IRect::default()));
         let debug_visible = world.insert(Val::new(false));
         world.insert(DebugPanel {
             common: WidgetCommon {
@@ -145,7 +145,7 @@ impl Element for ColorPickerPanel {
 
 pub struct ColorPickerButton {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for ColorPickerButton {
@@ -166,10 +166,8 @@ impl Element for ColorPickerButton {
             hovering: world.insert(Val::new(false)),
         });
 
-        let icon_transform = TransformValue::anchor(
-            (0.5, 0.5),
-            Rectangle::new_half(IVec2::ZERO, UVec2::splat(10)),
-        );
+        let icon_transform =
+            TransformValue::anchor((0.5, 0.5), IRect::new_half(IVec2::ZERO, UVec2::splat(10)));
         let icon_rect = world.build(Transform::new(icon_transform, self.rect));
         let color = world.insert(Val::new(mul_alpha(srgb_gamma_decode(page.color()))));
 
@@ -184,7 +182,7 @@ impl Element for ColorPickerButton {
 
         let panel_rect = world.build(Transform::anchor(
             (1.0, 1.0),
-            Rectangle::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
+            IRect::new_extend(20, -PANEL_HEIGHT, PANEL_WIDTH as u32, PANEL_HEIGHT as u32),
             self.rect,
         ));
         let panel_visible = world.insert(Val::new(false));
@@ -225,7 +223,7 @@ impl Element for ColorPickerButton {
                 let position = page_camera
                     .screen_to_world(drag.here.pointer.screen)
                     .q32_round();
-                let rect = world.insert(Val::new(Rectangle::new_half(position, UVec2::splat(24))));
+                let rect = world.insert(Val::new(IRect::new_half(position, UVec2::splat(24))));
 
                 world.insert(ColorSnip {
                     common: WidgetCommon {
@@ -242,7 +240,7 @@ impl Element for ColorPickerButton {
                 rect
             });
 
-            let next = Rectangle::new_half(
+            let next = IRect::new_half(
                 page_camera
                     .screen_to_world(drag.here.pointer.screen)
                     .q32_round(),
@@ -263,7 +261,7 @@ impl Element for ColorPickerButton {
 
 pub struct LayerHslPalette {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub hsl: Vec4,
 }
 
@@ -295,7 +293,7 @@ impl Element for LayerHslPalette {
         let ring_rect = world.build(Transform::new(
             TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(RING_HALF)),
+                IRect::new_half(IVec2::ZERO, UVec2::splat(RING_HALF)),
             ),
             restriction,
         ));
@@ -309,7 +307,7 @@ impl Element for LayerHslPalette {
         let square_rect = world.build(Transform::new(
             TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::splat(SQUARE_HALF)),
+                IRect::new_half(IVec2::ZERO, UVec2::splat(SQUARE_HALF)),
             ),
             restriction,
         ));
@@ -341,7 +339,7 @@ impl Element for LayerHslPalette {
 
 pub struct LayerOklabPalette {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub oklab: Vec4,
 }
 
@@ -371,7 +369,7 @@ impl Element for LayerOklabPalette {
         let polar_rect = world.build(Transform::new(
             TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::new(-30, 0), UVec2::splat(100)),
+                IRect::new_half(IVec2::new(-30, 0), UVec2::splat(100)),
             ),
             local,
         ));
@@ -384,7 +382,7 @@ impl Element for LayerOklabPalette {
         let bar_rect = world.build(Transform::new(
             TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::new(110, 0), UVec2::new(20, 100)),
+                IRect::new_half(IVec2::new(110, 0), UVec2::new(20, 100)),
             ),
             local,
         ));

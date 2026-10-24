@@ -4,7 +4,7 @@ use ln_world::{Element, Handle, HandleAny, World};
 use crate::{
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     render::camera::{Camera, UICamera},
     widgets::common::WidgetCommon,
 };
@@ -85,7 +85,7 @@ impl Element for ToolControl {
 pub struct ToolRectCollider {
     pub common: WidgetCommon,
     pub target: HandleAny,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub order: isize,
 }
 
@@ -131,7 +131,7 @@ impl Element for ToolRectCollider {
 pub struct ToolRingCollider {
     pub common: WidgetCommon,
     pub target: HandleAny,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub inner_radius: f32,
     pub outer_radius: f32,
     pub order: isize,

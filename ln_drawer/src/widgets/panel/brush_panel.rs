@@ -14,7 +14,7 @@ use crate::{
         transform::{Transform, TransformEdge, TransformValue},
         val::Val,
     },
-    measures::Rectangle,
+    measures::IRect,
     theme::{Theme, ThemeVal},
     tools::pointer::{PointerHit, PointerHover, PointerScroll},
     widgets::{
@@ -41,7 +41,7 @@ const LIST_PADDING: i32 = 8;
 
 pub struct BrushPanel {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for BrushPanel {
@@ -51,7 +51,7 @@ impl Element for BrushPanel {
 
         let theme = world.single_fetch::<ThemeVal>();
 
-        let list_rect = world.insert(Val::new(Rectangle::default()));
+        let list_rect = world.insert(Val::new(IRect::default()));
         let list_visible = world.insert(Val::new(false));
         world.insert(BrushListPanel {
             common: WidgetCommon {
@@ -61,7 +61,7 @@ impl Element for BrushPanel {
             rect: list_rect,
         });
 
-        let settings_rect = world.insert(Val::new(Rectangle::default()));
+        let settings_rect = world.insert(Val::new(IRect::default()));
         let settings_visible = world.insert(Val::new(false));
         world.insert(SettingPanel {
             common: WidgetCommon {
@@ -101,7 +101,7 @@ impl Element for BrushPanel {
 
 pub struct BrushListPanel {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for BrushListPanel {

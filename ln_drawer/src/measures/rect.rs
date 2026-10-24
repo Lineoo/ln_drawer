@@ -16,14 +16,36 @@ use crate::measures::{Axis, FI64Ext};
     bytemuck::Pod,
     bytemuck::Zeroable,
 )]
-pub struct Rectangle {
+pub struct IRect {
     pub origin: IVec2,
     pub extend: UVec2,
 }
 
-impl fmt::Debug for Rectangle {
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct URect {
+    pub origin: UVec2,
+    pub extend: UVec2,
+}
+
+impl URect {
+    pub fn intersect(self, other: URect) -> Option<URect> {
+        let x = (self.origin.x).max(other.origin.x);
+        let y = (self.origin.y).max(other.origin.y);
+        let right = ((self.origin.x).saturating_add(self.extend.x))
+            .min((other.origin.x).saturating_add(other.extend.x));
+        let down = ((self.origin.y).saturating_add(self.extend.y))
+            .min((other.origin.y).saturating_add(other.extend.y));
+        (right > x && down > y).then(|| URect {
+            origin: UVec2::new(x, y),
+            extend: UVec2::new(right - x, down - y),
+        })
+    }
+}
+
+impl fmt::Debug for IRect {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle")
+        f.debug_struct("IRect")
             .field("left", &self.left())
             .field("down", &self.down())
             .field("right", &self.right())
@@ -32,7 +54,7 @@ impl fmt::Debug for Rectangle {
     }
 }
 
-impl fmt::Display for Rectangle {
+impl fmt::Display for IRect {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
             .entry(&self.left())
@@ -43,67 +65,67 @@ impl fmt::Display for Rectangle {
     }
 }
 
-impl ops::Add<IVec2> for Rectangle {
-    type Output = Rectangle;
+impl ops::Add<IVec2> for IRect {
+    type Output = IRect;
     fn add(self, rhs: IVec2) -> Self::Output {
-        Rectangle {
+        IRect {
             origin: self.origin + rhs,
             extend: self.extend,
         }
     }
 }
 
-impl ops::Sub<IVec2> for Rectangle {
-    type Output = Rectangle;
+impl ops::Sub<IVec2> for IRect {
+    type Output = IRect;
     fn sub(self, rhs: IVec2) -> Self::Output {
-        Rectangle {
+        IRect {
             origin: self.origin - rhs,
             extend: self.extend,
         }
     }
 }
 
-impl ops::AddAssign<IVec2> for Rectangle {
+impl ops::AddAssign<IVec2> for IRect {
     fn add_assign(&mut self, rhs: IVec2) {
         self.origin += rhs;
     }
 }
 
-impl ops::SubAssign<IVec2> for Rectangle {
+impl ops::SubAssign<IVec2> for IRect {
     fn sub_assign(&mut self, rhs: IVec2) {
         self.origin -= rhs;
     }
 }
 
-impl Rectangle {
-    pub const FULLSCREEN: Rectangle = Rectangle {
+impl IRect {
+    pub const FULLSCREEN: IRect = IRect {
         origin: IVec2::MIN,
         extend: UVec2::MAX,
     };
 
-    pub fn new(left: i32, down: i32, right: i32, up: i32) -> Rectangle {
-        Rectangle {
+    pub fn new(left: i32, down: i32, right: i32, up: i32) -> IRect {
+        IRect {
             origin: IVec2::new(left.min(right), down.min(up)),
             extend: UVec2::new((right - left).unsigned_abs(), (up - down).unsigned_abs()),
         }
     }
 
-    pub fn new_minmax(min: IVec2, max: IVec2) -> Rectangle {
-        Rectangle {
+    pub fn new_minmax(min: IVec2, max: IVec2) -> IRect {
+        IRect {
             origin: min.min(max),
             extend: (min.max(max) - min.min(max)).abs().as_uvec2(),
         }
     }
 
-    pub fn new_extend(left: i32, down: i32, width: u32, height: u32) -> Rectangle {
-        Rectangle {
+    pub fn new_extend(left: i32, down: i32, width: u32, height: u32) -> IRect {
+        IRect {
             origin: IVec2::new(left, down),
             extend: UVec2::new(width, height),
         }
     }
 
-    pub fn new_half(center: IVec2, half: UVec2) -> Rectangle {
-        Rectangle {
+    pub fn new_half(center: IVec2, half: UVec2) -> IRect {
+        IRect {
             origin: center - half.as_ivec2(),
             extend: half * 2,
         }
@@ -169,43 +191,43 @@ impl Rectangle {
     }
 
     #[inline]
-    pub fn with_left(self, left: i32) -> Rectangle {
-        Rectangle::new(left, self.down(), self.right(), self.up())
+    pub fn with_left(self, left: i32) -> IRect {
+        IRect::new(left, self.down(), self.right(), self.up())
     }
 
     #[inline]
-    pub fn with_down(self, down: i32) -> Rectangle {
-        Rectangle::new(self.left(), down, self.right(), self.up())
+    pub fn with_down(self, down: i32) -> IRect {
+        IRect::new(self.left(), down, self.right(), self.up())
     }
 
     #[inline]
-    pub fn with_right(self, right: i32) -> Rectangle {
-        Rectangle::new(self.left(), self.down(), right, self.up())
+    pub fn with_right(self, right: i32) -> IRect {
+        IRect::new(self.left(), self.down(), right, self.up())
     }
 
     #[inline]
-    pub fn with_up(self, up: i32) -> Rectangle {
-        Rectangle::new(self.left(), self.down(), self.right(), up)
+    pub fn with_up(self, up: i32) -> IRect {
+        IRect::new(self.left(), self.down(), self.right(), up)
     }
 
     #[inline]
-    pub fn with_left_down(self, corner: IVec2) -> Rectangle {
-        Rectangle::new(corner.x, corner.y, self.right(), self.up())
+    pub fn with_left_down(self, corner: IVec2) -> IRect {
+        IRect::new(corner.x, corner.y, self.right(), self.up())
     }
 
     #[inline]
-    pub fn with_left_up(self, corner: IVec2) -> Rectangle {
-        Rectangle::new(corner.x, self.down(), self.right(), corner.y)
+    pub fn with_left_up(self, corner: IVec2) -> IRect {
+        IRect::new(corner.x, self.down(), self.right(), corner.y)
     }
 
     #[inline]
-    pub fn with_right_down(self, corner: IVec2) -> Rectangle {
-        Rectangle::new(self.left(), corner.y, corner.x, self.up())
+    pub fn with_right_down(self, corner: IVec2) -> IRect {
+        IRect::new(self.left(), corner.y, corner.x, self.up())
     }
 
     #[inline]
-    pub fn with_right_up(self, corner: IVec2) -> Rectangle {
-        Rectangle::new(self.left(), self.down(), corner.x, corner.y)
+    pub fn with_right_up(self, corner: IVec2) -> IRect {
+        IRect::new(self.left(), self.down(), corner.x, corner.y)
     }
 
     #[inline]
@@ -244,8 +266,8 @@ impl Rectangle {
         self.origin.y.wrapping_add(self.extend.y as i32 / 2)
     }
 
-    pub fn expand(self, val: i32) -> Rectangle {
-        Rectangle::new(
+    pub fn expand(self, val: i32) -> IRect {
+        IRect::new(
             self.origin.x.wrapping_sub(val),
             self.origin.y.wrapping_sub(val),
             (self.origin.x)
@@ -257,8 +279,8 @@ impl Rectangle {
         )
     }
 
-    pub fn grow(self, rhs: Rectangle) -> Rectangle {
-        Rectangle::new(
+    pub fn grow(self, rhs: IRect) -> IRect {
+        IRect::new(
             i32::min(self.left(), rhs.left()),
             i32::min(self.down(), rhs.down()),
             i32::max(self.right(), rhs.right()),
@@ -266,14 +288,14 @@ impl Rectangle {
         )
     }
 
-    pub fn intersect(self, rhs: Rectangle) -> Option<Rectangle> {
+    pub fn intersect(self, rhs: IRect) -> Option<IRect> {
         let left = self.left().max(rhs.left());
         let down = self.down().max(rhs.down());
         let right = self.right().min(rhs.right());
         let up = self.up().min(rhs.up());
 
         match right > left && up > down {
-            true => Some(Rectangle::new(left, down, right, up)),
+            true => Some(IRect::new(left, down, right, up)),
             false => None,
         }
     }
@@ -283,12 +305,12 @@ impl Rectangle {
         delta.x < self.extend.x && delta.y < self.extend.y
     }
 
-    pub fn axis_new(start: i32, right: i32, end: i32, left: i32, axis: Axis) -> Rectangle {
+    pub fn axis_new(start: i32, right: i32, end: i32, left: i32, axis: Axis) -> IRect {
         match axis {
-            Axis::Right => Rectangle::new(start, right, end, left),
-            Axis::Down => Rectangle::new(right, end, left, start),
-            Axis::Left => Rectangle::new(end, left, start, right),
-            Axis::Up => Rectangle::new(left, start, right, end),
+            Axis::Right => IRect::new(start, right, end, left),
+            Axis::Down => IRect::new(right, end, left, start),
+            Axis::Left => IRect::new(end, left, start, right),
+            Axis::Up => IRect::new(left, start, right, end),
         }
     }
 

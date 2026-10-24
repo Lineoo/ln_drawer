@@ -10,7 +10,7 @@ use crate::{
         wrapper::LayerPage,
     },
     layout::val::{Val, ValChanged},
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     render::{RenderDrawControl, RenderPrepareControl, camera::SetCameraOutdated},
     tools::collider::ToolRectCollider,
     widgets::{
@@ -25,7 +25,7 @@ use crate::{
 /// next frame.
 pub struct BrushPreview {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub brush: Option<Box<dyn BrushParams>>,
     pub outdated: bool,
 }
@@ -44,7 +44,7 @@ impl BrushPreview {
         let page = world.single_fetch::<LayerPage>();
         let rect = world.fetch(self.rect).val;
 
-        let canvas_rect = Rectangle::new_extend(0, 0, rect.width().max(1), rect.height().max(1));
+        let canvas_rect = IRect::new_extend(0, 0, rect.width().max(1), rect.height().max(1));
         let canvas = page.lp.create_standalone(canvas_rect);
 
         let (container, common) = world.build(ContainerWithCamera {
@@ -105,7 +105,7 @@ impl BrushPreview {
                 let page = world.single_fetch::<LayerPage>();
                 instance.canvas = page
                     .lp
-                    .create_standalone(Rectangle::new_extend(0, 0, size.x, size.y));
+                    .create_standalone(IRect::new_extend(0, 0, size.x, size.y));
                 this.outdated = true;
             }
 

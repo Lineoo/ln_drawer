@@ -9,7 +9,7 @@ use crate::{
         BrushKind, BrushStage, CompositeMode, DRAWS_ARRAY_CAPACITY, LayerPipeline, WriteMode,
         brush::{Brush, Draw, DrawsProcessor, param::BrushParam},
     },
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
 };
 
 #[derive(Clone)]
@@ -29,7 +29,7 @@ pub struct PixelDraw {
 }
 
 impl Brush for PixelBrush {
-    fn processor(&self, from: Option<Draw>, to: Draw, out: &mut Vec<u8>) -> (Draw, Rectangle, u32) {
+    fn processor(&self, from: Option<Draw>, to: Draw, out: &mut Vec<u8>) -> (Draw, IRect, u32) {
         self.processor_output(from, to, out)
     }
 
@@ -76,9 +76,9 @@ impl DrawsProcessor for PixelBrush {
         1.0
     }
 
-    fn dirty(&self, draw: Self::Draw) -> Rectangle {
+    fn dirty(&self, draw: Self::Draw) -> IRect {
         let half = draw.size.max(0.0).floor() as u32 + 1;
-        Rectangle::new_half(draw.position, UVec2::splat(half))
+        IRect::new_half(draw.position, UVec2::splat(half))
     }
 
     fn processor_output(
@@ -86,7 +86,7 @@ impl DrawsProcessor for PixelBrush {
         from: Option<Draw>,
         to: Draw,
         out: &mut Vec<u8>,
-    ) -> (Draw, Rectangle, u32) {
+    ) -> (Draw, IRect, u32) {
         let Some(from) = from else {
             let processed = self.process(to);
             let dirty = self.dirty(processed);
@@ -109,7 +109,7 @@ impl DrawsProcessor for PixelBrush {
 
         let mut cnt = 0;
         let mut curr = from;
-        let mut dirty = Rectangle::new_half(from.position.q32_as_i32(), UVec2::ZERO);
+        let mut dirty = IRect::new_half(from.position.q32_as_i32(), UVec2::ZERO);
         while pixel != target {
             let e2 = 2 * err;
             if e2 > -dy {

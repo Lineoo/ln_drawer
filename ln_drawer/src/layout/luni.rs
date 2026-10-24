@@ -2,12 +2,12 @@ use ln_world::{Descriptor, Element, Handle, World};
 
 use crate::{
     layout::val::{Val, ValChanged},
-    measures::Rectangle,
+    measures::IRect,
 };
 
 pub struct LuniFlex {
-    pub parent: (Handle<Val<Rectangle>>, LuniParent),
-    pub children: Vec<(Handle<Val<Rectangle>>, LuniChild)>,
+    pub parent: (Handle<Val<IRect>>, LuniParent),
+    pub children: Vec<(Handle<Val<IRect>>, LuniChild)>,
 }
 
 #[derive(Default)]
@@ -88,19 +88,19 @@ pub enum LuniAlign {
 pub struct LuniHug;
 
 impl LuniFlex {
-    pub fn new(rect: Handle<Val<Rectangle>>, parent: LuniParent) -> Self {
+    pub fn new(rect: Handle<Val<IRect>>, parent: LuniParent) -> Self {
         LuniFlex {
             parent: (rect, parent),
             children: Vec::new(),
         }
     }
 
-    pub fn child(&mut self, child: LuniChild) -> impl Descriptor<Target = Handle<Val<Rectangle>>> {
+    pub fn child(&mut self, child: LuniChild) -> impl Descriptor<Target = Handle<Val<IRect>>> {
         LuniFlexChildBuilder { luni: self, child }
     }
 }
 
-fn compute(rect: Rectangle, parent: &LuniParent, children: &[&LuniChild]) -> Vec<Rectangle> {
+fn compute(rect: IRect, parent: &LuniParent, children: &[&LuniChild]) -> Vec<IRect> {
     let mut result = Vec::with_capacity(children.len());
     let mut lengths = Vec::with_capacity(children.len());
 
@@ -186,7 +186,7 @@ fn distribute(free: i32, count: usize, distr: LuniDistribution) -> (i32, i32) {
     }
 }
 
-fn rect_main_lenth(rect: Rectangle, axis: LuniAxis) -> i32 {
+fn rect_main_lenth(rect: IRect, axis: LuniAxis) -> i32 {
     match axis {
         LuniAxis::Column | LuniAxis::ColumnReverse => rect.height() as i32,
         LuniAxis::Row | LuniAxis::RowReverse => rect.width() as i32,
@@ -218,35 +218,35 @@ fn rect_main_start(padding: LuniRect, axis: LuniAxis) -> i32 {
 
 fn cursor_assign(
     cursor: i32,
-    rect: Rectangle,
+    rect: IRect,
     padding: LuniRect,
     margin: LuniRect,
     cross: i32,
     length: i32,
     align: LuniAlign,
     axis: LuniAxis,
-) -> Rectangle {
+) -> IRect {
     match align {
         LuniAlign::Stretch => match axis {
-            LuniAxis::Row => Rectangle::new(
+            LuniAxis::Row => IRect::new(
                 rect.left() + cursor + margin.left,
                 rect.down() + padding.bottom + margin.bottom,
                 rect.left() + cursor + margin.left + length,
                 rect.up() - padding.top - margin.top,
             ),
-            LuniAxis::RowReverse => Rectangle::new(
+            LuniAxis::RowReverse => IRect::new(
                 rect.right() - cursor - margin.right,
                 rect.down() + padding.bottom + margin.bottom,
                 rect.right() - cursor - margin.right - length,
                 rect.up() - padding.top - margin.top,
             ),
-            LuniAxis::Column => Rectangle::new(
+            LuniAxis::Column => IRect::new(
                 rect.left() + padding.left + margin.left,
                 rect.up() - cursor - margin.top - length,
                 rect.right() - padding.right - margin.right,
                 rect.up() - cursor - margin.top,
             ),
-            LuniAxis::ColumnReverse => Rectangle::new(
+            LuniAxis::ColumnReverse => IRect::new(
                 rect.left() + padding.left + margin.left,
                 rect.down() + cursor + margin.top,
                 rect.right() - padding.right - margin.right,
@@ -254,25 +254,25 @@ fn cursor_assign(
             ),
         },
         LuniAlign::FlexStart => match axis {
-            LuniAxis::Row => Rectangle::new(
+            LuniAxis::Row => IRect::new(
                 rect.left() + cursor + margin.left,
                 rect.up() - padding.top - margin.top - cross,
                 rect.left() + cursor + margin.left + length,
                 rect.up() - padding.top - margin.top,
             ),
-            LuniAxis::RowReverse => Rectangle::new(
+            LuniAxis::RowReverse => IRect::new(
                 rect.right() - cursor - margin.right,
                 rect.up() - padding.top - margin.top - cross,
                 rect.right() - cursor - margin.right - length,
                 rect.up() - padding.top - margin.top,
             ),
-            LuniAxis::Column => Rectangle::new(
+            LuniAxis::Column => IRect::new(
                 rect.left() + padding.left + margin.left,
                 rect.up() - cursor - margin.top - length,
                 rect.left() + padding.left + margin.left + cross,
                 rect.up() - cursor - margin.top,
             ),
-            LuniAxis::ColumnReverse => Rectangle::new(
+            LuniAxis::ColumnReverse => IRect::new(
                 rect.left() + padding.left + margin.left,
                 rect.down() + cursor + margin.top,
                 rect.left() + padding.left + margin.left + cross,
@@ -280,25 +280,25 @@ fn cursor_assign(
             ),
         },
         LuniAlign::FlexEnd => match axis {
-            LuniAxis::Row => Rectangle::new(
+            LuniAxis::Row => IRect::new(
                 rect.left() + cursor + margin.left,
                 rect.down() + padding.bottom + margin.bottom,
                 rect.left() + cursor + margin.left + length,
                 rect.down() + padding.bottom + margin.bottom + cross,
             ),
-            LuniAxis::RowReverse => Rectangle::new(
+            LuniAxis::RowReverse => IRect::new(
                 rect.right() - cursor - margin.right,
                 rect.down() + padding.bottom + margin.bottom,
                 rect.right() - cursor - margin.right - length,
                 rect.down() + padding.bottom + margin.bottom + cross,
             ),
-            LuniAxis::Column => Rectangle::new(
+            LuniAxis::Column => IRect::new(
                 rect.right() - padding.right - margin.right - cross,
                 rect.up() - cursor - margin.top - length,
                 rect.right() - padding.right - margin.right,
                 rect.up() - cursor - margin.top,
             ),
-            LuniAxis::ColumnReverse => Rectangle::new(
+            LuniAxis::ColumnReverse => IRect::new(
                 rect.right() - padding.right - margin.right - cross,
                 rect.down() + cursor + margin.top,
                 rect.right() - padding.right - margin.right,
@@ -306,25 +306,25 @@ fn cursor_assign(
             ),
         },
         LuniAlign::Center => match axis {
-            LuniAxis::Row => Rectangle::new(
+            LuniAxis::Row => IRect::new(
                 rect.left() + cursor + margin.left,
                 rect.vertical_center() - cross / 2,
                 rect.left() + cursor + margin.left + length,
                 rect.vertical_center() + cross / 2,
             ),
-            LuniAxis::RowReverse => Rectangle::new(
+            LuniAxis::RowReverse => IRect::new(
                 rect.right() - cursor - margin.right,
                 rect.vertical_center() - cross / 2,
                 rect.right() - cursor - margin.right - length,
                 rect.vertical_center() + cross / 2,
             ),
-            LuniAxis::Column => Rectangle::new(
+            LuniAxis::Column => IRect::new(
                 rect.horizontal_center() - cross / 2,
                 rect.up() - cursor - margin.top - length,
                 rect.horizontal_center() + cross / 2,
                 rect.up() - cursor - margin.top,
             ),
-            LuniAxis::ColumnReverse => Rectangle::new(
+            LuniAxis::ColumnReverse => IRect::new(
                 rect.horizontal_center() - cross / 2,
                 rect.down() + cursor + margin.top,
                 rect.horizontal_center() + cross / 2,
@@ -355,10 +355,10 @@ struct LuniFlexChildBuilder<'a> {
 }
 
 impl Descriptor for LuniFlexChildBuilder<'_> {
-    type Target = Handle<Val<Rectangle>>;
+    type Target = Handle<Val<IRect>>;
 
     fn when_build(self, world: &World) -> Self::Target {
-        let rect = world.insert(Val::new(Rectangle::default()));
+        let rect = world.insert(Val::new(IRect::default()));
         self.luni.children.push((rect, self.child));
         rect
     }

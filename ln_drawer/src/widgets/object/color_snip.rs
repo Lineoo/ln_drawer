@@ -11,7 +11,7 @@ use crate::{
         transform::{Transform, TransformValue},
         val::{Val, ValChanged},
     },
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     theme::ThemeVal,
     tools::{
         mouse::MouseMenu,
@@ -26,7 +26,7 @@ use crate::{
 
 pub struct ColorSnip {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub attr: ColorSnipAttr,
 }
 
@@ -78,7 +78,7 @@ impl Element for ColorSnip {
             let delta = drag.here.position - drag.from.position;
             let destination = *source + delta.q32_round();
 
-            rect.val = Rectangle::new_half(destination, UVec2::splat(24));
+            rect.val = IRect::new_half(destination, UVec2::splat(24));
             world.queue_trigger(rect.handle(), ValChanged);
 
             if drag.status == ButtonDragStatus::End {

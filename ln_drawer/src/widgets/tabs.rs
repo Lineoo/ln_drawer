@@ -12,7 +12,7 @@ use crate::{
         transform::{Transform, TransformEdge, TransformValue},
         val::{Val, ValChanged},
     },
-    measures::Rectangle,
+    measures::IRect,
     theme::{Theme, ThemeVal},
     tools::collider::ToolRectCollider,
     widgets::{
@@ -23,7 +23,7 @@ use crate::{
 };
 
 pub struct Tabs {
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub common: WidgetCommon,
     pub tabs: Vec<TabEntry>,
     pub active: Handle<Val<usize>>,
@@ -31,7 +31,7 @@ pub struct Tabs {
 
 pub struct TabEntry {
     pub icon: ButtonImage,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub visible: Handle<Val<bool>>,
 }
 
@@ -130,10 +130,7 @@ impl Tabs {
             });
 
             let indicator_rect = world.build(Transform::new(
-                TransformValue::anchor(
-                    (0.0, 0.5),
-                    Rectangle::new_half(IVec2::ZERO, UVec2::new(1, 16)),
-                ),
+                TransformValue::anchor((0.0, 0.5), IRect::new_half(IVec2::ZERO, UVec2::new(1, 16))),
                 button_rect,
             ));
             world.insert(RRect {

@@ -13,7 +13,7 @@ use wgpu::{
 use crate::{
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
-    measures::Rectangle,
+    measures::IRect,
     render::{MSAA_STATE, Render, RenderDrawControl, RenderPrepareControl, camera::CameraBind},
     widgets::{common::WidgetCommon, shaders::shader_compile},
 };
@@ -25,7 +25,7 @@ pub struct VtorPipeline {
 
 pub struct Vtor {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub color: Vec4,
     pub order: isize,
     pub path: Path,
@@ -142,7 +142,7 @@ impl Vtor {
 
     fn gen_path_buffer(
         path: Path,
-        rect: Rectangle,
+        rect: IRect,
         color: Vec4,
         pipeline: &VtorPipeline,
         device: &Device,

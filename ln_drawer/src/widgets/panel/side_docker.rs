@@ -11,7 +11,7 @@ use crate::{
         transform::{Transform, TransformEdge, TransformValue},
         val::{Val, ValChanged},
     },
-    measures::{Axis, Rectangle},
+    measures::{Axis, IRect},
     theme::ThemeVal,
     widgets::{
         button::{ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
@@ -24,7 +24,7 @@ use crate::{
 
 pub struct SideDocker {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for SideDocker {
@@ -164,7 +164,7 @@ impl Element for SideDocker {
 
         let brush_panel_rect = world.build(Transform::anchor(
             (1.0, 1.0),
-            Rectangle::new_extend(20, -480, 364, 480),
+            IRect::new_extend(20, -480, 364, 480),
             brush_menu_rect,
         ));
 

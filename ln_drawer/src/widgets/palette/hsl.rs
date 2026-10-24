@@ -12,7 +12,7 @@ use crate::{
         transfer::Transfer,
         val::{Val, ValChanged},
     },
-    measures::{FI64Ext, Rectangle},
+    measures::{FI64Ext, IRect},
     tools::{
         collider::{ToolRectCollider, ToolRingCollider},
         pointer::PointerHit,
@@ -40,7 +40,7 @@ const THUMB_RADIUS: f32 = 5.0;
 /// y axis stands for lightness.
 pub struct HslSquare {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub hsl: Vec4,
 }
 
@@ -48,7 +48,7 @@ pub struct HslSquare {
 /// [`HslRing::inner_radius`] and [`OUTER_RADIUS`].
 pub struct HslRing {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub hsl: Vec4,
     pub inner_radius: f32,
 }
@@ -74,17 +74,17 @@ fn thumb_color(hsl: Vec4) -> Vec4 {
     mul_alpha(srgb_gamma_decode(hsl_to_srgb(hsl)))
 }
 
-fn square_thumb(rect: Rectangle, hsl: Vec4) -> Rectangle {
+fn square_thumb(rect: IRect, hsl: Vec4) -> IRect {
     let center = rect.origin + (Vec2::new(hsl.y, hsl.z) * rect.extend.as_vec2()).as_ivec2();
-    Rectangle::new_half(center, UVec2::splat(THUMB_RADIUS as u32))
+    IRect::new_half(center, UVec2::splat(THUMB_RADIUS as u32))
 }
 
-fn ring_thumb(rect: Rectangle, hsl: Vec4, inner_radius: f32) -> Rectangle {
+fn ring_thumb(rect: IRect, hsl: Vec4, inner_radius: f32) -> IRect {
     let angle = hsl.x * TAU;
     let radius = (inner_radius + OUTER_RADIUS) * 0.5;
     let uv = Vec2::splat(0.5) + Vec2::new(angle.cos(), angle.sin()) * radius;
     let center = rect.origin + (uv * rect.extend.as_vec2()).as_ivec2();
-    Rectangle::new_half(center, UVec2::splat(THUMB_RADIUS as u32))
+    IRect::new_half(center, UVec2::splat(THUMB_RADIUS as u32))
 }
 
 impl HslSquare {

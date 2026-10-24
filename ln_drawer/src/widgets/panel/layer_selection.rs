@@ -8,7 +8,7 @@ use crate::{
         transform::{Transform, TransformEdge, TransformValue},
         val::Val,
     },
-    measures::Rectangle,
+    measures::IRect,
     theme::ThemeVal,
     widgets::{
         button::{ButtonSelected, SetButtonSelected, ToggleButton},
@@ -27,7 +27,7 @@ struct LayerChosen(u64);
 
 pub struct LayerSelectionPanel {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for LayerSelectionPanel {
@@ -56,7 +56,7 @@ impl Element for LayerSelectionPanel {
         let local = world.build(ContainerEcho { container: panel });
 
         let doc_label_rect = world.build(Transform::new(
-            TransformValue::anchor((0.0, 1.0), Rectangle::new(28, -22 - 18, 28 + 32, -22)),
+            TransformValue::anchor((0.0, 1.0), IRect::new(28, -22 - 18, 28 + 32, -22)),
             local,
         ));
         world.insert(Text {
@@ -108,7 +108,7 @@ impl Element for LayerSelectionPanel {
         });
 
         let layer_label_rect = world.build(Transform::new(
-            TransformValue::anchor((0.0, 1.0), Rectangle::new(28, -90, 28 + 32, -90 + 16)),
+            TransformValue::anchor((0.0, 1.0), IRect::new(28, -90, 28 + 32, -90 + 16)),
             local,
         ));
         world.insert(Text {

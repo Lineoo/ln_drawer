@@ -6,7 +6,7 @@ use swash::scale::image::Content;
 use crate::{
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
-    measures::Rectangle,
+    measures::IRect,
     render::RenderPrepareControl,
     widgets::{
         common::WidgetCommon,
@@ -16,7 +16,7 @@ use crate::{
 
 pub struct Text {
     pub text: String,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
     pub attr: TextAttr,
     pub order: isize,
     pub common: WidgetCommon,
@@ -239,7 +239,7 @@ impl Text {
         self.attr.extra_upscale * lnwindow.window.scale_factor() as f32
     }
 
-    fn upscaled_rect(&self, lnwindow: &Lnwindow, rect: Rectangle) -> UVec2 {
+    fn upscaled_rect(&self, lnwindow: &Lnwindow, rect: IRect) -> UVec2 {
         (rect.extend.as_vec2() * self.upscale(lnwindow))
             .ceil()
             .as_uvec2()

@@ -18,7 +18,7 @@ use crate::{
         val::{Val, ValChanged},
     },
     lnwin::LnwindowRect,
-    measures::{Axis, Rectangle},
+    measures::{Axis, IRect},
     theme::ThemeVal,
     widgets::{
         button::{ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
@@ -103,7 +103,7 @@ impl Element for DesktopUi {
 
 pub struct MainWorkspace {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for MainWorkspace {
@@ -160,7 +160,7 @@ impl Element for MainWorkspace {
 /// the top one
 pub struct ToolBar {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for ToolBar {
@@ -194,7 +194,7 @@ impl Element for ToolBar {
             },
         });
 
-        let docker_button = |rect: Handle<Val<Rectangle>>, image_bytes: &[u8]| {
+        let docker_button = |rect: Handle<Val<IRect>>, image_bytes: &[u8]| {
             world.insert(ToggleButton {
                 common,
                 rect,
@@ -341,7 +341,7 @@ impl Element for ToolBar {
 /// the bottom one
 pub struct StatusBar {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for StatusBar {
@@ -373,7 +373,7 @@ impl Element for StatusBar {
         let text_rect = world.build(Transform::new(
             TransformValue::anchor(
                 (0.5, 0.5),
-                Rectangle::new_half(IVec2::ZERO, UVec2::new(100, 10)),
+                IRect::new_half(IVec2::ZERO, UVec2::new(100, 10)),
             ),
             local,
         ));
@@ -400,7 +400,7 @@ impl Element for StatusBar {
 
 pub struct CommandCenter {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for CommandCenter {
@@ -484,7 +484,7 @@ impl Element for CommandCenter {
 
 pub struct VerbosePanel {
     pub common: WidgetCommon,
-    pub rect: Handle<Val<Rectangle>>,
+    pub rect: Handle<Val<IRect>>,
 }
 
 impl Element for VerbosePanel {
@@ -496,7 +496,7 @@ impl Element for VerbosePanel {
 
         let theme = world.single_fetch::<ThemeVal>();
 
-        let brush_rect = world.insert(Val::new(Rectangle::default()));
+        let brush_rect = world.insert(Val::new(IRect::default()));
         let brush_visible = world.insert(Val::new(false));
         let tab_brush_list = world.insert(BrushListPanel {
             common: WidgetCommon {
@@ -506,7 +506,7 @@ impl Element for VerbosePanel {
             rect: brush_rect,
         });
 
-        let settings_rect = world.insert(Val::new(Rectangle::default()));
+        let settings_rect = world.insert(Val::new(IRect::default()));
         let settings_visible = world.insert(Val::new(false));
         let tab_settings = world.insert(SettingPanel {
             common: WidgetCommon {
@@ -516,7 +516,7 @@ impl Element for VerbosePanel {
             rect: settings_rect,
         });
 
-        let layer_rect = world.insert(Val::new(Rectangle::default()));
+        let layer_rect = world.insert(Val::new(IRect::default()));
         let layer_visible = world.insert(Val::new(false));
         let tab_layer_selection = world.insert(LayerSelectionPanel {
             common: WidgetCommon {
@@ -526,7 +526,7 @@ impl Element for VerbosePanel {
             rect: layer_rect,
         });
 
-        let debug_rect = world.insert(Val::new(Rectangle::default()));
+        let debug_rect = world.insert(Val::new(IRect::default()));
         let debug_visible = world.insert(Val::new(false));
         let tab_debug = world.insert(DebugPanel {
             common: WidgetCommon {

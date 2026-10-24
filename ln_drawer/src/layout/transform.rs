@@ -2,20 +2,20 @@ use ln_world::{Descriptor, Handle, World};
 
 use crate::{
     layout::{transfer::Transfer, val::Val},
-    measures::Rectangle,
+    measures::IRect,
 };
 
 pub struct Transform {
     pub value: TransformValue,
-    pub source: Handle<Val<Rectangle>>,
+    pub source: Handle<Val<IRect>>,
 }
 
 impl Transform {
-    pub fn new(value: TransformValue, source: Handle<Val<Rectangle>>) -> Self {
+    pub fn new(value: TransformValue, source: Handle<Val<IRect>>) -> Self {
         Transform { value, source }
     }
 
-    pub fn anchor(anchor: (f32, f32), rect: Rectangle, source: Handle<Val<Rectangle>>) -> Self {
+    pub fn anchor(anchor: (f32, f32), rect: IRect, source: Handle<Val<IRect>>) -> Self {
         Transform::new(TransformValue::anchor(anchor, rect), source)
     }
 }
@@ -56,7 +56,7 @@ impl TransformValue {
         }
     }
 
-    pub const fn anchor(anchor: (f32, f32), rect: Rectangle) -> TransformValue {
+    pub const fn anchor(anchor: (f32, f32), rect: IRect) -> TransformValue {
         TransformValue {
             left: TransformEdge {
                 anchor: anchor.0,
@@ -120,7 +120,7 @@ impl TransformValue {
         }
     }
 
-    pub fn compute(&self, source: Rectangle) -> Rectangle {
+    pub fn compute(&self, source: IRect) -> IRect {
         let left = source.extend.x as f32 * self.left.anchor;
         let left = source.origin.x + left.round() as i32 + self.left.offset;
 
@@ -133,12 +133,12 @@ impl TransformValue {
         let up = source.extend.y as f32 * self.up.anchor;
         let up = source.origin.y + up.round() as i32 + self.up.offset;
 
-        Rectangle::new(left, down, right, up)
+        IRect::new(left, down, right, up)
     }
 }
 
 impl Descriptor for Transform {
-    type Target = Handle<Val<Rectangle>>;
+    type Target = Handle<Val<IRect>>;
 
     fn when_build(self, world: &World) -> Self::Target {
         Transfer::derive(world, self.source).build(move |&source| self.value.compute(source))

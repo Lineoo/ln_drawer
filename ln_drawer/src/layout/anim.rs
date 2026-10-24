@@ -6,7 +6,7 @@ use ln_world::{Descriptor, Element, Handle, World};
 use crate::{
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
-    measures::Rectangle,
+    measures::IRect,
     render::{RenderInformation, RenderPrepareControl},
 };
 
@@ -172,7 +172,7 @@ impl AnimationType for Vec4 {
     }
 }
 
-impl AnimationType for Rectangle {
+impl AnimationType for IRect {
     type Storage = [f32; 4];
 
     fn into_storage(self) -> Self::Storage {
@@ -185,7 +185,7 @@ impl AnimationType for Rectangle {
     }
 
     fn from_storage(storage: Self::Storage) -> Self {
-        Rectangle::new(
+        IRect::new(
             storage[0].round() as i32,
             storage[1].round() as i32,
             storage[2].round() as i32,
