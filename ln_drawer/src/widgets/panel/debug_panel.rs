@@ -13,7 +13,7 @@ use crate::{
         Render,
         camera::{PageCamera, PageCameraUtils},
     },
-    save::{Save, SceneDocument},
+    save::Save,
     theme::ThemeVal,
     widgets::{
         button::{ButtonClick, ButtonImage, ButtonSelected, SetButtonSelected, ToggleButton},
@@ -168,11 +168,10 @@ impl Element for DebugPanel {
         );
         world.observer(compact, move |&ButtonClick, world| {
             log::debug!("on next startup database will be compacted");
-            let sn_file = Save::sn_file(world);
-            let sn_tmp_file = Save::sn_tmp_file(world);
-            let mut sn_doc = SceneDocument::read(&sn_file);
+            let save = world.single_fetch::<Save>();
+            let mut sn_doc = save.sn_read();
             sn_doc.set_compact_on_startup(true);
-            sn_doc.write(&sn_file, &sn_tmp_file);
+            save.sn_write(&sn_doc);
         });
     }
 }
