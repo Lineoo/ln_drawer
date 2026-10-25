@@ -18,7 +18,7 @@ use crate::{
     theme::{Theme, ThemeVal},
     tools::pointer::{PointerHit, PointerHover, PointerScroll},
     widgets::{
-        brush_preview::BrushPreview,
+        brush_preview::BrushPreviewDescriptor,
         button::{
             ButtonClick, ButtonDrag, ButtonDragStatus, ButtonImage, SetButtonSelected,
             ToggleButton, ToggleButtonTheme,
@@ -255,11 +255,35 @@ impl Element for BrushListPanel {
                 },
                 button_rect,
             ));
-            let preview = world.insert(BrushPreview {
-                common,
-                rect: preview_rect,
-                outdated: true,
-                brush: page.brushes.get(i).map(|x| x.brush.dup()),
+            // TODO temporary since Packer doesn't support delay data fetch yet
+            world.queue(move |world| {
+                world.scope("brush_list_panel::preview");
+                world.set_autodeps(Some(this));
+
+                let theme = world.single_fetch::<ThemeVal>();
+                let page = world.single_fetch::<LayerPage>();
+
+                let preview = world.insert(world.build(BrushPreviewDescriptor {
+                    common,
+                    background: theme.gray1,
+                    rect: preview_rect,
+                    brush: page.brushes[i].brush.dup(),
+                }));
+
+                // TODO temporary: `Container` couples render order with collider order, so the preview
+                // captures pointer events. Forward them to the button until that is decoupled.
+                world.observer(preview, move |event: &PointerHit, world| {
+                    world.queue_trigger(button, *event);
+                });
+                world.observer(preview, move |event: &PointerHover, world| {
+                    world.queue_trigger(button, *event);
+                });
+                world.observer(preview, move |event: &PointerScroll, world| {
+                    world.queue_trigger(button, *event);
+                });
+                world.observer(button, move |event: &PointerScroll, world| {
+                    world.queue_trigger(container, *event);
+                });
             });
 
             world.observer(button, move |&ButtonClick, world| {
@@ -301,21 +325,6 @@ impl Element for BrushListPanel {
                         },
                     );
                 }
-            });
-
-            // TODO temporary: `Container` couples render order with collider order, so the preview
-            // captures pointer events. Forward them to the button until that is decoupled.
-            world.observer(preview, move |event: &PointerHit, world| {
-                world.queue_trigger(button, *event);
-            });
-            world.observer(preview, move |event: &PointerHover, world| {
-                world.queue_trigger(button, *event);
-            });
-            world.observer(preview, move |event: &PointerScroll, world| {
-                world.queue_trigger(button, *event);
-            });
-            world.observer(button, move |event: &PointerScroll, world| {
-                world.queue_trigger(container, *event);
             });
         }
 

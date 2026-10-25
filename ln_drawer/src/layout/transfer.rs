@@ -38,6 +38,7 @@ impl<T: Send + 'static, U: Send + 'static> Transfer<'_, T, U> {
     }
 }
 
+// TODO remove Default requirement after ln_world pre-allocate function
 impl<T: Send + 'static, U: Send + Default + 'static> Transfer<'_, T, U> {
     pub fn derive(world: &World, this: Handle<Val<T>>) -> Transfer<'_, T, U> {
         let that = world.insert(Val::new(U::default()));

@@ -32,6 +32,7 @@ use wgpu::{
 };
 
 use crate::{
+    color::srgb::{demul_alpha, mul_alpha, srgb_gamma_encode},
     layer::{brush::Brush, stream::ThreadInput},
     measures::{FI64Ext, IRect},
     render::camera::Camera,
@@ -59,9 +60,6 @@ pub struct LayerPipeline {
     work_rect: Buffer,
     work_dispatch_group: BindGroup,
 
-    sampler_group_unfiltered: BindGroup,
-    sampler_group_filtered: BindGroup,
-
     draws_rect: Buffer,
     draws_length: Buffer,
     draws_array: Buffer,
@@ -80,6 +78,14 @@ pub struct LayerPipeline {
     copy_pipeline: ComputePipeline,
     readback_pipeline: ComputePipeline,
     clear_pipeline: ComputePipeline,
+}
+
+pub struct LayerRenderer {
+    pub lp: Arc<LayerPipeline>,
+
+    render_background: Buffer,
+    render_group_unfiltered: BindGroup,
+    render_group_filtered: BindGroup,
 }
 
 #[derive(Clone)]
@@ -127,10 +133,6 @@ impl LayerPipeline {
         let dispatch_layout = device.create_bind_group_layout(&LAYOUT_WORK_DISPATCH);
         let (work_rect, work_dispatch_group) = work_dispatch_group(&device, &dispatch_layout);
 
-        let sampler_layout = device.create_bind_group_layout(&LAYOUT_SAMPLER);
-        let (sampler_group_unfiltered, sampler_group_filtered) =
-            sampler_groups(&device, &sampler_layout);
-
         let draw_dispatch_layout = device.create_bind_group_layout(&LAYOUT_DRAW_DISPATCH);
         let (draws_rect, draws_length, draws_array, draws_state, draws_dispatch_group) =
             draws_dispatch_group(&device, &draw_dispatch_layout);
@@ -148,12 +150,13 @@ impl LayerPipeline {
                 .then(|| device.create_bind_group_layout(&LAYOUT_CHUNK_READ_WRITE)),
         };
 
+        let render_layout = device.create_bind_group_layout(&LAYOUT_RENDER);
         let render_pipelines = render_pipelines(
             &device,
             cache,
             surface_format,
             camera_bind_layout,
-            sampler_layout,
+            render_layout,
             &chunk_layout.render,
         );
 
@@ -172,24 +175,22 @@ impl LayerPipeline {
             chunk_layout,
             work_rect,
             work_dispatch_group,
-            sampler_group_unfiltered,
-            sampler_group_filtered,
             draws_rect,
             draws_length,
             draws_array,
-            draws_dispatch_group,
             draws_state,
+            draws_dispatch_group,
             readback_sample,
             readback_share,
             readback_group,
             readback_mapped: Arc::new(AtomicBool::new(false)),
             render_pipelines,
             merge_pipelines,
+            brush_pipelines,
             mipmap_pipeline,
             copy_pipeline,
             readback_pipeline,
             clear_pipeline,
-            brush_pipelines,
         }
     }
 
@@ -209,6 +210,23 @@ impl LayerPipeline {
     pub fn create_standalone(&self, rect: IRect) -> Standalone {
         let chunk = self.create_empty_chunk(rect.extend, rect);
         Standalone { chunk, rect }
+    }
+
+    pub fn create_render(self: &Arc<LayerPipeline>, background: Vec4) -> LayerRenderer {
+        let render_layout = self.device.create_bind_group_layout(&LAYOUT_RENDER);
+        let (render_background, render_group_unfiltered, render_group_filtered) =
+            render_groups(&self.device, &render_layout);
+        self.queue.write_buffer(
+            &render_background,
+            0,
+            bytes_of(&mul_alpha(srgb_gamma_encode(demul_alpha(background)))),
+        );
+        LayerRenderer {
+            lp: self.clone(),
+            render_background,
+            render_group_unfiltered,
+            render_group_filtered,
+        }
     }
 
     pub fn raw_remove_associated(
@@ -636,11 +654,21 @@ impl LayerPipeline {
         cpass.set_bind_group(1, Some(&chunk.write), &[]);
         dispatch_workgroups(cpass, &[chunk_rect]);
     }
+}
+
+impl LayerRenderer {
+    pub fn write_background(&self, color: Vec4) {
+        self.lp.queue.write_buffer(
+            &self.render_background,
+            0,
+            bytes_of(&mul_alpha(srgb_gamma_encode(demul_alpha(color)))),
+        );
+    }
 
     pub fn render_chunk(&self, rpass: &mut RenderPass, camera: &Camera, chunk: &Chunk) {
-        rpass.set_pipeline(&self.render_pipelines.main);
+        rpass.set_pipeline(&self.lp.render_pipelines.main);
         rpass.set_bind_group(0, &camera.bind, &[]);
-        rpass.set_bind_group(1, &self.sampler_group_filtered, &[]);
+        rpass.set_bind_group(1, &self.render_group_filtered, &[]);
         rpass.set_bind_group(2, &chunk.render, &[]);
         rpass.draw(0..4, 0..1);
     }
@@ -906,14 +934,26 @@ fn lower_chunk_of(chunk: (i32, i32, u8)) -> [(i32, i32, u8); 4] {
 
 // --- Layouts --- //
 
-const LAYOUT_SAMPLER: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
-    label: Some("layer_sampler"),
-    entries: &[BindGroupLayoutEntry {
-        binding: 0,
-        visibility: ShaderStages::FRAGMENT,
-        ty: BindingType::Sampler(SamplerBindingType::Filtering),
-        count: None,
-    }],
+const LAYOUT_RENDER: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
+    label: Some("layer_render"),
+    entries: &[
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Sampler(SamplerBindingType::Filtering),
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+    ],
 };
 
 const LAYOUT_WORK_DISPATCH: BindGroupLayoutDescriptor<'_> = BindGroupLayoutDescriptor {
@@ -1136,7 +1176,10 @@ fn work_dispatch_group(device: &Device, dispatch_layout: &BindGroupLayout) -> (B
     (dispatch, dispatch_group)
 }
 
-fn sampler_groups(device: &Device, sampler_layout: &BindGroupLayout) -> (BindGroup, BindGroup) {
+fn render_groups(
+    device: &Device,
+    render_layout: &BindGroupLayout,
+) -> (Buffer, BindGroup, BindGroup) {
     let sampler_unfiltered = device.create_sampler(&SamplerDescriptor {
         label: Some("layer_sampler_unfiltered"),
         address_mode_u: AddressMode::ClampToEdge,
@@ -1157,25 +1200,56 @@ fn sampler_groups(device: &Device, sampler_layout: &BindGroupLayout) -> (BindGro
         ..Default::default()
     });
 
-    let sampler_group_unfiltered = device.create_bind_group(&BindGroupDescriptor {
+    let render_background = device.create_buffer(&BufferDescriptor {
+        label: Some("layer_dispatch"),
+        size: size_of::<Vec4>() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let render_group_unfiltered = device.create_bind_group(&BindGroupDescriptor {
         label: Some("layer_sampler_unfiltered"),
-        layout: sampler_layout,
-        entries: &[BindGroupEntry {
-            binding: 0,
-            resource: BindingResource::Sampler(&sampler_unfiltered),
-        }],
+        layout: render_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Sampler(&sampler_unfiltered),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &render_background,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
     });
 
-    let sampler_group_filtered = device.create_bind_group(&BindGroupDescriptor {
+    let render_group_filtered = device.create_bind_group(&BindGroupDescriptor {
         label: Some("layer_sampler_filtered"),
-        layout: sampler_layout,
-        entries: &[BindGroupEntry {
-            binding: 0,
-            resource: BindingResource::Sampler(&sampler_filtered),
-        }],
+        layout: render_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Sampler(&sampler_filtered),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &render_background,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
     });
 
-    (sampler_group_unfiltered, sampler_group_filtered)
+    (
+        render_background,
+        render_group_unfiltered,
+        render_group_filtered,
+    )
 }
 
 fn draws_dispatch_group(
@@ -1309,8 +1383,8 @@ fn create_chunk_texture(device: &Device, size: UVec2) -> Texture {
     device.create_texture(&TextureDescriptor {
         label: Some("layer_chunk_texture"),
         size: Extent3d {
-            width: size.x,
-            height: size.y,
+            width: size.x.max(1),
+            height: size.y.max(1),
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,

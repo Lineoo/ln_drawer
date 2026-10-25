@@ -19,7 +19,7 @@ use crate::{
     render::camera::Camera,
     theme::ThemeVal,
     widgets::{
-        brush_preview::BrushPreview,
+        brush_preview::BrushPreviewDescriptor,
         common::WidgetCommon,
         container::{
             ContainerAttr, ContainerDeco, ContainerDecoDropdown, ContainerEcho, ContainerWithCamera,
@@ -40,8 +40,6 @@ impl Element for SettingPanel {
         world.set_autodeps(Some(this));
         world.dependency(this, self.rect);
         world.dependency(this, self.common.visible);
-
-        let page = world.single_fetch::<LayerPage>();
 
         let attr = ContainerAttr::default();
         let (_container, common) = world.build(ContainerWithCamera {
@@ -68,22 +66,26 @@ impl Element for SettingPanel {
             basis: Some(110),
             ..Default::default()
         }));
+        world.queue(move |world| {
+            world.scope("setting_panel::preview");
+            world.set_autodeps(Some(this));
 
-        let preview = world.insert(BrushPreview {
-            common: WidgetCommon {
-                camera: common.camera,
-                visible: self.common.visible,
-            },
-            rect: preview_rect,
-            outdated: false,
-            brush: Some(page.active().dup()),
-        });
+            let page = world.single_fetch::<LayerPage>();
+            let theme = world.single_fetch::<ThemeVal>();
 
-        world.observer(page.handle(), move |&BrushConfigurationChanged, world| {
-            let mut preview = world.fetch_mut(preview);
-            let layer_instance = world.single_fetch::<LayerPage>();
-            preview.outdated = true;
-            preview.brush = Some(layer_instance.active().dup());
+            let preview = world.insert(world.build(BrushPreviewDescriptor {
+                common,
+                rect: preview_rect,
+                brush: page.active().dup(),
+                background: theme.gray0,
+            }));
+
+            world.observer(page.handle(), move |&BrushConfigurationChanged, world| {
+                let mut preview = world.fetch_mut(preview);
+                let layer_instance = world.single_fetch::<LayerPage>();
+                preview.outdated = true;
+                preview.brush = layer_instance.active().dup();
+            });
         });
 
         let settings_rect = world.build(luni.child(LuniChild {

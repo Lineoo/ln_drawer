@@ -1,11 +1,11 @@
 use glam::{DVec2, I64Vec2, UVec2, Vec4};
-use ln_world::{Element, Handle, HandleGeneric, World};
+use ln_world::{Descriptor, Element, Handle, HandleGeneric, World};
 use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor};
 
 use crate::{
     color::{oklab::oklab_to_linear_srgb, srgb::srgb_gamma_encode},
     layer::{
-        LayerPipeline, Standalone,
+        LayerPipeline, LayerRenderer, Standalone,
         brush::{BrushParams, Draw, DrawsBatch, Stroke, param::BrushParam, round::RoundBrush},
         wrapper::LayerPage,
     },
@@ -19,33 +19,49 @@ use crate::{
     },
 };
 
+pub struct BrushPreviewDescriptor {
+    pub common: WidgetCommon,
+    pub rect: Handle<Val<IRect>>,
+    pub background: Handle<Val<Vec4>>,
+    pub brush: Box<dyn BrushParams>,
+}
+
 /// A widget that displays an engine-rendered brush preview.
-///
-/// Set [`BrushPreview::outdated`] and the preview regenerates with [`BrushPreview::brush`] on the
-/// next frame.
 pub struct BrushPreview {
     pub common: WidgetCommon,
     pub rect: Handle<Val<IRect>>,
-    pub brush: Option<Box<dyn BrushParams>>,
+    pub background: Handle<Val<Vec4>>,
+    pub brush: Box<dyn BrushParams>,
+    pub canvas: Standalone,
+    pub renderer: LayerRenderer,
     pub outdated: bool,
 }
 
-struct BrushPreviewInstance {
-    canvas: Standalone,
+impl Descriptor for BrushPreviewDescriptor {
+    type Target = BrushPreview;
+
+    fn when_build(self, world: &World) -> Self::Target {
+        let page = world.single_fetch::<LayerPage>();
+        let renderer = page.lp.create_render(world.fetch(self.background).val);
+        let canvas = page.lp.create_standalone(world.fetch(self.rect).val);
+        BrushPreview {
+            common: self.common,
+            rect: self.rect,
+            background: self.background,
+            brush: self.brush,
+            canvas,
+            renderer,
+            outdated: false,
+        }
+    }
 }
 
-impl BrushPreview {
-    fn init(&self, world: &World, this: Handle<Self>) {
+impl Element for BrushPreview {
+    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
         world.scope("brush_preview");
         world.set_autodeps(Some(this));
         world.dependency(this, self.rect);
         world.dependency(this, self.common.visible);
-
-        let page = world.single_fetch::<LayerPage>();
-        let rect = world.fetch(self.rect).val;
-
-        let canvas_rect = IRect::new_extend(0, 0, rect.width().max(1), rect.height().max(1));
-        let canvas = page.lp.create_standalone(canvas_rect);
 
         let (container, common) = world.build(ContainerWithCamera {
             common: self.common,
@@ -65,19 +81,13 @@ impl BrushPreview {
             order: 0,
         });
 
-        let instance = world.insert(BrushPreviewInstance { canvas });
-
         world.insert(RenderPrepareControl {
             prepare: Box::new(move |world| {
                 let mut this = world.fetch_mut(this);
-                let instance = world.fetch(instance);
                 let visible = world.fetch(this.common.visible).val;
-                if let Some(brush) = &this.brush
-                    && this.outdated
-                    && visible
-                {
+                if this.outdated && visible {
                     let page = world.single_fetch::<LayerPage>();
-                    Self::generate_preview(&page.lp, &instance.canvas, brush.as_ref());
+                    Self::generate_preview(&page.lp, &this.canvas, this.brush.as_ref());
                     this.outdated = false;
                 }
                 None
@@ -88,22 +98,20 @@ impl BrushPreview {
             common,
             order: 0,
             draw: Box::new(move |world, rpass, extra| {
-                let instance = world.fetch(instance);
-                let page = world.single_fetch::<LayerPage>();
-                page.lp
-                    .render_chunk(rpass, extra.camera, &instance.canvas.chunk);
+                let this = world.fetch(this);
+                this.renderer
+                    .render_chunk(rpass, extra.camera, &this.canvas.chunk);
             }),
         });
 
         world.observer(self.rect, move |ValChanged, world| {
             let mut this = world.fetch_mut(this);
             let rect = world.fetch(this.rect).val;
-            let mut instance = world.fetch_mut(instance);
 
-            let size = UVec2::new(rect.width().max(1), rect.height().max(1));
-            if size != instance.canvas.rect.extend {
+            let size = UVec2::new(rect.width(), rect.height());
+            if size != this.canvas.rect.extend {
                 let page = world.single_fetch::<LayerPage>();
-                instance.canvas = page
+                this.canvas = page
                     .lp
                     .create_standalone(IRect::new_extend(0, 0, size.x, size.y));
                 this.outdated = true;
@@ -111,8 +119,16 @@ impl BrushPreview {
 
             world.queue_trigger(common.camera, SetCameraOutdated);
         });
-    }
 
+        world.observer(self.background, move |ValChanged, world| {
+            let this = world.fetch(this);
+            let background_color = world.fetch(this.background).val;
+            this.renderer.write_background(background_color);
+        });
+    }
+}
+
+impl BrushPreview {
     /// Redraw `brush` over a fixed seed into `canvas`.
     pub fn generate_preview(lp: &LayerPipeline, canvas: &Standalone, brush: &dyn BrushParams) {
         let swap = canvas
@@ -269,11 +285,3 @@ impl BrushPreview {
         }
     }
 }
-
-impl Element for BrushPreview {
-    fn when_insert(&mut self, world: &World, this: Handle<Self>) {
-        self.init(world, this);
-    }
-}
-
-impl Element for BrushPreviewInstance {}

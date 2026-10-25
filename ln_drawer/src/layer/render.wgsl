@@ -11,6 +11,7 @@ struct Rectangle {
 }
 
 @group(1) @binding(0) var texture_sampler: sampler;
+@group(1) @binding(1) var<uniform> background_color: vec4f;
 
 @group(2) @binding(0) var texture: texture_2d<f32>;
 @group(2) @binding(1) var<uniform> chunk: Rectangle;
@@ -29,7 +30,7 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4f {
     let color = mul_alpha(srgb_gamma_encode(demul_alpha(textureSample(texture, texture_sampler, vertex.uv))));
-    return srgb_gamma_decode(color + vec4f(1) * (1 - color.a));
+    return srgb_gamma_decode(color + background_color * (1 - color.a));
 }
 
 @fragment
@@ -45,5 +46,5 @@ fn fs_debug(vertex: VertexOutput) -> @location(0) vec4f {
 
     let ab = a * (1 - b.a) + b;
     let abc = ab * (1 - c.a) + c;
-    return srgb_gamma_decode(abc + vec4f(1) * (1 - abc.a));
+    return srgb_gamma_decode(abc + background_color * (1 - abc.a));
 }

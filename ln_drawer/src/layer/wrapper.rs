@@ -14,7 +14,7 @@ use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor, RenderPass};
 use crate::{
     layer::{
         CacheLayerChunk, CacheLayers, ChunkPool, DEFAULT_CHUNK_SIZE, DEFAULT_MIPMAP_CAP,
-        LayerPipeline, PlainLayer, RawLayer, Standalone,
+        LayerPipeline, LayerRenderer, PlainLayer, RawLayer, Standalone,
         brush::{
             BrushParams, Draw, Stroke, blur::BlurBrush, param::BrushParam, pixel::PixelBrush,
             round::RoundBrush, smudge::SmudgeBrush, tint::TintBrush,
@@ -79,6 +79,7 @@ pub struct BrushPreset {
 pub struct LayerPage {
     // TODO: move to ECS after world-multithread support
     pub lp: Arc<LayerPipeline>,
+    rd: LayerRenderer,
 
     common: WidgetCommon,
     rect: Handle<Val<IRect>>,
@@ -128,6 +129,8 @@ impl LayerPage {
             render.config.format,
             &camera_bind.layout,
         ));
+
+        let rd = lp.create_render(Vec4::ONE);
 
         let traveler = Traveler::new(lp.clone());
 
@@ -263,6 +266,7 @@ impl LayerPage {
 
         LayerPage {
             lp,
+            rd,
             common,
             rect,
             cache: CacheLayers {
@@ -509,8 +513,8 @@ impl LayerPage {
         rpass.set_bind_group(0, &camera.bind, &[]);
 
         match pixel {
-            true => rpass.set_bind_group(1, &self.lp.sampler_group_unfiltered, &[]),
-            false => rpass.set_bind_group(1, &self.lp.sampler_group_filtered, &[]),
+            true => rpass.set_bind_group(1, &self.rd.render_group_unfiltered, &[]),
+            false => rpass.set_bind_group(1, &self.rd.render_group_filtered, &[]),
         }
 
         for key in rect_chunks_stack_layer_iter(view_rect, self.cache.chunk_size, mipmap) {
