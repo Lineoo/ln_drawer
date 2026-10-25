@@ -1,4 +1,4 @@
-#lib_constant #lib_rectangle #lib_colorspace
+#lib_constant #lib_rectangle #lib_colorspace #lib_math
 
 struct Draw {
     color: vec4f,
@@ -40,7 +40,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
     for (var i = 0u; i < draws_length; i++) {
         let draw = draws_array[i];
         let dist = length(vec2f(draw.position - position) - vec2f(0.5) + vec2f(draw.position_fract) * 0x1p-32);
-        let mask = smoothstep((1.0 + draw.softness) * draw.size + 0.5, (1.0 - draw.softness) * draw.size + 0.5, dist);
+        let mask = #mask;
         let src = mul_alpha(draws_state[1 + i]) * draw.flow * mask;
 
         dst = #composite;

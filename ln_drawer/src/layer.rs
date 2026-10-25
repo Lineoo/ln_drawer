@@ -1579,6 +1579,12 @@ enum BrushStage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum ShapeMask {
+    Smoothstep,
+    Gaussian,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WriteMode {
     InPlace,
     OutOfPlace,
@@ -1676,6 +1682,26 @@ impl BrushStage {
             BrushStage::PrepareStroke => "prepare_stroke",
             BrushStage::PrepareDraw => "prepare_draw",
             BrushStage::Draw => "draw",
+        }
+    }
+}
+
+impl ShapeMask {
+    const fn formula(self) -> &'static str {
+        match self {
+            ShapeMask::Smoothstep => {
+                "smoothstep((1.0 + draw.softness) * draw.size + 0.5, (1.0 - draw.softness) * draw.size + 0.5, dist)"
+            }
+            ShapeMask::Gaussian => {
+                "0.5 * (1.0 - erf((dist - draw.size) * FRAC_1_SQRT_2 / (draw.softness * draw.size * 0.5)))"
+            }
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            ShapeMask::Smoothstep => "smoothstep",
+            ShapeMask::Gaussian => "gaussian",
         }
     }
 }
@@ -2050,6 +2076,7 @@ fn brush_pipelines(
             &layout_out_of_place,
             BrushKind::Blur,
             BrushStage::Draw,
+            ShapeMask::Smoothstep,
             WriteMode::OutOfPlace,
             CompositeMode::Over,
         ),
@@ -2059,6 +2086,7 @@ fn brush_pipelines(
             &layout_out_of_place,
             BrushKind::Smudge,
             BrushStage::Draw,
+            ShapeMask::Smoothstep,
             WriteMode::OutOfPlace,
             CompositeMode::Over,
         ),
@@ -2068,6 +2096,7 @@ fn brush_pipelines(
             &layout_prepare_stroke,
             BrushKind::Smudge,
             BrushStage::PrepareStroke,
+            ShapeMask::Smoothstep,
             WriteMode::OutOfPlace,
             CompositeMode::Over,
         ),
@@ -2077,6 +2106,7 @@ fn brush_pipelines(
             &layout_prepare_draw,
             BrushKind::Smudge,
             BrushStage::PrepareDraw,
+            ShapeMask::Smoothstep,
             WriteMode::OutOfPlace,
             CompositeMode::Over,
         ),
@@ -2086,6 +2116,7 @@ fn brush_pipelines(
             &layout_out_of_place,
             BrushKind::Tint,
             BrushStage::Draw,
+            ShapeMask::Smoothstep,
             WriteMode::OutOfPlace,
             CompositeMode::Erase,
         ),
@@ -2095,6 +2126,7 @@ fn brush_pipelines(
             &layout_out_of_place,
             BrushKind::Round,
             BrushStage::Draw,
+            ShapeMask::Gaussian,
             WriteMode::OutOfPlace,
             CompositeMode::Over,
         ),
@@ -2104,6 +2136,7 @@ fn brush_pipelines(
             &layout_out_of_place,
             BrushKind::Round,
             BrushStage::Draw,
+            ShapeMask::Smoothstep,
             WriteMode::OutOfPlace,
             CompositeMode::Erase,
         ),
@@ -2113,6 +2146,7 @@ fn brush_pipelines(
             &layout_out_of_place,
             BrushKind::Pixel,
             BrushStage::Draw,
+            ShapeMask::Smoothstep,
             WriteMode::OutOfPlace,
             CompositeMode::Replace,
         ),
@@ -2122,6 +2156,7 @@ fn brush_pipelines(
             &layout_out_of_place,
             BrushKind::Pixel,
             BrushStage::Draw,
+            ShapeMask::Smoothstep,
             WriteMode::OutOfPlace,
             CompositeMode::Erase,
         ),
@@ -2132,6 +2167,7 @@ fn brush_pipelines(
                 layout,
                 BrushKind::Tint,
                 BrushStage::Draw,
+                ShapeMask::Smoothstep,
                 WriteMode::InPlace,
                 CompositeMode::Over,
             )
@@ -2143,6 +2179,7 @@ fn brush_pipelines(
                 layout,
                 BrushKind::Blur,
                 BrushStage::Draw,
+                ShapeMask::Smoothstep,
                 WriteMode::InPlace,
                 CompositeMode::Over,
             )
@@ -2154,6 +2191,7 @@ fn brush_pipelines(
                 layout,
                 BrushKind::Smudge,
                 BrushStage::Draw,
+                ShapeMask::Smoothstep,
                 WriteMode::InPlace,
                 CompositeMode::Over,
             )
@@ -2165,6 +2203,7 @@ fn brush_pipelines(
                 layout,
                 BrushKind::Round,
                 BrushStage::Draw,
+                ShapeMask::Gaussian,
                 WriteMode::InPlace,
                 CompositeMode::Over,
             )
@@ -2176,6 +2215,7 @@ fn brush_pipelines(
                 layout,
                 BrushKind::Round,
                 BrushStage::Draw,
+                ShapeMask::Smoothstep,
                 WriteMode::InPlace,
                 CompositeMode::Erase,
             )
@@ -2187,6 +2227,7 @@ fn brush_pipelines(
                 layout,
                 BrushKind::Pixel,
                 BrushStage::Draw,
+                ShapeMask::Smoothstep,
                 WriteMode::InPlace,
                 CompositeMode::Replace,
             )
@@ -2198,6 +2239,7 @@ fn brush_pipelines(
                 layout,
                 BrushKind::Pixel,
                 BrushStage::Draw,
+                ShapeMask::Smoothstep,
                 WriteMode::InPlace,
                 CompositeMode::Erase,
             )
@@ -2211,20 +2253,23 @@ fn brush_pipeline(
     layout: &PipelineLayout,
     brush: BrushKind,
     stage: BrushStage,
+    mask: ShapeMask,
     write: WriteMode,
     composite: CompositeMode,
 ) -> ComputePipeline {
     let label = format!(
-        "layer_brush_{}_{}_{}_{}",
+        "layer_brush_{}_{}_{}_{}_{}",
         brush.label(),
         stage.label(),
         write.label(),
+        mask.label(),
         composite.label()
     );
     let maps = &[
         ("read", write.read()),
         ("write", write.write()),
         ("composite", composite.formula()),
+        ("mask", mask.formula()),
     ];
     let wgsl = shader_compile(brush.shader(stage), maps);
     let shader = device.create_shader_module(ShaderModuleDescriptor {

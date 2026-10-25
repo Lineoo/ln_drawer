@@ -32,6 +32,7 @@ pub struct BrushPreviewDescriptor {
     /// Brush preview band colors, in L.
     pub c0: Handle<Val<Vec4>>,
     pub c1: Handle<Val<Vec4>>,
+    // TODO only for brush list, not for setting preview
     /// Brush stroke color, in L.
     pub bc: Handle<Val<Vec4>>,
     pub brush: Box<dyn BrushParams>,

@@ -60,7 +60,7 @@ fn sample_disk(center: vec2i, radius: f32) -> vec4f {
         for (var x = -r; x <= r; x++) {
             let p = center + vec2i(x, y);
             let flag = f32(x * x + y * y) > radius * radius & rectangle_contains(destination, p);
-            let k = select(0, gaussian_2d(vec2i(x, y), f32(r * r) / 9.0), flag);
+            let k = select(0, gaussian_2d(vec2f(vec2i(x, y)), f32(r * r) / 9.0), flag);
             let c = srgb_gamma_decode(textureLoad(destination_texture, p - destination.coords));
             sum += c * k;
             count += k;

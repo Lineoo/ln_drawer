@@ -44,7 +44,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
     for (var i = 0u; i < draws_length; i++) {
         let draw = draws_array[i];
         let dist = length(vec2f(draw.position - position) - vec2f(0.5) + vec2f(draw.position_fract) * 0x1p-32);
-        let mask = smoothstep((1.0 + draw.softness) * draw.size + 0.5, (1.0 - draw.softness) * draw.size + 0.5, dist);
+        let mask = #mask;
 
         let masked_sigma = draw.sigma * mask;
         variance += masked_sigma * masked_sigma;
@@ -57,7 +57,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_i
         for (var y = i32(round(-radius)); y <= i32(round(radius)); y++) {
             let cnv = position + vec2i(x, y);
             let cnv_coords = vec2i(lid.xy) + vec2i(8, 8) + vec2i(x, y);
-            let k = select(0, gaussian_2d(vec2i(x, y), variance), rectangle_contains(destination, cnv));
+            let k = select(0, gaussian_2d(vec2f(vec2i(x, y)), variance), rectangle_contains(destination, cnv));
             k_sum += k;
             dst += intermediate[cnv_coords.x][cnv_coords.y] * k;
         } 
