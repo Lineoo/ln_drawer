@@ -71,7 +71,6 @@ impl Element for DebugPanel {
             common,
             modulate: theme.distinct,
             outdated: false,
-            canvas_outdated: false,
         });
 
         world.observer(world.single::<Render>(), move |msg: &String, world| {

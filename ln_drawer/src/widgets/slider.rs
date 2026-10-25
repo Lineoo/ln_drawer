@@ -272,7 +272,6 @@ impl SliderLabel {
             common,
             modulate: theme.distinct,
             outdated: false,
-            canvas_outdated: false,
         });
 
         world.observer(self.source, move |event: &WidgetHover, world| {

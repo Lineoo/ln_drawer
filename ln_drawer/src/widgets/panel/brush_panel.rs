@@ -231,7 +231,6 @@ impl Element for BrushListPanel {
                 common,
                 modulate: theme_val.distinct,
                 outdated: false,
-                canvas_outdated: false,
             });
 
             let preview_rect = world.build(Transform::new(

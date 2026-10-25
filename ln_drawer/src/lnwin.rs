@@ -138,7 +138,7 @@ impl Element for Lnwindow {
             world.insert(QuadMeshPipeline::<OklabBarMaterial>::from_world(world));
             world.insert(QuadMeshPipeline::<RRectMaterial>::from_world(world));
             world.insert(VtorPipeline::from_world(world));
-            world.insert(TextPipeline::new());
+            world.insert(TextPipeline::from_world(world));
             let save = world.single_fetch::<Save>();
             let theme = match save.sn().dark_mode {
                 None | Some(true) => Theme::dark_mode(),

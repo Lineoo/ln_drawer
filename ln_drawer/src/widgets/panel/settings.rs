@@ -179,7 +179,6 @@ impl Element for TextSettingPanel {
             common,
             modulate: theme.gray4,
             outdated: false,
-            canvas_outdated: false,
         });
 
         let flow_frame = world.build(luni.child(LuniChild {
@@ -568,7 +567,6 @@ fn option_label(
         common: WidgetCommon { camera, visible },
         modulate: theme.distinct,
         outdated: false,
-        canvas_outdated: false,
     })
 }
 
@@ -617,7 +615,6 @@ fn option_desc(
         common: WidgetCommon { camera, visible },
         modulate: theme.gray4,
         outdated: false,
-        canvas_outdated: false,
     })
 }
 

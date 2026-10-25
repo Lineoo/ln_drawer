@@ -11,6 +11,10 @@ fn world_to_clip(world_space: vec2i) -> vec2f {
     return camera.transform * (vec2f(world_space - camera.center) - vec2f(camera.center_fract) * vec2f(0x1p-32));
 }
 
+fn world_to_clip_f(world_space: vec2f) -> vec2f {
+    return camera.transform * (world_space - vec2f(camera.center) - vec2f(camera.center_fract) * vec2f(0x1p-32));
+}
+
 fn world_to_clip_relative(world_space: vec2f) -> vec2f {
     return camera.transform * world_space;
 }

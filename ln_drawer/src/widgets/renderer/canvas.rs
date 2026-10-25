@@ -133,60 +133,6 @@ impl Canvas {
         });
     }
 
-    pub fn transparent(
-        rect: Handle<Val<IRect>>,
-        order: isize,
-        common: WidgetCommon,
-        modulate: Handle<Val<Vec4>>,
-        size: UVec2,
-    ) -> Self {
-        Self {
-            common,
-            rect,
-            order,
-            modulate,
-            data: vec![0u8; (size.x * size.y * 4) as usize],
-            data_width: size.x,
-            data_height: size.y,
-        }
-    }
-
-    pub fn read(&self, x: i32, y: i32) -> Vec4 {
-        let start = self.offset(x, y);
-        if start + 3 >= self.data.len() {
-            return Vec4::new(0.0, 0.0, 0.0, 0.0);
-        }
-
-        Vec4::new(
-            self.data[start] as f32 / 255.,
-            self.data[start + 1] as f32 / 255.,
-            self.data[start + 2] as f32 / 255.,
-            self.data[start + 3] as f32 / 255.,
-        )
-    }
-
-    pub fn write(&mut self, x: i32, y: i32, color: Vec4) {
-        let start = self.offset(x, y);
-        if start + 3 >= self.data.len() {
-            return;
-        }
-
-        self.data[start] = (color.x * 255.).clamp(0., 255.).round() as u8;
-        self.data[start + 1] = (color.y * 255.).clamp(0., 255.).round() as u8;
-        self.data[start + 2] = (color.z * 255.).clamp(0., 255.).round() as u8;
-        self.data[start + 3] = (color.w * 255.).clamp(0., 255.).round() as u8;
-    }
-
-    pub fn draw_over(&mut self, x: i32, y: i32, color: Vec4) {
-        let prev = self.read(x, y);
-        let next = color + prev * (1. - color.w);
-        self.write(x, y, next);
-    }
-
-    pub fn clear_transparent(&mut self) {
-        self.data.fill(0);
-    }
-
     pub fn upload(
         &self,
         p: IVec2,

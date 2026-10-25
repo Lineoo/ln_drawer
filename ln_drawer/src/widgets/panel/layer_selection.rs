@@ -74,7 +74,6 @@ impl Element for LayerSelectionPanel {
             common,
             modulate: theme.distinct,
             outdated: false,
-            canvas_outdated: false,
         });
 
         let div_rect = world.build(Transform::new(
@@ -126,7 +125,6 @@ impl Element for LayerSelectionPanel {
             common,
             modulate: theme.distinct,
             outdated: false,
-            canvas_outdated: false,
         });
 
         let layers_node = world.insert(());
@@ -204,7 +202,6 @@ impl Element for LayerSelectionPanel {
                 common,
                 modulate: theme.distinct,
                 outdated: false,
-                canvas_outdated: false,
             });
 
             world.observer(layer0_button, move |&ButtonSelected(val), world| {

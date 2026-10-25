@@ -393,7 +393,6 @@ impl Element for StatusBar {
             common,
             modulate: theme.gray3,
             outdated: false,
-            canvas_outdated: false,
         });
     }
 }
