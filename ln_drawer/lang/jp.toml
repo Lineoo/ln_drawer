@@ -1,26 +1,35 @@
 title = "LnDrawer v{version}"
 
 [settings.brush]
-title = "笔刷設定"
+title = "ブラシ設定"
 flow.label = "流量"
-flow.desc = "ストロークの不透明度（間隔に依存しない）"
+flow.desc = "ストロークの流量"
 sigma.label = "ぼかしの標準偏差"
 sigma.desc = "畳み込みカーネルに適用する標準偏差 σ"
 softness.label = "硬さ"
-softness.desc = "三次多項式によるスムージング"
+softness.desc = "ブラシマスクの形状"
 spacing.label = "間隔"
-spacing.desc = "ダブ間の距離（ブラシ直径に対する割合）"
-color_ratio.label = "色の比率"
-color_ratio.desc = "混合後の前景色の割合"
+spacing.desc = "ダブの間隔"
+color_ratio.label = "ドライカラー"
+color_ratio.desc = "前景色の割合"
 sample_radius.label = "サンプリング半径"
-sample_radius.desc = "各ダブがキャンバスをサンプリングする半径（ブラシサイズ比）"
-sample_rate.label = "サンプリング速度"
-sample_rate.desc = "保持色がキャンバスの色に置き換わる速度"
+sample_radius.desc = "サンプリングするキャンバスの相対半径"
+sample_rate.label = "ウェットカラー"
+sample_rate.desc = "キャンバスのサンプリング色の割合"
+
+[settings.layer_selection]
+doc_label = "ドキュメント"
+layer_label = "ページ"
+layer_name = "ページ {index}"
+
+[settings.page.zoom]
+label = "ズームオフセット"
+desc = "キャンバス詳細レベルのオフセット"
 
 [brush]
-pen = "丸筆"
-soft = "筆"
+pen = "筆圧対応ハード円"
+soft = "筆圧非対応ソフト円"
 pixel = "ピクセル"
 blur = "ぼかし"
-smudge = "スミッジ"
-tint = "淡彩"
+smudge = "混色"
+tint = "着色"

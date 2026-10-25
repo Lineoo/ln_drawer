@@ -61,7 +61,7 @@ impl DrawsProcessor for BlurBrush {
 
     fn process(&self, draw: Draw) -> Self::Draw {
         let size = self.size.get(draw);
-        let softness = self.softness.get(draw);
+        let softness = self.softness.get(draw).max(1e-6);
         let step = step_of(size, self.spacing.get(draw));
 
         // Each dab accumulates `(sigma * mask)²`; normalize so the stroke's total variance is the

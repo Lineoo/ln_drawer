@@ -84,7 +84,7 @@ impl DrawsProcessor for TintBrush {
             flow,
             position: draw.position.q32_floor(),
             position_fract: draw.position.q32_fract(),
-            softness: self.softness.get(draw),
+            softness: self.softness.get(draw).max(1e-6),
             size,
             _pad: [0; 2],
         }

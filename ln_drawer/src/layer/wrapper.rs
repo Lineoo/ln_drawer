@@ -215,7 +215,7 @@ impl LayerPage {
             BrushPreset {
                 label: "brush.pixel",
                 brush: Box::new(PixelBrush {
-                    size: BrushParam::constant(2.0),
+                    size: BrushParam::constant(0.5),
                     color,
                     erase: false,
                 }),
@@ -234,19 +234,19 @@ impl LayerPage {
                 brush: Box::new(SmudgeBrush {
                     size: BrushParam::force_index(1.0, 25.0, 1.0),
                     flow: BrushParam::force_index(0.1, 1.0, 1.0),
-                    softness: BrushParam::constant(0.5),
+                    softness: BrushParam::constant(0.1),
                     spacing: BrushParam::constant(0.1),
                     color,
-                    color_ratio: BrushParam::constant(0.4),
+                    color_ratio: BrushParam::constant(0.3),
                     sample_radius: BrushParam::constant(0.5),
-                    sample_rate: BrushParam::constant(0.07),
+                    sample_rate: BrushParam::force_index(0.1, 0.4, 1.0),
                 }),
             },
             BrushPreset {
                 label: "brush.tint",
                 brush: Box::new(TintBrush {
-                    size: BrushParam::force_index(10.0, 30.0, 1.0),
-                    flow: Vec4::new(0.2, 0.7, 0.7, 1.0),
+                    size: BrushParam::force_index(5.0, 30.0, 1.0),
+                    flow: Vec4::new(0.0, 0.7, 0.7, 1.0),
                     softness: BrushParam::constant(0.5),
                     spacing: BrushParam::constant(0.1),
                     color,

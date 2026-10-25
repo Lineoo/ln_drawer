@@ -79,7 +79,7 @@ impl DrawsProcessor for RoundBrush {
             color: self.color,
             position: draw.position.q32_floor(),
             position_fract: draw.position.q32_fract(),
-            softness: self.softness.get(draw),
+            softness: self.softness.get(draw).max(1e-6),
             size,
             flow: rate_coeff(self.flow.get(draw), overlap),
             _pad: 0,
