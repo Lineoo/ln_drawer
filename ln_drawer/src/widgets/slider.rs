@@ -4,7 +4,7 @@ use ln_world::{Element, Handle, HandleGeneric, World};
 
 use crate::{
     layout::{
-        anim::Animator,
+        anim::{Animator, AnimatorSnap},
         packer::Packer,
         val::{Val, ValChanged},
     },
@@ -207,11 +207,9 @@ impl Slider {
             let mut knob = world.fetch_mut(knob_rect_val);
             let mut knob_split = world.fetch_mut(knob_split_rect_val);
             let mut back = world.fetch_mut(back_rect_anim);
-            let mut back_anim = world.fetch_mut(back_rect_val);
 
             let back_rect = back_rect(rect, this.axis);
             back.val = back_rect;
-            back_anim.val = back_rect;
 
             let position = into_position(rect, this.axis, value);
             front.val = front_rect(rect, this.axis, position);
@@ -222,7 +220,7 @@ impl Slider {
             };
 
             world.queue_trigger(back.handle(), ValChanged);
-            world.queue_trigger(back_anim.handle(), ValChanged);
+            world.queue_trigger(back_rect_val, AnimatorSnap);
             world.queue_trigger(front.handle(), ValChanged);
             world.queue_trigger(knob_split.handle(), ValChanged);
             world.queue_trigger(knob.handle(), ValChanged);

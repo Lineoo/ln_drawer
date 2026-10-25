@@ -15,6 +15,9 @@ pub struct Animator<T: AnimationType> {
     pub factor: f32,
 }
 
+/// Jump to the current target without interpolation.
+pub struct AnimatorSnap;
+
 pub struct AnimationCore<T: AnimationType> {
     pub src: Handle<Val<T>>,
     pub dst: Handle<Val<T>>,
@@ -93,6 +96,19 @@ impl<T: AnimationType> Element for AnimationCore<T> {
             this.dst_st = T::into_storage(dst.val);
             this.last_update = Instant::now();
             world.single_fetch::<Lnwindow>().window.request_redraw();
+        });
+
+        world.observer(self.src, move |&AnimatorSnap, world| {
+            let mut this = world.fetch_mut(this);
+            let mut src = world.fetch_mut(this.src);
+            let dst = world.fetch(this.dst);
+            this.src_st = T::into_storage(dst.val);
+            this.dst_st = this.src_st;
+            this.last_update = Instant::now();
+            if src.val != dst.val {
+                src.val = dst.val;
+                world.queue_trigger(this.src, ValChanged);
+            }
         });
 
         world.dependency(control, this);
