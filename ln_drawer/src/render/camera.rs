@@ -72,7 +72,7 @@ impl Descriptor for CameraDescriptor {
         let binding = world.single_fetch::<CameraBind>();
 
         let device = &render.device;
-        let size = UVec2::new(render.config.width, render.config.height);
+        let size = render.target_size();
 
         let transform = Mat2::from_scale_angle(
             Vec2::splat(self.zoom.q32_as_f64().exp2() as f32) * 2. / size.as_vec2(),

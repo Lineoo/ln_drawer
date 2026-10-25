@@ -220,7 +220,7 @@ impl<M: QuadMaterial> QuadMeshPipeline<M> {
                 entry_point: M::fragment(),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
-                    format: render.config.format,
+                    format: render.target_format(),
                     blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: ColorWrites::ALL,
                 })],

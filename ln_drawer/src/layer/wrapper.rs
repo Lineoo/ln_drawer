@@ -126,7 +126,7 @@ impl LayerPage {
             render.device.clone(),
             render.queue.clone(),
             render.cache.as_ref(),
-            render.config.format,
+            render.target_format(),
             &camera_bind.layout,
         ));
 

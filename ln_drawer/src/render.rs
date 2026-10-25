@@ -1,6 +1,8 @@
 pub mod camera;
+mod export;
 
 use std::{
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -17,7 +19,10 @@ use crate::{
     layout::val::ValChanged,
     lnwin::Lnwindow,
     measures::URect,
-    render::camera::{Camera, UICamera},
+    render::{
+        camera::{Camera, UICamera},
+        export::Export,
+    },
     widgets::common::WidgetCommon,
 };
 
@@ -33,8 +38,7 @@ pub const TIMESTAMP_BUFFER_SIZE: u64 = (TIMESTAMP_COUNT * 8) as u64;
 
 pub struct Render {
     // wgpu surface
-    pub surface: Surface<'static>,
-    pub config: SurfaceConfiguration,
+    target: RenderTarget,
 
     // wgpu interface
     pub instance: Instance,
@@ -42,9 +46,6 @@ pub struct Render {
     pub device: Device,
     pub queue: Queue,
     pub cache: Option<PipelineCache>,
-
-    // msaa
-    msaa_texture: Option<Texture>,
 
     // render pass
     pub clear_color: Color,
@@ -64,6 +65,25 @@ pub struct Render {
     timestamp_mapper: Buffer,
     timestamp_query: QuerySet,
     timestamp_mapped: Arc<AtomicBool>,
+}
+
+enum RenderTarget {
+    Surface {
+        surface: Surface<'static>,
+        config: SurfaceConfiguration,
+    },
+    SurfaceMsaa {
+        resolve: Texture,
+        surface: Surface<'static>,
+        config: SurfaceConfiguration,
+    },
+    Offscreen {
+        texture: Texture,
+    },
+    OffscreenExport {
+        texture: Texture,
+        export: Export,
+    },
 }
 
 type RenderPrepareCommand = Box<dyn FnMut(&World) -> Option<RenderInformation> + Send>;
@@ -91,7 +111,6 @@ pub struct RenderExtra<'a, 'b> {
     pub queue: &'a Queue,
     pub camera: &'a Camera,
     pub early_encoder: &'a mut CommandEncoder,
-    pub surface_config: &'a SurfaceConfiguration,
     pub diagnosis: &'a mut RenderDiagnosis<'b>,
     pub scissor: URect,
 }
@@ -105,6 +124,22 @@ pub struct RenderDiagnosis<'a> {
 
 impl Render {
     pub async fn new(lnwindow: &Lnwindow) -> Render {
+        let headless = std::env::var_os("LNDRAWER_HEADLESS").is_some();
+        let export = std::env::var_os("LNDRAWER_EXPORT_PATH").map(PathBuf::from);
+        let fallback = std::env::var_os("LNDRAWER_FORCE_FALLBACK_ADAPTER").is_some();
+
+        if headless {
+            log::info!("headless rendering enabled by LNDRAWER_HEADLESS");
+        }
+
+        if let Some(path) = &export {
+            log::info!("export target by LNDRAWER_EXPORT_PATH: {:?}", path);
+        }
+
+        if fallback {
+            log::warn!("adapter force fallback enabled by LNDRAWER_FORCE_FALLBACK_ADAPTER");
+        };
+
         let instance = Instance::new(InstanceDescriptor {
             backends: Backends::all(),
             flags: InstanceFlags::default(),
@@ -113,13 +148,14 @@ impl Render {
             display: None,
         });
 
-        let surface = instance.create_surface(lnwindow.window.clone()).unwrap();
+        let surface =
+            (!headless).then(|| instance.create_surface(lnwindow.window.clone()).unwrap());
 
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
                 power_preference: PowerPreference::LowPower,
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
+                force_fallback_adapter: fallback,
+                compatible_surface: surface.as_ref(),
                 apply_limit_buckets: false,
             })
             .await
@@ -145,8 +181,33 @@ impl Render {
             .unwrap();
 
         let size = lnwindow.window.surface_size();
-        let config = Render::configuration(&surface, &adapter, size);
-        surface.configure(&device, &config);
+
+        let surface = match (surface, export, MSAA_SAMPLE_COUNT > 1) {
+            (Some(surface), _, false) => {
+                let config = Render::configuration(&surface, &adapter, size);
+                surface.configure(&device, &config);
+                RenderTarget::Surface { surface, config }
+            }
+            (Some(surface), _, true) => {
+                let config = Render::configuration(&surface, &adapter, size);
+                surface.configure(&device, &config);
+                let resolve = device.create_texture(&Render::msaa_texture(&config));
+                RenderTarget::SurfaceMsaa {
+                    surface,
+                    config,
+                    resolve,
+                }
+            }
+            (None, Some(path), _) => {
+                let texture = device.create_texture(&Render::offscreen_texture(size));
+                let export = Export::new(&device, size, path);
+                RenderTarget::OffscreenExport { texture, export }
+            }
+            (None, None, _) => {
+                let texture = device.create_texture(&Render::offscreen_texture(size));
+                RenderTarget::Offscreen { texture }
+            }
+        };
 
         let timestamp_resolver = device.create_buffer(&BufferDescriptor {
             label: Some("timestamp_buffer_resolver"),
@@ -169,14 +230,12 @@ impl Render {
         });
 
         Render {
-            surface,
-            config,
+            target: surface,
             instance,
             adapter,
             device,
             queue,
             cache: None,
-            msaa_texture: None,
             clear_color: Color::WHITE,
             preparing: false,
             time_avg_prepare: None,
@@ -191,25 +250,90 @@ impl Render {
         }
     }
 
-    pub fn surface_recreate(&mut self, lnwindow: &Lnwindow) {
-        self.surface = self
-            .instance
-            .create_surface(lnwindow.window.clone())
-            .unwrap();
+    pub fn target_recreate(&mut self, lnwindow: &Lnwindow) {
         let size = lnwindow.window.surface_size();
-        self.config = Render::configuration(&self.surface, &self.adapter, size);
-        self.surface.configure(&self.device, &self.config);
-        self.msaa_texture = None;
+        match &mut self.target {
+            RenderTarget::Surface { surface, config } => {
+                *surface = self
+                    .instance
+                    .create_surface(lnwindow.window.clone())
+                    .unwrap();
+                *config = Render::configuration(surface, &self.adapter, size);
+                surface.configure(&self.device, config);
+            }
+            RenderTarget::SurfaceMsaa {
+                resolve,
+                surface,
+                config,
+            } => {
+                *surface = self
+                    .instance
+                    .create_surface(lnwindow.window.clone())
+                    .unwrap();
+                *config = Render::configuration(surface, &self.adapter, size);
+                surface.configure(&self.device, config);
+                *resolve = self.device.create_texture(&Render::msaa_texture(config));
+            }
+            RenderTarget::Offscreen { texture } => {
+                *texture = self.device.create_texture(&Render::offscreen_texture(size));
+            }
+            RenderTarget::OffscreenExport { texture, export } => {
+                *texture = self.device.create_texture(&Render::offscreen_texture(size));
+                export.resize(&self.device, size);
+            }
+        }
     }
 
-    pub fn surface_resize(&mut self, size: PhysicalSize<u32>) {
-        self.config.width = size.width.max(1);
-        self.config.height = size.height.max(1);
-        self.surface.configure(&self.device, &self.config);
-        self.msaa_texture = None;
+    pub fn target_resize(&mut self, size: PhysicalSize<u32>) {
+        match &mut self.target {
+            RenderTarget::Surface { surface, config } => {
+                config.width = size.width.max(1);
+                config.height = size.height.max(1);
+                surface.configure(&self.device, &config);
+            }
+            RenderTarget::SurfaceMsaa {
+                resolve,
+                surface,
+                config,
+            } => {
+                config.width = size.width.max(1);
+                config.height = size.height.max(1);
+                surface.configure(&self.device, &config);
+                *resolve = self.device.create_texture(&Render::msaa_texture(config));
+            }
+            RenderTarget::Offscreen { texture } => {
+                *texture = self.device.create_texture(&Render::offscreen_texture(size));
+            }
+            RenderTarget::OffscreenExport { texture, export } => {
+                *texture = self.device.create_texture(&Render::offscreen_texture(size));
+                export.resize(&self.device, size);
+            }
+        }
     }
 
-    fn msaa_texture(config: &SurfaceConfiguration) -> TextureDescriptor<'_> {
+    pub fn target_format(&self) -> TextureFormat {
+        match &self.target {
+            RenderTarget::Surface { config, .. } | RenderTarget::SurfaceMsaa { config, .. } => {
+                config.format
+            }
+            RenderTarget::Offscreen { texture } | RenderTarget::OffscreenExport { texture, .. } => {
+                texture.format()
+            }
+        }
+    }
+
+    pub fn target_size(&self) -> UVec2 {
+        match &self.target {
+            RenderTarget::Surface { config, .. } | RenderTarget::SurfaceMsaa { config, .. } => {
+                UVec2::new(config.width, config.height)
+            }
+            RenderTarget::Offscreen { texture } | RenderTarget::OffscreenExport { texture, .. } => {
+                UVec2::new(texture.size().width, texture.size().height)
+            }
+        }
+    }
+
+    fn msaa_texture(config: &SurfaceConfiguration) -> TextureDescriptor<'static> {
         assert!(
             MSAA_SAMPLE_COUNT > 1,
             "msaa texture should be created only when msaa sample count > 1"
@@ -226,6 +350,23 @@ impl Render {
             dimension: TextureDimension::D2,
             format: config.format,
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT,
+            view_formats: &[],
+        }
+    }
+
+    fn offscreen_texture(size: PhysicalSize<u32>) -> TextureDescriptor<'static> {
+        TextureDescriptor {
+            label: Some("offscreen_target"),
+            size: Extent3d {
+                width: size.width.max(1),
+                height: size.height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8UnormSrgb,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
             view_formats: &[],
         }
     }
@@ -293,7 +434,6 @@ impl Render {
                 queue: extra.queue,
                 camera,
                 early_encoder: extra.early_encoder,
-                surface_config: extra.surface_config,
                 diagnosis: extra.diagnosis,
                 scissor: extra.scissor,
             };
@@ -337,24 +477,49 @@ impl Render {
 
         let render = &mut *world.single_fetch_mut::<Render>();
 
-        // setup render pass
+        // setup render target
 
-        let surface = match render.surface.get_current_texture() {
-            CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
-            CurrentSurfaceTexture::Suboptimal(surface_texture) => surface_texture,
-            CurrentSurfaceTexture::Timeout => return,
-            CurrentSurfaceTexture::Occluded => return,
-            CurrentSurfaceTexture::Outdated => {
-                render.surface.configure(&render.device, &render.config);
-                return;
+        let surface = match &render.target {
+            RenderTarget::Surface { surface, config }
+            | RenderTarget::SurfaceMsaa {
+                surface, config, ..
+            } => match surface.get_current_texture() {
+                CurrentSurfaceTexture::Success(surface_texture) => Some(surface_texture),
+                CurrentSurfaceTexture::Suboptimal(surface_texture) => Some(surface_texture),
+                CurrentSurfaceTexture::Timeout => return,
+                CurrentSurfaceTexture::Occluded => return,
+                CurrentSurfaceTexture::Outdated => {
+                    surface.configure(&render.device, &config);
+                    return;
+                }
+                // TODO not correctly handled
+                CurrentSurfaceTexture::Lost => return,
+                CurrentSurfaceTexture::Validation => return,
+            },
+            RenderTarget::Offscreen { .. } | RenderTarget::OffscreenExport { .. } => None,
+        };
+        let msaa_view = match &render.target {
+            RenderTarget::SurfaceMsaa { resolve, .. } => {
+                Some(resolve.create_view(&TextureViewDescriptor::default()))
             }
-            // TODO not correctly handled
-            CurrentSurfaceTexture::Lost => return,
-            CurrentSurfaceTexture::Validation => return,
+            RenderTarget::Surface { .. }
+            | RenderTarget::Offscreen { .. }
+            | RenderTarget::OffscreenExport { .. } => None,
+        };
+        let target_view = match &surface {
+            Some(surface) => surface
+                .texture
+                .create_view(&TextureViewDescriptor::default()),
+            None => match &render.target {
+                RenderTarget::Surface { .. } | RenderTarget::SurfaceMsaa { .. } => unreachable!(),
+                RenderTarget::Offscreen { texture }
+                | RenderTarget::OffscreenExport { texture, .. } => {
+                    texture.create_view(&TextureViewDescriptor::default())
+                }
+            },
         };
 
-        let surface_texture = &surface.texture;
-        let surface_view = surface_texture.create_view(&TextureViewDescriptor::default());
+        // setup GPU resources
 
         let mut early_encoder = render
             .device
@@ -368,10 +533,9 @@ impl Render {
                 label: Some("main_encoder"),
             });
 
-        let mut rpass = if MSAA_SAMPLE_COUNT > 1 {
-            msaa_rpass(render, &surface_view, &mut encoder)
-        } else {
-            plain_rpass(render, &surface_view, &mut encoder)
+        let mut rpass = match msaa_view {
+            Some(msaa_view) => msaa_rpass(render, &msaa_view, &target_view, &mut encoder),
+            None => plain_rpass(render, &target_view, &mut encoder),
         };
 
         let mut diagnosis = RenderDiagnosis {
@@ -394,7 +558,6 @@ impl Render {
                 queue: &render.queue,
                 camera: &camera,
                 early_encoder: &mut early_encoder,
-                surface_config: &render.config,
                 diagnosis: &mut diagnosis,
                 scissor: URect {
                     origin: UVec2::ZERO,
@@ -426,9 +589,27 @@ impl Render {
 
         // submission
 
-        let commands = [early_encoder.finish(), encoder.finish()];
-        render.queue.submit(commands);
-        render.queue.present(surface);
+        if let RenderTarget::OffscreenExport { export, texture } = &mut render.target {
+            if export.step() {
+                let lnwindow = world.single::<Lnwindow>();
+                export.encode_copy(&mut encoder, texture);
+                let commands = [early_encoder.finish(), encoder.finish()];
+                render.queue.submit(commands);
+                export.save(&render.device);
+                world.queue_trigger(lnwindow, WindowEvent::CloseRequested);
+            } else {
+                let lnwindow = world.single_fetch::<Lnwindow>();
+                let commands = [early_encoder.finish(), encoder.finish()];
+                render.queue.submit(commands);
+                lnwindow.window.request_redraw();
+            }
+        } else {
+            let commands = [early_encoder.finish(), encoder.finish()];
+            render.queue.submit(commands);
+            if let Some(surface) = surface {
+                render.queue.present(surface);
+            }
+        }
 
         // CPU + GPU profiling
 
@@ -553,17 +734,10 @@ impl Render {
 
 fn msaa_rpass<'encoder>(
     render: &mut Render,
+    msaa_view: &TextureView,
     surface_view: &TextureView,
     encoder: &'encoder mut CommandEncoder,
 ) -> RenderPass<'encoder> {
-    // prepare msaa texture if not exist
-    let msaa_texture = render.msaa_texture.get_or_insert_with(|| {
-        let desc = Render::msaa_texture(&render.config);
-        render.device.create_texture(&desc)
-    });
-
-    let msaa_view = msaa_texture.create_view(&TextureViewDescriptor::default());
-
     encoder.begin_render_pass(&RenderPassDescriptor {
         label: Some("main_rpass"),
         color_attachments: &[Some(RenderPassColorAttachment {
@@ -641,7 +815,7 @@ impl Element for Render {
         world.observer(lnwindow, move |event: &WindowEvent, world| match event {
             WindowEvent::SurfaceResized(size) => {
                 let mut render = world.fetch_mut(this);
-                render.surface_resize(*size);
+                render.target_resize(*size);
             }
 
             WindowEvent::RedrawRequested => {

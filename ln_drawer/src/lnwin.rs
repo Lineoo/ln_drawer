@@ -55,7 +55,7 @@ impl ApplicationHandler for Lnwin {
                 self.world.enter(view, || {
                     let mut render = self.world.single_fetch_mut::<Render>();
                     let lnwindow = self.world.single_fetch::<Lnwindow>();
-                    render.surface_recreate(&lnwindow);
+                    render.target_recreate(&lnwindow);
                 });
             }
         }

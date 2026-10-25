@@ -20,6 +20,7 @@ icu_locale = "2.3.1"
 indexmap = "2.11.0"
 log = "0.4.27"
 lyon = "1.0.19"
+png = "0.18.1"
 pollster = "0.4.0"
 postcard = { version = "1.1.3", features = ["use-std"] }
 redb = { version = "4.1.0", features = ["logging"] }

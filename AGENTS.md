@@ -9,7 +9,7 @@ GPU-accelerated drawing app featured infinite canvas in Rust (winit + wgpu). Car
 ## Tasks
 
 - If assigned to review in read-only mode, assume that users has run `cargo check` and `cargo fmt`. Skip cargo tool calls that'll need write-permission, except when significant type errors are spotted.
-- Don't run actual rendering tests, headless rendering is not supported, and just tell user when you need it.
+- Headless rendering is only experimentally supported, and just tell user when you need it.
 - Don't run `cargo check --target aarch64-linux-android`. Tell user to perform Android check or build.
 - Don't use clippy. No need to check that (it returns warnings, but we just don't care about that). 
 - Tests: `cargo test` — tests are all are pure-compute and run headless.
@@ -36,5 +36,7 @@ Documents are in Chinese if not specially marked with language suffix. Sort by r
 - `docs/composite.md` - Color-space notation for rendering and drawing. Important when treating color conventions.
 - `docs/draw.md` - Draw call pipeline: batch-draw, stroke-submit, stroke-discard, undo/redo, failure paths, stream-thread synchronization.
 - `docs/render.md` - Rendering architecture: render camera, controls, pipeline, instances, redraw rules.
-- `docs/save.md` - Save database tables and chunk binary formats.
+- `docs/redb.md` - `redb` database tables and chunk binary formats.
+- `docs/env.md` - Available environment variables.
+- `docs/headless.en.md` - How to use experimental headless rendering.
 - `docs/ndk.md` - Android `cargo ndk` usage and `cargo-ndk-env` fingerprint pitfalls. Not very useful for agents environment.
