@@ -761,7 +761,6 @@ pub trait Brush {
 pub trait BrushParams: Brush + Send {
     fn dup(&self) -> Box<dyn BrushParams>;
 
-    #[expect(dead_code)]
     fn list_params(&self) -> &'static [BrushParamKey];
 
     fn param(&self, key: BrushParamKey) -> Option<BrushValue<'_>>;

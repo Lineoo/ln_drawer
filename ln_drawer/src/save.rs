@@ -366,7 +366,6 @@ pub struct Autosave(pub Box<dyn FnMut(&World, AutosaveTask) + Send>);
 
 pub struct AutosaveTask<'a> {
     pub write: &'a WriteTransaction,
-    #[expect(unused)]
     pub sn: &'a SceneFile,
     pub sn_doc: &'a mut SceneDocument,
 }

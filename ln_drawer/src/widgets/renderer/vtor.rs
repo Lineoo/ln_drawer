@@ -216,7 +216,6 @@ impl Vtor {
     }
 }
 
-#[expect(unused)]
 pub fn logo() -> Path {
     let mut builder = Path::svg_builder();
 

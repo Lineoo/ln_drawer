@@ -26,7 +26,6 @@ pub struct Theme {
     pub shadow_offset: Vec2,
     pub shadow_blur: f32,
     pub roundness: f32,
-    #[expect(unused)]
     pub axis: Axis,
     pub anim_factor: f32,
 }

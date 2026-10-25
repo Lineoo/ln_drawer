@@ -98,7 +98,6 @@ impl TransformValue {
         }
     }
 
-    #[expect(unused)]
     pub const fn scale(width: f32, height: f32) -> TransformValue {
         TransformValue {
             left: TransformEdge {

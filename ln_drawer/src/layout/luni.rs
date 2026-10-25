@@ -44,7 +44,6 @@ pub struct LuniChild {
 }
 
 #[derive(Default, Clone, Copy)]
-#[expect(unused)]
 pub enum LuniAxis {
     #[default]
     Row,
@@ -54,7 +53,6 @@ pub enum LuniAxis {
 }
 
 #[derive(Default, Clone, Copy)]
-#[expect(unused)]
 pub enum LuniDistribution {
     #[default]
     FlexStart,
@@ -74,7 +72,6 @@ pub struct LuniRect {
 }
 
 #[derive(Default, Clone, Copy)]
-#[expect(unused)]
 pub enum LuniAlign {
     #[default]
     Stretch,
@@ -84,7 +81,6 @@ pub enum LuniAlign {
 }
 
 /// TODO specific certain data for parent to adjust itself based on its children
-#[expect(unused)]
 pub struct LuniHug;
 
 impl LuniFlex {

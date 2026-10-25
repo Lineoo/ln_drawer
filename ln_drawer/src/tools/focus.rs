@@ -49,5 +49,4 @@ pub struct FocusEnter;
 
 pub struct FocusLeave;
 
-#[expect(unused)]
 pub struct FocusInput(pub KeyEvent);

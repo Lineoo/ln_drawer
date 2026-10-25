@@ -258,7 +258,6 @@ impl CameraUtils {
         self.camera_center = self.resolve_camera_center();
     }
 
-    #[cfg_attr(not(test), expect(unused))]
     pub fn camera_cursor_by_anchor_cursor(&mut self, cursor: DVec2) {
         self.camera_cursor = cursor;
         self.anchor_cursor = self.resolve_anchor_cursor();
@@ -275,13 +274,11 @@ impl CameraUtils {
         self.anchor_cursor = self.resolve_anchor_cursor();
     }
 
-    #[cfg_attr(not(test), expect(unused))]
     pub fn camera_distance_by_anchor_distance(&mut self, distance: f64) {
         self.camera_distance = distance.max(1e-5);
         self.anchor_distance = self.resolve_anchor_distance();
     }
 
-    #[cfg_attr(not(test), expect(unused))]
     pub fn anchor_center(&mut self, center: I64Vec2) {
         self.anchor_center = center;
         if self.anchor_lock {
@@ -289,7 +286,6 @@ impl CameraUtils {
         }
     }
 
-    #[cfg_attr(not(test), expect(unused))]
     pub fn anchor_zoom(&mut self, zoom: i64) {
         self.anchor_zoom = zoom;
         if self.anchor_lock {
@@ -311,7 +307,6 @@ impl CameraUtils {
         }
     }
 
-    #[expect(unused)]
     pub fn anchor_lock(&mut self, locked: bool) {
         self.anchor_lock = locked;
     }

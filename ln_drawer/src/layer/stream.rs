@@ -42,7 +42,6 @@ const ZOOM_OFFSET: f64 = 0.5;
 pub enum ThreadInput {
     SetPage(u64),
     SetStreamCamera(i64, UVec2, I64Vec2),
-    #[expect(unused)]
     MarkRawUnsaved(Vec<(i32, i32)>),
     MarkCacheUnsaved(Vec<(i32, i32, u8)>),
     SwapRaw((i32, i32), RawLayerChunk),

@@ -29,14 +29,12 @@ pub struct PointerHit {
 #[derive(Clone, Copy)]
 pub struct PointerScroll {
     pub delta: DVec2,
-    #[expect(unused)]
     pub position: I64Vec2,
     pub pointer: PointerData,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHover {
-    #[expect(unused)]
     pub position: I64Vec2,
     pub pointer: PointerData,
     pub status: PointerHoverStatus,
@@ -65,7 +63,6 @@ pub struct PointerData {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerHitData {
-    #[expect(unused)]
     pub force: f32,
 }
 

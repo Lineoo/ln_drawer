@@ -613,7 +613,6 @@ impl LayerPipeline {
     }
 
     /// use `work_dispatch_group`
-    #[expect(unused)]
     pub fn merge_chunk_over_read_write(
         &self,
         cpass: &mut ComputePass,

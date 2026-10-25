@@ -41,12 +41,22 @@ use crate::{
 pub struct Lnwin {
     pub world: World,
     pub windows: HashMap<WindowId, Handle<Lnwindow>>,
+    pub payload: Option<Arc<dyn Fn(&World, WidgetCommon) + Send + Sync>>,
 }
 
 impl ApplicationHandler for Lnwin {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.windows.is_empty() {
-            let lnwindow = Lnwindow::new(event_loop);
+            let win_attr = WindowAttributes::default()
+                .with_transparent(true)
+                .with_title("LnDrawer");
+
+            let window = event_loop.create_window(win_attr).unwrap();
+            let window = Arc::from(window);
+
+            let payload = self.payload.clone();
+            let lnwindow = Lnwindow { window, payload };
+
             let window_id = lnwindow.window.id();
             let lnwindow = self.world.insert(lnwindow);
             self.windows.insert(window_id, lnwindow);
@@ -98,6 +108,7 @@ impl ApplicationHandler for Lnwin {
 /// The main window.
 pub struct Lnwindow {
     pub window: Arc<dyn Window>,
+    pub payload: Option<Arc<dyn Fn(&World, WidgetCommon) + Send + Sync>>,
 }
 
 pub struct LnwindowRect(pub Handle<Val<IRect>>);
@@ -151,7 +162,6 @@ impl Element for Lnwindow {
             world.flush();
 
             world.insert(PointerTool::default());
-            world.insert(MouseTool::default());
             world.insert(MultiTouchTool::default());
             world.insert(FocusTool::default());
 
@@ -199,41 +209,38 @@ impl Element for Lnwindow {
                 }
             });
 
-            world.flush();
-
-            let save = world.single_fetch::<Save>();
-            let use_desktop = std::env::var_os("LNDRAWER_DESKTOP_UI").is_some()
-                || save.sn().desktop_mode.is_some_and(|x| x);
-            drop(save);
-
             let visible = world.insert(Val::new(true));
             let common = WidgetCommon {
                 camera: ui_camera,
                 visible,
             };
 
-            if use_desktop {
-                log::warn!("using experimental desktop ui");
-                world.insert(DesktopUi { common });
+            world.flush();
+
+            let this = world.fetch(this);
+            if let Some(payload) = &this.payload {
+                payload(world, common);
             } else {
-                world.insert(MobileUi { common });
+                // TODO some should be for PageInput not MouseTool
+                world.insert(MouseTool::default());
+
+                let save = world.single_fetch::<Save>();
+                let use_desktop = std::env::var_os("LNDRAWER_DESKTOP_UI").is_some()
+                    || save.sn().desktop_mode.is_some_and(|x| x);
+                drop(save);
+
+                if use_desktop {
+                    log::warn!("using experimental desktop ui");
+                    world.insert(DesktopUi { common });
+                } else {
+                    world.insert(MobileUi { common });
+                }
             }
         });
     }
 }
 
 impl Lnwindow {
-    fn new(event_loop: &dyn ActiveEventLoop) -> Lnwindow {
-        let win_attr = WindowAttributes::default()
-            .with_transparent(true)
-            .with_title("LnDrawer");
-
-        let window = event_loop.create_window(win_attr).unwrap();
-        let window = Arc::from(window);
-
-        Lnwindow { window }
-    }
-
     pub fn cursor_to_screen(&self, position: PhysicalPosition<f64>) -> DVec2 {
         let size = self.window.surface_size();
         let x = (position.x * 2.0) / size.width as f64 - 1.0;

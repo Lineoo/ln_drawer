@@ -15,7 +15,6 @@ pub struct MouseTool;
 
 /// Right-click events.
 #[derive(Clone, Copy)]
-#[expect(unused)]
 pub struct MouseMenu(pub IVec2);
 
 impl Element for MouseTool {
