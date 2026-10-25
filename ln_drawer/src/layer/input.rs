@@ -254,7 +254,7 @@ impl LayerInput {
             let camera_utils = &mut *world.fetch_mut(utils);
             let page = &mut *world.single_fetch_mut::<LayerPage>();
 
-            let center = touch_center(event);
+            let center = touch_center(event).unwrap_or(event.active.data.screen);
             let pinch = touch_pinch(event, center);
 
             let prev = std::mem::replace(&mut state, LayerInputState::None);
@@ -560,7 +560,7 @@ fn update_icon(this: &LayerInput, state: &LayerInputState, lnwindow: &Lnwindow) 
     }
 }
 
-fn touch_center(event: &MultiTouchGroup) -> DVec2 {
+fn touch_center(event: &MultiTouchGroup) -> Option<DVec2> {
     let mut sum = DVec2::ZERO;
     let mut cnt = 0;
     for member in &event.members {
@@ -570,20 +570,26 @@ fn touch_center(event: &MultiTouchGroup) -> DVec2 {
         sum += member.data.screen;
         cnt += 1;
     }
-    sum / cnt as f64
+
+    if cnt > 0 {
+        Some(sum / cnt as f64)
+    } else {
+        None
+    }
 }
 
 fn touch_pinch(event: &MultiTouchGroup, center: DVec2) -> Option<f64> {
-    if event.members.len() >= 2 {
-        let mut sum = 0.0;
-        let mut cnt = 0;
-        for member in &event.members {
-            if let MultiTouchStatus::Release = member.status {
-                continue;
-            }
-            sum += DVec2::distance(member.data.screen, center);
-            cnt += 1;
+    let mut sum = 0.0;
+    let mut cnt = 0;
+    for member in &event.members {
+        if let MultiTouchStatus::Release = member.status {
+            continue;
         }
+        sum += DVec2::distance(member.data.screen, center);
+        cnt += 1;
+    }
+
+    if cnt >= 2 {
         Some(sum / cnt as f64)
     } else {
         None

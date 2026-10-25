@@ -253,7 +253,7 @@ impl CameraUtils {
     }
 
     pub fn camera_distance_by_camera_zoom_center(&mut self, distance: f64) {
-        self.camera_distance = distance;
+        self.camera_distance = distance.max(1e-5);
         self.camera_zoom = self.resolve_camera_zoom();
         self.camera_center = self.resolve_camera_center();
     }
@@ -270,14 +270,14 @@ impl CameraUtils {
     }
 
     pub fn camera_distance_by_anchor_zoom_cursor(&mut self, distance: f64) {
-        self.camera_distance = distance;
+        self.camera_distance = distance.max(1e-5);
         self.anchor_zoom = self.resolve_anchor_zoom();
         self.anchor_cursor = self.resolve_anchor_cursor();
     }
 
     #[cfg_attr(not(test), expect(unused))]
     pub fn camera_distance_by_anchor_distance(&mut self, distance: f64) {
-        self.camera_distance = distance;
+        self.camera_distance = distance.max(1e-5);
         self.anchor_distance = self.resolve_anchor_distance();
     }
 
@@ -305,7 +305,7 @@ impl CameraUtils {
     }
 
     pub fn anchor_distance(&mut self, distance: f64) {
-        self.anchor_distance = distance;
+        self.anchor_distance = distance.max(1e-5);
         if self.anchor_lock {
             self.update_locked();
         }
