@@ -266,6 +266,9 @@ impl Element for BrushListPanel {
                 let preview = world.insert(world.build(BrushPreviewDescriptor {
                     common,
                     background: theme.gray1,
+                    c0: theme.c0,
+                    c1: theme.c1,
+                    bc: theme.gray4,
                     rect: preview_rect,
                     brush: page.brushes[i].brush.dup(),
                 }));

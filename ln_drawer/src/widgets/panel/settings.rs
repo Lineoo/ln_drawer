@@ -78,6 +78,9 @@ impl Element for SettingPanel {
                 rect: preview_rect,
                 brush: page.active().dup(),
                 background: theme.gray0,
+                c0: theme.c0,
+                c1: theme.c1,
+                bc: theme.gray4,
             }));
 
             world.observer(page.handle(), move |&BrushConfigurationChanged, world| {

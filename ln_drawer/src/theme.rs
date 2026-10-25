@@ -2,7 +2,10 @@ use glam::{Vec2, Vec4};
 use ln_world::{Element, Handle, World};
 
 use crate::{
-    color::srgb::{hex_to_srgb, srgb_gamma_decode},
+    color::{
+        oklab::oklab_to_linear_srgb,
+        srgb::{hex_to_srgb, srgb_gamma_decode},
+    },
     layout::val::{Val, ValChanged},
     measures::Axis,
     widgets::button::ToggleButtonTheme,
@@ -16,6 +19,9 @@ pub struct Theme {
     pub gray4: Vec4,
     pub theme: Vec4,
     pub distinct: Vec4,
+    /// Brush preview band colors, in L.
+    pub c0: Vec4,
+    pub c1: Vec4,
     pub shadow_color: Vec4,
     pub shadow_offset: Vec2,
     pub shadow_blur: f32,
@@ -33,6 +39,8 @@ pub struct ThemeVal {
     pub gray4: Handle<Val<Vec4>>,
     pub theme: Handle<Val<Vec4>>,
     pub distinct: Handle<Val<Vec4>>,
+    pub c0: Handle<Val<Vec4>>,
+    pub c1: Handle<Val<Vec4>>,
     pub shadow_color: Handle<Val<Vec4>>,
 }
 
@@ -46,6 +54,8 @@ impl Theme {
             gray4: srgb_gamma_decode(hex_to_srgb("#aaa")),
             theme: srgb_gamma_decode(hex_to_srgb("#cc7353")),
             distinct: srgb_gamma_decode(hex_to_srgb("#fff")),
+            c0: oklab_to_linear_srgb(Vec4::new(0.6, 0.08, 0.0, 1.0)),
+            c1: oklab_to_linear_srgb(Vec4::new(0.5, 0.0, 0.0, 1.0)),
             shadow_color: srgb_gamma_decode(Vec4::new(0.0, 0.0, 0.0, 0.25)),
             shadow_offset: Vec2::new(0.0, -4.0),
             shadow_blur: 4.0,
@@ -64,6 +74,8 @@ impl Theme {
             gray4: srgb_gamma_decode(hex_to_srgb("#b8b8b8")),
             theme: srgb_gamma_decode(hex_to_srgb("#dcba96")),
             distinct: srgb_gamma_decode(hex_to_srgb("#000000")),
+            c0: oklab_to_linear_srgb(Vec4::new(0.90, 0.1, 0.0, 1.0)),
+            c1: oklab_to_linear_srgb(Vec4::new(0.98, 0.0, 0.0, 1.0)),
             shadow_color: srgb_gamma_decode(Vec4::new(0.0, 0.0, 0.0, 0.25)),
             shadow_offset: Vec2::new(0.0, -4.0),
             shadow_blur: 4.0,
@@ -82,6 +94,8 @@ impl Theme {
             gray4: world.insert(Val::new(self.gray4)),
             theme: world.insert(Val::new(self.theme)),
             distinct: world.insert(Val::new(self.distinct)),
+            c0: world.insert(Val::new(self.c0)),
+            c1: world.insert(Val::new(self.c1)),
             shadow_color: world.insert(Val::new(self.shadow_color)),
         }
     }
@@ -96,6 +110,8 @@ impl Theme {
         world.fetch_mut(bind.gray4).val = self.gray4;
         world.fetch_mut(bind.theme).val = self.theme;
         world.fetch_mut(bind.distinct).val = self.distinct;
+        world.fetch_mut(bind.c0).val = self.c0;
+        world.fetch_mut(bind.c1).val = self.c1;
         world.fetch_mut(bind.shadow_color).val = self.shadow_color;
 
         world.queue_trigger(bind.gray0, ValChanged);
@@ -105,6 +121,8 @@ impl Theme {
         world.queue_trigger(bind.gray4, ValChanged);
         world.queue_trigger(bind.theme, ValChanged);
         world.queue_trigger(bind.distinct, ValChanged);
+        world.queue_trigger(bind.c0, ValChanged);
+        world.queue_trigger(bind.c1, ValChanged);
         world.queue_trigger(bind.shadow_color, ValChanged);
     }
 }

@@ -77,7 +77,6 @@ pub fn mul_alpha(v: Vec4) -> Vec4 {
 }
 
 /// P(x) -> x
-#[expect(unused)]
 pub fn demul_alpha(v: Vec4) -> Vec4 {
     match v.w.is_normal() {
         true => Vec4::new(v.x / v.w, v.y / v.w, v.z / v.w, v.w),

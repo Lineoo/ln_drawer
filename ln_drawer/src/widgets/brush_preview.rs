@@ -1,15 +1,21 @@
 use glam::{DVec2, I64Vec2, UVec2, Vec4};
 use ln_world::{Descriptor, Element, Handle, HandleGeneric, World};
-use wgpu::{CommandEncoderDescriptor, ComputePassDescriptor};
+use wgpu::{
+    CommandEncoderDescriptor, ComputePassDescriptor, Extent3d, TexelCopyBufferLayout,
+    TexelCopyTextureInfo, TextureAspect,
+};
 
 use crate::{
-    color::{oklab::oklab_to_linear_srgb, srgb::srgb_gamma_encode},
+    color::srgb::{mul_alpha, srgb_gamma_decode, srgb_gamma_encode},
     layer::{
         LayerPipeline, LayerRenderer, Standalone,
-        brush::{BrushParams, Draw, DrawsBatch, Stroke, param::BrushParam, round::RoundBrush},
+        brush::{BrushParams, Draw, DrawsBatch, Stroke},
         wrapper::LayerPage,
     },
-    layout::val::{Val, ValChanged},
+    layout::{
+        transfer::Transfer,
+        val::{Val, ValChanged},
+    },
     measures::{FI64Ext, IRect},
     render::{RenderDrawControl, RenderPrepareControl, camera::SetCameraOutdated},
     tools::collider::ToolRectCollider,
@@ -23,6 +29,11 @@ pub struct BrushPreviewDescriptor {
     pub common: WidgetCommon,
     pub rect: Handle<Val<IRect>>,
     pub background: Handle<Val<Vec4>>,
+    /// Brush preview band colors, in L.
+    pub c0: Handle<Val<Vec4>>,
+    pub c1: Handle<Val<Vec4>>,
+    /// Brush stroke color, in L.
+    pub bc: Handle<Val<Vec4>>,
     pub brush: Box<dyn BrushParams>,
 }
 
@@ -31,6 +42,11 @@ pub struct BrushPreview {
     pub common: WidgetCommon,
     pub rect: Handle<Val<IRect>>,
     pub background: Handle<Val<Vec4>>,
+    /// Brush preview band colors, in S(L).
+    pub c0: Handle<Val<Vec4>>,
+    pub c1: Handle<Val<Vec4>>,
+    /// Brush stroke color, in S(L).
+    pub bc: Handle<Val<Vec4>>,
     pub brush: Box<dyn BrushParams>,
     pub canvas: Standalone,
     pub renderer: LayerRenderer,
@@ -44,10 +60,16 @@ impl Descriptor for BrushPreviewDescriptor {
         let page = world.single_fetch::<LayerPage>();
         let renderer = page.lp.create_render(world.fetch(self.background).val);
         let canvas = page.lp.create_standalone(world.fetch(self.rect).val);
+        let c0 = Transfer::derive(world, self.c0).build(|&c| srgb_gamma_encode(c));
+        let c1 = Transfer::derive(world, self.c1).build(|&c| srgb_gamma_encode(c));
+        let bc = Transfer::derive(world, self.bc).build(|&c| srgb_gamma_encode(c));
         BrushPreview {
             common: self.common,
             rect: self.rect,
             background: self.background,
+            c0,
+            c1,
+            bc,
             brush: self.brush,
             canvas,
             renderer,
@@ -87,7 +109,11 @@ impl Element for BrushPreview {
                 let visible = world.fetch(this.common.visible).val;
                 if this.outdated && visible {
                     let page = world.single_fetch::<LayerPage>();
-                    Self::generate_preview(&page.lp, &this.canvas, this.brush.as_ref());
+                    let c0 = world.fetch(this.c0).val;
+                    let c1 = world.fetch(this.c1).val;
+                    let bc = world.fetch(this.bc).val;
+                    let BrushPreview { canvas, brush, .. } = &mut *this;
+                    Self::generate_preview(&page.lp, canvas, brush.as_mut(), c0, c1, bc);
                     this.outdated = false;
                 }
                 None
@@ -125,12 +151,31 @@ impl Element for BrushPreview {
             let background_color = world.fetch(this.background).val;
             this.renderer.write_background(background_color);
         });
+
+        world.observer(self.c0, move |ValChanged, world| {
+            world.fetch_mut(this).outdated = true;
+        });
+
+        world.observer(self.c1, move |ValChanged, world| {
+            world.fetch_mut(this).outdated = true;
+        });
+
+        world.observer(self.bc, move |ValChanged, world| {
+            world.fetch_mut(this).outdated = true;
+        });
     }
 }
 
 impl BrushPreview {
     /// Redraw `brush` over a fixed seed into `canvas`.
-    pub fn generate_preview(lp: &LayerPipeline, canvas: &Standalone, brush: &dyn BrushParams) {
+    pub fn generate_preview(
+        lp: &LayerPipeline,
+        canvas: &Standalone,
+        brush: &mut dyn BrushParams,
+        c0: Vec4,
+        c1: Vec4,
+        distinct: Vec4,
+    ) {
         let swap = canvas
             .chunk
             .read_write
@@ -152,9 +197,10 @@ impl BrushPreview {
         lp.queue.submit([encoder.finish()]);
 
         if brush.replace_mode() {
-            Self::draw_background(lp, canvas, &swap);
+            Self::draw_background(lp, canvas, c0, c1);
         }
 
+        brush.set_color(distinct);
         Self::draw_stroke(lp, canvas, &swap, brush);
     }
 
@@ -182,57 +228,57 @@ impl BrushPreview {
         lp.queue.submit([encoder.finish()]);
     }
 
-    /// Two vertical bands, one red on the left and one blue on the right, each half the canvas
-    /// wide, used as the preview's background.
-    fn draw_background(lp: &LayerPipeline, canvas: &Standalone, swap: &Option<Standalone>) {
-        let w = canvas.rect.width() as f32;
-        let h = canvas.rect.height() as f32;
-        let radius = w / 4.0 + 2.5;
-        let c1 = srgb_gamma_encode(oklab_to_linear_srgb(Vec4::new(0.98, 0.1, 0.02, 1.0)));
-        let c2 = srgb_gamma_encode(oklab_to_linear_srgb(Vec4::new(0.98, -0.1, 0.02, 1.0)));
-        let bands = [(w * 0.25, c1), (w * 0.75, c2)];
-
-        for (x, color) in bands {
-            let brush = RoundBrush {
-                size: BrushParam::constant(radius),
-                flow: BrushParam::constant(1.0),
-                softness: BrushParam::constant(0.01),
-                spacing: BrushParam::constant(0.1),
-                color,
-                erase: false,
-            };
-
-            let start = Draw {
-                position: I64Vec2::q32_from_f64(DVec2::new(x as f64, -radius as f64)),
-                force: 1.0,
-            };
-
-            let end = Draw {
-                position: I64Vec2::q32_from_f64(DVec2::new(x as f64, (h + radius) as f64)),
-                force: 1.0,
-            };
-
-            let mut stroke = Stroke::new(&brush);
-
-            let Some(first) = stroke.batch(&brush, start) else {
-                continue;
-            };
-
-            stroke.confirm_batch(&first);
-
-            let Some(last) = stroke.batch(&brush, end) else {
-                Self::submit_batch(lp, canvas, swap, &brush, &first);
-                continue;
-            };
-
-            stroke.confirm_batch(&last);
-
-            let (merged, rest) = first.merge(last);
-            Self::submit_batch(lp, canvas, swap, &brush, &merged);
-            if let Some(rest) = rest {
-                Self::submit_batch(lp, canvas, swap, &brush, &rest);
-            }
+    /// Two differently colored halves, left and right, as the preview background.
+    fn draw_background(lp: &LayerPipeline, canvas: &Standalone, c0: Vec4, c1: Vec4) {
+        let size = canvas.rect.extend;
+        if size.x == 0 || size.y == 0 {
+            return;
         }
+
+        // Brush colors are S(L), while the canvas stores S(P(L)).
+        let texel = |color: Vec4| {
+            let color = srgb_gamma_encode(mul_alpha(srgb_gamma_decode(color)));
+            [
+                (color.x * 255.0).clamp(0.0, 255.0).round() as u8,
+                (color.y * 255.0).clamp(0.0, 255.0).round() as u8,
+                (color.z * 255.0).clamp(0.0, 255.0).round() as u8,
+                (color.w * 255.0).clamp(0.0, 255.0).round() as u8,
+            ]
+        };
+
+        let left = texel(c0);
+        let right = texel(c1);
+        let split = size.x / 2;
+
+        let mut row = Vec::with_capacity((size.x * 4) as usize);
+        for x in 0..size.x {
+            row.extend_from_slice(if x < split { &left } else { &right });
+        }
+
+        let mut data = Vec::with_capacity(row.len() * size.y as usize);
+        for _ in 0..size.y {
+            data.extend_from_slice(&row);
+        }
+
+        lp.queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &canvas.chunk.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &data,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size.x * 4),
+                rows_per_image: Some(size.y),
+            },
+            Extent3d {
+                width: size.x,
+                height: size.y,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     /// A gentle S-curve with a pressure ramp, drawn with the previewed brush.
