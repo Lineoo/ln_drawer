@@ -1,22 +1,16 @@
 name: Release
-run-name: Release ${{ inputs.version }} by @${{ github.actor }}
+run-name: Release v${{ inputs.version }} by @${{ github.actor }}
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version (include "v" prefix, for example "v1.2.6-beta.3")
+        description: Version (without "v" prefix, for example "1.2.6-beta.3")
         required: true
         type: string
-      release:
-        description: Run Release Script
-        default: true
-        required: true
-        type: boolean
       draft:
         description: Generate a Draft Release
         default: true
-        required: true
         type: boolean
 
 permissions:
@@ -69,6 +63,12 @@ jobs:
       if: ${{ matrix.target == 'x86_64-pc-windows-gnu' }}
       run: sudo apt-get install gcc-mingw-w64-x86-64-win32 gcc-mingw-w64-x86-64-posix
 
+    - name: '[Install] AppImage Tool'
+      if: ${{ matrix.package == 'linux-tar' }}
+      run: |
+        curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x "$RUNNER_TEMP/appimagetool"
+
     - name: '[Install] Rustup Target ${{ matrix.target }}'
       run: rustup target add ${{ matrix.target }}
 
@@ -76,40 +76,39 @@ jobs:
       if: ${{ matrix.platform == 'android' }}
       run: cargo install cargo-ndk --version 4.1.2
 
+    - name: '[Setup] Version Configuration'
+      env:
+        VERSION: ${{ inputs.version }}
+      run: scripts/version.sh "$VERSION"
+
     - name: '[Setup] Release Configuration'
-      if: ${{ inputs.release }}
-      run: scripts/release.sh
+      run: scripts/release.sh >> $GITHUB_ENV
 
     - name: '[Setup] Android Keystore'
       if: ${{ matrix.platform == 'android' }}
       env:
-        ORG_LINN_KEYSTORE: ${{ secrets.ORG_LINN_KEYSTORE }}
-        CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
-      run: echo "$ORG_LINN_KEYSTORE" | base64 -di > "$CARGO_APK_RELEASE_KEYSTORE"
+        RELEASE_KEYSTORE_BASE64: ${{ secrets.ORG_LINN_KEYSTORE }}
+        RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
+      run: echo "$RELEASE_KEYSTORE_BASE64" | base64 -di > "$RELEASE_KEYSTORE"
 
     - name: '[Build] Compile Binary'
       if: ${{ matrix.platform == 'desktop' }}
-      run: LNDRAWER_RELEASE=1 cargo build --verbose --release --package=ln_drawer --bin=ln_drawer --target ${{ matrix.target }}
-
-    - name: '[Install] AppImage Tool'
-      if: ${{ matrix.package == 'linux-tar' }}
-      run: |
-        curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-        chmod +x "$RUNNER_TEMP/appimagetool"
+      run: cargo build --verbose --release --package=ln_drawer --bin=ln_drawer --target ${{ matrix.target }}
 
     - name: '[Build] Compile Library and Package (Apk)'
       if: ${{ matrix.platform == 'android' }}
       env:
-        CARGO_APK_RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
-        CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
+        RELEASE_KEYSTORE: ${{ vars.CARGO_APK_RELEASE_KEYSTORE }}
+        RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CARGO_APK_RELEASE_KEYSTORE_PASSWORD }}
       working-directory: ./ln_drawer/build/android
       run: |
         export JAVA_HOME="$JAVA_HOME_21_X64"
         export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
-        LNDRAWER_RELEASE=1 ./gradlew assembleRelease -PcargoProfile=release
+
+        ./gradlew assembleRelease -PcargoProfile=release
         "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
-          --ks "$CARGO_APK_RELEASE_KEYSTORE" \
-          --ks-pass "env:CARGO_APK_RELEASE_KEYSTORE_PASSWORD" \
+          --ks "$RELEASE_KEYSTORE" \
+          --ks-pass "env:RELEASE_KEYSTORE_PASSWORD" \
           --out "$RUNNER_TEMP/ln_drawer.apk" \
           app/build/outputs/apk/release/app-release-unsigned.apk
         echo "ARTIFACT=$(readlink -f "$RUNNER_TEMP/ln_drawer.apk")" >> $GITHUB_ENV
@@ -178,8 +177,8 @@ jobs:
         set -e
 
         PAYLOAD=$(jq -n \
-          --arg tag "$VER" \
-          --arg name "LnDrawer $VER" \
+          --arg tag "v$VER" \
+          --arg name "LnDrawer v$VER" \
           --arg body "This release is auto-generated." \
           --arg commit "$SHA" \
           '{tag_name: $tag, target_commitish: $commit, name: $name, body: $body, draft: true, prerelease: false}')
@@ -205,10 +204,10 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO: ${{ github.repository }}
         ASSETS: |
-          artifact-x86_64-unknown-linux-gnu-linux-tar/ln_drawer.tar.gz|ln_drawer-${{ inputs.version }}-linux-x86_64.tar.gz
-          artifact-x86_64-unknown-linux-gnu-linux-appimage/ln_drawer.AppImage|ln_drawer-${{ inputs.version }}-linux-x86_64.AppImage
-          artifact-x86_64-pc-windows-gnu-windows-zip/ln_drawer.zip|ln_drawer-${{ inputs.version }}-windows-x86_64.zip
-          artifact-aarch64-linux-android-android-apk/ln_drawer.apk|ln_drawer-${{ inputs.version }}-android-aarch64.apk
+          artifact-x86_64-unknown-linux-gnu-linux-tar/ln_drawer.tar.gz|ln_drawer-v${{ inputs.version }}-linux-x86_64.tar.gz
+          artifact-x86_64-unknown-linux-gnu-linux-appimage/ln_drawer.AppImage|ln_drawer-v${{ inputs.version }}-linux-x86_64.AppImage
+          artifact-x86_64-pc-windows-gnu-windows-zip/ln_drawer.zip|ln_drawer-v${{ inputs.version }}-windows-x86_64.zip
+          artifact-aarch64-linux-android-android-apk/ln_drawer.apk|ln_drawer-v${{ inputs.version }}-android-aarch64.apk
       run: |
         set -e
 
