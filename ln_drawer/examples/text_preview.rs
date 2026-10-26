@@ -14,6 +14,11 @@ use ln_drawer::{
 use ln_world::{Element, Handle, World};
 use winit::event_loop::EventLoop;
 
+/// Benchmark fonts: pinned explicitly so nothing is resolved by fallback.
+const FONT_SANS: &str = "Source Han Sans CN";
+const FONT_MONO: &str = "Noto Sans Mono";
+const FONT_EMOJI: &str = "Noto Color Emoji";
+
 fn main() {
     env_logger::init();
 
@@ -49,67 +54,72 @@ impl Element for TextPreview {
             ))
         };
 
-        let title = row(40, 60);
-        let latin = row(120, 100);
-        let cjk = row(250, 100);
+        let title = row(30, 60);
+        let latin = row(100, 84);
+        let cjk = row(196, 90);
+        let emoji = row(296, 84);
         let left = world.build(Transform::new(
-            TransformValue::anchor((0.0, 1.0), IRect::new(40, -460, 260, -380)),
+            TransformValue::anchor((0.0, 1.0), IRect::new(40, -470, 260, -400)),
             root,
         ));
         let center = world.build(Transform::new(
-            TransformValue::anchor((0.0, 1.0), IRect::new(280, -460, 500, -380)),
+            TransformValue::anchor((0.0, 1.0), IRect::new(280, -470, 500, -400)),
             root,
         ));
         let right = world.build(Transform::new(
-            TransformValue::anchor((0.0, 1.0), IRect::new(520, -460, 760, -380)),
+            TransformValue::anchor((0.0, 1.0), IRect::new(520, -470, 760, -400)),
             root,
         ));
-        let small = row(490, 60);
+        let small = row(490, 50);
 
-        world.insert(Text {
-            text: "GPU 文本渲染 / GPU Text".into(),
-            rect: title,
+        let text = |text: String, rect, metrics: Metrics, family: &'static str, modulate| Text {
+            text,
+            rect,
             attr: TextAttr {
-                metrics: Metrics::new(32.0, 38.0),
-                attrs: Attrs::new().family(Family::SansSerif),
+                metrics,
+                attrs: Attrs::new().family(Family::Name(family)),
                 align: Align::Left,
                 extra_upscale: 1.0,
             },
             order: 10,
             common: self.common,
-            modulate: theme.theme,
+            modulate,
             outdated: false,
-        });
+        };
 
-        world.insert(Text {
-            text: "The quick brown fox jumps over the lazy dog.\nABCDEFGHIJKLMNOPQRSTUVWXYZ\n0123456789 !@#$%^&*()".into(),
-            rect: latin,
-            attr: TextAttr {
-                metrics: Metrics::new(18.0, 24.0),
-                attrs: Attrs::new().family(Family::Monospace),
-                align: Align::Left,
-                extra_upscale: 1.0,
-            },
-            order: 10,
-            common: self.common,
-            modulate: theme.gray0,
-            outdated: false,
-        });
+        world.insert(text(
+            "文本渲染测试 / Text Rendering".into(),
+            title,
+            Metrics::new(32.0, 38.0),
+            FONT_SANS,
+            theme.theme,
+        ));
 
-        world.insert(Text {
-            text: "永和九年，岁在癸丑，暮春之初。\n中文字体测试：天地玄黄，宇宙洪荒。\n日本語のテキスト / 한국어 텍스트".into(),
-            rect: cjk,
-            attr: TextAttr {
-                metrics: Metrics::new(18.0, 26.0),
-                attrs: Attrs::new().family(Family::SansSerif),
-                align: Align::Left,
-                extra_upscale: 1.0,
-            },
-            order: 10,
-            common: self.common,
-            modulate: theme.gray0,
-            outdated: false,
-        });
+        world.insert(text(
+            "The quick brown fox jumps over the lazy dog.\nABCDEFGHIJKLMNOPQRSTUVWXYZ\n0123456789 !@#$%^&*()"
+                .into(),
+            latin,
+            Metrics::new(18.0, 24.0),
+            FONT_MONO,
+            theme.gray0,
+        ));
+
+        world.insert(text(
+            "永和九年，岁在癸丑，暮春之初。\n中文字体测试：天地玄黄，宇宙洪荒。\n日本語のテキスト / 한국어 텍스트"
+                .into(),
+            cjk,
+            Metrics::new(18.0, 26.0),
+            FONT_SANS,
+            theme.gray0,
+        ));
+
+        world.insert(text(
+            "😀 😁 🥰 😎 🤖 🍎 🌈 🚀 ❤️ 🔥 🟥 🟦\n⭐ 🌸 🐱 🍕 🎨 👀 🟩 🟨 🟪 🟧".into(),
+            emoji,
+            Metrics::new(24.0, 36.0),
+            FONT_EMOJI,
+            theme.gray0,
+        ));
 
         for (rect, align) in [
             (left, Align::Left),
@@ -121,7 +131,7 @@ impl Element for TextPreview {
                 rect,
                 attr: TextAttr {
                     metrics: Metrics::new(14.0, 20.0),
-                    attrs: Attrs::new(),
+                    attrs: Attrs::new().family(Family::Name(FONT_SANS)),
                     align,
                     extra_upscale: 1.0,
                 },
@@ -132,19 +142,12 @@ impl Element for TextPreview {
             });
         }
 
-        world.insert(Text {
-            text: "small text 12px：0123456789 中文小字".into(),
-            rect: small,
-            attr: TextAttr {
-                metrics: Metrics::new(12.0, 18.0),
-                attrs: Attrs::new(),
-                align: Align::Left,
-                extra_upscale: 1.0,
-            },
-            order: 10,
-            common: self.common,
-            modulate: theme.gray0,
-            outdated: false,
-        });
+        world.insert(text(
+            "small text 12px：0123456789 中文小字".into(),
+            small,
+            Metrics::new(12.0, 18.0),
+            FONT_SANS,
+            theme.gray0,
+        ));
     }
 }

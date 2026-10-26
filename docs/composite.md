@@ -23,6 +23,7 @@
 - 绘制 Shader 下载，使用 `S(L)`
 - UI Shader 上传，使用 `P(L)` 
 - UI Canvas，使用 `P(L)`
+- 文本彩色字形图集，使用 `P(L)`
 
 在光学线性（linear-srgb）`P(L)` 混合的：
 
