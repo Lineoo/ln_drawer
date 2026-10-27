@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.linn.lndrawer"
+    namespace = "org.linn.lndrawer"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "dev.linn.lndrawer"
+        applicationId = "org.linn.lndrawer.dev"
         minSdk = 21
         targetSdk = 34
         versionCode = 16778496

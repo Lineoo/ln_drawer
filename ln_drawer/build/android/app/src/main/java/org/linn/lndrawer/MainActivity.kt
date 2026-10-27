@@ -1,4 +1,4 @@
-package dev.linn.lndrawer
+package org.linn.lndrawer
 
 import android.app.NativeActivity
 import android.os.Build

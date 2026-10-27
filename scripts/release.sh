@@ -10,8 +10,8 @@ cd "$root"
 #### Android & Gradle ####
 
 # `ln_drawer/build/android/app/build.gradle.kts`
-# applicationId: "dev.linn.lndrawer" -> "org.linn.lndrawer"
-sed -i 's/applicationId = "dev\./applicationId = "org./' ln_drawer/build/android/app/build.gradle.kts
+# applicationId: "org.linn.lndrawer.dev" -> "org.linn.lndrawer"
+sed -i 's/applicationId = "org\.linn\.lndrawer\.dev/applicationId = "org.linn.lndrawer/' ln_drawer/build/android/app/build.gradle.kts
 
 # `ln_drawer/build/android/app/src/main/res/values/strings.xml`
 # app_name: LnDrawer Dev -> LnDrawer
