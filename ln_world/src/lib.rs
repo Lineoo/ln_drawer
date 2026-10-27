@@ -21,10 +21,6 @@ pub trait Element: Any + Sized + Send {
         let _ = (world, this);
     }
 
-    fn when_modify(&mut self, world: &World, this: Handle<Self>) {
-        let _ = (world, this);
-    }
-
     fn when_remove(&mut self, world: &World, this: Handle<Self>) {
         let _ = (world, this);
     }
@@ -879,7 +875,6 @@ impl World {
             ptr: element,
             world: self,
             handle,
-            modified: false,
         })
     }
 
@@ -1168,7 +1163,6 @@ pub struct RefMut<'world, T: Element> {
     ptr: *mut T,
     world: &'world World,
     handle: Handle<T>,
-    modified: bool,
 }
 
 impl<T: Element> Deref for Ref<'_, T> {
@@ -1189,8 +1183,6 @@ impl<T: Element> Deref for RefMut<'_, T> {
 
 impl<T: Element> DerefMut for RefMut<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.modified = true;
-
         // SAFETY: guaranteed by World's cell_occupied
         unsafe { self.ptr.as_mut().unwrap() }
     }
@@ -1206,15 +1198,6 @@ impl<T: Element> Drop for Ref<'_, T> {
 
 impl<T: Element> Drop for RefMut<'_, T> {
     fn drop(&mut self) {
-        if self.modified {
-            T::when_modify(
-                // SAFETY: still inside the RefMut's guarantee
-                unsafe { self.ptr.as_mut().unwrap() },
-                self.world,
-                self.handle,
-            );
-        }
-
         let mut occupied = self.world.occupied.borrow_mut();
         let cnt = occupied.get_mut(&self.handle.untyped()).unwrap();
         *cnt += 1;
@@ -1230,10 +1213,6 @@ impl<T: Element> Ref<'_, T> {
 impl<T: Element> RefMut<'_, T> {
     pub fn handle(&self) -> Handle<T> {
         self.handle
-    }
-
-    pub fn modified(&mut self) {
-        self.modified = true;
     }
 }
 
