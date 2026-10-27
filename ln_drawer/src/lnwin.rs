@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use glam::{DVec2, I64Vec2, IVec2, UVec2};
 use hashbrown::HashMap;
@@ -8,8 +11,8 @@ use winit::platform::android::activity::AndroidApp;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
-    event::WindowEvent,
-    event_loop::ActiveEventLoop,
+    event::{StartCause, WindowEvent},
+    event_loop::{ActiveEventLoop, ControlFlow},
     window::{Window, WindowAttributes, WindowId},
 };
 
@@ -68,6 +71,38 @@ impl ApplicationHandler for Lnwin {
                     render.target_recreate(&lnwindow);
                 });
             }
+        }
+
+        self.world.flush();
+    }
+
+    fn new_events(&mut self, event_loop: &dyn ActiveEventLoop, _cause: StartCause) {
+        for &view in self.windows.values() {
+            self.world.enter(view, || {
+                let now = Instant::now();
+                let mut earliest = None;
+                self.world.foreach_fetch::<Task>(|task| {
+                    let earliest = earliest.get_or_insert(task.instant);
+                    if task.instant < *earliest {
+                        *earliest = task.instant;
+                    }
+                    if task.instant <= now {
+                        let task = task.retrieve();
+                        self.world.queue(move |world| {
+                            world.remove_with(task, |task, world| {
+                                log::debug!("Oi!");
+                                (task.content)(world)
+                            });
+                        });
+                    }
+                });
+                if let Some(earliest) = earliest {
+                    log::debug!("Lets wait!");
+                    event_loop.set_control_flow(ControlFlow::WaitUntil(earliest));
+                } else {
+                    event_loop.set_control_flow(ControlFlow::Wait);
+                }
+            })
         }
 
         self.world.flush();
@@ -266,6 +301,13 @@ impl Lnwindow {
 }
 
 impl Element for LnwindowRect {}
+
+pub struct Task {
+    pub instant: Instant,
+    pub content: Box<dyn FnOnce(&World) + Send>,
+}
+
+impl Element for Task {}
 
 #[cfg(target_os = "android")]
 pub struct LnAndroid(pub AndroidApp);

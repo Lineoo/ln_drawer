@@ -14,7 +14,7 @@ use crate::{
         wrapper::{BrushConfigurationChanged, LayerPage},
     },
     layout::val::{Val, ValChanged},
-    lnwin::Lnwindow,
+    lnwin::{Lnwindow, Task},
     measures::{FI64Ext, IRect},
     render::camera::{PageCamera, PageCameraUtils, UICamera},
     save::Save,
@@ -45,7 +45,7 @@ enum LayerInputState {
     None,
     Paint {
         start_position: DVec2,
-        start_instant: Instant,
+        task: Handle<Task>,
     },
     PaintNoErase,
     PaintErase,
@@ -245,11 +245,13 @@ impl LayerInput {
             camera_utils.write_camera(world, main);
         });
 
-        let mut state = LayerInputState::None;
+        let state_handle = world.insert(Val::new(LayerInputState::None));
         world.observer(this, move |event: &MultiTouchGroup, world| {
             let page_camera = world.single_fetch::<PageCamera>().0;
             let utils = world.single_fetch::<PageCameraUtils>().0;
             let mut this = world.fetch_mut(this);
+            let mut state = world.fetch_mut(state_handle);
+            let state = &mut state.val;
             let lnwindow = world.fetch(lnwindow);
             let camera_utils = &mut *world.fetch_mut(utils);
             let page = &mut *world.single_fetch_mut::<LayerPage>();
@@ -257,8 +259,8 @@ impl LayerInput {
             let center = touch_center(event).unwrap_or(event.active.data.screen);
             let pinch = touch_pinch(event, center);
 
-            let prev = std::mem::replace(&mut state, LayerInputState::None);
-            state = match (prev, event.active.status) {
+            let prev = std::mem::replace(state, LayerInputState::None);
+            *state = match (prev, event.active.status) {
                 (LayerInputState::None, MultiTouchStatus::Press)
                     if (!this.touch_draw
                         && matches!(event.active.data.kind, PointerKind::Touch(_)))
@@ -399,9 +401,32 @@ impl LayerInput {
                     let lnwindow = world.single_fetch::<Lnwindow>();
                     lnwindow.window.request_redraw();
 
+                    let start_position = event.active.data.screen;
+                    let target_instant = Instant::now() + Duration::from_secs_f64(ERASE_TIMER);
                     LayerInputState::Paint {
-                        start_position: event.active.data.screen,
-                        start_instant: Instant::now(),
+                        start_position,
+                        task: world.insert(Task {
+                            instant: target_instant,
+                            content: Box::new(move |world| {
+                                let this = world.single_fetch::<LayerInput>();
+                                let mut page = world.single_fetch_mut::<LayerPage>();
+
+                                let lnwindow = world.single_fetch::<Lnwindow>();
+                                let mut state = world.fetch_mut(state_handle);
+                                let state = &mut state.val;
+                                lnwindow.window.request_redraw();
+
+                                if Instant::now() > target_instant {
+                                    page.discard();
+                                    *state = if this.hold_pick {
+                                        LayerInputState::PickColor
+                                    } else {
+                                        page.draw_erase(draw);
+                                        LayerInputState::PaintErase
+                                    };
+                                }
+                            }),
+                        }),
                     }
                 }
                 (
@@ -427,7 +452,7 @@ impl LayerInput {
                 (
                     LayerInputState::Paint {
                         start_position,
-                        start_instant,
+                        task,
                     },
                     MultiTouchStatus::Holding,
                 ) => {
@@ -436,24 +461,27 @@ impl LayerInput {
                         force: event.active.data.force.unwrap_or(1.0),
                     };
 
-                    page.draw_active(draw);
-
                     let lnwindow = world.single_fetch::<Lnwindow>();
+                    let task = world.fetch(task);
                     lnwindow.window.request_redraw();
 
                     if event.active.data.screen.distance(start_position) > DRAG_DISTANCE {
+                        page.draw_active(draw);
+                        world.remove(task.retrieve());
                         LayerInputState::PaintNoErase
-                    } else if start_instant.elapsed() > Duration::from_secs_f64(ERASE_TIMER) {
+                    } else if Instant::now() > task.instant {
                         page.discard();
+                        world.remove(task.retrieve());
                         if this.hold_pick {
                             LayerInputState::PickColor
                         } else {
+                            page.draw_erase(draw);
                             LayerInputState::PaintErase
                         }
                     } else {
                         LayerInputState::Paint {
                             start_position,
-                            start_instant,
+                            task: task.handle(),
                         }
                     }
                 }

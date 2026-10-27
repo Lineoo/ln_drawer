@@ -1317,10 +1317,18 @@ impl<T: Element> Ref<'_, T> {
     pub fn handle(&self) -> Handle<T> {
         self.handle
     }
+
+    pub fn retrieve(self) -> Handle<T> {
+        self.handle
+    }
 }
 
 impl<T: Element> RefMut<'_, T> {
     pub fn handle(&self) -> Handle<T> {
+        self.handle
+    }
+
+    pub fn retrieve(self) -> Handle<T> {
         self.handle
     }
 }
