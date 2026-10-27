@@ -41,15 +41,16 @@ impl Element for SettingPanel {
         world.dependency(this, self.rect);
         world.dependency(this, self.common.visible);
 
+        let page = world.single_fetch::<LayerPage>();
+        let theme = world.single_fetch::<ThemeVal>();
+
         let attr = ContainerAttr::default();
-        let (_container, common) = world.build(ContainerWithCamera {
+        let (container, common) = world.build(ContainerWithCamera {
             common: self.common,
             rect: self.rect,
             attr,
         });
-        let local = world.build(ContainerEcho {
-            container: _container,
-        });
+        let local = world.build(ContainerEcho { container });
 
         let mut luni = LuniFlex::new(
             local,
@@ -66,31 +67,16 @@ impl Element for SettingPanel {
             basis: Some(110),
             ..Default::default()
         }));
-        world.queue(move |world| {
-            world.scope("setting_panel::preview");
-            world.set_autodeps(Some(this));
 
-            let page = world.single_fetch::<LayerPage>();
-            let theme = world.single_fetch::<ThemeVal>();
-
-            let preview = world.insert(world.build(BrushPreviewDescriptor {
-                common,
-                rect: preview_rect,
-                brush: page.active().dup(),
-                background: theme.gray0,
-                c0: theme.c0,
-                c1: theme.c1,
-                bc: theme.gray4,
-            }));
-
-            world.observer(page.handle(), move |&BrushConfigurationChanged, world| {
-                let mut preview = world.fetch_mut(preview);
-                let layer_instance = world.single_fetch::<LayerPage>();
-                preview.outdated = true;
-                preview.brush = layer_instance.active().dup();
-            });
-        });
-
+        let preview = world.insert(world.build(BrushPreviewDescriptor {
+            common,
+            rect: preview_rect,
+            brush: page.active().dup(),
+            background: theme.gray0,
+            c0: theme.c0,
+            c1: theme.c1,
+            bc: theme.gray4,
+        }));
         let settings_rect = world.build(luni.child(LuniChild {
             basis: Some(200),
             shrink: Some(1.0),
@@ -106,6 +92,13 @@ impl Element for SettingPanel {
         });
 
         world.insert(luni);
+
+        world.observer(page.handle(), move |&BrushConfigurationChanged, world| {
+            let mut preview = world.fetch_mut(preview);
+            let layer_instance = world.single_fetch::<LayerPage>();
+            preview.outdated = true;
+            preview.brush = layer_instance.active().dup();
+        });
     }
 }
 

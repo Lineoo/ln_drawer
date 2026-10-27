@@ -49,7 +49,7 @@ pub struct BrushPreview {
     /// Brush stroke color, in S(L).
     pub bc: Handle<Val<Vec4>>,
     pub brush: Box<dyn BrushParams>,
-    pub canvas: Standalone,
+    pub canvas: Handle<Val<Standalone>>,
     pub renderer: LayerRenderer,
     pub outdated: bool,
 }
@@ -60,7 +60,13 @@ impl Descriptor for BrushPreviewDescriptor {
     fn when_build(self, world: &World) -> Self::Target {
         let page = world.single_fetch::<LayerPage>();
         let renderer = page.lp.create_render(world.fetch(self.background).val);
-        let canvas = page.lp.create_standalone(world.fetch(self.rect).val);
+        let rect = self.rect;
+        let canvas = world.insert_with(move |world| {
+            let page = world.single_fetch::<LayerPage>();
+            let rect = world.fetch(rect).val;
+            let canvas = page.lp.create_standalone(rect);
+            Val::new(canvas)
+        });
         let c0 = Transfer::derive(world, self.c0).build(|&c| srgb_gamma_encode(c));
         let c1 = Transfer::derive(world, self.c1).build(|&c| srgb_gamma_encode(c));
         let bc = Transfer::derive(world, self.bc).build(|&c| srgb_gamma_encode(c));
@@ -113,8 +119,8 @@ impl Element for BrushPreview {
                     let c0 = world.fetch(this.c0).val;
                     let c1 = world.fetch(this.c1).val;
                     let bc = world.fetch(this.bc).val;
-                    let BrushPreview { canvas, brush, .. } = &mut *this;
-                    Self::generate_preview(&page.lp, canvas, brush.as_mut(), c0, c1, bc);
+                    let canvas = world.fetch(this.canvas);
+                    Self::generate_preview(&page.lp, &canvas.val, this.brush.as_mut(), c0, c1, bc);
                     this.outdated = false;
                 }
                 None
@@ -126,19 +132,21 @@ impl Element for BrushPreview {
             order: 0,
             draw: Box::new(move |world, rpass, extra| {
                 let this = world.fetch(this);
+                let canvas = world.fetch(this.canvas);
                 this.renderer
-                    .render_chunk(rpass, extra.camera, &this.canvas.chunk);
+                    .render_chunk(rpass, extra.camera, &canvas.val.chunk);
             }),
         });
 
         world.observer(self.rect, move |ValChanged, world| {
             let mut this = world.fetch_mut(this);
             let rect = world.fetch(this.rect).val;
+            let mut canvas = world.fetch_mut(this.canvas);
 
             let size = UVec2::new(rect.width(), rect.height());
-            if size != this.canvas.rect.extend {
+            if size != canvas.val.rect.extend {
                 let page = world.single_fetch::<LayerPage>();
-                this.canvas = page
+                canvas.val = page
                     .lp
                     .create_standalone(IRect::new_extend(0, 0, size.x, size.y));
                 this.outdated = true;

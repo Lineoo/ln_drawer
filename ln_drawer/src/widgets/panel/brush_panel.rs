@@ -254,39 +254,16 @@ impl Element for BrushListPanel {
                 },
                 button_rect,
             ));
-            // TODO temporary since Packer doesn't support delay data fetch yet
-            world.queue(move |world| {
-                world.scope("brush_list_panel::preview");
-                world.set_autodeps(Some(this));
 
-                let theme = world.single_fetch::<ThemeVal>();
-                let page = world.single_fetch::<LayerPage>();
-
-                let preview = world.insert(world.build(BrushPreviewDescriptor {
-                    common,
-                    background: theme.gray1,
-                    c0: theme.c0,
-                    c1: theme.c1,
-                    bc: theme.gray4,
-                    rect: preview_rect,
-                    brush: page.brushes[i].brush.dup(),
-                }));
-
-                // TODO temporary: `Container` couples render order with collider order, so the preview
-                // captures pointer events. Forward them to the button until that is decoupled.
-                world.observer(preview, move |event: &PointerHit, world| {
-                    world.queue_trigger(button, *event);
-                });
-                world.observer(preview, move |event: &PointerHover, world| {
-                    world.queue_trigger(button, *event);
-                });
-                world.observer(preview, move |event: &PointerScroll, world| {
-                    world.queue_trigger(button, *event);
-                });
-                world.observer(button, move |event: &PointerScroll, world| {
-                    world.queue_trigger(container, *event);
-                });
-            });
+            let preview = world.insert(world.build(BrushPreviewDescriptor {
+                common,
+                background: theme_val.gray1,
+                c0: theme_val.c0,
+                c1: theme_val.c1,
+                bc: theme_val.gray4,
+                rect: preview_rect,
+                brush: page.brushes[i].brush.dup(),
+            }));
 
             world.observer(button, move |&ButtonClick, world| {
                 let mut page = world.single_fetch_mut::<LayerPage>();
@@ -327,6 +304,22 @@ impl Element for BrushListPanel {
                         },
                     );
                 }
+            });
+
+            world.observer(button, move |event: &PointerScroll, world| {
+                world.queue_trigger(container, *event);
+            });
+
+            // TODO temporary: `Container` couples render order with collider order, so the preview
+            // captures pointer events. Forward them to the button until that is decoupled.
+            world.observer(preview, move |event: &PointerHit, world| {
+                world.queue_trigger(button, *event);
+            });
+            world.observer(preview, move |event: &PointerHover, world| {
+                world.queue_trigger(button, *event);
+            });
+            world.observer(preview, move |event: &PointerScroll, world| {
+                world.queue_trigger(button, *event);
             });
         }
 
