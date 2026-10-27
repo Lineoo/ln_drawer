@@ -379,6 +379,15 @@ impl World {
     /// Due to limit of cell, the inserted element cannot be fetched until `flush` is called.
     /// Meanwhile, handle-based ops, like `observer` or `dependency`, can still be used normally.
     pub fn insert<T: Element>(&self, element: T) -> Handle<T> {
+        self.insert_with(move |_| element)
+    }
+
+    /// Due to limit of cell, the inserted element cannot be fetched until `flush` is called.
+    /// Meanwhile, handle-based ops, like `observer` or `dependency`, can still be used normally.
+    pub fn insert_with<T: Element>(
+        &self,
+        element: impl FnOnce(&World) -> T + Send + 'static,
+    ) -> Handle<T> {
         // assign estimate handle
         let (index, generation) = self.allocate();
         let handle = Handle::<T>(index, generation, PhantomData);
@@ -398,6 +407,9 @@ impl World {
         let label = format!("{} {:?}", trace, handle);
         self.queue(move |world| {
             world.scope(label);
+
+            // initialize element
+            let element = element(world);
 
             // get type table ready
             let storage = world.storages.entry(TypeId::of::<T>()).or_insert_with(|| {
@@ -439,6 +451,14 @@ impl World {
 
     pub fn remove(&self, handle: impl HandleGeneric) -> usize {
         self.unwrap(self.try_remove(handle))
+    }
+
+    pub fn remove_with<T: Element>(
+        &self,
+        handle: Handle<T>,
+        recycle: impl FnOnce(T, &World) + Send + 'static,
+    ) -> usize {
+        self.unwrap(self.try_remove_with(handle, recycle))
     }
 
     /// Cell-mode removal cannot access the element immediately so we can't return the owned value of removed element.
@@ -512,6 +532,95 @@ impl World {
             // pop out storage
             let storage = world.storages.get_mut(&tid).unwrap();
             storage.remove(handle.untyped());
+
+            // release the slot, invalidating any outstanding handle to it
+            world.deallocate(handle.0);
+        });
+
+        Ok(cnt)
+    }
+
+    /// Cell-mode removal cannot access the element immediately so we can't return the owned value of removed element.
+    pub fn try_remove_with<T: Element>(
+        &self,
+        handle: Handle<T>,
+        recycle: impl FnOnce(T, &World) + Send + 'static,
+    ) -> Result<usize, WorldError> {
+        let handle = handle.untyped();
+
+        self.available_mut(handle)?;
+        let mut cnt = 1;
+
+        // when_remove
+        // SAFETY: we have checked the mutability
+        let tid = self.indices.get(&handle).unwrap().tid;
+        let storage = self.storages.get(&tid).unwrap().as_ref() as *const _;
+        let storage = storage as *mut dyn StorageGeneral;
+        unsafe { (*storage).when_remove(self, handle) };
+
+        // clear view
+        self.enter(handle, || {
+            cnt += self.clear();
+        });
+
+        // cleanup parents' dependencies
+        let mut dependencies = self.dependencies.borrow_mut();
+        if let Some(deps) = dependencies.0.get_mut(&handle.untyped()) {
+            for parent in std::mem::take(&mut deps.parents) {
+                let parent_deps = dependencies.0.get_mut(&parent).unwrap();
+                parent_deps
+                    .children
+                    .retain(|child| *child != handle.untyped());
+            }
+        }
+        drop(dependencies);
+
+        // remove children
+        loop {
+            let mut dependencies = self.dependencies.borrow_mut();
+            let Some(dep) = dependencies.0.get(&handle.untyped()) else {
+                break;
+            };
+
+            let Some(&child) = dep.children.last() else {
+                dependencies.0.remove(&handle.untyped());
+                break;
+            };
+
+            drop(dependencies);
+
+            let child_view = self.indices.get(&child).unwrap().view;
+            cnt += self.enter(child_view, || self.try_remove(child))?;
+
+            // TODO proper ops
+            // cnt += self.remove(child)?;
+        }
+
+        // write immediate record
+        let mut removed = self.removed.borrow_mut();
+        removed.insert(handle.untyped());
+        drop(removed);
+
+        // junk cache:
+        // swap_remove shifts the storage indices the cache points to, so drop every
+        // cache entry of this type, not just the one at the current location
+        let mut cache = self.cache.borrow_mut();
+        cache.retain(|(t, _), _| *t != tid);
+        drop(cache);
+
+        self.queue(move |world| {
+            // update typetable
+            world.indices.remove(&handle.untyped());
+
+            // pop out storage
+            let storage = world.storages.get_mut(&tid).unwrap();
+            let typed_storage = (storage.as_mut() as &mut dyn Any)
+                .downcast_mut::<Storage<T>>()
+                .unwrap();
+            let element = typed_storage.0.swap_remove(&handle).unwrap();
+
+            // perform recycle
+            recycle(element, world);
 
             // release the slot, invalidating any outstanding handle to it
             world.deallocate(handle.0);

@@ -48,28 +48,28 @@
 我们遵循生命周期最小的原则：
 
 - 在 insert 后无法 fetch
-- 在 insert-flush 后正常 fetch
+- 在 insert 命令 flush 之后正常 fetch
 - 在 remove 后立刻无法 fetch
-- 在 remove-flush 后当然无法 fetch
-
-我们极力避免出现生命周期交叉！（图中没有画 queue 有关的，但是也应该尽力保证不交叉）
+- 在 remove 命令 flush 之后当然无法 fetch
 
 ```text
----- insert
-|    insert-flush ------
-|    insert-event      |  ----  ===> where `when_insert` runs (after insert-flush)
-|    ...               |     |
-|    modify            |     |
-|    modify-event      |     |  ===> where `when_modify` runs (after modify)
-|    ...               |     |
-|    bind-deps         |     |
-|    ...               |     |
-|    remove-event      |  ----  ===> where `when_remove` runs (before remove)
-|    remove-deps       |   ^^^
-|    remove       ------   element-trait hook lifecycle
----- remove-flush    ^^^
-^^^                  fetch-available lifecycle
-actual ownership lifecycle      ===> where `drop` runs
+insert            output `Handle<T>`
+  insert-record
+...
+flush
+  insert-with     (if you use `insert_with`)
+  insert-index    #### fetch-available now
+  insert-hook     ==> `when_insert`
+...
+remove            input `HandleGeneric`
+  remove-hook     ==> `when_remove` (immediately!)
+  remove-record   #### fetch-unavailable now
+  remove-deps
+...
+flush
+  remove-index
+  remove-with     (if you use `remove_with`)
+    drop          performed by Rust
 ```
 
 ## trigger 生命周期 ##
