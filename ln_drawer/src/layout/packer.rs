@@ -2,6 +2,7 @@ use ln_world::{Handle, HandleGeneric, World};
 
 use crate::layout::val::{Val, ValChanged};
 
+/// Binding a function for data, and listen to nodes.
 pub struct Packer<'w, T: Send + 'static, F: Send + 'static> {
     world: &'w World,
     that: Handle<Val<T>>,
@@ -20,6 +21,15 @@ impl<T: Send + 'static, F: Fn(&World) -> T + Send + 'static> Packer<'_, T, F> {
         Packer { world, that, fun }
     }
 
+    pub fn derive(world: &World, fun: F) -> Packer<'_, T, F> {
+        let fun = world.insert(Val::new(fun));
+        let that = world.insert_with(move |world| {
+            let fun = world.fetch(fun);
+            Val::new((fun.val)(world))
+        });
+        Packer { world, that, fun }
+    }
+
     pub fn listen(&self, this: impl HandleGeneric) -> &Self {
         let &Packer { world, that, fun } = self;
         world.observer(this, move |ValChanged, world| {
@@ -33,13 +43,5 @@ impl<T: Send + 'static, F: Fn(&World) -> T + Send + 'static> Packer<'_, T, F> {
 
     pub fn finish(&self) -> Handle<Val<T>> {
         self.that
-    }
-}
-
-// TODO remove Default requirement after ln_world pre-allocate function
-impl<T: Send + Default + 'static, F: Fn(&World) -> T + Send + 'static> Packer<'_, T, F> {
-    pub fn derive(world: &World, fun: F) -> Packer<'_, T, F> {
-        let that = world.insert(Val::new(T::default()));
-        Packer::new(world, that, fun)
     }
 }
