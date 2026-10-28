@@ -17,16 +17,17 @@ struct VertexOutput {
 @vertex
 fn vs_main(
     @builtin(vertex_index) index: u32,
-    @location(0) origin: vec2f,
-    @location(1) size: vec2f,
-    @location(2) uv: vec4f,
-    @location(3) kind: u32,
+    @location(0) origin: vec2i,
+    @location(1) origin_fract: vec2u,
+    @location(2) size: vec2f,
+    @location(3) uv: vec4f,
+    @location(4) kind: u32,
 ) -> VertexOutput {
     let corner = vec2f(f32(index & 1u), f32((index >> 1u) & 1u));
-    let world = origin + size * corner;
+    let clip = world_to_clip_q32(origin, origin_fract) + world_to_clip_relative(size * corner);
 
     var ret: VertexOutput;
-    ret.pos = vec4f(world_to_clip_f(world), 0.0, 1.0);
+    ret.pos = vec4f(clip, 0.0, 1.0);
     ret.uv = vec2f(mix(uv.x, uv.z, corner.x), mix(uv.w, uv.y, corner.y));
     ret.kind = kind;
     return ret;

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, mem::size_of};
 
 use cosmic_text::{Align, Attrs, Buffer as CosmicBuffer, CacheKey, FontSystem, Metrics, Shaping};
-use glam::Vec4;
+use glam::{DVec2, I64Vec2, Vec4};
 use ln_world::{Element, Handle, World};
 use smallvec::SmallVec;
 use wgpu::{
@@ -12,7 +12,7 @@ use wgpu::{
 use crate::{
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
-    measures::IRect,
+    measures::{FI64Ext, IRect},
     render::{MSAA_STATE, Render, RenderDrawControl, RenderPrepareControl, camera::CameraBind},
     widgets::{common::WidgetCommon, shaders::shader_compile},
 };
@@ -72,7 +72,8 @@ struct GlyphSlot {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct GlyphInstance {
-    origin: [f32; 2],
+    origin: [i32; 2],
+    origin_fract: [u32; 2],
     size: [f32; 2],
     uv: [f32; 4],
     kind: u32,
@@ -305,16 +306,18 @@ impl Text {
 
             let left = x + slot.left;
             let top = line_y - slot.top;
-            let origin = [
-                rect.origin.x as f32 + left as f32 / upscale,
-                rect.origin.y as f32 + rect.extend.y as f32
-                    - (top + slot.height as i32) as f32 / upscale,
-            ];
+            let origin = I64Vec2::q32_from_i32(rect.origin)
+                + I64Vec2::new(0, (rect.extend.y as i64) << 32)
+                + I64Vec2::q32_from_f64(DVec2::new(
+                    left as f64 / upscale as f64,
+                    -((top + slot.height as i32) as f64 / upscale as f64),
+                ));
             let size = [slot.width as f32 / upscale, slot.height as f32 / upscale];
 
             let index = glyphs.len() as u32;
             glyphs.push(GlyphInstance {
-                origin,
+                origin: origin.q32_floor().into(),
+                origin_fract: origin.q32_fract().into(),
                 size,
                 uv: slot.uv,
                 kind: slot.kind as u32,
@@ -444,24 +447,29 @@ impl TextPipeline {
                     step_mode: VertexStepMode::Instance,
                     attributes: &[
                         VertexAttribute {
-                            format: VertexFormat::Float32x2,
+                            format: VertexFormat::Sint32x2,
                             offset: 0,
                             shader_location: 0,
                         },
                         VertexAttribute {
-                            format: VertexFormat::Float32x2,
+                            format: VertexFormat::Uint32x2,
                             offset: 8,
                             shader_location: 1,
                         },
                         VertexAttribute {
-                            format: VertexFormat::Float32x4,
+                            format: VertexFormat::Float32x2,
                             offset: 16,
                             shader_location: 2,
                         },
                         VertexAttribute {
-                            format: VertexFormat::Uint32,
-                            offset: 32,
+                            format: VertexFormat::Float32x4,
+                            offset: 24,
                             shader_location: 3,
+                        },
+                        VertexAttribute {
+                            format: VertexFormat::Uint32,
+                            offset: 40,
+                            shader_location: 4,
                         },
                     ],
                 })],
