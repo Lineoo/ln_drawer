@@ -24,7 +24,7 @@ mod atlas;
 mod raster;
 
 use atlas::{GLYPH_ATLAS_SIZE, GLYPH_PADDING, GlyphAtlasPage};
-use raster::{GlyphKind, GlyphRasterizer, SwashRasterizer};
+use raster::{GlyphKind, SwashRasterizer};
 
 pub struct Text {
     pub text: String,
@@ -46,7 +46,7 @@ pub struct TextAttr {
 
 pub struct TextPipeline {
     font_system: FontSystem,
-    rasterizer: Box<dyn GlyphRasterizer + Send>,
+    rasterizer: SwashRasterizer,
 
     glyphs: HashMap<CacheKey, Option<GlyphSlot>>,
     pages: Vec<GlyphAtlasPage>,
@@ -70,12 +70,6 @@ struct GlyphSlot {
     top: i32,
     width: u32,
     height: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct TextMaterial {
-    color: [f32; 4],
 }
 
 #[repr(C)]
@@ -136,9 +130,7 @@ impl Text {
 
         let material = render.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("text_material"),
-            contents: bytemuck::bytes_of(&TextMaterial {
-                color: modulate.to_array(),
-            }),
+            contents: bytemuck::bytes_of(&modulate),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
@@ -236,13 +228,9 @@ impl Text {
             let instance = world.fetch(instance);
             let render = world.single_fetch::<Render>();
 
-            render.queue.write_buffer(
-                &instance.material,
-                0,
-                bytemuck::bytes_of(&TextMaterial {
-                    color: modulate.to_array(),
-                }),
-            );
+            render
+                .queue
+                .write_buffer(&instance.material, 0, bytemuck::bytes_of(&modulate));
 
             let lnwindow = world.single_fetch::<Lnwindow>();
             lnwindow.window.request_redraw();
@@ -332,7 +320,7 @@ impl Text {
                 origin,
                 size,
                 uv: slot.uv,
-                kind: slot.kind.as_u32(),
+                kind: slot.kind as u32,
                 _pad: 0,
             });
 
@@ -510,7 +498,7 @@ impl TextPipeline {
 
         Self {
             font_system: Self::font_system(),
-            rasterizer: Box::new(SwashRasterizer::new()),
+            rasterizer: SwashRasterizer::new(),
             glyphs: HashMap::new(),
             pages: Vec::new(),
             epoch: 0,
@@ -582,8 +570,8 @@ impl TextPipeline {
                 continue;
             }
 
-            if let Some(place) = atlas.insert(&render.queue, &raster) {
-                found = Some((page, place));
+            if let Some(uv) = atlas.insert(&render.queue, &raster) {
+                found = Some((page, uv));
                 break;
             }
         }
@@ -593,12 +581,12 @@ impl TextPipeline {
             self.pages.push(page);
 
             let page = self.pages.len() - 1;
-            if let Some(place) = self.pages[page].insert(&render.queue, &raster) {
-                found = Some((page, place));
+            if let Some(uv) = self.pages[page].insert(&render.queue, &raster) {
+                found = Some((page, uv));
             }
         }
 
-        let Some((page, place)) = found else {
+        let Some((page, uv)) = found else {
             if raster.width + GLYPH_PADDING * 2 > GLYPH_ATLAS_SIZE
                 || raster.height + GLYPH_PADDING * 2 > GLYPH_ATLAS_SIZE
             {
@@ -619,11 +607,11 @@ impl TextPipeline {
         let slot = GlyphSlot {
             page,
             kind,
-            uv: place.uv,
-            left: place.left,
-            top: place.top,
-            width: place.width,
-            height: place.height,
+            uv,
+            left: raster.left,
+            top: raster.top,
+            width: raster.width,
+            height: raster.height,
         };
         self.glyphs.insert(key, Some(slot));
         Some(slot)

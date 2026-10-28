@@ -7,14 +7,6 @@ use crate::render::Render;
 pub(super) const GLYPH_ATLAS_SIZE: u32 = 2048;
 pub(super) const GLYPH_PADDING: u32 = 1;
 
-pub(super) struct GlyphPlacement {
-    pub uv: [f32; 4],
-    pub left: i32,
-    pub top: i32,
-    pub width: u32,
-    pub height: u32,
-}
-
 pub(super) struct GlyphAtlasPage {
     pub kind: GlyphKind,
     pub bind: BindGroup,
@@ -88,7 +80,7 @@ impl GlyphAtlasPage {
         }
     }
 
-    pub(super) fn insert(&mut self, queue: &Queue, raster: &GlyphRaster) -> Option<GlyphPlacement> {
+    pub(super) fn insert(&mut self, queue: &Queue, raster: &GlyphRaster) -> Option<[f32; 4]> {
         if raster.width == 0 || raster.height == 0 {
             return None;
         }
@@ -137,12 +129,6 @@ impl GlyphAtlasPage {
         let u1 = (x as f32 + raster.width as f32) * inv;
         let v1 = (y as f32 + raster.height as f32) * inv;
 
-        Some(GlyphPlacement {
-            uv: [u0, v0, u1, v1],
-            left: raster.left,
-            top: raster.top,
-            width: raster.width,
-            height: raster.height,
-        })
+        Some([u0, v0, u1, v1])
     }
 }
