@@ -1,7 +1,7 @@
 use std::{collections::HashMap, mem::size_of};
 
 use cosmic_text::{Align, Attrs, Buffer as CosmicBuffer, CacheKey, FontSystem, Metrics, Shaping};
-use glam::{I64Vec2, UVec2, Vec4};
+use glam::Vec4;
 use ln_world::{Element, Handle, World};
 use smallvec::SmallVec;
 use wgpu::{
@@ -12,11 +12,8 @@ use wgpu::{
 use crate::{
     layout::val::{Val, ValChanged},
     lnwin::Lnwindow,
-    measures::{FI64Ext, IRect, URect},
-    render::{
-        MSAA_STATE, Render, RenderDrawControl, RenderPrepareControl,
-        camera::{Camera, CameraBind},
-    },
+    measures::IRect,
+    render::{MSAA_STATE, Render, RenderDrawControl, RenderPrepareControl, camera::CameraBind},
     widgets::{common::WidgetCommon, shaders::shader_compile},
 };
 
@@ -181,7 +178,7 @@ impl Text {
 
                 let rect = world.fetch(rect).val;
                 let lnwindow = world.single_fetch::<Lnwindow>();
-                let clip = screen_scissor(rect, extra.camera, &lnwindow);
+                let clip = lnwindow.screen_scissor(rect, extra.camera);
                 let Some(clip) = extra.scissor.intersect(clip) else {
                     return;
                 };
@@ -350,7 +347,7 @@ impl Text {
     }
 
     fn upscale(&self, lnwindow: &Lnwindow) -> f32 {
-        self.attr.extra_upscale * lnwindow.window.scale_factor() as f32
+        self.attr.extra_upscale * lnwindow.scale_factor() as f32
     }
 }
 
@@ -626,24 +623,6 @@ impl TextPipeline {
             GlyphKind::Mask => 2,
             GlyphKind::Color => 1,
         }
-    }
-}
-
-fn screen_scissor(rect: IRect, camera: &Camera, lnwindow: &Lnwindow) -> URect {
-    let size = lnwindow.window.surface_size();
-    let left_up =
-        lnwindow.screen_to_cursor(camera.world_to_screen(I64Vec2::q32_from_i32(rect.left_up())));
-    let right_down =
-        lnwindow.screen_to_cursor(camera.world_to_screen(I64Vec2::q32_from_i32(rect.right_down())));
-
-    let x = (left_up.x.max(0.0) as u32).min(size.width);
-    let y = (left_up.y.max(0.0) as u32).min(size.height);
-    let right = (right_down.x.max(0.0) as u32).min(size.width);
-    let down = (right_down.y.max(0.0) as u32).min(size.height);
-
-    URect {
-        origin: UVec2::new(x, y),
-        extend: UVec2::new(right.saturating_sub(x), down.saturating_sub(y)),
     }
 }
 

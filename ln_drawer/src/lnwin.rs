@@ -18,7 +18,7 @@ use winit::{
 
 use crate::{
     layout::val::{Val, ValChanged},
-    measures::{FI64Ext, IRect},
+    measures::{FI64Ext, IRect, URect},
     render::{
         Render,
         camera::{Camera, CameraDescriptor, CameraOutdated, SetCameraOutdated, UICamera},
@@ -58,7 +58,20 @@ impl ApplicationHandler for Lnwin {
             let window = Arc::from(window);
 
             let payload = self.payload.clone();
-            let lnwindow = Lnwindow { window, payload };
+            let scale_factor_override = std::env::var("LNDRAWER_SCALE_FACTOR").ok().map(|value| {
+                let scale = value.parse::<f64>().unwrap();
+                assert!(
+                    scale.is_finite() && scale > 0.0,
+                    "invalid scale factor: {value}"
+                );
+                log::warn!("scale factor overridden to {scale} by LNDRAWER_SCALE_FACTOR");
+                scale
+            });
+            let lnwindow = Lnwindow {
+                window,
+                payload,
+                scale_factor_override,
+            };
 
             let window_id = lnwindow.window.id();
             let lnwindow = self.world.insert(lnwindow);
@@ -144,6 +157,7 @@ impl ApplicationHandler for Lnwin {
 pub struct Lnwindow {
     pub window: Arc<dyn Window>,
     pub payload: Option<Arc<dyn Fn(&World, WidgetCommon) + Send + Sync>>,
+    pub scale_factor_override: Option<f64>,
 }
 
 pub struct LnwindowRect(pub Handle<Val<IRect>>);
@@ -205,7 +219,7 @@ impl Element for Lnwindow {
             let lnwindow = world.fetch(this);
             let ui_camera = world.insert(world.build(CameraDescriptor {
                 center: I64Vec2::ZERO,
-                zoom: i64::q32_from_f64(lnwindow.window.scale_factor().log2()),
+                zoom: i64::q32_from_f64(lnwindow.scale_factor().log2()),
             }));
             world.insert(UICamera(ui_camera));
             world.observer(ui_camera, move |&SetCameraOutdated, world| {
@@ -233,7 +247,7 @@ impl Element for Lnwindow {
                     let mut rect = world.fetch_mut(rect);
                     let mut camera = world.fetch_mut(ui_camera);
 
-                    let scale = lnwindow.window.scale_factor();
+                    let scale = lnwindow.scale_factor();
                     let next = lnwindow.window_rect();
 
                     rect.val = next;
@@ -276,6 +290,32 @@ impl Element for Lnwindow {
 }
 
 impl Lnwindow {
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor_override
+            .unwrap_or_else(|| self.window.scale_factor())
+    }
+
+    pub fn screen_scissor(&self, rect: IRect, camera: &Camera) -> URect {
+        let size = self.window.surface_size();
+        let left_up =
+            self.screen_to_cursor(camera.world_to_screen(I64Vec2::q32_from_i32(rect.left_up())));
+        let right_down =
+            self.screen_to_cursor(camera.world_to_screen(I64Vec2::q32_from_i32(rect.right_down())));
+
+        // ceil/floor keeps the last pixel inside fractional-scaled panels.
+        let width = size.width as f64;
+        let height = size.height as f64;
+        let x = left_up.x.clamp(0.0, width).floor() as u32;
+        let y = left_up.y.clamp(0.0, height).floor() as u32;
+        let right = right_down.x.clamp(0.0, width).ceil() as u32;
+        let down = right_down.y.clamp(0.0, height).ceil() as u32;
+
+        URect {
+            origin: UVec2::new(x, y),
+            extend: UVec2::new(right.saturating_sub(x), down.saturating_sub(y)),
+        }
+    }
+
     pub fn cursor_to_screen(&self, position: PhysicalPosition<f64>) -> DVec2 {
         let size = self.window.surface_size();
         let x = (position.x * 2.0) / size.width as f64 - 1.0;
@@ -292,10 +332,9 @@ impl Lnwindow {
 
     fn window_rect(&self) -> IRect {
         let size = self.window.surface_size();
-        let scale = self.window.scale_factor();
-        let half = (UVec2::new(size.width / 2, size.height / 2).as_dvec2() / scale)
-            .round()
-            .as_uvec2();
+        let scale = self.scale_factor();
+        let size = DVec2::new(size.width as f64, size.height as f64);
+        let half = (size / (2.0 * scale)).ceil().as_uvec2();
         IRect::new_half(IVec2::ZERO, half)
     }
 }

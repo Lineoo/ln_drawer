@@ -7,7 +7,7 @@ use crate::{
         val::{Val, ValChanged},
     },
     lnwin::Lnwindow,
-    measures::{FI64Ext, IRect, URect},
+    measures::{FI64Ext, IRect},
     render::{
         Render, RenderDrawControl, RenderExtra,
         camera::{Camera, CameraDescriptor, CameraOutdated, SetCameraOutdated},
@@ -107,24 +107,7 @@ impl Element for Container {
                 if this.attr.clip {
                     let camera = extra.camera;
                     let panel_rect = world.fetch(this.rect).val;
-                    let window_size = lnwindow.window.surface_size();
-
-                    let left_up = lnwindow.screen_to_cursor(
-                        camera.world_to_screen(I64Vec2::q32_from_i32(panel_rect.left_up())),
-                    );
-                    let right_down = lnwindow.screen_to_cursor(
-                        camera.world_to_screen(I64Vec2::q32_from_i32(panel_rect.right_down())),
-                    );
-
-                    let x = (left_up.x.max(0.0) as u32).min(window_size.width);
-                    let y = (left_up.y.max(0.0) as u32).min(window_size.height);
-                    let right = (right_down.x.max(0.0) as u32).min(window_size.width);
-                    let down = (right_down.y.max(0.0) as u32).min(window_size.height);
-
-                    let clip = URect {
-                        origin: UVec2::new(x, y),
-                        extend: UVec2::new(right.saturating_sub(x), down.saturating_sub(y)),
-                    };
+                    let clip = lnwindow.screen_scissor(panel_rect, camera);
 
                     let clipped = match extra.scissor.intersect(clip) {
                         Some(result) => result,

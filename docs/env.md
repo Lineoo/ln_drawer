@@ -8,6 +8,7 @@
 
 - `LNDRAWER_NO_READ_WRITE` 禁用设备 `STORAGE_READ_WRITE` 能力
 - `LNDRAWER_DESKTOP_UI` 使用实验性桌面模式
+- `LNDRAWER_SCALE_FACTOR` 覆盖 winit 报告的 HiDPI 缩放因子
 - `LNDRAWER_HEADLESS` 启用无头渲染
 - `LNDRAWER_EXPORT_PATH` 无头渲染导出图片到路径
 - `LNDRAWER_EXPORT_FRAME` 无头渲染捕获第几帧
