@@ -35,5 +35,5 @@ fn main(in: VertexOutput) -> @location(0) vec4f {
 
 fn sdRoundRect(p: vec2f, b: vec2f, r: f32) -> f32 {
     let q = abs(p) - b + r;
-    return length(max(q, vec2f())) - r;
+    return length(max(q, vec2f())) + min(max(q.x, q.y), 0.0) - r;
 }

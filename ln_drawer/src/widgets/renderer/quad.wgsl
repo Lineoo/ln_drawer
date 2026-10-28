@@ -16,10 +16,14 @@ struct VertexOutput {
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
     let pose = vec2i(i32(index / 2), i32(index % 2));
-    let world_space = quad.origin + vec2i(quad.extend) * pose + vec2i(quad.edge) * (2 * pose - 1);
+    let extend = vec2f(quad.extend);
+    let uv = vec2f(pose) + vec2f(2 * pose - 1) * vec2f(quad.edge) / extend;
+
+    let left_down = snap_to_pixel_min(world_to_clip(quad.origin));
+    let right_up = snap_to_pixel_max(world_to_clip(quad.origin + vec2i(quad.extend)));
 
     var ret: VertexOutput;
-    ret.pos = vec4f(world_to_clip(world_space), 0.0, 1.0);
-    ret.uv = vec2f(world_space - quad.origin) / vec2f(quad.extend);
+    ret.pos = vec4f(left_down + (right_up - left_down) * uv, 0.0, 1.0);
+    ret.uv = uv;
     return ret;
 }

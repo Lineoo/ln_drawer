@@ -1,4 +1,4 @@
-use glam::{DVec2, I64Vec2, Mat2, UVec2, Vec2};
+use glam::{DVec2, I64Vec2, IVec2, Mat2, UVec2, Vec2};
 use ln_world::{Descriptor, Element, Handle, World};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -58,10 +58,12 @@ pub struct UICamera(pub Handle<Camera>);
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct CameraUniform {
-    center: [i32; 2],
-    center_fract: [u32; 2],
+    center: IVec2,
+    center_fract: UVec2,
     transform: Mat2,
     inverse: Mat2,
+    size: Vec2,
+    _pad: u64,
 }
 
 impl Descriptor for CameraDescriptor {
@@ -82,10 +84,12 @@ impl Descriptor for CameraDescriptor {
         let uniform = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("camera_uniform"),
             contents: bytemuck::bytes_of(&CameraUniform {
-                center: translate.q32_floor().into(),
-                center_fract: translate.q32_fract().into(),
+                center: translate.q32_floor(),
+                center_fract: translate.q32_fract(),
                 transform,
                 inverse: transform.inverse(),
+                size: size.as_vec2(),
+                _pad: 0,
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -203,6 +207,8 @@ impl Camera {
                 center_fract: translate.q32_fract().into(),
                 transform,
                 inverse: transform.inverse(),
+                size: self.surface_size.as_vec2(),
+                _pad: 0,
             }),
         );
     }
