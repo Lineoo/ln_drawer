@@ -8,6 +8,7 @@ Headless rendering and frame export are controlled independently:
 ## 1. Wayland Compositor
 
 - `LNDRAWER_HEADLESS`: If present, do not create a `wgpu::Surface`; render into an offscreen texture.
+- `LNDRAWER_WINDOW_SIZE`: If present, request the surface size in physical pixels, formatted as `WIDTHxHEIGHT`. This keeps exports independent of the compositor's scale factor and default window size.
 
 A virtual Wayland compositor is enough. Weston's headless backend with the pixman renderer does not need a GPU or `/dev/dri`:
 

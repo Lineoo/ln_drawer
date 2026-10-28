@@ -34,7 +34,7 @@ jobs:
       run: cargo test --verbose
 
   regression-wayland:
-    name: Headless Regression x86_64 Linux
+    name: Headless Regression x86_64 Linux Wayland
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

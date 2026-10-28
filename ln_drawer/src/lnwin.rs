@@ -10,7 +10,7 @@ use ln_world::{Element, Handle, ViewRef, World};
 use winit::platform::android::activity::AndroidApp;
 use winit::{
     application::ApplicationHandler,
-    dpi::PhysicalPosition,
+    dpi::{PhysicalPosition, PhysicalSize},
     event::{StartCause, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow},
     window::{Window, WindowAttributes, WindowId},
@@ -50,9 +50,19 @@ pub struct Lnwin {
 impl ApplicationHandler for Lnwin {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.windows.is_empty() {
-            let win_attr = WindowAttributes::default()
+            let mut win_attr = WindowAttributes::default()
                 .with_transparent(true)
                 .with_title("LnDrawer");
+
+            if let Some(value) = std::env::var_os("LNDRAWER_WINDOW_SIZE") {
+                let value = value.to_string_lossy();
+                let (width, height) = value.split_once('x').unwrap();
+                let width: u32 = width.parse().unwrap();
+                let height: u32 = height.parse().unwrap();
+                let size = PhysicalSize::new(width, height);
+                log::warn!("surface size overridden to {size:?} by LNDRAWER_WINDOW_SIZE");
+                win_attr = win_attr.with_surface_size(size);
+            }
 
             let window = event_loop.create_window(win_attr).unwrap();
             let window = Arc::from(window);
