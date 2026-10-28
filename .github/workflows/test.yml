@@ -33,6 +33,89 @@ jobs:
     - name: '[Test] Cargo Test x86_64 Linux'
       run: cargo test --verbose
 
+  regression-wayland:
+    name: Headless Regression x86_64 Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: '[Actions] Checkout'
+      uses: actions/checkout@v7
+
+    - name: '[Actions] Cache'
+      uses: actions/cache@v6
+      with:
+        key: ubuntu-test-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ubuntu-test-x86_64-unknown-linux-gnu-
+          ubuntu-test-
+          ubuntu-test
+        path: |
+          ~/.cargo
+          target
+
+    - name: '[Install] Headless Runtime & Fonts'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          weston \
+          mesa-vulkan-drivers \
+          imagemagick \
+          fonts-noto-mono \
+          fonts-noto-color-emoji
+
+        mkdir -p "$HOME/.local/share/fonts"
+        cp ln_drawer/fonts/*.otf "$HOME/.local/share/fonts/"
+
+    - name: '[Test] Headless Regression'
+      run: |
+        export XDG_RUNTIME_DIR="$RUNNER_TEMP/headless/rt"
+        mkdir -p "$XDG_RUNTIME_DIR"
+        chmod 700 "$XDG_RUNTIME_DIR"
+
+        weston \
+          --backend=headless-backend.so \
+          --renderer=pixman \
+          --socket=wayland-headless \
+          --width=1200 \
+          --height=900 \
+          --idle-time=0 \
+          > "$RUNNER_TEMP/weston.log" 2>&1 &
+
+        for _ in $(seq 50); do
+          [ -S "$XDG_RUNTIME_DIR/wayland-headless" ] && break
+          sleep 0.1
+        done
+
+        export WAYLAND_DISPLAY=wayland-headless
+        unset DISPLAY
+
+        scripts/regression.sh "$RUNNER_TEMP/regression"
+
+    - name: '[Test] Compare Pixels'
+      run: |
+        failed=0
+        for baseline in ln_drawer/examples/*.png; do
+          name=$(basename "$baseline")
+          actual="$RUNNER_TEMP/regression/$name"
+
+          convert "$baseline" -depth 8 "rgba:$RUNNER_TEMP/baseline.raw"
+          convert "$actual" -depth 8 "rgba:$RUNNER_TEMP/actual.raw"
+
+          if ! cmp -s "$RUNNER_TEMP/baseline.raw" "$RUNNER_TEMP/actual.raw"; then
+            echo "::error::$name pixels differ from baseline"
+            failed=1
+          fi
+        done
+        exit $failed
+
+    - name: '[Actions] Upload Actual Images'
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: regression-actual
+        path: ${{ runner.temp }}/regression/*.png
+
   rustfmt-check:
     name: Format Check
     runs-on: ubuntu-latest
